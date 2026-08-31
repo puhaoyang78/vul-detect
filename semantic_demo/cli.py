@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .analyzer import analyze
+from .joern import JoernValidator
 from .semantics import (
     Validation,
     discover_candidates,
@@ -121,10 +122,15 @@ def detect(
     replay_path: str,
     semantics_path: str,
     detections_path: str,
+    joern_dir: str = "/home/phy/joern",
+    use_joern: bool = True,
 ) -> None:
     samples = read_jsonl(samples_path)
     validate_detection_manifest(samples)
     replay = load_replay(replay_path)
+    joern = JoernValidator(joern_dir) if use_joern else None
+    if joern is not None:
+        joern.ensure_available()
     semantic_records: list[dict[str, object]] = []
     detection_records: list[dict[str, object]] = []
 
@@ -141,7 +147,7 @@ def detect(
         for candidate in candidates:
             key = (sample_key, candidate.function.path, candidate.function.name)
             for summary in replay.get(key, []):
-                validation = validate_summary(candidate, summary)
+                validation = validate_summary(candidate, summary, joern=joern)
                 validations.append(validation)
                 semantic_records.append(validation.as_json())
 
@@ -282,7 +288,14 @@ def evaluate(
 
 
 def run_command(args: argparse.Namespace) -> None:
-    detect(args.samples, args.replay, args.semantics, args.detections)
+    detect(
+        args.samples,
+        args.replay,
+        args.semantics,
+        args.detections,
+        joern_dir=args.joern_dir,
+        use_joern=not args.no_joern,
+    )
     evaluate(args.detections, args.oracle, args.table, args.summary)
 
 
@@ -304,6 +317,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--detections", default="results/detections.jsonl")
     run.add_argument("--table", default="results/results.csv")
     run.add_argument("--summary", default="results/summary.md")
+    run.add_argument("--joern-dir", default="/home/phy/joern")
+    run.add_argument(
+        "--no-joern",
+        action="store_true",
+        help="use the lightweight fallback validator instead of Joern",
+    )
     run.set_defaults(func=run_command)
     return parser
 
