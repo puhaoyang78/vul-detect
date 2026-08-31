@@ -1,6 +1,7 @@
 import unittest
 
-from semantic_demo.analyzer import analyze
+from semantic_demo.analyzer import Operation, analyze
+from semantic_demo.z3_reasoner import reason_memory_safety
 from semantic_demo.semantics import (
     Candidate,
     Validation,
@@ -140,6 +141,120 @@ class SemanticValidationTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "finish_reason='length'"):
             _response_content(result)
+
+
+class Z3ReasonerTests(unittest.TestCase):
+    def test_capacity_mismatch_is_feasible(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(char *buf, unsigned long buflen, struct result res)
+            {
+                unsigned long acl_len = res.len - 4;
+                if (acl_len > buflen)
+                    return -1;
+                copy_wrap(buf, res.pages, 0, res.len);
+                return 0;
+            }
+            """,
+        )[0]
+        result = reason_memory_safety(
+            entry,
+            [
+                Operation(
+                    "WRITE",
+                    "copy_wrap",
+                    "buf",
+                    "res.len",
+                    entry.start_line + 5,
+                    True,
+                )
+            ],
+        )
+        self.assertEqual("POTENTIAL_VIOLATION", result.status)
+        self.assertIn("res.len <= buflen", result.reason)
+
+    def test_matching_guard_proves_bounds(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(char *buf, unsigned long buflen, unsigned long len)
+            {
+                if (len > buflen)
+                    return -1;
+                copy_wrap(buf, src, len);
+                return 0;
+            }
+            """,
+        )[0]
+        result = reason_memory_safety(
+            entry,
+            [
+                Operation(
+                    "WRITE",
+                    "copy_wrap",
+                    "buf",
+                    "len",
+                    entry.start_line + 4,
+                    True,
+                )
+            ],
+        )
+        self.assertEqual("SAFE", result.status)
+
+    def test_signed_length_without_guard_is_feasible(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(char *buf, int len)
+            {
+                copy_wrap(buf, src, len);
+                return 0;
+            }
+            """,
+        )[0]
+        result = reason_memory_safety(
+            entry,
+            [
+                Operation(
+                    "WRITE",
+                    "copy_wrap",
+                    "buf",
+                    "len",
+                    entry.start_line + 2,
+                    True,
+                )
+            ],
+        )
+        self.assertEqual("POTENTIAL_VIOLATION", result.status)
+        self.assertIn("len >= 0", result.reason)
+
+    def test_unknown_capacity_is_reported(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(struct ctx *ctx, unsigned long len)
+            {
+                copy_wrap(ctx->data, src, len);
+                return 0;
+            }
+            """,
+        )[0]
+        result = reason_memory_safety(
+            entry,
+            [
+                Operation(
+                    "WRITE",
+                    "copy_wrap",
+                    "ctx->data",
+                    "len",
+                    entry.start_line + 2,
+                    True,
+                )
+            ],
+        )
+        self.assertEqual("UNKNOWN", result.status)
+        self.assertIn("capacity/valid extent is unknown", result.reason)
 
 
 class PropagationTests(unittest.TestCase):
