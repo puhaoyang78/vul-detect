@@ -283,7 +283,10 @@ def _risky_custom_access(
         buffer = normalize_expression(operation.buffer)
         length_tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", length))
 
-        if "-" in length:
+        if buffer in {"NULL", "0", "nullptr"}:
+            continue
+
+        if operation.kind == "WRITE" and "-" in length:
             controlling = sorted(length_tokens)
             if not any(
                 any(token in guard for token in controlling)
@@ -317,21 +320,22 @@ def _risky_custom_access(
                         "different expression"
                     )
 
-        for token in length_tokens:
-            origin = assignments.get(token, "")
-            origin_tokens = set(
-                re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", origin)
-            )
-            signed_sources = ({token} | origin_tokens) & signed
-            if signed_sources and ("+" in origin or token in signed):
-                if not any(
-                    _has_nonnegative_guard(item, guards) for item in signed_sources
-                ):
-                    return (
-                        f"validated {operation.kind} {operation.callee} uses signed "
-                        f"length {length}; the vulnerable function has no nonnegative "
-                        "constraint before the access"
-                    )
+        if operation.kind == "WRITE":
+            for token in length_tokens:
+                origin = assignments.get(token, "")
+                origin_tokens = set(
+                    re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", origin)
+                )
+                signed_sources = ({token} | origin_tokens) & signed
+                if signed_sources and ("+" in origin or token in signed):
+                    if not any(
+                        _has_nonnegative_guard(item, guards) for item in signed_sources
+                    ):
+                        return (
+                            f"validated WRITE {operation.callee} uses signed "
+                            f"length {length}; the vulnerable function has no nonnegative "
+                            "constraint before the write"
+                        )
     return None
 
 
