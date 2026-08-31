@@ -4,6 +4,7 @@ from semantic_demo.analyzer import analyze
 from semantic_demo.semantics import (
     Candidate,
     Validation,
+    _family_role_indices,
     _response_content,
     validate_summary,
 )
@@ -89,6 +90,29 @@ class SemanticValidationTests(unittest.TestCase):
                 candidate, {"kind": "GUARD", "relation": "arg1 < arg0"}
             ).passed
         )
+
+
+    def test_scalar_parameter_cannot_be_memory_buffer(self):
+        source = """
+        void bad_wrap(int fd, unsigned long len)
+        {
+            write(fd, (const void *)len, 4);
+        }
+        """
+        function = parse_functions("bad.c", source)[0]
+        candidate = Candidate("sample", function, (50,))
+        result = validate_summary(
+            candidate,
+            {"kind": "READ", "buffer": "arg1", "length": "4"},
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("not pointer-like", result.reason)
+
+    def test_io_family_roles_preserve_direction(self):
+        self.assertEqual(((1,), (2,)), _family_role_indices("socket_recv", "WRITE", 3))
+        self.assertEqual(((1,), (2,)), _family_role_indices("socket_send", "READ", 3))
+        self.assertEqual(((), ()), _family_role_indices("socket_recv", "READ", 3))
+        self.assertEqual(((), ()), _family_role_indices("socket_send", "WRITE", 3))
 
     def test_response_content_accepts_final_answer(self):
         result = {
