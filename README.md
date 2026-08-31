@@ -69,5 +69,7 @@ DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL，并显式指定 api：
 - results/results.csv 保存与人工核验机制合并后的完整结果表。
 - results/summary.md 保存汇总结果。
 
-当前保存的结果由本地 Qwen normalization 和 Joern 4.x 重新生成。59 条候选语义中
-21 条通过验证，Proposed 检出 6/10，Baseline 检出 3/10。
+results/ 目录中当前保存的 59 条候选语义、21 条通过验证、Proposed 6/10、
+Baseline 3/10 是 role-sensitive verification 改动前的一轮结果，仅作为对照。
+本轮修改收紧了 READ/WRITE 参数角色验证和风险规则，必须重新运行 normalization
+与 Joern validation 后再评价新结果。
