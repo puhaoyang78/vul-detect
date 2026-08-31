@@ -134,6 +134,15 @@ def _arg_indices(value: str) -> list[int]:
     return [int(item) for item in re.findall(r"\barg(\d+)\b", value)]
 
 
+def _buffer_root_index(value: str) -> int | None:
+    match = re.match(r"^\s*arg(\d+)\b", value)
+    return int(match.group(1)) if match else None
+
+
+def _pointer_like(declaration: str) -> bool:
+    return "*" in declaration or "[" in declaration
+
+
 def _schema_error(summary: dict[str, object], parameter_count: int) -> str | None:
     kind = summary.get("kind")
     if kind == "ALLOC":
@@ -306,6 +315,27 @@ def _known_call_indices(name: str, kind: str) -> tuple[tuple[int, ...], tuple[in
     return (), ()
 
 
+def _family_role_indices(
+    name: str, kind: str, argument_count: int
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Conservative role models for common I/O wrapper families."""
+    lowered = name.lower()
+    if argument_count < 3:
+        return (), ()
+
+    if kind == "WRITE" and (
+        "recv" in lowered or lowered.startswith("read") or "_read" in lowered
+    ):
+        return (1,), (2,)
+
+    if kind == "READ" and (
+        "send" in lowered or lowered.startswith("write") or "_write" in lowered
+    ):
+        return (1,), (2,)
+
+    return (), ()
+
+
 def _joern_expr_reaches(
     facts,
     expression: str,
@@ -346,22 +376,28 @@ def _validate_with_joern(
 
     if kind in {"READ", "WRITE"}:
         for call in facts.call_list():
-            predicate = _looks_like_read if kind == "READ" else _looks_like_write
-            if not predicate(call.name):
-                continue
             buffer_indices, length_indices = _known_call_indices(call.name, kind)
             if not buffer_indices or not length_indices:
-                # Unknown project wrapper: require at least two explicit arguments and
-                # let data-flow evidence determine which ones carry the summary.
-                buffer_indices = tuple(call.arguments)
-                length_indices = tuple(call.arguments)
+                buffer_indices, length_indices = _family_role_indices(
+                    call.name, kind, len(call.arguments)
+                )
+            if not buffer_indices or not length_indices:
+                continue
             if _joern_expr_reaches(
                 facts, summary["buffer"], call, buffer_indices
             ) and _joern_expr_reaches(
                 facts, summary["length"], call, length_indices
             ):
-                return True, f"Joern verified {kind.lower()} buffer/length data flow"
-        return False, f"Joern found no single {kind.lower()} operation matching buffer and length"
+                return (
+                    True,
+                    f"Joern verified role-sensitive {kind.lower()} "
+                    f"buffer/length flow through {call.name}",
+                )
+        return (
+            False,
+            f"Joern found no role-compatible {kind.lower()} operation "
+            "matching both buffer and length",
+        )
 
     if kind == "GUARD":
         relation = normalize_expression(
@@ -405,12 +441,21 @@ def validate_summary(
     )
     if not error and referenced_names & set(function.parameters):
         error = "source parameter names must be normalized to argN"
-    if (
-        not error
-        and clean_summary.get("kind") in {"READ", "WRITE"}
-        and not _arg_indices(clean_summary.get("buffer", ""))
-    ):
-        error = f"{clean_summary.get('kind')} buffer must be rooted at a caller-supplied argN"
+    if not error and clean_summary.get("kind") in {"READ", "WRITE"}:
+        buffer = clean_summary.get("buffer", "")
+        root_index = _buffer_root_index(buffer)
+        if root_index is None:
+            error = (
+                f"{clean_summary.get('kind')} buffer must be rooted at a "
+                "caller-supplied argN"
+            )
+        elif root_index >= len(function.parameter_types) or not _pointer_like(
+            function.parameter_types[root_index]
+        ):
+            error = (
+                f"{clean_summary.get('kind')} buffer root arg{root_index} "
+                "is not pointer-like in the candidate signature"
+            )
 
     if error:
         return Validation(
@@ -592,13 +637,19 @@ Return one JSON object with key summaries, whose value is a JSON array. Use only
 
 Meaning:
 - ALLOC: returned object is allocated/resized with the given size expression.
-- READ: function reads/consumes the given length from memory rooted at a caller-supplied argument.
-- WRITE: function writes the given length into memory rooted at a caller-supplied argument.
+- READ: bytes are consumed FROM a caller-supplied buffer. write(fd, buf, n) or send(fd, buf, n)
+  implies READ(buffer=buf,length=n).
+- WRITE: bytes are written INTO a caller-supplied buffer. read(fd, buf, n) or recv(fd, buf, n)
+  implies WRITE(buffer=buf,length=n).
+- For memcpy(dst, src, n), emit WRITE(dst,n) and READ(src,n). Never swap these roles.
 - GUARD: a real comparison in this function constrains an argument's size, capacity, index, or offset.
 - VALUE: return value is a direct value/cast/arithmetic transformation of caller arguments.
 
-Every source parameter reference must be replaced with positional argN form. A field is arg0->field,
-never the source parameter name. Do not emit local variables or internal buffers as READ/WRITE buffers.
+Preserve the candidate signature exactly: arg0 is the first parameter, arg1 the second, etc.
+A READ/WRITE buffer must be rooted at a pointer-like caller parameter, while length denotes the
+extent/count used by the underlying operation. Every source parameter reference must be replaced
+with positional argN form. A field is arg0->field, never the source parameter name. Do not emit
+local variables or internal buffers as READ/WRITE buffers.
 Do not guess implied checks, library contracts, caller behavior, or vulnerability labels. Emit only
 semantics directly implemented by this function. Expressions may combine argN with constants, fields,
 casts, sizeof, and arithmetic. Emit {{"summaries":[]}} when none applies. Do not inspect anything
