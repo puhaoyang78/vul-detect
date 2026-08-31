@@ -4,8 +4,8 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from .semantics import ALLOCATORS, UNBOUNDED_WRITES, WRITES, Validation
-from .source import Call, FunctionSource, normalize_expression
+from .semantics import ALLOCATORS, READS, UNBOUNDED_WRITES, WRITES, Validation
+from .source import FunctionSource, normalize_expression
 
 
 @dataclass(frozen=True)
@@ -42,12 +42,17 @@ def _substitute(expression: str, arguments: tuple[str, ...]) -> str:
 def _standard_operations(entry: FunctionSource) -> list[Operation]:
     operations: list[Operation] = []
     for call in entry.calls():
-        if call.name in ALLOCATORS and len(call.arguments) > ALLOCATORS[call.name]:
+        if call.name in ALLOCATORS:
+            indices = ALLOCATORS[call.name]
             if call.name == "calloc" and len(call.arguments) >= 2:
                 size = f"({call.arguments[0]}) * ({call.arguments[1]})"
+            elif indices and len(call.arguments) > indices[0]:
+                size = call.arguments[indices[0]]
             else:
-                size = call.arguments[ALLOCATORS[call.name]]
-            operations.append(Operation("ALLOC", call.name, "return", size, call.line, False))
+                continue
+            operations.append(
+                Operation("ALLOC", call.name, "return", size, call.line, False)
+            )
         elif call.name in WRITES:
             buffer_index, length_index = WRITES[call.name]
             if len(call.arguments) > max(buffer_index, length_index):
@@ -57,6 +62,22 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
                 operations.append(
                     Operation(
                         "WRITE",
+                        call.name,
+                        call.arguments[buffer_index],
+                        length,
+                        call.line,
+                        False,
+                    )
+                )
+        elif call.name in READS:
+            buffer_index, length_index = READS[call.name]
+            if len(call.arguments) > max(buffer_index, length_index):
+                length = call.arguments[length_index]
+                if call.name == "fwrite" and len(call.arguments) >= 3:
+                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+                operations.append(
+                    Operation(
+                        "READ",
                         call.name,
                         call.arguments[buffer_index],
                         length,
@@ -82,7 +103,8 @@ def _custom_operations(
     operations: list[Operation] = []
     for call in entry.calls():
         for summary in by_name.get(call.name, []):
-            if summary["kind"] == "ALLOC":
+            kind = summary["kind"]
+            if kind == "ALLOC":
                 operations.append(
                     Operation(
                         "ALLOC",
@@ -93,10 +115,10 @@ def _custom_operations(
                         True,
                     )
                 )
-            elif summary["kind"] == "WRITE":
+            elif kind in {"READ", "WRITE"}:
                 operations.append(
                     Operation(
-                        "WRITE",
+                        kind,
                         call.name,
                         _substitute(summary["buffer"], call.arguments),
                         _substitute(summary["length"], call.arguments),
@@ -104,13 +126,24 @@ def _custom_operations(
                         True,
                     )
                 )
-            elif summary["kind"] == "GUARD":
+            elif kind == "GUARD":
                 operations.append(
                     Operation(
                         "GUARD",
                         call.name,
                         "",
                         _substitute(summary["relation"], call.arguments),
+                        call.line,
+                        True,
+                    )
+                )
+            elif kind == "VALUE":
+                operations.append(
+                    Operation(
+                        "VALUE",
+                        call.name,
+                        "return",
+                        _substitute(summary["expression"], call.arguments),
                         call.line,
                         True,
                     )
@@ -146,7 +179,10 @@ def _signed_names(entry: FunctionSource) -> set[str]:
 
 
 def _guards(text: str) -> list[str]:
-    return [normalize_expression(item) for item in re.findall(r"\bif\s*\((.*?)\)", text, re.S)]
+    return [
+        normalize_expression(item)
+        for item in re.findall(r"\bif\s*\((.*?)\)", text, re.S)
+    ]
 
 
 def _local_arrays(text: str) -> dict[str, str]:
@@ -168,17 +204,9 @@ def _has_nonnegative_guard(name: str, guards: Iterable[str]) -> bool:
     return any(any(pattern in guard for pattern in patterns) for guard in guards)
 
 
-def _operation_target(call: Call, function_name: str, text: str) -> str | None:
-    escaped = re.escape(function_name)
-    for match in re.finditer(
-        rf"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:\([^;=]+\)\s*)?{escaped}\s*\(",
-        text,
-    ):
-        return match.group(1)
-    return None
-
-
-def _risky_unbounded_write(entry: FunctionSource, operations: list[Operation]) -> str | None:
+def _risky_unbounded_write(
+    entry: FunctionSource, operations: list[Operation]
+) -> str | None:
     arrays = _local_arrays(entry.text)
     for operation in operations:
         if operation.kind != "WRITE" or operation.extent != "UNBOUNDED":
@@ -192,7 +220,9 @@ def _risky_unbounded_write(entry: FunctionSource, operations: list[Operation]) -
     return None
 
 
-def _risky_offset_write(entry: FunctionSource, operations: list[Operation]) -> str | None:
+def _risky_offset_write(
+    entry: FunctionSource, operations: list[Operation]
+) -> str | None:
     guards = _guards(entry.text) + [
         normalize_expression(operation.extent)
         for operation in operations
@@ -216,7 +246,9 @@ def _risky_offset_write(entry: FunctionSource, operations: list[Operation]) -> s
     return None
 
 
-def _risky_allocation_arithmetic(entry: FunctionSource, operations: list[Operation]) -> str | None:
+def _risky_allocation_arithmetic(
+    entry: FunctionSource, operations: list[Operation]
+) -> str | None:
     guards = _guards(entry.text)
     for operation in operations:
         if operation.kind != "ALLOC" or operation.custom:
@@ -233,7 +265,9 @@ def _risky_allocation_arithmetic(entry: FunctionSource, operations: list[Operati
     return None
 
 
-def _risky_custom_write(entry: FunctionSource, operations: list[Operation]) -> str | None:
+def _risky_custom_access(
+    entry: FunctionSource, operations: list[Operation]
+) -> str | None:
     assignments = _assignments(entry.text)
     signed = _signed_names(entry)
     guards = _guards(entry.text) + [
@@ -243,7 +277,7 @@ def _risky_custom_write(entry: FunctionSource, operations: list[Operation]) -> s
     ]
 
     for operation in operations:
-        if operation.kind != "WRITE" or not operation.custom:
+        if operation.kind not in {"READ", "WRITE"} or not operation.custom:
             continue
         length = normalize_expression(operation.extent)
         buffer = normalize_expression(operation.buffer)
@@ -257,8 +291,8 @@ def _risky_custom_write(entry: FunctionSource, operations: list[Operation]) -> s
                 for guard in guards
             ):
                 return (
-                    f"validated WRITE {operation.callee} receives {length} with no visible "
-                    "upper-bound guard"
+                    f"validated {operation.kind} {operation.callee} receives {length} "
+                    "with no visible upper-bound guard"
                 )
 
         if buffer in entry.parameters:
@@ -278,21 +312,26 @@ def _risky_custom_write(entry: FunctionSource, operations: list[Operation]) -> s
                     normalize_expression(length) in guard for guard in protecting
                 ):
                     return (
-                        f"buffer {buffer} is bounded by {capacity}, but the validated WRITE uses "
-                        f"{length}; the visible guard constrains a different expression"
+                        f"buffer {buffer} is bounded by {capacity}, but the validated "
+                        f"{operation.kind} uses {length}; the visible guard constrains a "
+                        "different expression"
                     )
 
         for token in length_tokens:
             origin = assignments.get(token, "")
-            origin_tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", origin))
+            origin_tokens = set(
+                re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", origin)
+            )
             signed_sources = ({token} | origin_tokens) & signed
             if signed_sources and ("+" in origin or token in signed):
-                if not any(_has_nonnegative_guard(item, guards) for item in signed_sources):
+                if not any(
+                    _has_nonnegative_guard(item, guards) for item in signed_sources
+                ):
                     return (
-                        f"validated WRITE {operation.callee} uses signed length {length}; "
-                        "the vulnerable function has no nonnegative constraint before the write"
+                        f"validated {operation.kind} {operation.callee} uses signed "
+                        f"length {length}; the vulnerable function has no nonnegative "
+                        "constraint before the access"
                     )
-
     return None
 
 
@@ -311,7 +350,7 @@ def analyze(
         _risky_allocation_arithmetic(entry, operations),
     ]
     if proposed:
-        checks.append(_risky_custom_write(entry, operations))
+        checks.append(_risky_custom_access(entry, operations))
     reason = next((item for item in checks if item), None)
     if reason:
         return Verdict("VULNERABLE", reason, tuple(operations))
@@ -319,11 +358,11 @@ def analyze(
     visible_custom = sum(operation.custom for operation in operations)
     if proposed and visible_custom:
         reason = (
-            f"recovered {visible_custom} validated custom operation(s), but the supported "
-            "ALLOC/WRITE/GUARD checks did not establish a capacity violation"
+            f"recovered {visible_custom} validated custom semantic operation(s), but the "
+            "supported checks did not establish an unsafe memory relation"
         )
     elif proposed:
-        reason = "no validated custom memory semantic reached a supported capacity check"
+        reason = "no validated custom memory semantic reached a supported safety check"
     else:
         reason = "no direct supported sink established a capacity violation in the entry function"
     return Verdict("NOT_DETECTED", reason, tuple(operations))
