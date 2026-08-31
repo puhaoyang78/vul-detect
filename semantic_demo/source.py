@@ -19,6 +19,7 @@ class Call:
     name: str
     arguments: tuple[str, ...]
     line: int
+    result: str | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +215,33 @@ def _callee_name(node: Node | None, source: bytes) -> str | None:
     return None
 
 
+def _call_result(node: Node, source: bytes) -> str | None:
+    current = node
+    for _ in range(4):
+        parent = current.parent
+        if parent is None:
+            return None
+        if parent.type == "assignment_expression":
+            right = parent.child_by_field_name("right")
+            left = parent.child_by_field_name("left")
+            if right is not None and left is not None and (
+                right.id == current.id or current.start_byte >= right.start_byte
+            ):
+                return _text(left, source)
+        if parent.type == "init_declarator":
+            value = parent.child_by_field_name("value")
+            declarator = parent.child_by_field_name("declarator")
+            if value is not None and declarator is not None and (
+                value.id == current.id or current.start_byte >= value.start_byte
+            ):
+                name = _identifier(declarator, source)
+                return name or _text(declarator, source)
+        if parent.type in {"expression_statement", "return_statement", "argument_list"}:
+            return None
+        current = parent
+    return None
+
+
 def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
     calls: list[Call] = []
     for item in _walk(node):
@@ -225,7 +253,12 @@ def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
             continue
         arguments = tuple(_text(arg, source) for arg in arguments_node.named_children)
         calls.append(
-            Call(name=name, arguments=arguments, line=line_offset + item.start_point.row)
+            Call(
+                name=name,
+                arguments=arguments,
+                line=line_offset + item.start_point.row,
+                result=_call_result(item, source),
+            )
         )
     return calls
 
