@@ -37,6 +37,36 @@ class SemanticValidationTests(unittest.TestCase):
         )
         self.assertFalse(result.passed)
 
+    def test_read_buffer_and_length_reach_same_source(self):
+        source = """
+        int send_wrap(int fd, const char *src, unsigned long len)
+        {
+            return write(fd, src, len);
+        }
+        """
+        function = parse_functions("reader.c", source)[0]
+        candidate = Candidate("sample", function, (30,))
+        result = validate_summary(
+            candidate,
+            {"kind": "READ", "buffer": "arg1", "length": "arg2"},
+        )
+        self.assertTrue(result.passed)
+
+    def test_value_return_relation(self):
+        source = """
+        unsigned long identity(unsigned long len)
+        {
+            return len;
+        }
+        """
+        function = parse_functions("value.c", source)[0]
+        candidate = Candidate("sample", function, (40,))
+        result = validate_summary(
+            candidate,
+            {"kind": "VALUE", "target": "return", "expression": "arg0"},
+        )
+        self.assertTrue(result.passed)
+
     def test_guard_must_exist_in_candidate(self):
         guard = parse_functions(
             "guard.c",
