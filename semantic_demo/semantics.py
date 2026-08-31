@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .joern import JoernError, JoernValidator
+from .joern import JoernValidator
 from .source import FunctionSource, GitRepository, normalize_expression
 
 
@@ -418,17 +418,7 @@ def validate_summary(
         )
 
     if joern is not None:
-        try:
-            passed, reason = _validate_with_joern(candidate, clean_summary, joern)
-        except JoernError as error:
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
-                clean_summary,
-                False,
-                f"Joern validation failed: {error}",
-            )
+        passed, reason = _validate_with_joern(candidate, clean_summary, joern)
         return Validation(
             candidate.sample_key,
             function.name,
@@ -577,10 +567,18 @@ def rule_normalize(candidate: Candidate) -> list[dict[str, str]]:
     return summaries
 
 
-def llm_normalize(candidate: Candidate) -> list[dict[str, str]]:
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+def llm_normalize(
+    candidate: Candidate,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    max_tokens: int = 2048,
+    disable_proxy: bool = False,
+) -> list[dict[str, str]]:
+    api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+    base_url = base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY is not set")
 
@@ -619,7 +617,7 @@ Source:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0,
-            "max_tokens": 384,
+            "max_tokens": max_tokens,
             "chat_template_kwargs": {"enable_thinking": False},
             "response_format": {"type": "json_object"},
         }
@@ -633,14 +631,43 @@ Source:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=180) as response:
+    if disable_proxy:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        response_context = opener.open(request, timeout=180)
+    else:
+        response_context = urllib.request.urlopen(request, timeout=180)
+    with response_context as response:
         result = json.load(response)
-    content = result["choices"][0]["message"]["content"]
+    content = _response_content(result)
     parsed = _extract_json_object(content)
     summaries = parsed.get("summaries", [])
     if not isinstance(summaries, list):
         raise ValueError("LLM output field summaries is not a list")
     return [item for item in summaries if isinstance(item, dict)]
+
+
+def _response_content(result: dict[str, object]) -> str:
+    try:
+        choice = result["choices"][0]
+        message = choice["message"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise ValueError("LLM response has no choices[0].message") from error
+
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+
+    reasoning = message.get("reasoning_content")
+    reasoning_length = len(reasoning) if isinstance(reasoning, str) else 0
+    usage = result.get("usage")
+    completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+    raise ValueError(
+        "LLM returned empty content "
+        f"(finish_reason={choice.get('finish_reason')!r}, "
+        f"reasoning_length={reasoning_length}, "
+        f"completion_tokens={completion_tokens!r}). "
+        "The provider produced no final JSON answer."
+    )
 
 
 def _extract_json_object(content: str) -> dict[str, object]:

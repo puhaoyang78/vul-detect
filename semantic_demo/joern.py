@@ -43,10 +43,15 @@ class JoernValidator:
     def __init__(
         self,
         joern_dir: str | Path = "/home/phy/joern",
+        java_home: str | Path | None = None,
         timeout: int | None = None,
     ) -> None:
         self.joern_dir = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
         self.joern = self.joern_dir / "joern"
+        self.java_home = Path(
+            java_home or os.environ.get("JAVA_HOME", "/home/phy/jdk21")
+        ).expanduser()
+        self.java = self.java_home / "bin" / "java"
         self.script = Path(__file__).with_name("joern_extract.sc")
         self.timeout = timeout or int(os.environ.get("JOERN_TIMEOUT", "180"))
         self._cache: dict[str, JoernFacts] = {}
@@ -57,6 +62,11 @@ class JoernValidator:
             raise JoernError(
                 f"Joern launcher not found at {self.joern}. "
                 "Set --joern-dir or JOERN_HOME to the Joern installation."
+            )
+        if not self.java.is_file() or not os.access(self.java, os.X_OK):
+            raise JoernError(
+                f"Java executable not found at {self.java}. "
+                "Set --java-home or JAVA_HOME to the JDK installation."
             )
         if not self.script.is_file():
             raise JoernError(f"Joern extraction script not found: {self.script}")
@@ -90,6 +100,13 @@ class JoernValidator:
                 "--param",
                 f"functionName={candidate.function.name}",
             ]
+            environment = os.environ.copy()
+            environment["JAVA_HOME"] = str(self.java_home)
+            environment["PATH"] = (
+                str(self.java.parent)
+                + os.pathsep
+                + environment.get("PATH", "")
+            )
             result = subprocess.run(
                 command,
                 stdout=subprocess.PIPE,
@@ -97,6 +114,7 @@ class JoernValidator:
                 text=True,
                 timeout=self.timeout,
                 check=False,
+                env=environment,
             )
             if result.returncode != 0:
                 message = (

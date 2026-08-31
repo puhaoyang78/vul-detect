@@ -3,6 +3,7 @@ import unittest
 from semantic_demo.cli import (
     FORBIDDEN_DETECTION_FIELDS,
     _load_entry,
+    build_parser,
     read_jsonl,
     validate_detection_manifest,
 )
@@ -21,6 +22,18 @@ class IsolationTests(unittest.TestCase):
         for sample in samples:
             _, entry = _load_entry(sample)
             self.assertEqual(sample["entry_function"], entry.name)
+
+    def test_llm_normalization_defaults_to_local_qwen(self):
+        args = build_parser().parse_args(["normalize", "--normalizer", "llm"])
+        self.assertEqual("local", args.llm_backend)
+        self.assertTrue(args.llama_server.endswith("/llama-server"))
+        self.assertTrue(args.local_model.endswith(".gguf"))
+
+    def test_run_defaults_to_local_joern_and_jdk(self):
+        args = build_parser().parse_args(["run"])
+        self.assertEqual("/home/phy/joern", args.joern_dir)
+        self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertFalse(args.no_joern)
 
 
 if __name__ == "__main__":

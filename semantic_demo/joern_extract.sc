@@ -54,7 +54,7 @@ import io.joern.dataflowengineoss.language._
       method.call.name("<operator>.*").code.l.foreach { operator =>
         lines += ("OP\t" + clean(operator))
       }
-      method.returns.l.foreach { ret =>
+      method.ast.isReturn.l.foreach { ret =>
         lines += ("RET\t" + clean(ret.code))
         params.foreach { p =>
           try {

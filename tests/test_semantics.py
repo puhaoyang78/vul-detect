@@ -1,7 +1,12 @@
 import unittest
 
 from semantic_demo.analyzer import analyze
-from semantic_demo.semantics import Candidate, Validation, validate_summary
+from semantic_demo.semantics import (
+    Candidate,
+    Validation,
+    _response_content,
+    validate_summary,
+)
 from semantic_demo.source import FunctionSource, parse_functions
 
 
@@ -84,6 +89,33 @@ class SemanticValidationTests(unittest.TestCase):
                 candidate, {"kind": "GUARD", "relation": "arg1 < arg0"}
             ).passed
         )
+
+    def test_response_content_accepts_final_answer(self):
+        result = {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": '{"summaries":[]}',
+                        "reasoning_content": "internal reasoning",
+                    },
+                }
+            ]
+        }
+        self.assertEqual('{"summaries":[]}', _response_content(result))
+
+    def test_response_content_rejects_reasoning_without_final_answer(self):
+        result = {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {"content": "", "reasoning_content": "unfinished"},
+                }
+            ],
+            "usage": {"completion_tokens": 384},
+        }
+        with self.assertRaisesRegex(ValueError, "finish_reason='length'"):
+            _response_content(result)
 
 
 class PropagationTests(unittest.TestCase):

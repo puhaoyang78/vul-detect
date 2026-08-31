@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
+import os
+import socket
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
 from collections import Counter
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from .analyzer import analyze
-from .joern import JoernValidator
+from .joern import JoernError, JoernValidator
 from .semantics import (
     Validation,
     discover_candidates,
@@ -86,33 +94,143 @@ def _load_entry(sample: dict[str, object]):
     return repository, entry
 
 
+@contextlib.contextmanager
+def local_llm_server(
+    executable: str, model_path: str
+) -> Iterator[dict[str, object]]:
+    server = Path(executable)
+    model = Path(model_path)
+    if not server.is_file():
+        raise FileNotFoundError(f"llama-server not found: {server}")
+    if not model.is_file():
+        raise FileNotFoundError(f"local Qwen model not found: {model}")
+
+    with socket.socket() as port_reservation:
+        port_reservation.bind(("127.0.0.1", 0))
+        port = port_reservation.getsockname()[1]
+
+    command = [
+        str(server),
+        "-m",
+        str(model),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "-c",
+        "16384",
+        "-np",
+        "1",
+        "-ngl",
+        "99",
+        "-t",
+        "24",
+        "--reasoning",
+        "off",
+        "--reasoning-budget",
+        "0",
+    ]
+    print(f"starting_local_llm={model}", flush=True)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with tempfile.TemporaryFile(mode="w+") as log:
+        process = subprocess.Popen(
+            command,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            deadline = time.monotonic() + 180
+            health_url = f"http://127.0.0.1:{port}/health"
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    log.flush()
+                    log.seek(0)
+                    raise RuntimeError(
+                        "local llama-server exited during startup:\n" + log.read()[-4000:]
+                    )
+                try:
+                    with opener.open(health_url, timeout=2) as response:
+                        if response.status == 200:
+                            break
+                except (urllib.error.URLError, TimeoutError):
+                    time.sleep(1)
+            else:
+                raise RuntimeError("local llama-server was not ready within 180 seconds")
+
+            print(f"local_llm_ready=http://127.0.0.1:{port}", flush=True)
+            yield {
+                "api_key": "local",
+                "base_url": f"http://127.0.0.1:{port}/v1",
+                "model": model.stem,
+                "max_tokens": 512,
+                "disable_proxy": True,
+            }
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=15)
+
+
 def normalize_command(args: argparse.Namespace) -> None:
     samples = read_jsonl(args.samples)
     validate_detection_manifest(samples)
     records: list[dict[str, object]] = []
-    for sample in samples:
-        repository, entry = _load_entry(sample)
-        candidates = discover_candidates(
-            str(sample["sample_key"]),
-            repository,
-            entry,
-            tuple(str(item) for item in sample.get("scan_paths", [])),
-        )
-        for candidate in candidates:
-            summaries = (
-                llm_normalize(candidate)
-                if args.normalizer == "llm"
-                else rule_normalize(candidate)
+    if args.normalizer == "llm" and args.llm_backend == "local":
+        llm_context = local_llm_server(args.llama_server, args.local_model)
+    elif args.normalizer == "llm":
+        llm_context = contextlib.nullcontext({"max_tokens": 8192})
+    else:
+        llm_context = contextlib.nullcontext({})
+
+    with llm_context as llm_options:
+        for sample in samples:
+            repository, entry = _load_entry(sample)
+            candidates = discover_candidates(
+                str(sample["sample_key"]),
+                repository,
+                entry,
+                tuple(str(item) for item in sample.get("scan_paths", [])),
             )
-            records.append(
-                {
-                    "sample_key": candidate.sample_key,
-                    "source_path": candidate.function.path,
-                    "function": candidate.function.name,
-                    "parameters": list(candidate.function.parameters),
-                    "summaries": summaries,
-                }
-            )
+            for candidate in candidates:
+                try:
+                    summaries = (
+                        llm_normalize(candidate, **llm_options)
+                        if args.normalizer == "llm"
+                        else rule_normalize(candidate)
+                    )
+                except (
+                    RuntimeError,
+                    ValueError,
+                    urllib.error.URLError,
+                    TimeoutError,
+                ) as error:
+                    raise RuntimeError(
+                        f"{candidate.sample_key}:{candidate.function.name}: "
+                        "normalization failed"
+                    ) from error
+                records.append(
+                    {
+                        "sample_key": candidate.sample_key,
+                        "source_path": candidate.function.path,
+                        "function": candidate.function.name,
+                        "parameters": list(candidate.function.parameters),
+                        "normalizer": args.normalizer,
+                        "llm_backend": (
+                            args.llm_backend if args.normalizer == "llm" else None
+                        ),
+                        "llm_model": (
+                            llm_options.get("model")
+                            if args.normalizer == "llm"
+                            else None
+                        ),
+                        "summaries": summaries,
+                    }
+                )
     write_jsonl(args.output, records)
     print(f"normalized_candidates={len(records)} output={args.output}")
 
@@ -123,18 +241,21 @@ def detect(
     semantics_path: str,
     detections_path: str,
     joern_dir: str = "/home/phy/joern",
+    java_home: str = "/home/phy/jdk21",
     use_joern: bool = True,
 ) -> None:
     samples = read_jsonl(samples_path)
     validate_detection_manifest(samples)
     replay = load_replay(replay_path)
-    joern = JoernValidator(joern_dir) if use_joern else None
+    joern = JoernValidator(joern_dir, java_home=java_home) if use_joern else None
     if joern is not None:
         joern.ensure_available()
     semantic_records: list[dict[str, object]] = []
     detection_records: list[dict[str, object]] = []
 
-    for sample in samples:
+    backend = "joern" if use_joern else "lightweight"
+    print(f"validation_start samples={len(samples)} backend={backend}", flush=True)
+    for sample_index, sample in enumerate(samples, 1):
         sample_key = str(sample["sample_key"])
         repository, entry = _load_entry(sample)
         candidates = discover_candidates(
@@ -144,10 +265,35 @@ def detect(
             tuple(str(item) for item in sample.get("scan_paths", [])),
         )
         validations: list[Validation] = []
+        summary_count = sum(
+            len(
+                replay.get(
+                    (sample_key, candidate.function.path, candidate.function.name), []
+                )
+            )
+            for candidate in candidates
+        )
+        print(
+            f"validate_sample={sample_index}/{len(samples)} sample={sample_key} "
+            f"candidates={len(candidates)} summaries={summary_count}",
+            flush=True,
+        )
         for candidate in candidates:
             key = (sample_key, candidate.function.path, candidate.function.name)
-            for summary in replay.get(key, []):
-                validation = validate_summary(candidate, summary, joern=joern)
+            summaries = replay.get(key, [])
+            if summaries:
+                print(
+                    f"validate_candidate={candidate.function.name} "
+                    f"summaries={len(summaries)}",
+                    flush=True,
+                )
+            for summary in summaries:
+                try:
+                    validation = validate_summary(candidate, summary, joern=joern)
+                except JoernError as error:
+                    raise JoernError(
+                        f"{sample_key}:{candidate.function.name}: {error}"
+                    ) from error
                 validations.append(validation)
                 semantic_records.append(validation.as_json())
 
@@ -167,6 +313,12 @@ def detect(
                 "rejected_semantic_count": sum(not item.passed for item in validations),
                 "semantic_validations": [item.as_json() for item in validations],
             }
+        )
+        print(
+            f"validate_sample_done={sample_key} "
+            f"passed={sum(item.passed for item in validations)} "
+            f"rejected={sum(not item.passed for item in validations)}",
+            flush=True,
         )
 
     write_jsonl(semantics_path, semantic_records)
@@ -294,6 +446,7 @@ def run_command(args: argparse.Namespace) -> None:
         args.semantics,
         args.detections,
         joern_dir=args.joern_dir,
+        java_home=args.java_home,
         use_joern=not args.no_joern,
     )
     evaluate(args.detections, args.oracle, args.table, args.summary)
@@ -306,6 +459,23 @@ def build_parser() -> argparse.ArgumentParser:
     normalize = subparsers.add_parser("normalize", help="normalize candidate functions")
     normalize.add_argument("--samples", default="data/detection_samples.jsonl")
     normalize.add_argument("--normalizer", choices=("rules", "llm"), default="rules")
+    normalize.add_argument(
+        "--llm-backend",
+        choices=("local", "api"),
+        default="local",
+        help="use local Qwen by default; api reads DEEPSEEK_* environment variables",
+    )
+    normalize.add_argument(
+        "--llama-server",
+        default="/home/phy/llama.cpp/build/bin/llama-server",
+    )
+    normalize.add_argument(
+        "--local-model",
+        default=(
+            "/home/phy/models/Qwen3.6-35B-A3B-MTP-GGUF/"
+            "Qwen3.6-35B-A3B-MXFP4_MOE.gguf"
+        ),
+    )
     normalize.add_argument("--output", default="data/normalizer_outputs.jsonl")
     normalize.set_defaults(func=normalize_command)
 
@@ -318,6 +488,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--table", default="results/results.csv")
     run.add_argument("--summary", default="results/summary.md")
     run.add_argument("--joern-dir", default="/home/phy/joern")
+    run.add_argument(
+        "--java-home",
+        default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
+    )
     run.add_argument(
         "--no-joern",
         action="store_true",
