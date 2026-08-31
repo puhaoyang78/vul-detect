@@ -361,6 +361,11 @@ def evaluate(
             and proposed["verdict"] == "VULNERABLE"
             and truth["ground_truth"] == "VULNERABLE"
         )
+        constraint_result = proposed.get("constraint_result") or {}
+        conditions = constraint_result.get("conditions") or []
+        condition_text = " | ".join(
+            str(item.get("condition", "")) for item in conditions if item.get("condition")
+        )
         rows.append(
             {
                 "CVE": truth["cve"],
@@ -379,6 +384,13 @@ def evaluate(
                 "baseline_reason": baseline["reason"],
                 "proposed_verdict": proposed["verdict"],
                 "proposed_reason": proposed["reason"],
+                "z3_status": constraint_result.get("status", ""),
+                "verification_conditions": condition_text,
+                "z3_model": json.dumps(
+                    constraint_result.get("model", {}),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
                 "fix_commit": truth["fix_commit"],
                 "fixing_patch": truth["fix_url"],
                 "human_verified_mechanism": truth["mechanism"],
@@ -397,6 +409,9 @@ def evaluate(
     proposed_hits = sum(row["proposed_verdict"] == "VULNERABLE" for row in rows)
     corrections = sum(row["proposed_corrected_baseline"] == "YES" for row in rows)
     rejected = sum(int(row["rejected_semantics"]) for row in rows)
+    z3_statuses = Counter(
+        row["z3_status"] for row in rows if row.get("z3_status")
+    )
     failures = Counter(
         row["proposed_reason"]
         for row in rows
@@ -410,6 +425,13 @@ def evaluate(
         f"- Proposed 检出：{proposed_hits}/{len(rows)}",
         f"- Proposed 纠正 Baseline 漏检：{corrections} 个",
         f"- 静态验证拒绝的语义摘要：{rejected} 条",
+        (
+            "- Z3 状态：" + ", ".join(
+                f"{status}={count}" for status, count in sorted(z3_statuses.items())
+            )
+            if z3_statuses
+            else "- Z3 状态：无"
+        ),
         "",
         (
             "结论：出现明确但有限的正向信号。自动恢复并验证的项目语义使检出数从 "
