@@ -225,14 +225,16 @@ def _call_result(node: Node, source: bytes) -> str | None:
             right = parent.child_by_field_name("right")
             left = parent.child_by_field_name("left")
             if right is not None and left is not None and (
-                right.id == current.id or current.start_byte >= right.start_byte
+                right.start_byte <= current.start_byte
+                and current.end_byte <= right.end_byte
             ):
                 return _text(left, source)
         if parent.type == "init_declarator":
             value = parent.child_by_field_name("value")
             declarator = parent.child_by_field_name("declarator")
             if value is not None and declarator is not None and (
-                value.id == current.id or current.start_byte >= value.start_byte
+                value.start_byte <= current.start_byte
+                and current.end_byte <= value.end_byte
             ):
                 name = _identifier(declarator, source)
                 return name or _text(declarator, source)
