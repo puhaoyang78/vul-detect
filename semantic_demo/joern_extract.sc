@@ -15,7 +15,7 @@ import io.joern.dataflowengineoss.language._
     importCode.c.fromString(code)
     run.ossdataflow
 
-    val methods = cpg.method.name(functionName).l
+    val methods = cpg.method.nameExact(functionName).l
     if (methods.isEmpty) {
       lines += ("ERROR\tmethod_not_found:" + clean(functionName))
     } else {
@@ -23,7 +23,6 @@ import io.joern.dataflowengineoss.language._
       val params = method.parameter.l
 
       params.foreach { p =>
-        // Joern C/C++ parameters are 1-based. Export zero-based indexes to match argN.
         lines += ("PARAM\t" + (p.index - 1) + "\t" + clean(p.name) + "\t" + clean(p.typeFullName))
       }
 
@@ -51,6 +50,21 @@ import io.joern.dataflowengineoss.language._
 
       method.controlStructure.condition.code.l.foreach { condition =>
         lines += ("COND\t" + clean(condition))
+      }
+      method.call.name("<operator>.*").code.l.foreach { operator =>
+        lines += ("OP\t" + clean(operator))
+      }
+      method.returns.l.foreach { ret =>
+        lines += ("RET\t" + clean(ret.code))
+        params.foreach { p =>
+          try {
+            if (ret.reachableBy(p).l.nonEmpty) {
+              lines += ("RETFLOW\t" + (p.index - 1))
+            }
+          } catch {
+            case _: Throwable => ()
+          }
+        }
       }
     }
   } catch {
