@@ -4,8 +4,9 @@
 当前语义包括 ALLOC、READ、WRITE、GUARD 和 VALUE。
 
 LLM 只读取单个候选函数并输出固定 JSON，不直接判断漏洞。Joern 负责验证参数到
-分配、读写操作的数据流、真实比较条件和返回值关系。验证后的语义再传播回入口函数，
-由轻量规则检查明显的不安全关系。
+分配、读写操作的数据流、真实比较条件和返回值关系。验证后的语义再传播回入口函数。
+对于跨过程内存访问，系统生成标准 Verification Condition（VC）和 Path Constraint，
+并使用 Z3 判断 bounds constraint 是否可被证明、可能违反或因信息不足而未知。
 
 检测输入为 data/detection_samples.jsonl。其中不含 CVE、fixing commit、补丁、
 漏洞描述或人工结论。data/oracle.jsonl 只在检测结果落盘后读取。
@@ -59,7 +60,8 @@ DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL，并显式指定 api：
 - semantic_demo/semantics.py 定义语义、筛选候选、调用 LLM，并执行结构化静态校验。
 - semantic_demo/joern.py 调用本地 Joern，并解析 CPG 和数据流事实。
 - semantic_demo/joern_extract.sc 提取参数、调用参数、数据流、比较和返回值事实。
-- semantic_demo/analyzer.py 把验证后的跨过程语义传播回入口函数。
+- semantic_demo/analyzer.py 把验证后的跨过程语义传播回入口函数，并调用约束推理。
+- semantic_demo/z3_reasoner.py 生成 Verification Condition、Path Constraint 和 bounds constraint，并用 Z3 求解。
 - semantic_demo/cli.py 管理本地 Qwen、执行 normalization，并隔离检测与 oracle。
 
 ## 输出
@@ -69,7 +71,12 @@ DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL，并显式指定 api：
 - results/results.csv 保存与人工核验机制合并后的完整结果表。
 - results/summary.md 保存汇总结果。
 
-results/ 目录中当前保存的 59 条候选语义、21 条通过验证、Proposed 6/10、
-Baseline 3/10 是 role-sensitive verification 改动前的一轮结果，仅作为对照。
-本轮修改收紧了 READ/WRITE 参数角色验证和风险规则，必须重新运行 normalization
-与 Joern validation 后再评价新结果。
+results/ 目录中的现有结果均早于 Z3 Verification Condition 推理版本，仅作为历史对照。
+当前 Proposed 已改为：Verified Semantic IR -> Verification Condition / Path Constraint
+-> Z3 bounds reasoning。重新安装 requirements 后，必须重新运行 normalization 与 run
+才能评价这一版结果。
+
+Z3 输出三种状态：
+- SAFE：当前约束可以证明生成的 bounds condition。
+- POTENTIAL_VIOLATION：Z3 找到可违反 bounds condition 的满足解。
+- UNKNOWN：缺少 capacity、valid extent 或无法可靠编码的关系，不强行判漏洞。
