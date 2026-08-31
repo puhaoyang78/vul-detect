@@ -6,6 +6,7 @@ from typing import Iterable
 
 from .semantics import ALLOCATORS, READS, UNBOUNDED_WRITES, WRITES, Validation
 from .source import FunctionSource, normalize_expression
+from .z3_reasoner import reason_memory_safety
 
 
 @dataclass(frozen=True)
@@ -23,12 +24,14 @@ class Verdict:
     verdict: str
     reason: str
     operations: tuple[Operation, ...]
+    constraint_result: dict[str, object] | None = None
 
     def as_json(self) -> dict[str, object]:
         return {
             "verdict": self.verdict,
             "reason": self.reason,
             "operations": [asdict(item) for item in self.operations],
+            "constraint_result": self.constraint_result,
         }
 
 
@@ -51,7 +54,14 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
             else:
                 continue
             operations.append(
-                Operation("ALLOC", call.name, "return", size, call.line, False)
+                Operation(
+                    "ALLOC",
+                    call.name,
+                    call.result or "return",
+                    size,
+                    call.line,
+                    False,
+                )
             )
         elif call.name in WRITES:
             buffer_index, length_index = WRITES[call.name]
@@ -109,7 +119,7 @@ def _custom_operations(
                     Operation(
                         "ALLOC",
                         call.name,
-                        "return",
+                        call.result or "return",
                         _substitute(summary["size"], call.arguments),
                         call.line,
                         True,
@@ -142,7 +152,7 @@ def _custom_operations(
                     Operation(
                         "VALUE",
                         call.name,
-                        "return",
+                        call.result or "return",
                         _substitute(summary["expression"], call.arguments),
                         call.line,
                         True,
@@ -348,25 +358,42 @@ def analyze(
     if proposed:
         operations.extend(_custom_operations(entry, validations))
 
+    # Keep the baseline-compatible checks only for direct, syntactically obvious cases.
     checks = [
         _risky_unbounded_write(entry, operations),
         _risky_offset_write(entry, operations),
         _risky_allocation_arithmetic(entry, operations),
     ]
-    if proposed:
-        checks.append(_risky_custom_access(entry, operations))
     reason = next((item for item in checks if item), None)
     if reason:
         return Verdict("VULNERABLE", reason, tuple(operations))
 
-    visible_custom = sum(operation.custom for operation in operations)
-    if proposed and visible_custom:
-        reason = (
-            f"recovered {visible_custom} validated custom semantic operation(s), but the "
-            "supported checks did not establish an unsafe memory relation"
+    if proposed:
+        constraint_result = reason_memory_safety(entry, operations)
+        constraint_json = constraint_result.as_json()
+        if constraint_result.status == "POTENTIAL_VIOLATION":
+            return Verdict(
+                "VULNERABLE",
+                f"Z3: {constraint_result.reason}",
+                tuple(operations),
+                constraint_json,
+            )
+        if constraint_result.status == "SAFE":
+            return Verdict(
+                "NOT_DETECTED",
+                "Z3 proved the generated bounds conditions under the available constraints",
+                tuple(operations),
+                constraint_json,
+            )
+        return Verdict(
+            "NOT_DETECTED",
+            f"Z3 could not decide: {constraint_result.reason}",
+            tuple(operations),
+            constraint_json,
         )
-    elif proposed:
-        reason = "no validated custom memory semantic reached a supported safety check"
-    else:
-        reason = "no direct supported sink established a capacity violation in the entry function"
-    return Verdict("NOT_DETECTED", reason, tuple(operations))
+
+    return Verdict(
+        "NOT_DETECTED",
+        "no direct supported sink established a capacity violation in the entry function",
+        tuple(operations),
+    )
