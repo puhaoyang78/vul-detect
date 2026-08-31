@@ -25,6 +25,8 @@ class JoernFacts:
     calls: dict[tuple[int, str], JoernCall] = field(default_factory=dict)
     flows: set[tuple[int, int, str, int]] = field(default_factory=set)
     conditions: list[str] = field(default_factory=list)
+    returns: list[str] = field(default_factory=list)
+    return_flows: set[int] = field(default_factory=set)
 
     def call_list(self) -> list[JoernCall]:
         return list(self.calls.values())
@@ -36,12 +38,7 @@ class JoernFacts:
 
 
 class JoernValidator:
-    """Extract per-function CPG/data-flow facts with a local Joern installation.
-
-    The validator intentionally imports one candidate function at a time. This keeps the
-    demo fast and makes Joern a verifier for LLM-proposed semantics instead of turning
-    the prototype into a full repository-scale static analyzer.
-    """
+    """Extract per-function CPG/data-flow facts with a local Joern installation."""
 
     def __init__(
         self,
@@ -132,8 +129,7 @@ class JoernValidator:
             if tag == "ERROR":
                 raise JoernError(parts[1] if len(parts) > 1 else "unknown Joern error")
             if tag == "PARAM" and len(parts) >= 4:
-                index = int(parts[1])
-                facts.parameters[index] = (parts[2], parts[3])
+                facts.parameters[int(parts[1])] = (parts[2], parts[3])
             elif tag == "ARG" and len(parts) >= 6:
                 line = int(parts[1])
                 name = parts[2]
@@ -143,8 +139,12 @@ class JoernValidator:
                 facts.flows.add(
                     (int(parts[1]), int(parts[2]), parts[3], int(parts[4]))
                 )
-            elif tag == "COND" and len(parts) >= 2:
+            elif tag in {"COND", "OP"} and len(parts) >= 2:
                 facts.conditions.append(parts[1])
+            elif tag == "RET" and len(parts) >= 2:
+                facts.returns.append(parts[1])
+            elif tag == "RETFLOW" and len(parts) >= 2:
+                facts.return_flows.add(int(parts[1]))
 
         for (line, name), arguments in call_args.items():
             facts.calls[(line, name)] = JoernCall(line, name, arguments)
