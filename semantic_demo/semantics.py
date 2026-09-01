@@ -83,55 +83,76 @@ def discover_candidates(
     scopes: Iterable[str],
     max_functions: int = 64,
 ) -> list[Candidate]:
-    """Build a bounded reachable-function semantic closure.
+    """Return the memory-semantic closure reachable from the entry function.
 
-    Traversal stops at known primitives and repeated functions. The max_functions
-    limit is only a resource guard; it is not a semantic hop limit.
+    First build a bounded reachable call graph. Functions that directly expose a
+    memory-relevant primitive are semantic seeds. Relevance is then propagated
+    backwards through the call graph so bridge wrappers on paths to those seeds are
+    included without using a fixed hop count or sending unrelated reachable code to
+    the LLM. max_functions is only a resource guard.
     """
     scopes = tuple(scopes)
-    queue: list[tuple[FunctionSource, tuple[int, ...]]] = [(entry, ())]
-    visited: set[tuple[str, str]] = {(entry.path, entry.name)}
-    discovered: dict[tuple[str, str], Candidate] = {}
-    order: list[tuple[str, str]] = []
+    entry_key = (entry.path, entry.name)
+    functions: dict[tuple[str, str], FunctionSource] = {entry_key: entry}
+    call_lines: dict[tuple[str, str], list[int]] = {}
+    edges: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    queue: list[FunctionSource] = [entry]
 
-    while queue and len(visited) < max_functions:
-        caller, _ = queue.pop(0)
-        calls_by_name: dict[str, list[int]] = {}
+    while queue and len(functions) < max_functions:
+        caller = queue.pop(0)
+        caller_key = (caller.path, caller.name)
+        edges.setdefault(caller_key, set())
+        grouped: dict[str, list[int]] = {}
         for call in caller.calls():
             if call.name in IGNORED_CALLS or call.name == caller.name:
                 continue
-            calls_by_name.setdefault(call.name, []).append(call.line)
+            grouped.setdefault(call.name, []).append(call.line)
 
-        for name, lines in sorted(calls_by_name.items()):
-            function = repository.find_function(
+        for name, lines in sorted(grouped.items()):
+            callee = repository.find_function(
                 name, preferred_path=caller.path, scopes=scopes
             )
-            if function is None:
+            if callee is None:
                 continue
-            key = (function.path, function.name)
-            if key not in visited and len(visited) < max_functions:
-                visited.add(key)
-                queue.append((function, tuple(lines)))
+            callee_key = (callee.path, callee.name)
+            edges[caller_key].add(callee_key)
+            call_lines.setdefault(callee_key, []).extend(lines)
+            if callee_key not in functions and len(functions) < max_functions:
+                functions[callee_key] = callee
+                queue.append(callee)
 
-            # Include both direct memory candidates and bridge functions. Bridge
-            # summaries can later be validated compositionally from child summaries.
-            if key not in discovered:
-                discovered[key] = Candidate(
-                    sample_key=sample_key,
-                    function=function,
-                    call_lines=tuple(lines),
-                )
-                order.append(key)
+    relevant = {
+        key
+        for key, function in functions.items()
+        if key != entry_key and _is_memory_candidate(function)
+    }
 
-    # Prefer obvious memory candidates first so fixed-point validation can seed
-    # summaries from primitives before validating bridge functions.
-    order.sort(
-        key=lambda key: (
-            0 if _is_memory_candidate(discovered[key].function) else 1,
-            discovered[key].function.name,
+    changed = True
+    while changed:
+        changed = False
+        for parent, children in edges.items():
+            if parent == entry_key or parent in relevant:
+                continue
+            if children & relevant:
+                relevant.add(parent)
+                changed = True
+
+    candidates = [
+        Candidate(
+            sample_key=sample_key,
+            function=functions[key],
+            call_lines=tuple(sorted(set(call_lines.get(key, ())))),
+        )
+        for key in relevant
+    ]
+    candidates.sort(
+        key=lambda item: (
+            0 if _is_memory_candidate(item.function) else 1,
+            item.function.name,
+            item.function.path,
         )
     )
-    return [discovered[key] for key in order]
+    return candidates
 
 
 def _is_memory_candidate(function: FunctionSource) -> bool:
