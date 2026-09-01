@@ -12,11 +12,11 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 
 ## 当前分析流程
 
-1. **Memory-semantic call-graph closure**
-   - 从目标函数出发构建项目内可达调用图。
-   - 直接包含已知内存行为的函数作为 semantic seeds。
-   - 从 seeds 沿调用图反向传播，只保留位于“目标函数 -> 内存行为”路径上的 bridge functions。
-   - 不采用固定 3-hop/5-hop，也不把所有可达函数交给 LLM。
+1. **Selective semantic frontier**
+   - 目标函数中的项目自定义直接调用构成初始语义前沿。
+   - 若候选函数已经直接接触标准内存 primitive，则在该处停止继续展开。
+   - 只有当函数尚未暴露可验证内存行为时，才沿“参数继续传递给子调用”或“子调用结果继续返回”的调用链扩展。
+   - 该策略不依赖固定 hop，也不构建整个可达调用图，从而减少无关函数和 LLM 调用。
 
 2. **Semantic normalization**
    - LLM 每次只读取一个候选函数。
@@ -63,10 +63,14 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 
     python -m unittest discover -s tests -v
 
-重新生成 semantic normalization。候选发现机制已经改变，因此旧的
-data/normalizer_outputs.jsonl 不应直接复用：
+生成 semantic normalization。默认会复用同一 sample/path/function 的已有摘要，
+只对 selective frontier 中新增的函数调用 LLM：
 
     python -m semantic_demo.cli normalize --normalizer llm
+
+如需忽略缓存、强制重新生成全部摘要：
+
+    python -m semantic_demo.cli normalize --normalizer llm --refresh
 
 然后重新执行 Joern fixed-point validation 和 Z3 bounds verification：
 
@@ -101,3 +105,8 @@ data/normalizer_outputs.jsonl 不应直接复用：
 
 results/ 目录中的现有数字来自本次方法重构之前的运行，仅作为历史对照。由于候选发现、
 组合验证和 Z3 聚合方式均已改变，必须重新运行 normalization 和 run 后再评价新结果。
+
+
+Z3 中 Path Constraint 与 buffer capacity 已严格分离。Guard 只作为路径约束；
+当缺少显式 capacity 时，只有 guarded value 与实际 access extent 之间存在可编码的
+def-use 数值关系，才会生成 guard-coverage VC。Guard 的右值不会再被解释成对象容量。
