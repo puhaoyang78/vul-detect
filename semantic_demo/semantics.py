@@ -262,6 +262,25 @@ def _schema_error(summary: dict[str, object], parameter_count: int) -> str | Non
     return None
 
 
+def canonicalize_summary(
+    function: FunctionSource, summary: dict[str, object]
+) -> dict[str, str]:
+    """Normalize exact source-parameter identifiers to positional argN names."""
+    clean = {str(key): str(value) for key, value in summary.items()}
+    for key, value in list(clean.items()):
+        if key == "kind":
+            continue
+        normalized = value
+        for index, parameter in reversed(list(enumerate(function.parameters))):
+            normalized = re.sub(
+                rf"\b{re.escape(parameter)}\b",
+                f"arg{index}",
+                normalized,
+            )
+        clean[key] = normalized
+    return clean
+
+
 def _substitute_args(expression: str, parameters: tuple[str, ...]) -> str:
     result = expression
     for index in reversed(range(len(parameters))):
@@ -579,7 +598,7 @@ def validate_summary(
 ) -> Validation:
     function = candidate.function
     error = _schema_error(summary, len(function.parameters))
-    clean_summary = {str(key): str(value) for key, value in summary.items()}
+    clean_summary = canonicalize_summary(function, summary)
 
     referenced_names = set().union(
         *(_identifier_tokens(value) for value in clean_summary.values())
