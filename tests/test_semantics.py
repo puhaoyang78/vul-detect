@@ -39,12 +39,14 @@ class SemanticValidationTests(unittest.TestCase):
         )
         self.assertFalse(result.passed)
 
-    def test_source_parameter_name_is_rejected(self):
+    def test_source_parameter_name_is_canonicalized(self):
         result = validate_summary(
             self.candidate,
-            {"kind": "WRITE", "buffer": "dst", "length": "arg2"},
+            {"kind": "WRITE", "buffer": "dst", "length": "len"},
         )
-        self.assertFalse(result.passed)
+        self.assertTrue(result.passed)
+        self.assertEqual("arg0", result.summary["buffer"])
+        self.assertEqual("arg2", result.summary["length"])
 
     def test_read_buffer_and_length_reach_same_source(self):
         source = """
@@ -249,6 +251,40 @@ class Z3ReasonerTests(unittest.TestCase):
         )
         self.assertEqual("POTENTIAL_VIOLATION", result.status)
         self.assertIn("res.len <= buflen", result.reason)
+
+    def test_unrelated_guard_is_not_used_as_access_bound(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(char *buf, unsigned long buflen, struct result res)
+            {
+                unsigned long npages = (res.len + 4095) >> 12;
+                unsigned long acl_len = res.len - res.offset;
+                if (npages > 1)
+                    return -1;
+                if (acl_len > buflen)
+                    return -1;
+                copy_wrap(buf, src, res.len);
+                return 0;
+            }
+            """,
+        )[0]
+        result = reason_memory_safety(
+            entry,
+            [
+                Operation(
+                    "WRITE",
+                    "copy_wrap",
+                    "buf",
+                    "res.len",
+                    entry.start_line + 7,
+                    True,
+                )
+            ],
+        )
+        self.assertEqual("POTENTIAL_VIOLATION", result.status)
+        self.assertIn("res.len<=buflen", result.reason.replace(" ", ""))
+        self.assertNotIn("res.len<=1", result.reason.replace(" ", ""))
 
     def test_matching_guard_proves_bounds(self):
         entry = parse_functions(
