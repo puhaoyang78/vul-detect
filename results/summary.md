@@ -5,15 +5,17 @@
 - Proposed 检出：6/10
 - Proposed 纠正 Baseline 漏检：3 个
 - 静态验证拒绝的语义摘要：33 条
+- Z3 状态：POTENTIAL_VIOLATION=3, UNKNOWN=4
 
 结论：出现明确但有限的正向信号。自动恢复并验证的项目语义使检出数从 3 增加到 6，纠正了 3 个漏检。
 该样本集全部为漏洞样本，并且优先选择了自定义内存函数，因此这里只能说明召回方向值得继续，不能据此判断误报率或泛化效果。
 
 ## 主要失败原因
 
-- 2 个：no validated custom memory semantic reached a supported safety check
-- 1 个：recovered 22 validated custom semantic operation(s), but the supported checks did not establish an unsafe memory relation
-- 1 个：recovered 7 validated custom semantic operation(s), but the supported checks did not establish an unsafe memory relation
+- 1 个：Z3 could not decide: capacity/valid extent is unknown for c->in_s->data at line 98; capacity/valid extent is unknown for c->in_s->data at line 123
+- 1 个：Z3 could not decide: capacity/valid extent is unknown for (unsignedchar*)xcfdata at line 356
+- 1 个：Z3 could not decide: capacity/valid extent is unknown for msg->stun_hdr.tran_id at line 92
+- 1 个：Z3 could not decide: no supported bounds condition could be generated
 - BSON 样本的模型摘要未严格归一化或未通过同一写入点的数据流验证。
 - ImageMagick 样本需要关联分配大小与后续循环读取范围，新增 READ/VALUE 后需重新评估。
 - Sofia SIP 样本依赖剩余输入长度与越界读取关系，新增 READ 语义后需重新评估。
