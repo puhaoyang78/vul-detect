@@ -96,6 +96,20 @@ class SemanticValidationTests(unittest.TestCase):
             ).passed
         )
 
+    def test_deep_ast_does_not_exhaust_python_recursion(self):
+        depth = 1100
+        source = (
+            "int deep(void) {"
+            + "{" * depth
+            + "return 0;"
+            + "}" * depth
+            + "}"
+        )
+
+        functions = parse_functions("deep.c", source)
+
+        self.assertEqual(["deep"], [function.name for function in functions])
+
 
     def test_scalar_parameter_cannot_be_memory_buffer(self):
         source = """

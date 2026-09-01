@@ -135,9 +135,11 @@ def _text(node: Node, source: bytes) -> str:
 
 
 def _walk(node: Node) -> Iterable[Node]:
-    yield node
-    for child in node.children:
-        yield from _walk(child)
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        stack.extend(reversed(current.children))
 
 
 def _identifier(node: Node | None, source: bytes) -> str | None:
