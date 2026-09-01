@@ -289,6 +289,33 @@ def _dependency_distances(
     return distances
 
 
+def _direct_numeric_relation(
+    entry: FunctionSource,
+    line: int,
+    guarded_term: str,
+    extent_text: str,
+) -> bool:
+    """Require an encodable direct value relation between guard and access extent."""
+    extent_terms = _identifier_terms(extent_text)
+    if guarded_term in extent_terms:
+        return True
+
+    encoder = ExpressionEncoder()
+    for left, right in entry.value_relations_before(line):
+        left_terms = _identifier_terms(left)
+        right_terms = _identifier_terms(right)
+        if guarded_term not in left_terms:
+            continue
+        if not (right_terms & extent_terms):
+            continue
+        try:
+            encoder.equality(left, right)
+        except Exception:
+            continue
+        return True
+    return False
+
+
 def _guard_coverage_condition(
     entry: FunctionSource,
     line: int,
@@ -311,12 +338,22 @@ def _guard_coverage_condition(
             continue
         left, operator, right = match.groups()
         left_terms = _identifier_terms(left)
-        reachable = [distances[term] for term in left_terms if term in distances]
-        if not reachable:
+        reachable_terms = [term for term in left_terms if term in distances]
+        if not reachable_terms:
             continue
-        # Prefer the most directly data-related guard and preserve strictness.
+        supported_terms = [
+            term
+            for term in reachable_terms
+            if _direct_numeric_relation(entry, line, term, extent_text)
+        ]
+        if not supported_terms:
+            continue
+        # Prefer the closest guard whose relationship to the access extent can
+        # actually be represented in the current numeric model.
         rhs = right if operator == "<=" else f"({right})-1"
-        candidates.append((min(reachable), f"{extent_text}<={rhs}"))
+        candidates.append(
+            (min(distances[term] for term in supported_terms), f"{extent_text}<={rhs}")
+        )
 
     if not candidates:
         return None
