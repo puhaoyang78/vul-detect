@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import csv
+import hashlib
 import json
 import os
 import socket
@@ -176,10 +177,43 @@ def local_llm_server(
                     process.wait(timeout=15)
 
 
+def _candidate_fingerprint(candidate) -> str:
+    payload = (
+        candidate.function.path
+        + "\0"
+        + candidate.function.name
+        + "\0"
+        + candidate.function.text
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _normalization_cache(path: str | Path) -> dict[tuple[str, str, str, str], dict[str, object]]:
+    target = Path(path)
+    if not target.is_file():
+        return {}
+    cache: dict[tuple[str, str, str, str], dict[str, object]] = {}
+    for record in read_jsonl(target):
+        fingerprint = str(record.get("source_fingerprint", ""))
+        if not fingerprint:
+            continue
+        key = (
+            str(record.get("sample_key", "")),
+            str(record.get("source_path", "")),
+            str(record.get("function", "")),
+            fingerprint,
+        )
+        cache[key] = record
+    return cache
+
+
 def normalize_command(args: argparse.Namespace) -> None:
     samples = read_jsonl(args.samples)
     validate_detection_manifest(samples)
     records: list[dict[str, object]] = []
+    cache = {} if args.refresh else _normalization_cache(args.output)
+    reused = 0
+    generated = 0
     if args.normalizer == "llm" and args.llm_backend == "local":
         llm_context = local_llm_server(args.llama_server, args.local_model)
     elif args.normalizer == "llm":
@@ -197,6 +231,26 @@ def normalize_command(args: argparse.Namespace) -> None:
                 tuple(str(item) for item in sample.get("scan_paths", [])),
             )
             for candidate in candidates:
+                fingerprint = _candidate_fingerprint(candidate)
+                cache_key = (
+                    candidate.sample_key,
+                    candidate.function.path,
+                    candidate.function.name,
+                    fingerprint,
+                )
+                cached = cache.get(cache_key)
+                if (
+                    cached is not None
+                    and cached.get("normalizer") == args.normalizer
+                    and (
+                        args.normalizer != "llm"
+                        or cached.get("llm_backend") == args.llm_backend
+                    )
+                ):
+                    records.append(cached)
+                    reused += 1
+                    continue
+
                 try:
                     summaries = (
                         llm_normalize(candidate, **llm_options)
@@ -213,12 +267,14 @@ def normalize_command(args: argparse.Namespace) -> None:
                         f"{candidate.sample_key}:{candidate.function.name}: "
                         "normalization failed"
                     ) from error
+                generated += 1
                 records.append(
                     {
                         "sample_key": candidate.sample_key,
                         "source_path": candidate.function.path,
                         "function": candidate.function.name,
                         "parameters": list(candidate.function.parameters),
+                        "source_fingerprint": fingerprint,
                         "normalizer": args.normalizer,
                         "llm_backend": (
                             args.llm_backend if args.normalizer == "llm" else None
@@ -232,7 +288,10 @@ def normalize_command(args: argparse.Namespace) -> None:
                     }
                 )
     write_jsonl(args.output, records)
-    print(f"normalized_candidates={len(records)} output={args.output}")
+    print(
+        f"normalized_candidates={len(records)} reused={reused} generated={generated} "
+        f"output={args.output}"
+    )
 
 
 def detect(
@@ -540,6 +599,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     normalize.add_argument("--output", default="data/normalizer_outputs.jsonl")
+    normalize.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore cached normalization records and regenerate all candidate summaries",
+    )
     normalize.set_defaults(func=normalize_command)
 
     run = subparsers.add_parser("run", help="run recovery, detection, and isolated evaluation")
