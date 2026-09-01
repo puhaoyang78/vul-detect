@@ -81,21 +81,77 @@ def discover_candidates(
     repository: GitRepository,
     entry: FunctionSource,
     scopes: Iterable[str],
+    max_functions: int = 64,
 ) -> list[Candidate]:
-    by_name: dict[str, list[int]] = {}
-    for call in entry.calls():
-        if call.name in IGNORED_CALLS or call.name == entry.name:
-            continue
-        by_name.setdefault(call.name, []).append(call.line)
+    """Return the memory-semantic closure reachable from the entry function.
 
-    candidates: list[Candidate] = []
-    for name, lines in sorted(by_name.items()):
-        function = repository.find_function(name, preferred_path=entry.path, scopes=scopes)
-        if function is None or not _is_memory_candidate(function):
-            continue
-        candidates.append(
-            Candidate(sample_key=sample_key, function=function, call_lines=tuple(lines))
+    First build a bounded reachable call graph. Functions that directly expose a
+    memory-relevant primitive are semantic seeds. Relevance is then propagated
+    backwards through the call graph so bridge wrappers on paths to those seeds are
+    included without using a fixed hop count or sending unrelated reachable code to
+    the LLM. max_functions is only a resource guard.
+    """
+    scopes = tuple(scopes)
+    entry_key = (entry.path, entry.name)
+    functions: dict[tuple[str, str], FunctionSource] = {entry_key: entry}
+    call_lines: dict[tuple[str, str], list[int]] = {}
+    edges: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    queue: list[FunctionSource] = [entry]
+
+    while queue and len(functions) < max_functions:
+        caller = queue.pop(0)
+        caller_key = (caller.path, caller.name)
+        edges.setdefault(caller_key, set())
+        grouped: dict[str, list[int]] = {}
+        for call in caller.calls():
+            if call.name in IGNORED_CALLS or call.name == caller.name:
+                continue
+            grouped.setdefault(call.name, []).append(call.line)
+
+        for name, lines in sorted(grouped.items()):
+            callee = repository.find_function(
+                name, preferred_path=caller.path, scopes=scopes
+            )
+            if callee is None:
+                continue
+            callee_key = (callee.path, callee.name)
+            edges[caller_key].add(callee_key)
+            call_lines.setdefault(callee_key, []).extend(lines)
+            if callee_key not in functions and len(functions) < max_functions:
+                functions[callee_key] = callee
+                queue.append(callee)
+
+    relevant = {
+        key
+        for key, function in functions.items()
+        if key != entry_key and _is_memory_candidate(function)
+    }
+
+    changed = True
+    while changed:
+        changed = False
+        for parent, children in edges.items():
+            if parent == entry_key or parent in relevant:
+                continue
+            if children & relevant:
+                relevant.add(parent)
+                changed = True
+
+    candidates = [
+        Candidate(
+            sample_key=sample_key,
+            function=functions[key],
+            call_lines=tuple(sorted(set(call_lines.get(key, ())))),
         )
+        for key in relevant
+    ]
+    candidates.sort(
+        key=lambda item: (
+            0 if _is_memory_candidate(item.function) else 1,
+            item.function.name,
+            item.function.path,
+        )
+    )
     return candidates
 
 
@@ -427,10 +483,65 @@ def _validate_with_joern(
     return False, f"unsupported semantic kind: {kind}"
 
 
+def _validate_by_composition(
+    candidate: Candidate,
+    summary: dict[str, str],
+    validator: JoernValidator,
+    callee_summaries: dict[str, list[dict[str, str]]],
+) -> tuple[bool, str]:
+    """Validate a wrapper summary from already validated callee summaries."""
+    facts = validator.facts(candidate)
+    kind = summary["kind"]
+
+    for call in facts.call_list():
+        for child in callee_summaries.get(call.name, []):
+            if child.get("kind") != kind:
+                continue
+
+            if kind in {"READ", "WRITE"}:
+                child_buffer_args = tuple(_arg_indices(child.get("buffer", "")))
+                child_length_args = tuple(_arg_indices(child.get("length", "")))
+                if not child_buffer_args or not child_length_args:
+                    continue
+                if _joern_expr_reaches(
+                    facts, summary["buffer"], call, child_buffer_args
+                ) and _joern_expr_reaches(
+                    facts, summary["length"], call, child_length_args
+                ):
+                    return (
+                        True,
+                        f"composition verified {kind.lower()} through "
+                        f"validated callee summary {call.name}",
+                    )
+
+            elif kind == "ALLOC":
+                child_size_args = tuple(_arg_indices(child.get("size", "")))
+                if not child_size_args:
+                    continue
+                if not _joern_expr_reaches(
+                    facts, summary["size"], call, child_size_args
+                ):
+                    continue
+                # Allocation result must be returned by the wrapper.
+                if re.search(
+                    rf"\breturn\s+[^;]*\b{re.escape(call.name)}\s*\(",
+                    candidate.function.text,
+                    re.S,
+                ):
+                    return (
+                        True,
+                        f"composition verified allocation through "
+                        f"validated callee summary {call.name}",
+                    )
+
+    return False, "no validated callee summary composes to the claimed semantic role"
+
+
 def validate_summary(
     candidate: Candidate,
     summary: dict[str, object],
     joern: JoernValidator | None = None,
+    callee_summaries: dict[str, list[dict[str, str]]] | None = None,
 ) -> Validation:
     function = candidate.function
     error = _schema_error(summary, len(function.parameters))
@@ -464,6 +575,15 @@ def validate_summary(
 
     if joern is not None:
         passed, reason = _validate_with_joern(candidate, clean_summary, joern)
+        if not passed and callee_summaries:
+            composed, composed_reason = _validate_by_composition(
+                candidate,
+                clean_summary,
+                joern,
+                callee_summaries,
+            )
+            if composed:
+                passed, reason = composed, composed_reason
         return Validation(
             candidate.sample_key,
             function.name,
