@@ -190,10 +190,13 @@ def _signed_names(entry: FunctionSource) -> set[str]:
         ):
             names.add(parameter)
     for match in re.finditer(
-        r"\b(?:signed\s+)?(?:int|short|ssize_t|long)\s+([A-Za-z_][A-Za-z0-9_]*)",
+        r"\b(?:(unsigned|signed)\s+)?(?:int|short|ssize_t|long(?:\s+long)?)"
+        r"\s+([A-Za-z_][A-Za-z0-9_]*)",
         entry.text,
     ):
-        names.add(match.group(1))
+        qualifier, name = match.groups()
+        if qualifier != "unsigned" and name != entry.name:
+            names.add(name)
     return names
 
 

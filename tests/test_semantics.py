@@ -333,7 +333,7 @@ class PropagationTests(unittest.TestCase):
         )
         verdict = analyze(entry, [validation], proposed=True)
         self.assertEqual("VULNERABLE", verdict.verdict)
-        self.assertIn("different expression", verdict.reason)
+        self.assertIn("res.len <= buflen", verdict.reason)
 
 
 if __name__ == "__main__":
