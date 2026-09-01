@@ -462,10 +462,65 @@ def _validate_with_joern(
     return False, f"unsupported semantic kind: {kind}"
 
 
+def _validate_by_composition(
+    candidate: Candidate,
+    summary: dict[str, str],
+    validator: JoernValidator,
+    callee_summaries: dict[str, list[dict[str, str]]],
+) -> tuple[bool, str]:
+    """Validate a wrapper summary from already validated callee summaries."""
+    facts = validator.facts(candidate)
+    kind = summary["kind"]
+
+    for call in facts.call_list():
+        for child in callee_summaries.get(call.name, []):
+            if child.get("kind") != kind:
+                continue
+
+            if kind in {"READ", "WRITE"}:
+                child_buffer_args = tuple(_arg_indices(child.get("buffer", "")))
+                child_length_args = tuple(_arg_indices(child.get("length", "")))
+                if not child_buffer_args or not child_length_args:
+                    continue
+                if _joern_expr_reaches(
+                    facts, summary["buffer"], call, child_buffer_args
+                ) and _joern_expr_reaches(
+                    facts, summary["length"], call, child_length_args
+                ):
+                    return (
+                        True,
+                        f"composition verified {kind.lower()} through "
+                        f"validated callee summary {call.name}",
+                    )
+
+            elif kind == "ALLOC":
+                child_size_args = tuple(_arg_indices(child.get("size", "")))
+                if not child_size_args:
+                    continue
+                if not _joern_expr_reaches(
+                    facts, summary["size"], call, child_size_args
+                ):
+                    continue
+                # Allocation result must be returned by the wrapper.
+                if re.search(
+                    rf"\breturn\s+[^;]*\b{re.escape(call.name)}\s*\(",
+                    candidate.function.text,
+                    re.S,
+                ):
+                    return (
+                        True,
+                        f"composition verified allocation through "
+                        f"validated callee summary {call.name}",
+                    )
+
+    return False, "no validated callee summary composes to the claimed semantic role"
+
+
 def validate_summary(
     candidate: Candidate,
     summary: dict[str, object],
     joern: JoernValidator | None = None,
+    callee_summaries: dict[str, list[dict[str, str]]] | None = None,
 ) -> Validation:
     function = candidate.function
     error = _schema_error(summary, len(function.parameters))
@@ -499,6 +554,15 @@ def validate_summary(
 
     if joern is not None:
         passed, reason = _validate_with_joern(candidate, clean_summary, joern)
+        if not passed and callee_summaries:
+            composed, composed_reason = _validate_by_composition(
+                candidate,
+                clean_summary,
+                joern,
+                callee_summaries,
+            )
+            if composed:
+                passed, reason = composed, composed_reason
         return Validation(
             candidate.sample_key,
             function.name,
