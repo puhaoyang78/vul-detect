@@ -252,6 +252,60 @@ def _capacity_for_buffer(
     return None
 
 
+def _identifier_terms(expression: str) -> set[str]:
+    return set(
+        re.findall(
+            r"\b[A-Za-z_][A-Za-z0-9_]*(?:->(?:[A-Za-z_][A-Za-z0-9_]*))?\b",
+            normalize_expression(expression),
+        )
+    )
+
+
+def _dependency_component(
+    entry: FunctionSource, line: int, expression: str
+) -> set[str]:
+    graph: dict[str, set[str]] = {}
+    for left, right in entry.value_relations_before(line):
+        left_terms = _identifier_terms(left)
+        right_terms = _identifier_terms(right)
+        all_terms = left_terms | right_terms
+        for term in all_terms:
+            graph.setdefault(term, set()).update(all_terms - {term})
+
+    seeds = _identifier_terms(expression)
+    seen = set(seeds)
+    queue = list(seeds)
+    while queue:
+        current = queue.pop()
+        for neighbor in graph.get(current, ()):
+            if neighbor not in seen:
+                seen.add(neighbor)
+                queue.append(neighbor)
+    return seen
+
+
+def _guard_derived_upper_bound(
+    entry: FunctionSource,
+    line: int,
+    extent_text: str,
+    path_constraints: Iterable[str],
+) -> str | None:
+    """Find an upper bound established for a value data-dependent on the extent."""
+    related = _dependency_component(entry, line, extent_text)
+    related.update(_identifier_terms(extent_text))
+
+    for relation in path_constraints:
+        match = re.match(
+            r"^(.*?)(<=|<)(.*)$", normalize_expression(relation)
+        )
+        if not match:
+            continue
+        left, _, right = match.groups()
+        if _identifier_terms(left) & related:
+            return right
+    return None
+
+
 def _add_program_constraints(
     solver: Solver,
     encoder: ExpressionEncoder,
@@ -342,17 +396,23 @@ def _check_access(
 
     capacity = _capacity_for_buffer(buffer_text, capacities)
     if capacity is None:
-        return AccessCheck(
-            kind,
-            buffer_text,
-            extent_text,
-            line,
-            "UNKNOWN",
-            f"capacity/valid extent is unknown for {buffer_text}",
-            tuple(conditions),
-            path_constraints,
-            {},
+        guard_bound = _guard_derived_upper_bound(
+            entry, line, extent_text, path_constraints
         )
+        if guard_bound is not None:
+            capacity = (guard_bound, "0")
+        else:
+            return AccessCheck(
+                kind,
+                buffer_text,
+                extent_text,
+                line,
+                "UNKNOWN",
+                f"capacity/valid extent is unknown for {buffer_text}",
+                tuple(conditions),
+                path_constraints,
+                {},
+            )
 
     capacity_text, offset_text = capacity
     try:
