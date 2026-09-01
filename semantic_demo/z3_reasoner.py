@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from z3 import And, Int, IntVal, Not, Solver, sat, unsat
+from z3 import Int, IntVal, Not, Solver, sat, unsat
 
 from .source import FunctionSource, normalize_expression
 
@@ -20,28 +20,47 @@ class VerificationCondition:
 
 
 @dataclass(frozen=True)
-class ConstraintResult:
+class AccessCheck:
+    access_kind: str
+    buffer: str
+    extent: str
+    line: int
     status: str
     reason: str
     conditions: tuple[VerificationCondition, ...]
+    path_constraints: tuple[str, ...]
     model: dict[str, int]
+
+    def as_json(self) -> dict[str, object]:
+        return {
+            "access_kind": self.access_kind,
+            "buffer": self.buffer,
+            "extent": self.extent,
+            "line": self.line,
+            "status": self.status,
+            "reason": self.reason,
+            "conditions": [asdict(item) for item in self.conditions],
+            "path_constraints": list(self.path_constraints),
+            "model": self.model,
+        }
+
+
+@dataclass(frozen=True)
+class ConstraintResult:
+    status: str
+    reason: str
+    accesses: tuple[AccessCheck, ...]
 
     def as_json(self) -> dict[str, object]:
         return {
             "status": self.status,
             "reason": self.reason,
-            "conditions": [asdict(item) for item in self.conditions],
-            "model": self.model,
+            "accesses": [item.as_json() for item in self.accesses],
         }
 
 
 class ExpressionEncoder:
-    """Small integer-expression encoder for bounds reasoning.
-
-    Unknown calls, field expressions, casts and sizeof terms are preserved as opaque
-    integer symbols. Arithmetic relations around them remain solvable without
-    pretending to understand their internal semantics.
-    """
+    """Encode integer and bounds relations while preserving unknown terms symbolically."""
 
     _atom_pattern = re.compile(
         r"""
@@ -73,15 +92,22 @@ class ExpressionEncoder:
             if not match:
                 break
             raw = match.group(0)
-            symbol = self.symbol(raw)
-            result = result[: match.start()] + str(symbol) + result[match.end() :]
+            result = (
+                result[: match.start()]
+                + str(self.symbol(raw))
+                + result[match.end() :]
+            )
         return result
 
     def encode(self, expression: str):
         text = normalize_expression(expression)
         if not text:
             raise ValueError("empty expression")
-        text = re.sub(r"\(\s*(?:unsigned|signed|long|short|int|char|size_t|ssize_t)[^)]*\)", "", text)
+        text = re.sub(
+            r"\(\s*(?:unsigned|signed|long|short|int|char|size_t|ssize_t)[^)]*\)",
+            "",
+            text,
+        )
         text = self._replace_atoms(text)
         identifiers = sorted(
             set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", text)),
@@ -91,13 +117,17 @@ class ExpressionEncoder:
         for name in identifiers:
             if name.startswith("v_"):
                 continue
-            symbol = self.symbol(name)
-            text = re.sub(rf"\b{re.escape(name)}\b", str(symbol), text)
+            text = re.sub(
+                rf"\b{re.escape(name)}\b", str(self.symbol(name)), text
+            )
         tree = ast.parse(text, mode="eval")
         return self._node(tree.body)
 
     def comparison(self, expression: str):
-        match = re.match(r"^(.*?)(<=|>=|==|!=|<|>)(.*)$", normalize_expression(expression))
+        match = re.match(
+            r"^(.*?)(<=|>=|==|!=|<|>)(.*)$",
+            normalize_expression(expression),
+        )
         if not match:
             raise ValueError(f"unsupported comparison: {expression}")
         left, operator, right = match.groups()
@@ -111,6 +141,9 @@ class ExpressionEncoder:
             "==": lhs == rhs,
             "!=": lhs != rhs,
         }[operator]
+
+    def equality(self, left: str, right: str):
+        return self.encode(left) == self.encode(right)
 
     def _node(self, node):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
@@ -173,51 +206,17 @@ def _local_array_capacities(entry: FunctionSource) -> dict[str, str]:
     }
 
 
-def _parameter_capacities(entry: FunctionSource) -> dict[str, str]:
-    capacities: dict[str, str] = {}
-    for index, (name, declaration) in enumerate(
-        zip(entry.parameters, entry.parameter_types)
-    ):
-        if "*" not in declaration and "[" not in declaration:
-            continue
-        for candidate in entry.parameters[index + 1 : index + 3]:
-            if re.search(r"(?:buflen|len|size|capacity|cap)$", candidate, re.I):
-                capacities[normalize_expression(name)] = normalize_expression(candidate)
-                break
-    return capacities
-
-
-def _continuation_constraints(entry: FunctionSource, access_line: int) -> list[str]:
-    """Infer simple constraints established by reject-before-access checks."""
-    constraints: list[str] = []
-    lines = entry.text.splitlines()
-    relative_access = max(1, access_line - entry.start_line + 1)
-    prefix = "\n".join(lines[:relative_access])
-    pattern = re.compile(
-        r"if\s*\(([^()]*)\)\s*(?:\{[^{}]{0,300})?"
-        r"(?:return\b[^;]*;|goto\b[^;]*;|break\s*;)",
-        re.S,
-    )
-    for match in pattern.finditer(prefix):
-        condition = normalize_expression(match.group(1))
-        comparison = re.match(r"^(.*?)(<=|>=|==|!=|<|>)(.*)$", condition)
-        if not comparison:
-            continue
-        left, operator, right = comparison.groups()
-        inverse = {
-            ">": "<=",
-            ">=": "<",
-            "<": ">=",
-            "<=": ">",
-            "==": "!=",
-            "!=": "==",
-        }[operator]
-        constraints.append(f"{left}{inverse}{right}")
-    return constraints
+def _strip_outer_casts(expression: str) -> str:
+    text = normalize_expression(expression)
+    while True:
+        updated = re.sub(r"^\([^()]*\*[^()]*\)", "", text)
+        if updated == text:
+            return text
+        text = updated
 
 
 def _buffer_base_and_offset(buffer: str) -> tuple[str, str]:
-    text = normalize_expression(buffer)
+    text = _strip_outer_casts(buffer)
     depth = 0
     for index, char in enumerate(text):
         if char == "(":
@@ -229,9 +228,23 @@ def _buffer_base_and_offset(buffer: str) -> tuple[str, str]:
     return text, "0"
 
 
+def _collect_capacity_relations(
+    entry: FunctionSource, operations: Iterable[object]
+) -> dict[str, str]:
+    """Collect capacities from concrete allocation bindings and local arrays only."""
+    capacities = _local_array_capacities(entry)
+    for operation in operations:
+        if getattr(operation, "kind", "") != "ALLOC":
+            continue
+        buffer = _strip_outer_casts(getattr(operation, "buffer", ""))
+        extent = normalize_expression(getattr(operation, "extent", ""))
+        if buffer and buffer != "return" and extent:
+            capacities[buffer] = extent
+    return capacities
+
+
 def _capacity_for_buffer(
-    buffer: str,
-    capacities: dict[str, str],
+    buffer: str, capacities: dict[str, str]
 ) -> tuple[str, str] | None:
     base, offset = _buffer_base_and_offset(buffer)
     if base in capacities:
@@ -239,135 +252,225 @@ def _capacity_for_buffer(
     return None
 
 
+def _add_program_constraints(
+    solver: Solver,
+    encoder: ExpressionEncoder,
+    entry: FunctionSource,
+    line: int,
+) -> tuple[str, ...]:
+    path_constraints = tuple(entry.continuation_constraints_before(line))
+    for relation in path_constraints:
+        try:
+            solver.add(encoder.comparison(relation))
+        except Exception:
+            continue
+    for left, right in entry.value_relations_before(line):
+        try:
+            solver.add(encoder.equality(left, right))
+        except Exception:
+            continue
+    return path_constraints
+
+
+def _check_access(
+    entry: FunctionSource,
+    operation: object,
+    capacities: dict[str, str],
+    signed: set[str],
+) -> AccessCheck:
+    kind = getattr(operation, "kind", "")
+    buffer_text = _strip_outer_casts(getattr(operation, "buffer", ""))
+    extent_text = normalize_expression(getattr(operation, "extent", ""))
+    line = int(getattr(operation, "line", 0))
+
+    if not extent_text or extent_text == "UNBOUNDED":
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            "access extent is not represented as a bounded integer expression",
+            tuple(),
+            tuple(),
+            {},
+        )
+
+    encoder = ExpressionEncoder()
+    solver = Solver()
+    path_constraints = _add_program_constraints(solver, encoder, entry, line)
+    conditions: list[VerificationCondition] = []
+
+    try:
+        extent = encoder.encode(extent_text)
+    except Exception:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            f"cannot encode access extent {extent_text}",
+            tuple(),
+            path_constraints,
+            {},
+        )
+
+    # Non-negativity is a standard precondition for signed access extents.
+    extent_tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", extent_text))
+    if extent_tokens & signed:
+        condition_text = f"{extent_text} >= 0"
+        condition = extent >= 0
+        conditions.append(
+            VerificationCondition(kind, buffer_text, extent_text, condition_text, line)
+        )
+        check = Solver()
+        check.add(*solver.assertions())
+        check.add(Not(condition))
+        if check.check() == sat:
+            return AccessCheck(
+                kind,
+                buffer_text,
+                extent_text,
+                line,
+                "POTENTIAL_VIOLATION",
+                f"access extent may be negative: {condition_text}",
+                tuple(conditions),
+                path_constraints,
+                encoder.model_dict(check.model()),
+            )
+
+    capacity = _capacity_for_buffer(buffer_text, capacities)
+    if capacity is None:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            f"capacity/valid extent is unknown for {buffer_text}",
+            tuple(conditions),
+            path_constraints,
+            {},
+        )
+
+    capacity_text, offset_text = capacity
+    try:
+        capacity_expr = encoder.encode(capacity_text)
+        offset_expr = encoder.encode(offset_text)
+    except Exception:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            f"cannot encode capacity relation for {buffer_text}",
+            tuple(conditions),
+            path_constraints,
+            {},
+        )
+
+    condition_text = (
+        f"{offset_text} + {extent_text} <= {capacity_text}"
+        if normalize_expression(offset_text) != "0"
+        else f"{extent_text} <= {capacity_text}"
+    )
+    condition = offset_expr + extent <= capacity_expr
+    conditions.append(
+        VerificationCondition(kind, buffer_text, extent_text, condition_text, line)
+    )
+
+    check = Solver()
+    check.add(*solver.assertions())
+    check.add(Not(condition))
+    result = check.check()
+    if result == sat:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "POTENTIAL_VIOLATION",
+            f"bounds condition may fail: {condition_text}",
+            tuple(conditions),
+            path_constraints,
+            encoder.model_dict(check.model()),
+        )
+    if result == unsat:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "SAFE",
+            "bounds condition is implied by the available program constraints",
+            tuple(conditions),
+            path_constraints,
+            {},
+        )
+    return AccessCheck(
+        kind,
+        buffer_text,
+        extent_text,
+        line,
+        "UNKNOWN",
+        "solver returned unknown",
+        tuple(conditions),
+        path_constraints,
+        {},
+    )
+
+
 def reason_memory_safety(
     entry: FunctionSource,
     operations: Iterable[object],
 ) -> ConstraintResult:
     operations = list(operations)
-    encoder = ExpressionEncoder()
-    capacities = _local_array_capacities(entry)
-    capacities.update(_parameter_capacities(entry))
-
-    # Bind allocation results to their allocation extents when the call result is known.
-    for operation in operations:
-        if getattr(operation, "kind", "") != "ALLOC":
-            continue
-        buffer = normalize_expression(getattr(operation, "buffer", ""))
-        extent = normalize_expression(getattr(operation, "extent", ""))
-        if buffer and buffer != "return":
-            capacities[buffer] = extent
-
-    conditions: list[VerificationCondition] = []
-    potential_models: list[tuple[str, dict[str, int]]] = []
-    unknown_reasons: list[str] = []
+    capacities = _collect_capacity_relations(entry, operations)
     signed = _signed_names(entry)
 
-    for operation in operations:
-        kind = getattr(operation, "kind", "")
-        if kind not in {"READ", "WRITE"}:
-            continue
-        extent_text = normalize_expression(getattr(operation, "extent", ""))
-        buffer_text = normalize_expression(getattr(operation, "buffer", ""))
-        line = int(getattr(operation, "line", 0))
-        if not extent_text or extent_text == "UNBOUNDED":
-            continue
+    accesses = tuple(
+        _check_access(entry, operation, capacities, signed)
+        for operation in operations
+        if getattr(operation, "kind", "") in {"READ", "WRITE"}
+        and getattr(operation, "buffer", "") not in {"", "NULL", "0", "nullptr"}
+    )
 
-        path_constraints = _continuation_constraints(entry, line)
-        solver = Solver()
-        for relation in path_constraints:
-            try:
-                solver.add(encoder.comparison(relation))
-            except Exception:
-                continue
-
-        try:
-            extent = encoder.encode(extent_text)
-        except Exception:
-            unknown_reasons.append(
-                f"cannot encode access extent {extent_text} at line {line}"
-            )
-            continue
-
-        extent_tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", extent_text))
-        if extent_tokens & signed:
-            vc_text = f"{extent_text} >= 0"
-            vc = extent >= 0
-            conditions.append(
-                VerificationCondition(kind, buffer_text, extent_text, vc_text, line)
-            )
-            check = Solver()
-            check.add(*solver.assertions())
-            check.add(Not(vc))
-            if check.check() == sat:
-                potential_models.append(
-                    (
-                        f"{kind} length may be negative: {vc_text}",
-                        encoder.model_dict(check.model()),
-                    )
-                )
-
-        capacity = _capacity_for_buffer(buffer_text, capacities)
-        if capacity is None:
-            unknown_reasons.append(
-                f"capacity/valid extent is unknown for {buffer_text} at line {line}"
-            )
-            continue
-
-        capacity_text, offset_text = capacity
-        try:
-            capacity_expr = encoder.encode(capacity_text)
-            offset_expr = encoder.encode(offset_text)
-        except Exception:
-            unknown_reasons.append(
-                f"cannot encode capacity relation for {buffer_text} at line {line}"
-            )
-            continue
-
-        vc_text = (
-            f"{offset_text} + {extent_text} <= {capacity_text}"
-            if normalize_expression(offset_text) != "0"
-            else f"{extent_text} <= {capacity_text}"
-        )
-        vc = offset_expr + extent <= capacity_expr
-        conditions.append(
-            VerificationCondition(kind, buffer_text, extent_text, vc_text, line)
-        )
-
-        check = Solver()
-        check.add(*solver.assertions())
-        check.add(Not(vc))
-        result = check.check()
-        if result == sat:
-            potential_models.append(
-                (
-                    f"bounds check may fail: {vc_text}",
-                    encoder.model_dict(check.model()),
-                )
-            )
-
-    if potential_models:
-        reason, model = potential_models[0]
+    violations = [
+        item for item in accesses if item.status == "POTENTIAL_VIOLATION"
+    ]
+    if violations:
+        first = violations[0]
         return ConstraintResult(
-            "POTENTIAL_VIOLATION", reason, tuple(conditions), model
+            "POTENTIAL_VIOLATION",
+            (
+                f"{len(violations)} memory access(es) have feasible counterexamples; "
+                f"first at line {first.line}: {first.reason}"
+            ),
+            accesses,
         )
-    if conditions and not unknown_reasons:
-        return ConstraintResult(
-            "SAFE",
-            "all generated bounds conditions are implied by the available constraints",
-            tuple(conditions),
-            {},
-        )
-    if conditions:
+
+    unknowns = [item for item in accesses if item.status == "UNKNOWN"]
+    if unknowns:
         return ConstraintResult(
             "UNKNOWN",
-            "; ".join(dict.fromkeys(unknown_reasons)),
-            tuple(conditions),
-            {},
+            (
+                f"{len(unknowns)} memory access(es) remain unresolved; "
+                f"first at line {unknowns[0].line}: {unknowns[0].reason}"
+            ),
+            accesses,
         )
+
+    if accesses:
+        return ConstraintResult(
+            "SAFE",
+            "all analyzed memory accesses satisfy their generated bounds conditions",
+            accesses,
+        )
+
     return ConstraintResult(
         "UNKNOWN",
-        "; ".join(dict.fromkeys(unknown_reasons))
-        or "no supported bounds condition could be generated",
+        "no supported memory access was available for bounds analysis",
         tuple(),
-        {},
     )
