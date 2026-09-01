@@ -2,13 +2,11 @@ import unittest
 
 from semantic_demo.analyzer import Operation, analyze
 from semantic_demo.z3_reasoner import reason_memory_safety
-from semantic_demo.joern import JoernCall, JoernFacts
 from semantic_demo.semantics import (
     Candidate,
     Validation,
     _family_role_indices,
     _response_content,
-    _validate_by_composition,
     validate_summary,
 )
 from semantic_demo.source import FunctionSource, parse_functions
@@ -143,55 +141,6 @@ class SemanticValidationTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "finish_reason='length'"):
             _response_content(result)
-
-
-class CompositionalValidationTests(unittest.TestCase):
-    def test_parent_write_summary_composes_from_validated_callee(self):
-        function = parse_functions(
-            "wrapper.c",
-            """
-            void copy_outer(char *dst, const char *src, unsigned long len)
-            {
-                copy_inner(dst, src, len);
-            }
-            """,
-        )[0]
-        candidate = Candidate("sample", function, (10,))
-        call = JoernCall(
-            line=function.start_line + 2,
-            name="copy_inner",
-            arguments={0: "dst", 1: "src", 2: "len"},
-        )
-        facts = JoernFacts(
-            parameters={
-                0: ("dst", "char *"),
-                1: ("src", "const char *"),
-                2: ("len", "unsigned long"),
-            },
-            calls={(call.line, call.name): call},
-            flows={
-                (0, call.line, call.name, 0),
-                (1, call.line, call.name, 1),
-                (2, call.line, call.name, 2),
-            },
-        )
-
-        class FakeValidator:
-            def facts(self, _candidate):
-                return facts
-
-        passed, reason = _validate_by_composition(
-            candidate,
-            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
-            FakeValidator(),
-            {
-                "copy_inner": [
-                    {"kind": "WRITE", "buffer": "arg0", "length": "arg2"}
-                ]
-            },
-        )
-        self.assertTrue(passed)
-        self.assertIn("composition verified write", reason)
 
 
 class Z3ReasonerTests(unittest.TestCase):

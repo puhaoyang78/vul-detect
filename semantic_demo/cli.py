@@ -264,66 +264,38 @@ def detect(
             entry,
             tuple(str(item) for item in sample.get("scan_paths", [])),
         )
-        summary_entries: list[tuple[object, dict[str, str]]] = []
-        for candidate in candidates:
-            key = (sample_key, candidate.function.path, candidate.function.name)
-            for summary in replay.get(key, []):
-                summary_entries.append((candidate, summary))
-
-        summary_count = len(summary_entries)
+        validations: list[Validation] = []
+        summary_count = sum(
+            len(
+                replay.get(
+                    (sample_key, candidate.function.path, candidate.function.name), []
+                )
+            )
+            for candidate in candidates
+        )
         print(
             f"validate_sample={sample_index}/{len(samples)} sample={sample_key} "
             f"candidates={len(candidates)} summaries={summary_count}",
             flush=True,
         )
-
-        # Fixed-point validation: primitive-backed summaries seed the process;
-        # wrapper summaries may then be validated from already accepted callees.
-        accepted: dict[str, list[dict[str, str]]] = {}
-        pending = list(range(len(summary_entries)))
-        final: dict[int, Validation] = {}
-
-        while pending:
-            progress = False
-            next_pending: list[int] = []
-            for index in pending:
-                candidate, summary = summary_entries[index]
+        for candidate in candidates:
+            key = (sample_key, candidate.function.path, candidate.function.name)
+            summaries = replay.get(key, [])
+            if summaries:
+                print(
+                    f"validate_candidate={candidate.function.name} "
+                    f"summaries={len(summaries)}",
+                    flush=True,
+                )
+            for summary in summaries:
                 try:
-                    validation = validate_summary(
-                        candidate,
-                        summary,
-                        joern=joern,
-                        callee_summaries=accepted,
-                    )
+                    validation = validate_summary(candidate, summary, joern=joern)
                 except JoernError as error:
                     raise JoernError(
                         f"{sample_key}:{candidate.function.name}: {error}"
                     ) from error
-                final[index] = validation
-                if validation.passed:
-                    bucket = accepted.setdefault(validation.function, [])
-                    if validation.summary not in bucket:
-                        bucket.append(validation.summary)
-                    progress = True
-                else:
-                    next_pending.append(index)
-            if not progress:
-                break
-            pending = next_pending
-
-        # Re-evaluate unresolved summaries once with the complete accepted set so
-        # rejection reasons reflect the final fixed point.
-        for index in pending:
-            candidate, summary = summary_entries[index]
-            final[index] = validate_summary(
-                candidate,
-                summary,
-                joern=joern,
-                callee_summaries=accepted,
-            )
-
-        validations = [final[index] for index in range(len(summary_entries))]
-        semantic_records.extend(item.as_json() for item in validations)
+                validations.append(validation)
+                semantic_records.append(validation.as_json())
 
         baseline = analyze(entry, proposed=False)
         proposed = analyze(entry, validations=validations, proposed=True)
@@ -390,23 +362,10 @@ def evaluate(
             and truth["ground_truth"] == "VULNERABLE"
         )
         constraint_result = proposed.get("constraint_result") or {}
-        access_checks = constraint_result.get("accesses") or []
+        conditions = constraint_result.get("conditions") or []
         condition_text = " | ".join(
-            str(condition.get("condition", ""))
-            for access in access_checks
-            for condition in (access.get("conditions") or [])
-            if condition.get("condition")
+            str(item.get("condition", "")) for item in conditions if item.get("condition")
         )
-        z3_models = [
-            {
-                "line": access.get("line"),
-                "buffer": access.get("buffer"),
-                "status": access.get("status"),
-                "model": access.get("model") or {},
-            }
-            for access in access_checks
-            if access.get("model")
-        ]
         rows.append(
             {
                 "CVE": truth["cve"],
@@ -428,7 +387,7 @@ def evaluate(
                 "z3_status": constraint_result.get("status", ""),
                 "verification_conditions": condition_text,
                 "z3_model": json.dumps(
-                    z3_models,
+                    constraint_result.get("model", {}),
                     ensure_ascii=False,
                     sort_keys=True,
                 ),

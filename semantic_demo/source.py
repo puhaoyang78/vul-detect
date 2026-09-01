@@ -35,18 +35,6 @@ class FunctionSource:
         tree = _PARSER.parse(self.text.encode())
         return _calls(tree.root_node, self.text.encode(), self.start_line)
 
-    def value_relations_before(self, line: int) -> list[tuple[str, str]]:
-        source = self.text.encode()
-        tree = _PARSER.parse(source)
-        return _value_relations_before(tree.root_node, source, self.start_line, line)
-
-    def continuation_constraints_before(self, line: int) -> list[str]:
-        source = self.text.encode()
-        tree = _PARSER.parse(source)
-        return _continuation_constraints_before(
-            tree.root_node, source, self.start_line, line
-        )
-
 
 class GitRepository:
     def __init__(self, git_dir: str, revision: str):
@@ -275,90 +263,6 @@ def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
             )
         )
     return calls
-
-
-def _absolute_line(node: Node, line_offset: int) -> int:
-    return line_offset + node.start_point.row
-
-
-def _contains_exit(node: Node | None) -> bool:
-    if node is None:
-        return False
-    return any(
-        item.type in {"return_statement", "goto_statement", "break_statement"}
-        for item in _walk(node)
-    )
-
-
-def _invert_comparison(expression: str) -> str | None:
-    text = normalize_expression(expression)
-    match = re.match(r"^(.*?)(<=|>=|==|!=|<|>)(.*)$", text)
-    if not match:
-        return None
-    left, operator, right = match.groups()
-    inverse = {
-        ">": "<=",
-        ">=": "<",
-        "<": ">=",
-        "<=": ">",
-        "==": "!=",
-        "!=": "==",
-    }[operator]
-    return f"{left}{inverse}{right}"
-
-
-def _continuation_constraints_before(
-    root: Node,
-    source: bytes,
-    line_offset: int,
-    access_line: int,
-) -> list[str]:
-    constraints: list[str] = []
-    for node in _walk(root):
-        if node.type != "if_statement":
-            continue
-        if _absolute_line(node, line_offset) >= access_line:
-            continue
-        condition = node.child_by_field_name("condition")
-        consequence = node.child_by_field_name("consequence")
-        alternative = node.child_by_field_name("alternative")
-        if condition is None:
-            continue
-        condition_text = _text(condition, source)
-        if _contains_exit(consequence):
-            inverted = _invert_comparison(condition_text)
-            if inverted:
-                constraints.append(inverted)
-        elif _contains_exit(alternative):
-            compact = normalize_expression(condition_text)
-            if re.match(r"^.*?(<=|>=|==|!=|<|>).*?$", compact):
-                constraints.append(compact)
-    return constraints
-
-
-def _value_relations_before(
-    root: Node,
-    source: bytes,
-    line_offset: int,
-    access_line: int,
-) -> list[tuple[str, str]]:
-    relations: list[tuple[str, str]] = []
-    for node in _walk(root):
-        if _absolute_line(node, line_offset) >= access_line:
-            continue
-        if node.type == "assignment_expression":
-            left = node.child_by_field_name("left")
-            right = node.child_by_field_name("right")
-            if left is not None and right is not None:
-                relations.append((_text(left, source), _text(right, source)))
-        elif node.type == "init_declarator":
-            declarator = node.child_by_field_name("declarator")
-            value = node.child_by_field_name("value")
-            if declarator is not None and value is not None:
-                name = _identifier(declarator, source)
-                if name:
-                    relations.append((name, _text(value, source)))
-    return relations
 
 
 def normalize_expression(expression: str) -> str:

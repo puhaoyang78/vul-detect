@@ -1,48 +1,15 @@
 # C/C++ 跨过程内存安全语义 Demo
 
-该 Demo 面向函数级 C/C++ 内存安全检测，目标不是给大模型更多原始代码，而是恢复并验证
-目标函数中缺失的跨过程安全语义，再将这些语义转化为可求解的程序约束。
+该 Demo 用结构化、可验证的安全语义补充目标函数中缺失的跨过程信息。
+当前语义包括 ALLOC、READ、WRITE、GUARD 和 VALUE。
 
-当前安全语义包括 ALLOC、READ、WRITE、GUARD 和 VALUE。LLM 只负责把项目自定义函数
-归一化成固定语义；它不直接判断漏洞。Joern 用于验证参数角色和数据流；Z3 用于求解
-Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
+LLM 只读取单个候选函数并输出固定 JSON，不直接判断漏洞。Joern 负责验证参数到
+分配、读写操作的数据流、真实比较条件和返回值关系。验证后的语义再传播回入口函数。
+对于跨过程内存访问，系统生成标准 Verification Condition（VC）和 Path Constraint，
+并使用 Z3 判断 bounds constraint 是否可被证明、可能违反或因信息不足而未知。
 
-检测输入为 data/detection_samples.jsonl，其中不含 CVE、fixing commit、补丁、漏洞描述
-或人工结论。data/oracle.jsonl 只在检测结果落盘之后用于评估。
-
-## 当前分析流程
-
-1. **Memory-semantic call-graph closure**
-   - 从目标函数出发构建项目内可达调用图。
-   - 直接包含已知内存行为的函数作为 semantic seeds。
-   - 从 seeds 沿调用图反向传播，只保留位于“目标函数 -> 内存行为”路径上的 bridge functions。
-   - 不采用固定 3-hop/5-hop，也不把所有可达函数交给 LLM。
-
-2. **Semantic normalization**
-   - LLM 每次只读取一个候选函数。
-   - 输出固定 ALLOC / READ / WRITE / GUARD / VALUE JSON。
-   - READ/WRITE 明确区分 source、destination 和 length 参数角色。
-
-3. **Compositional static validation**
-   - 直接接触 malloc/memcpy/read/recv/write/send 等标准 primitive 的摘要由 Joern 验证。
-   - 已验证摘要作为下一层函数的语义模型。
-   - 父函数摘要可由“已验证子摘要 + caller-to-callee 参数映射”组合验证。
-   - 采用 fixed-point 迭代直到没有新的摘要能够通过验证，因此支持 wrapper -> wrapper -> primitive。
-
-4. **Program-constraint extraction**
-   - Tree-sitter AST 提取赋值/初始化得到 Value Constraint。
-   - AST 提取 early-exit 分支在后续访问点成立的 Path Constraint。
-   - 分配返回值和局部数组提供显式 buffer capacity。
-   - 若缺少显式 capacity，但支配访问的边界条件约束了与访问长度存在数据依赖的值，则推导
-     guard-derived access bound；该过程基于数据依赖，不依赖 buflen/size/capacity 等变量名。
-
-5. **Per-access bounds verification**
-   - 每一个 READ/WRITE 单独生成 Verification Condition。
-   - 典型条件包括 extent >= 0、extent <= capacity、offset + extent <= capacity。
-   - Z3 为每个 memory access 单独返回 SAFE / POTENTIAL_VIOLATION / UNKNOWN。
-   - POTENTIAL_VIOLATION 表示当前已知 Path/Value Constraints 下存在违反 VC 的满足解；
-     UNKNOWN 表示缺少 capacity、valid extent 或无法可靠编码的关系，不强行判漏洞。
-   - 函数级结果最后再由各 memory-access 结果聚合，因此无关访问的 UNKNOWN 不会覆盖真正的违规访问。
+检测输入为 data/detection_samples.jsonl。其中不含 CVE、fixing commit、补丁、
+漏洞描述或人工结论。data/oracle.jsonl 只在检测结果落盘后读取。
 
 ## 环境
 
@@ -50,7 +17,7 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 
     python -m pip install -r requirements.txt
 
-默认使用：
+默认使用以下本地资源：
 
     Joern: /home/phy/joern
     JDK: /home/phy/jdk21
@@ -63,41 +30,53 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 
     python -m unittest discover -s tests -v
 
-重新生成 semantic normalization。候选发现机制已经改变，因此旧的
-data/normalizer_outputs.jsonl 不应直接复用：
+重新生成 LLM normalization。该命令默认自动启动和停止本地 Qwen，不读取
+DEEPSEEK 环境变量，源码不会发送到外部：
 
     python -m semantic_demo.cli normalize --normalizer llm
 
-然后重新执行 Joern fixed-point validation 和 Z3 bounds verification：
+然后运行 Joern 验证和检测：
 
     python -m semantic_demo.cli run --joern-dir /home/phy/joern
 
-只有需要外部 OpenAI-compatible API 时才显式指定：
+只有明确需要外部 OpenAI-compatible API 时，才配置 DEEPSEEK_API_KEY、
+DEEPSEEK_BASE_URL 和 DEEPSEEK_MODEL，并显式指定 api：
 
     python -m semantic_demo.cli normalize --normalizer llm --llm-backend api
 
+如需指定其他本地模型或 llama-server：
+
+    python -m semantic_demo.cli normalize --normalizer llm \
+      --local-model /path/to/model.gguf \
+      --llama-server /path/to/llama-server
+
+临时绕过 Joern 的调试命令：
+
+    python -m semantic_demo.cli run --no-joern
+
 ## 实现
 
-- semantic_demo/source.py
-  Tree-sitter 函数/调用解析、调用返回值绑定、AST Path/Value Constraint 提取。
-- semantic_demo/semantics.py
-  memory-semantic call-graph closure、LLM normalization、Joern role-sensitive validation、
-  compositional fixed-point summary validation。
-- semantic_demo/joern.py / joern_extract.sc
-  CPG、参数到调用角色的数据流、比较和返回关系。
-- semantic_demo/analyzer.py
-  标准内存操作与验证后的跨过程语义统一传播到目标函数。
-- semantic_demo/z3_reasoner.py
-  per-memory-access Verification Condition 生成与 Z3 求解。
-- semantic_demo/cli.py
-  完整运行流程、结果落盘以及与 oracle 的隔离评估。
+- semantic_demo/source.py 读取指定 Git revision，并用 tree-sitter 提取函数、参数和调用。
+- semantic_demo/semantics.py 定义语义、筛选候选、调用 LLM，并执行结构化静态校验。
+- semantic_demo/joern.py 调用本地 Joern，并解析 CPG 和数据流事实。
+- semantic_demo/joern_extract.sc 提取参数、调用参数、数据流、比较和返回值事实。
+- semantic_demo/analyzer.py 把验证后的跨过程语义传播回入口函数，并调用约束推理。
+- semantic_demo/z3_reasoner.py 生成 Verification Condition、Path Constraint 和 bounds constraint，并用 Z3 求解。
+- semantic_demo/cli.py 管理本地 Qwen、执行 normalization，并隔离检测与 oracle。
 
 ## 输出
 
-- results/validated_semantics.jsonl：每条摘要的验证结果。
-- results/detections.jsonl：逐样本操作、逐访问 Z3 结果和最终 verdict。
-- results/results.csv：包含 Z3 status、Verification Conditions 和 counterexample model。
-- results/summary.md：整体结果摘要。
+- results/validated_semantics.jsonl 保存每条摘要的验证状态和拒绝原因。
+- results/detections.jsonl 保存不读取 oracle 得到的 baseline 和 proposed 结果。
+- results/results.csv 保存与人工核验机制合并后的完整结果表。
+- results/summary.md 保存汇总结果。
 
-results/ 目录中的现有数字来自本次方法重构之前的运行，仅作为历史对照。由于候选发现、
-组合验证和 Z3 聚合方式均已改变，必须重新运行 normalization 和 run 后再评价新结果。
+results/ 目录中的现有结果均早于 Z3 Verification Condition 推理版本，仅作为历史对照。
+当前 Proposed 已改为：Verified Semantic IR -> Verification Condition / Path Constraint
+-> Z3 bounds reasoning。重新安装 requirements 后，必须重新运行 normalization 与 run
+才能评价这一版结果。
+
+Z3 输出三种状态：
+- SAFE：当前约束可以证明生成的 bounds condition。
+- POTENTIAL_VIOLATION：Z3 找到可违反 bounds condition 的满足解。
+- UNKNOWN：缺少 capacity、valid extent 或无法可靠编码的关系，不强行判漏洞。
