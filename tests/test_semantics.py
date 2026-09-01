@@ -2,7 +2,7 @@ import unittest
 
 from semantic_demo.analyzer import Operation, analyze
 from semantic_demo.z3_reasoner import reason_memory_safety
-from semantic_demo.joern import JoernCall, JoernFacts
+from semantic_demo.joern import JoernCall, JoernError, JoernFacts, JoernMethodNotFound
 from semantic_demo.semantics import (
     Candidate,
     Validation,
@@ -116,6 +116,31 @@ class SemanticValidationTests(unittest.TestCase):
         self.assertEqual(((1,), (2,)), _family_role_indices("socket_send", "READ", 3))
         self.assertEqual(((), ()), _family_role_indices("socket_recv", "READ", 3))
         self.assertEqual(((), ()), _family_role_indices("socket_send", "WRITE", 3))
+
+    def test_missing_joern_method_rejects_only_the_summary(self):
+        class MissingMethodValidator:
+            def facts(self, _candidate):
+                raise JoernMethodNotFound("method_not_found:copy_wrap")
+
+        result = validate_summary(
+            self.candidate,
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            joern=MissingMethodValidator(),
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("method_not_found:copy_wrap", result.reason)
+
+    def test_joern_infrastructure_error_still_propagates(self):
+        class BrokenValidator:
+            def facts(self, _candidate):
+                raise JoernError("launcher failed")
+
+        with self.assertRaisesRegex(JoernError, "launcher failed"):
+            validate_summary(
+                self.candidate,
+                {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+                joern=BrokenValidator(),
+            )
 
     def test_response_content_accepts_final_answer(self):
         result = {

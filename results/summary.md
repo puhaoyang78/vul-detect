@@ -4,7 +4,7 @@
 - Baseline 检出：3/10
 - Proposed 检出：6/10
 - Proposed 纠正 Baseline 漏检：3 个
-- 静态验证拒绝的语义摘要：33 条
+- 静态验证拒绝的语义摘要：175 条
 - Z3 状态：POTENTIAL_VIOLATION=3, UNKNOWN=4
 
 结论：出现明确但有限的正向信号。自动恢复并验证的项目语义使检出数从 3 增加到 6，纠正了 3 个漏检。
@@ -12,10 +12,10 @@
 
 ## 主要失败原因
 
-- 1 个：Z3 could not decide: capacity/valid extent is unknown for c->in_s->data at line 98; capacity/valid extent is unknown for c->in_s->data at line 123
-- 1 个：Z3 could not decide: capacity/valid extent is unknown for (unsignedchar*)xcfdata at line 356
-- 1 个：Z3 could not decide: capacity/valid extent is unknown for msg->stun_hdr.tran_id at line 92
-- 1 个：Z3 could not decide: no supported bounds condition could be generated
+- 1 个：Z3 could not decide: 2 memory access(es) remain unresolved; first at line 98: capacity/valid extent is unknown for c->in_s->data
+- 1 个：Z3 could not decide: 1 memory access(es) remain unresolved; first at line 356: capacity/valid extent is unknown for xcfdata
+- 1 个：Z3 could not decide: 2 memory access(es) remain unresolved; first at line 92: capacity/valid extent is unknown for msg->stun_hdr.tran_id
+- 1 个：Z3 could not decide: no supported memory access was available for bounds analysis
 - BSON 样本的模型摘要未严格归一化或未通过同一写入点的数据流验证。
 - ImageMagick 样本需要关联分配大小与后续循环读取范围，新增 READ/VALUE 后需重新评估。
 - Sofia SIP 样本依赖剩余输入长度与越界读取关系，新增 READ 语义后需重新评估。

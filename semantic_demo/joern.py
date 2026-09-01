@@ -12,6 +12,10 @@ class JoernError(RuntimeError):
     pass
 
 
+class JoernMethodNotFound(JoernError):
+    """The candidate fragment parsed, but Joern produced no matching method."""
+
+
 @dataclass(frozen=True)
 class JoernCall:
     line: int
@@ -56,6 +60,7 @@ class JoernValidator:
         self.timeout = timeout or int(os.environ.get("JOERN_TIMEOUT", "180"))
         self._cache: dict[str, JoernFacts] = {}
         self._errors: dict[str, str] = {}
+        self._missing_methods: dict[str, str] = {}
 
     def ensure_available(self) -> None:
         if not self.joern.is_file():
@@ -80,6 +85,8 @@ class JoernValidator:
         key = self._key(candidate.function)
         if key in self._cache:
             return self._cache[key]
+        if key in self._missing_methods:
+            raise JoernMethodNotFound(self._missing_methods[key])
         if key in self._errors:
             raise JoernError(self._errors[key])
 
@@ -131,7 +138,11 @@ class JoernValidator:
                 self._errors[key] = message
                 raise JoernError(message)
 
-            facts = self._parse(output_path.read_text())
+            try:
+                facts = self._parse(output_path.read_text())
+            except JoernMethodNotFound as error:
+                self._missing_methods[key] = str(error)
+                raise
             self._cache[key] = facts
             return facts
 
@@ -145,7 +156,10 @@ class JoernValidator:
             parts = raw_line.split("\t")
             tag = parts[0]
             if tag == "ERROR":
-                raise JoernError(parts[1] if len(parts) > 1 else "unknown Joern error")
+                message = parts[1] if len(parts) > 1 else "unknown Joern error"
+                if message.startswith("method_not_found:"):
+                    raise JoernMethodNotFound(message)
+                raise JoernError(message)
             if tag == "PARAM" and len(parts) >= 4:
                 facts.parameters[int(parts[1])] = (parts[2], parts[3])
             elif tag == "ARG" and len(parts) >= 6:

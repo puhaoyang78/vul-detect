@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .joern import JoernValidator
+from .joern import JoernMethodNotFound, JoernValidator
 from .source import FunctionSource, GitRepository, normalize_expression
 
 
@@ -574,16 +574,20 @@ def validate_summary(
         )
 
     if joern is not None:
-        passed, reason = _validate_with_joern(candidate, clean_summary, joern)
-        if not passed and callee_summaries:
-            composed, composed_reason = _validate_by_composition(
-                candidate,
-                clean_summary,
-                joern,
-                callee_summaries,
-            )
-            if composed:
-                passed, reason = composed, composed_reason
+        try:
+            passed, reason = _validate_with_joern(candidate, clean_summary, joern)
+            if not passed and callee_summaries:
+                composed, composed_reason = _validate_by_composition(
+                    candidate,
+                    clean_summary,
+                    joern,
+                    callee_summaries,
+                )
+                if composed:
+                    passed, reason = composed, composed_reason
+        except JoernMethodNotFound as error:
+            passed = False
+            reason = f"Joern candidate method unavailable: {error}"
         return Validation(
             candidate.sample_key,
             function.name,
