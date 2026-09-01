@@ -264,49 +264,64 @@ def _identifier_terms(expression: str) -> set[str]:
     )
 
 
-def _dependency_component(
+def _dependency_distances(
     entry: FunctionSource, line: int, expression: str
-) -> set[str]:
+) -> dict[str, int]:
+    """Shortest undirected def-use distance from the access extent to related values."""
     graph: dict[str, set[str]] = {}
     for left, right in entry.value_relations_before(line):
         left_terms = _identifier_terms(left)
         right_terms = _identifier_terms(right)
-        all_terms = left_terms | right_terms
-        for term in all_terms:
-            graph.setdefault(term, set()).update(all_terms - {term})
+        for lhs in left_terms:
+            graph.setdefault(lhs, set()).update(right_terms)
+        for rhs in right_terms:
+            graph.setdefault(rhs, set()).update(left_terms)
 
-    seeds = _identifier_terms(expression)
-    seen = set(seeds)
-    queue = list(seeds)
+    distances = {term: 0 for term in _identifier_terms(expression)}
+    queue = list(distances)
     while queue:
-        current = queue.pop()
+        current = queue.pop(0)
+        distance = distances[current]
         for neighbor in graph.get(current, ()):
-            if neighbor not in seen:
-                seen.add(neighbor)
+            if neighbor not in distances:
+                distances[neighbor] = distance + 1
                 queue.append(neighbor)
-    return seen
+    return distances
 
 
-def _guard_derived_upper_bound(
+def _guard_coverage_condition(
     entry: FunctionSource,
     line: int,
     extent_text: str,
     path_constraints: Iterable[str],
 ) -> str | None:
-    """Find an upper bound established for a value data-dependent on the extent."""
-    related = _dependency_component(entry, line, extent_text)
-    related.update(_identifier_terms(extent_text))
+    """Construct a VC that checks whether the nearest related upper-bound guard
+    also bounds the actual access extent.
+
+    The guard remains a path constraint; its RHS is never treated as object
+    capacity. Selection is based on shortest def-use distance from the guarded
+    expression to the actual access extent.
+    """
+    distances = _dependency_distances(entry, line, extent_text)
+    candidates: list[tuple[int, str]] = []
 
     for relation in path_constraints:
-        match = re.match(
-            r"^(.*?)(<=|<)(.*)$", normalize_expression(relation)
-        )
+        match = re.match(r"^(.*?)(<=|<)(.*)$", normalize_expression(relation))
         if not match:
             continue
-        left, _, right = match.groups()
-        if _identifier_terms(left) & related:
-            return right
-    return None
+        left, operator, right = match.groups()
+        left_terms = _identifier_terms(left)
+        reachable = [distances[term] for term in left_terms if term in distances]
+        if not reachable:
+            continue
+        # Prefer the most directly data-related guard and preserve strictness.
+        rhs = right if operator == "<=" else f"({right})-1"
+        candidates.append((min(reachable), f"{extent_text}<={rhs}"))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
 
 
 def _add_program_constraints(
@@ -399,23 +414,63 @@ def _check_access(
 
     capacity = _capacity_for_buffer(buffer_text, capacities)
     if capacity is None:
-        guard_bound = _guard_derived_upper_bound(
+        guard_vc_text = _guard_coverage_condition(
             entry, line, extent_text, path_constraints
         )
-        if guard_bound is not None:
-            capacity = (guard_bound, "0")
-        else:
-            return AccessCheck(
-                kind,
-                buffer_text,
-                extent_text,
-                line,
-                "UNKNOWN",
-                f"capacity/valid extent is unknown for {buffer_text}",
-                tuple(conditions),
-                path_constraints,
-                {},
-            )
+        if guard_vc_text is not None:
+            try:
+                guard_vc = encoder.comparison(guard_vc_text)
+            except Exception:
+                guard_vc = None
+            if guard_vc is not None:
+                conditions.append(
+                    VerificationCondition(
+                        kind,
+                        buffer_text,
+                        extent_text,
+                        guard_vc_text,
+                        line,
+                    )
+                )
+                check = Solver()
+                check.add(*solver.assertions())
+                check.add(Not(guard_vc))
+                result = check.check()
+                if result == sat:
+                    return AccessCheck(
+                        kind,
+                        buffer_text,
+                        extent_text,
+                        line,
+                        "POTENTIAL_VIOLATION",
+                        f"guard does not cover actual access extent: {guard_vc_text}",
+                        tuple(conditions),
+                        path_constraints,
+                        encoder.model_dict(check.model()),
+                    )
+                if result == unsat:
+                    return AccessCheck(
+                        kind,
+                        buffer_text,
+                        extent_text,
+                        line,
+                        "SAFE",
+                        "nearest data-dependent upper-bound guard covers the access extent",
+                        tuple(conditions),
+                        path_constraints,
+                        {},
+                    )
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            f"capacity/valid extent is unknown for {buffer_text}",
+            tuple(conditions),
+            path_constraints,
+            {},
+        )
 
     capacity_text, offset_text = capacity
     try:
