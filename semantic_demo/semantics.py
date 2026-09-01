@@ -76,78 +76,112 @@ class Validation:
         return asdict(self)
 
 
+def _contains_known_memory_primitive(function: FunctionSource) -> bool:
+    return any(
+        call.name in ALLOCATORS
+        or call.name in WRITES
+        or call.name in READS
+        or call.name in UNBOUNDED_WRITES
+        for call in function.calls()
+    )
+
+
+def _call_forwards_parameters(function: FunctionSource, call) -> bool:
+    """Whether a call carries values derived from the current function parameters."""
+    arguments = " ".join(call.arguments)
+    argument_tokens = _identifier_tokens(arguments)
+    for parameter in function.parameters:
+        if _tainted_tokens(function, parameter) & argument_tokens:
+            return True
+    return False
+
+
+def _call_result_is_returned(function: FunctionSource, call_name: str) -> bool:
+    return bool(
+        re.search(
+            rf"\breturn\s+[^;]*\b{re.escape(call_name)}\s*\(",
+            function.text,
+            re.S,
+        )
+    )
+
+
 def discover_candidates(
     sample_key: str,
     repository: GitRepository,
     entry: FunctionSource,
     scopes: Iterable[str],
-    max_functions: int = 64,
+    max_functions: int = 32,
 ) -> list[Candidate]:
-    """Return the memory-semantic closure reachable from the entry function.
+    """Build a selective interprocedural semantic frontier.
 
-    First build a bounded reachable call graph. Functions that directly expose a
-    memory-relevant primitive are semantic seeds. Relevance is then propagated
-    backwards through the call graph so bridge wrappers on paths to those seeds are
-    included without using a fixed hop count or sending unrelated reachable code to
-    the LLM. max_functions is only a resource guard.
+    Direct project calls from the target function form the initial frontier. A
+    frontier function is expanded only when it does not already expose a known
+    memory primitive, and only through child calls that carry values derived from
+    the frontier function's parameters (or whose result is directly returned).
+    This preserves wrapper chains without constructing the whole reachable call
+    graph. max_functions is a resource guard rather than a semantic hop limit.
     """
     scopes = tuple(scopes)
-    entry_key = (entry.path, entry.name)
-    functions: dict[tuple[str, str], FunctionSource] = {entry_key: entry}
-    call_lines: dict[tuple[str, str], list[int]] = {}
-    edges: dict[tuple[str, str], set[tuple[str, str]]] = {}
-    queue: list[FunctionSource] = [entry]
+    discovered: dict[tuple[str, str], Candidate] = {}
+    queue: list[FunctionSource] = []
+    expanded: set[tuple[str, str]] = set()
 
-    while queue and len(functions) < max_functions:
-        caller = queue.pop(0)
-        caller_key = (caller.path, caller.name)
-        edges.setdefault(caller_key, set())
-        grouped: dict[str, list[int]] = {}
-        for call in caller.calls():
-            if call.name in IGNORED_CALLS or call.name == caller.name:
-                continue
-            grouped.setdefault(call.name, []).append(call.line)
-
-        for name, lines in sorted(grouped.items()):
-            callee = repository.find_function(
-                name, preferred_path=caller.path, scopes=scopes
-            )
-            if callee is None:
-                continue
-            callee_key = (callee.path, callee.name)
-            edges[caller_key].add(callee_key)
-            call_lines.setdefault(callee_key, []).extend(lines)
-            if callee_key not in functions and len(functions) < max_functions:
-                functions[callee_key] = callee
-                queue.append(callee)
-
-    relevant = {
-        key
-        for key, function in functions.items()
-        if key != entry_key and _is_memory_candidate(function)
-    }
-
-    changed = True
-    while changed:
-        changed = False
-        for parent, children in edges.items():
-            if parent == entry_key or parent in relevant:
-                continue
-            if children & relevant:
-                relevant.add(parent)
-                changed = True
-
-    candidates = [
-        Candidate(
-            sample_key=sample_key,
-            function=functions[key],
-            call_lines=tuple(sorted(set(call_lines.get(key, ())))),
+    def add_call(caller: FunctionSource, call) -> None:
+        if call.name in IGNORED_CALLS or call.name == caller.name:
+            return
+        callee = repository.find_function(
+            call.name, preferred_path=caller.path, scopes=scopes
         )
-        for key in relevant
-    ]
+        if callee is None:
+            return
+        key = (callee.path, callee.name)
+        existing = discovered.get(key)
+        lines = set(existing.call_lines if existing else ())
+        lines.add(call.line)
+        discovered[key] = Candidate(
+            sample_key=sample_key,
+            function=callee,
+            call_lines=tuple(sorted(lines)),
+        )
+        if key not in expanded and callee not in queue:
+            queue.append(callee)
+
+    # Target-level project calls are the semantic entry points. This avoids
+    # guessing vulnerability relevance from function names.
+    for call in entry.calls():
+        add_call(entry, call)
+        if len(discovered) >= max_functions:
+            break
+
+    while queue and len(discovered) < max_functions:
+        function = queue.pop(0)
+        key = (function.path, function.name)
+        if key in expanded:
+            continue
+        expanded.add(key)
+
+        # Once a function reaches a modeled primitive, its summary can be grounded
+        # locally; expanding unrelated descendants only adds cost and noise.
+        if _contains_known_memory_primitive(function):
+            continue
+
+        for call in function.calls():
+            if call.name in IGNORED_CALLS or call.name == function.name:
+                continue
+            if not (
+                _call_forwards_parameters(function, call)
+                or _call_result_is_returned(function, call.name)
+            ):
+                continue
+            add_call(function, call)
+            if len(discovered) >= max_functions:
+                break
+
+    candidates = list(discovered.values())
     candidates.sort(
         key=lambda item: (
-            0 if _is_memory_candidate(item.function) else 1,
+            0 if _contains_known_memory_primitive(item.function) else 1,
             item.function.name,
             item.function.path,
         )
