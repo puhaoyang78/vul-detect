@@ -81,22 +81,57 @@ def discover_candidates(
     repository: GitRepository,
     entry: FunctionSource,
     scopes: Iterable[str],
+    max_functions: int = 64,
 ) -> list[Candidate]:
-    by_name: dict[str, list[int]] = {}
-    for call in entry.calls():
-        if call.name in IGNORED_CALLS or call.name == entry.name:
-            continue
-        by_name.setdefault(call.name, []).append(call.line)
+    """Build a bounded reachable-function semantic closure.
 
-    candidates: list[Candidate] = []
-    for name, lines in sorted(by_name.items()):
-        function = repository.find_function(name, preferred_path=entry.path, scopes=scopes)
-        if function is None or not _is_memory_candidate(function):
-            continue
-        candidates.append(
-            Candidate(sample_key=sample_key, function=function, call_lines=tuple(lines))
+    Traversal stops at known primitives and repeated functions. The max_functions
+    limit is only a resource guard; it is not a semantic hop limit.
+    """
+    scopes = tuple(scopes)
+    queue: list[tuple[FunctionSource, tuple[int, ...]]] = [(entry, ())]
+    visited: set[tuple[str, str]] = {(entry.path, entry.name)}
+    discovered: dict[tuple[str, str], Candidate] = {}
+    order: list[tuple[str, str]] = []
+
+    while queue and len(visited) < max_functions:
+        caller, _ = queue.pop(0)
+        calls_by_name: dict[str, list[int]] = {}
+        for call in caller.calls():
+            if call.name in IGNORED_CALLS or call.name == caller.name:
+                continue
+            calls_by_name.setdefault(call.name, []).append(call.line)
+
+        for name, lines in sorted(calls_by_name.items()):
+            function = repository.find_function(
+                name, preferred_path=caller.path, scopes=scopes
+            )
+            if function is None:
+                continue
+            key = (function.path, function.name)
+            if key not in visited and len(visited) < max_functions:
+                visited.add(key)
+                queue.append((function, tuple(lines)))
+
+            # Include both direct memory candidates and bridge functions. Bridge
+            # summaries can later be validated compositionally from child summaries.
+            if key not in discovered:
+                discovered[key] = Candidate(
+                    sample_key=sample_key,
+                    function=function,
+                    call_lines=tuple(lines),
+                )
+                order.append(key)
+
+    # Prefer obvious memory candidates first so fixed-point validation can seed
+    # summaries from primitives before validating bridge functions.
+    order.sort(
+        key=lambda key: (
+            0 if _is_memory_candidate(discovered[key].function) else 1,
+            discovered[key].function.name,
         )
-    return candidates
+    )
+    return [discovered[key] for key in order]
 
 
 def _is_memory_candidate(function: FunctionSource) -> bool:
