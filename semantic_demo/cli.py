@@ -195,8 +195,6 @@ def _normalization_cache(path: str | Path) -> dict[tuple[str, str, str, str], di
     cache: dict[tuple[str, str, str, str], dict[str, object]] = {}
     for record in read_jsonl(target):
         fingerprint = str(record.get("source_fingerprint", ""))
-        if not fingerprint:
-            continue
         key = (
             str(record.get("sample_key", "")),
             str(record.get("source_path", "")),
@@ -239,6 +237,18 @@ def normalize_command(args: argparse.Namespace) -> None:
                     fingerprint,
                 )
                 cached = cache.get(cache_key)
+                if cached is None:
+                    # Legacy normalization files predate source fingerprints. The
+                    # vulnerable revision is immutable, so sample/path/function is
+                    # sufficient to reuse those records safely within this dataset.
+                    cached = cache.get(
+                        (
+                            candidate.sample_key,
+                            candidate.function.path,
+                            candidate.function.name,
+                            "",
+                        )
+                    )
                 if (
                     cached is not None
                     and cached.get("normalizer") == args.normalizer
