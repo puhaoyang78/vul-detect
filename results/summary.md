@@ -4,7 +4,7 @@
 - Baseline 检出：3/10
 - Proposed 检出：6/10
 - Proposed 纠正 Baseline 漏检：3 个
-- 静态验证拒绝的语义摘要：175 条
+- 静态验证拒绝的语义摘要：141 条
 - Z3 状态：POTENTIAL_VIOLATION=3, UNKNOWN=4
 
 结论：出现明确但有限的正向信号。自动恢复并验证的项目语义使检出数从 3 增加到 6，纠正了 3 个漏检。
