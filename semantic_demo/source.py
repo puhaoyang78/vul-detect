@@ -23,6 +23,14 @@ class Call:
 
 
 @dataclass(frozen=True)
+class MemoryAccess:
+    kind: str
+    buffer: str
+    extent: str
+    line: int
+
+
+@dataclass(frozen=True)
 class FunctionSource:
     path: str
     name: str
@@ -46,6 +54,11 @@ class FunctionSource:
         return _continuation_constraints_before(
             tree.root_node, source, self.start_line, line
         )
+
+    def direct_memory_accesses(self) -> list[MemoryAccess]:
+        source = self.text.encode()
+        tree = _PARSER.parse(source)
+        return _direct_memory_accesses(tree.root_node, source, self.start_line)
 
 
 class GitRepository:
@@ -277,6 +290,61 @@ def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
             )
         )
     return calls
+
+
+def _is_address_taken(node: Node, source: bytes) -> bool:
+    parent = node.parent
+    if parent is None or parent.type != "pointer_expression":
+        return False
+    text = _text(parent, source).lstrip()
+    return text.startswith("&")
+
+
+def _subscript_write_kind(node: Node, source: bytes) -> tuple[str, ...]:
+    parent = node.parent
+    if parent is None:
+        return ("READ",)
+    if parent.type == "assignment_expression":
+        left = parent.child_by_field_name("left")
+        if left is not None and left.start_byte <= node.start_byte and node.end_byte <= left.end_byte:
+            between = source[left.end_byte : parent.child_by_field_name("right").start_byte].decode(
+                errors="replace"
+            ) if parent.child_by_field_name("right") is not None else "="
+            return ("WRITE", "READ") if between.strip() != "=" else ("WRITE",)
+    if parent.type == "update_expression":
+        return ("READ", "WRITE")
+    return ("READ",)
+
+
+def _direct_memory_accesses(
+    root: Node, source: bytes, line_offset: int
+) -> list[MemoryAccess]:
+    accesses: list[MemoryAccess] = []
+    for node in _walk(root):
+        if node.type != "subscript_expression":
+            continue
+        # For multidimensional expressions, model only the outermost subscript.
+        if node.parent is not None and node.parent.type == "subscript_expression":
+            continue
+        if _is_address_taken(node, source):
+            continue
+        argument = node.child_by_field_name("argument")
+        index = node.child_by_field_name("index")
+        if argument is None or index is None:
+            continue
+        base = _text(argument, source)
+        offset = _text(index, source)
+        buffer = f"({base})+({offset})"
+        for kind in _subscript_write_kind(node, source):
+            accesses.append(
+                MemoryAccess(
+                    kind=kind,
+                    buffer=buffer,
+                    extent="1",
+                    line=line_offset + node.start_point.row,
+                )
+            )
+    return accesses
 
 
 def _absolute_line(node: Node, line_offset: int) -> int:
