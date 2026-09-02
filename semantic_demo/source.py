@@ -334,7 +334,7 @@ def _direct_memory_accesses(
             continue
         base = _text(argument, source)
         offset = _text(index, source)
-        buffer = f"({base})+({offset})"
+        buffer = f"{base}+({offset})"
         for kind in _subscript_write_kind(node, source):
             accesses.append(
                 MemoryAccess(
