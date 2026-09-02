@@ -92,6 +92,10 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
                 if call.name == "fwrite" and len(call.arguments) >= 3:
                     length = f"({call.arguments[1]}) * ({call.arguments[2]})"
                 operations.append(Operation("READ", call.name, call.arguments[buffer_index], length, call.line, False))
+                if call.name == "memcmp" and len(call.arguments) >= 3:
+                    operations.append(
+                        Operation("READ", call.name, call.arguments[1], call.arguments[2], call.line, False)
+                    )
 
         if call.name == "strcpy" and len(call.arguments) >= 2:
             extent = _string_copy_extent(call.arguments[1])
@@ -140,14 +144,20 @@ def _direct_ast_operations(entry: FunctionSource) -> list[Operation]:
 def _custom_operations(
     entry: FunctionSource, validations: Iterable[Validation]
 ) -> list[Operation]:
-    by_name: dict[str, list[dict[str, str]]] = {}
+    passed: dict[str, list[Validation]] = {}
     for validation in validations:
         if validation.passed:
-            by_name.setdefault(validation.function, []).append(validation.summary)
+            passed.setdefault(validation.function, []).append(validation)
+
+    unique_by_name: dict[str, list[dict[str, str]]] = {}
+    for name, items in passed.items():
+        source_paths = {item.source_path for item in items}
+        if len(source_paths) == 1:
+            unique_by_name[name] = [item.summary for item in items]
 
     operations: list[Operation] = []
     for call in entry.calls():
-        for summary in by_name.get(call.name, []):
+        for summary in unique_by_name.get(call.name, []):
             kind = summary["kind"]
             if kind == "ALLOC":
                 operations.append(
@@ -171,23 +181,12 @@ def _custom_operations(
                         True,
                     )
                 )
-            elif kind == "GUARD":
-                operations.append(
-                    Operation(
-                        "GUARD",
-                        call.name,
-                        "",
-                        _substitute(summary["relation"], call.arguments),
-                        call.line,
-                        True,
-                    )
-                )
-            elif kind == "VALUE":
+            elif kind == "VALUE" and call.result:
                 operations.append(
                     Operation(
                         "VALUE",
                         call.name,
-                        call.result or "return",
+                        call.result,
                         _substitute(summary["expression"], call.arguments),
                         call.line,
                         True,
