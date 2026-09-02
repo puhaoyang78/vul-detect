@@ -318,6 +318,10 @@ def _capacity_for_buffer(
     return capacity, offset
 
 
+def _expression_identifiers(expression: str) -> set[str]:
+    return set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expression))
+
+
 def _add_program_constraints(
     solver: Solver,
     encoder: ExpressionEncoder,
@@ -325,34 +329,36 @@ def _add_program_constraints(
     line: int,
     operations: Iterable[object],
     unsigned: set[str],
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], tuple[str, ...], set[str]]:
     path_constraints = tuple(entry.continuation_constraints_before(line))
+    incomplete: list[str] = []
+    skipped_targets: set[str] = set()
+
     for relation in path_constraints:
         if _has_unresolved_compile_time_symbol(relation):
+            incomplete.append(f"unresolved path symbol: {relation}")
             continue
         try:
             solver.add(encoder.comparison(relation))
         except Exception:
-            continue
+            incomplete.append(f"unsupported path constraint: {relation}")
 
     for name in unsigned:
         try:
             solver.add(encoder.encode(name) >= 0)
         except Exception:
-            continue
+            pass
 
     for left, right in entry.value_relations_before(line):
-        if _has_unresolved_compile_time_symbol(left, right):
-            continue
-        if _has_unmodeled_c_arithmetic(right):
+        target = normalize_expression(left)
+        if _has_unresolved_compile_time_symbol(left, right) or _has_unmodeled_c_arithmetic(right):
+            skipped_targets.add(target)
             continue
         try:
             solver.add(encoder.equality(left, right))
         except Exception:
-            continue
+            skipped_targets.add(target)
 
-    # Validated interprocedural VALUE summaries become caller-side equalities
-    # only when the call result is bound to a concrete local target.
     for operation in operations:
         if getattr(operation, "kind", "") != "VALUE":
             continue
@@ -362,17 +368,15 @@ def _add_program_constraints(
         expression = normalize_expression(getattr(operation, "extent", ""))
         if not target or target == "return" or not expression:
             continue
-        if _has_unresolved_compile_time_symbol(target, expression):
-            continue
-        if _has_unmodeled_c_arithmetic(expression):
+        if _has_unresolved_compile_time_symbol(target, expression) or _has_unmodeled_c_arithmetic(expression):
+            skipped_targets.add(target)
             continue
         try:
             solver.add(encoder.equality(target, expression))
         except Exception:
-            continue
+            skipped_targets.add(target)
 
-    return path_constraints
-
+    return path_constraints, tuple(incomplete), skipped_targets
 
 
 def _check_access(
@@ -403,10 +407,22 @@ def _check_access(
 
     encoder = ExpressionEncoder()
     solver = Solver()
-    path_constraints = _add_program_constraints(
+    path_constraints, incomplete_paths, skipped_targets = _add_program_constraints(
         solver, encoder, entry, line, operations, unsigned
     )
     conditions: list[VerificationCondition] = []
+    if incomplete_paths:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            incomplete_paths[0],
+            tuple(),
+            path_constraints,
+            {},
+        )
 
     if _has_unresolved_compile_time_symbol(extent_text):
         return AccessCheck(
@@ -507,6 +523,26 @@ def _check_access(
         )
 
     capacity_text, offset_text = capacity
+    relevant_identifiers = (
+        _expression_identifiers(extent_text)
+        | _expression_identifiers(buffer_text)
+        | _expression_identifiers(capacity_text)
+        | _expression_identifiers(offset_text)
+    )
+    unresolved_definitions = sorted(skipped_targets & relevant_identifiers)
+    if unresolved_definitions:
+        return AccessCheck(
+            kind,
+            buffer_text,
+            extent_text,
+            line,
+            "UNKNOWN",
+            "reaching value definition is not safely encodable for: "
+            + ", ".join(unresolved_definitions),
+            tuple(conditions),
+            path_constraints,
+            {},
+        )
     if _has_unresolved_compile_time_symbol(capacity_text, offset_text):
         return AccessCheck(
             kind,
