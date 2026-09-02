@@ -149,7 +149,7 @@ class CheckpointTests(unittest.TestCase):
                     use_joern=False,
                 )
 
-            self.assertEqual(2, analyze.call_count)
+            self.assertEqual(1, analyze.call_count)
             self.assertEqual(
                 ["S01", "S02"],
                 [record["sample_key"] for record in read_jsonl(detections_path)],
