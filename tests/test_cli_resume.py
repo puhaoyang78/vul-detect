@@ -129,7 +129,7 @@ class CheckpointTests(unittest.TestCase):
 
             self.assertEqual(1, normalize.call_count)
             record = read_jsonl(output_path)[0]
-            self.assertEqual("llm", record["normalizer"])
+            self.assertEqual("localized-hybrid", record["normalizer"])
             self.assertNotIn("skip_reason", record)
 
     def test_llm_normalization_cache_is_model_specific(self):
