@@ -183,6 +183,43 @@ class SemanticValidationTests(unittest.TestCase):
         )
         self.assertTrue(result.passed)
 
+    def test_indirect_call_does_not_reject_unrelated_direct_summary(self):
+        function = parse_functions(
+            "mixed.c",
+            """
+            void mixed(char *dst, const char *src, unsigned long len, void (*cb)(char *))
+            {
+                memcpy(dst, src, len);
+                cb(dst);
+            }
+            """,
+        )[0]
+        call = JoernCall(
+            line=function.start_line + 2,
+            name="memcpy",
+            arguments={0: "dst", 1: "src", 2: "len"},
+        )
+        facts = JoernFacts(
+            parameters={
+                0: ("dst", "char *"),
+                1: ("src", "const char *"),
+                2: ("len", "unsigned long"),
+                3: ("cb", "void (*)(char *)"),
+            },
+            calls={(call.line, call.name): call},
+            flows={
+                (0, call.line, call.name, 0),
+                (1, call.line, call.name, 1),
+                (2, call.line, call.name, 2),
+            },
+        )
+        result = validate_summary(
+            Candidate("sample", function, (1,)),
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            joern=StaticFactsValidator(facts),
+        )
+        self.assertTrue(result.passed)
+
     def test_guard_summary_is_not_part_of_sound_schema(self):
         result = validate_summary(
             self.candidate,
@@ -320,7 +357,14 @@ class SemanticValidationTests(unittest.TestCase):
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=None)
         response.read.return_value = json.dumps(
-            {"choices": [{"message": {"content": '{"summaries":[]}'}}]}
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"matched":false,"value":""}'},
+                    }
+                ]
+            }
         ).encode()
 
         with patch(
