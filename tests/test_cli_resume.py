@@ -77,6 +77,65 @@ class CheckpointTests(unittest.TestCase):
                 [record["function"] for record in read_jsonl(output_path)],
             )
 
+    def test_llm_normalization_cache_is_model_specific(self):
+        entry = parse_functions("entry.c", "void entry(void) {}\n")[0]
+        function = parse_functions(
+            "wrapper.c", "void wrapper(char *p) { free(p); }\n"
+        )[0]
+        candidate = Candidate("S01", function, (1,))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            samples_path = root / "samples.jsonl"
+            output_path = root / "normalizer.jsonl"
+            write_jsonl(
+                samples_path,
+                [
+                    {
+                        "sample_key": "S01",
+                        "repository_git_dir": "/unused",
+                        "vulnerable_commit": "a" * 40,
+                        "entry_path": "entry.c",
+                        "entry_function": "entry",
+                        "scan_paths": [],
+                    }
+                ],
+            )
+            args = SimpleNamespace(
+                samples=str(samples_path),
+                output=str(output_path),
+                llm_backend="api",
+                llama_server="/unused",
+                local_model="/unused",
+                refresh=False,
+            )
+
+            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+                "semantic_demo.cli.discover_candidates", return_value=[candidate]
+            ), patch(
+                "semantic_demo.cli.llm_normalize",
+                return_value=[{"kind": "VALUE", "target": "return", "expression": "arg0"}],
+            ) as normalize, patch.dict(
+                "os.environ", {"DEEPSEEK_MODEL": "model-a"}, clear=False
+            ):
+                normalize_command(args)
+            self.assertEqual(1, normalize.call_count)
+
+            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+                "semantic_demo.cli.discover_candidates", return_value=[candidate]
+            ), patch(
+                "semantic_demo.cli.llm_normalize",
+                return_value=[{"kind": "VALUE", "target": "return", "expression": "arg0"}],
+            ) as normalize, patch.dict(
+                "os.environ", {"DEEPSEEK_MODEL": "model-b"}, clear=False
+            ):
+                normalize_command(args)
+            self.assertEqual(1, normalize.call_count)
+            self.assertEqual(
+                "model-b",
+                read_jsonl(output_path)[0]["llm_model"],
+            )
+
     def test_detection_resumes_after_completed_sample(self):
         entries = [
             parse_functions(
