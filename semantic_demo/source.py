@@ -44,6 +44,7 @@ class Call:
     line: int
     result: str | None = None
     returned: bool = False
+    indirect: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,21 @@ class FunctionSource:
 
     def calls(self) -> list[Call]:
         tree = _parser_for_language(self.language).parse(self.text.encode())
-        return _calls(tree.root_node, self.text.encode(), self.start_line)
+        return _calls(
+            tree.root_node,
+            self.text.encode(),
+            self.start_line,
+            set(
+                parameter
+                for parameter, pointer_like in zip(
+                    self.parameters, self.parameter_pointer_like
+                )
+                if pointer_like
+            ),
+        )
+
+    def has_indirect_calls(self) -> bool:
+        return any(call.indirect for call in self.calls())
 
     def value_relations_before(self, line: int) -> list[tuple[str, str]]:
         source = self.text.encode()
@@ -452,11 +467,8 @@ def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
 def _callee_name(node: Node | None, source: bytes) -> str | None:
     if node is None:
         return None
-    if node.type in {"identifier", "field_identifier"}:
+    if node.type == "identifier":
         return _text(node, source)
-    if node.type in {"field_expression", "field_access_expression"}:
-        field = node.child_by_field_name("field")
-        return _text(field, source) if field is not None else None
     if node.type in {"qualified_identifier", "scoped_identifier"}:
         name = node.child_by_field_name("name")
         return _text(name, source) if name is not None else _identifier(node, source)
@@ -498,15 +510,30 @@ def _call_context(node: Node, source: bytes) -> tuple[str | None, bool]:
     return result, returned
 
 
-def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
+def _calls(
+    node: Node,
+    source: bytes,
+    line_offset: int,
+    pointer_parameters: set[str],
+) -> list[Call]:
     calls: list[Call] = []
     for item in _walk(node):
         if item.type != "call_expression":
             continue
-        name = _callee_name(item.child_by_field_name("function"), source)
+        function_node = item.child_by_field_name("function")
         arguments_node = item.child_by_field_name("arguments")
-        if not name or arguments_node is None:
+        if function_node is None or arguments_node is None:
             continue
+        direct_name = _callee_name(function_node, source)
+        function_text = _text(function_node, source)
+        indirect = (
+            direct_name is None
+            or (
+                function_node.type == "identifier"
+                and direct_name in pointer_parameters
+            )
+        )
+        name = direct_name or function_text
         arguments = tuple(_text(arg, source) for arg in arguments_node.named_children)
         result, returned = _call_context(item, source)
         calls.append(
@@ -516,6 +543,7 @@ def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
                 line=line_offset + item.start_point.row,
                 result=result,
                 returned=returned,
+                indirect=indirect,
             )
         )
     return calls
