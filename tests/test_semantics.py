@@ -370,6 +370,26 @@ class CompositionalValidationTests(unittest.TestCase):
         self.assertFalse(passed)
 
 
+class ParsingRegressionTests(unittest.TestCase):
+    def test_cpp_qualified_method_name_uses_terminal_identifier(self):
+        functions = parse_functions(
+            "sample.cpp",
+            """
+            class Foo { public: int bar(int x); };
+            int Foo::bar(int x) { return x; }
+            """,
+        )
+        self.assertEqual(["bar"], [function.name for function in functions])
+        self.assertEqual("cpp", functions[0].language)
+
+    def test_function_pointer_parameter_is_marked_indirect(self):
+        function = parse_functions(
+            "sample.c",
+            "int entry(int (*cb)(int), int x) { return cb(x); }",
+        )[0]
+        self.assertTrue(function.has_indirect_calls())
+
+
 class Z3ReasonerTests(unittest.TestCase):
     def test_known_local_capacity_mismatch_is_feasible(self):
         entry = parse_functions(
@@ -441,6 +461,22 @@ class Z3ReasonerTests(unittest.TestCase):
         )[0]
         line = entry.start_line + 4
         self.assertIn("len<=8", entry.continuation_constraints_before(line))
+
+    def test_relevant_unknown_call_guard_causes_abstention(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const char *src, int len)
+            {
+                char buf[8];
+                if (len < 0)
+                    report_and_maybe_abort();
+                memcpy(buf, src, len);
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        self.assertEqual("UNKNOWN", result.verdict)
 
     def test_compound_early_exit_constraints_use_de_morgan(self):
         entry = parse_functions(
