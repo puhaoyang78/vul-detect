@@ -509,6 +509,12 @@ def _condition_terms(node: Node | None, source: bytes, truth: bool) -> list[str]
     return [inverted] if inverted else []
 
 
+def _node_contains_line(node: Node, line_offset: int, absolute_line: int) -> bool:
+    start = line_offset + node.start_point.row
+    end = line_offset + node.end_point.row
+    return start <= absolute_line <= end
+
+
 def _continuation_constraints_before(
     root: Node,
     source: bytes,
@@ -517,20 +523,30 @@ def _continuation_constraints_before(
 ) -> list[str]:
     constraints: list[str] = []
     for node in _walk(root):
-        if node.type != "if_statement":
+        if node.type == "if_statement":
+            if _absolute_line(node, line_offset) >= access_line:
+                continue
+            condition = node.child_by_field_name("condition")
+            consequence = node.child_by_field_name("consequence")
+            alternative = node.child_by_field_name("alternative")
+            if condition is None:
+                continue
+            if _contains_exit(consequence):
+                constraints.extend(_condition_terms(condition, source, False))
+            elif _contains_exit(alternative):
+                constraints.extend(_condition_terms(condition, source, True))
             continue
-        if _absolute_line(node, line_offset) >= access_line:
-            continue
-        condition = node.child_by_field_name("condition")
-        consequence = node.child_by_field_name("consequence")
-        alternative = node.child_by_field_name("alternative")
-        if condition is None:
-            continue
-        if _contains_exit(consequence):
-            constraints.extend(_condition_terms(condition, source, False))
-        elif _contains_exit(alternative):
+
+        if node.type in {"for_statement", "while_statement", "do_statement"}:
+            if not _node_contains_line(node, line_offset, access_line):
+                continue
+            condition = node.child_by_field_name("condition")
+            if condition is None:
+                continue
             constraints.extend(_condition_terms(condition, source, True))
-    return constraints
+
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(constraints))
 
 
 def _value_relations_before(
