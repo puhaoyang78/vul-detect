@@ -355,7 +355,8 @@ def normalize_command(args: argparse.Namespace) -> None:
                 write_jsonl(args.output, cache.values())
                 print(
                     f"normalize_candidate_done={candidate.sample_key}:"
-                    f"{candidate.function.name} checkpoint={args.output}",
+                    f"{candidate.function.name}@{candidate.function.start_line} "
+                    f"checkpoint={args.output}",
                     flush=True,
                 )
     write_jsonl(args.output, records)
@@ -537,7 +538,11 @@ def detect(
         semantic_records.extend(item.as_json() for item in validations)
 
         baseline = baseline_model.predict(entry.text)
-        proposed = analyze(entry, validations=validations)
+        proposed = analyze(
+            entry,
+            validations=validations,
+            variant_counts=dict(variant_counts),
+        )
         detection_records.append(
             {
                 "sample_key": sample_key,
