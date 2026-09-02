@@ -42,6 +42,27 @@ def _substitute(expression: str, arguments: tuple[str, ...]) -> str:
     return result
 
 
+def _c_string_literal_length(expression: str) -> int | None:
+    text = expression.strip()
+    if not (len(text) >= 2 and text[0] == '"' and text[-1] == '"'):
+        return None
+    try:
+        import ast
+        value = ast.literal_eval(text)
+    except Exception:
+        return None
+    if not isinstance(value, str):
+        return None
+    return len(value.encode()) + 1
+
+
+def _string_copy_extent(expression: str) -> str:
+    literal = _c_string_literal_length(expression)
+    if literal is not None:
+        return str(literal)
+    return f"strlen({expression}) + 1"
+
+
 def _standard_operations(entry: FunctionSource) -> list[Operation]:
     operations: list[Operation] = []
     for call in entry.calls():
@@ -72,8 +93,33 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
                     length = f"({call.arguments[1]}) * ({call.arguments[2]})"
                 operations.append(Operation("READ", call.name, call.arguments[buffer_index], length, call.line, False))
 
-        if call.name in UNBOUNDED_WRITES and call.arguments:
-            operations.append(Operation("WRITE", call.name, call.arguments[0], "UNBOUNDED", call.line, False))
+        if call.name == "strcpy" and len(call.arguments) >= 2:
+            extent = _string_copy_extent(call.arguments[1])
+            operations.append(
+                Operation("WRITE", call.name, call.arguments[0], extent, call.line, False)
+            )
+            operations.append(
+                Operation("READ", call.name, call.arguments[1], extent, call.line, False)
+            )
+        elif call.name == "strcat" and len(call.arguments) >= 2:
+            extent = _string_copy_extent(call.arguments[1])
+            operations.append(
+                Operation(
+                    "WRITE",
+                    call.name,
+                    f"{call.arguments[0]} + strlen({call.arguments[0]})",
+                    extent,
+                    call.line,
+                    False,
+                )
+            )
+            operations.append(
+                Operation("READ", call.name, call.arguments[1], extent, call.line, False)
+            )
+        elif call.name in {"sprintf", "vsprintf"} and call.arguments:
+            operations.append(
+                Operation("WRITE", call.name, call.arguments[0], "UNBOUNDED", call.line, False)
+            )
     return operations
 
 
