@@ -99,7 +99,7 @@ class CheckpointTests(unittest.TestCase):
         verdict = Mock()
         verdict.as_json.return_value = {"verdict": "NOT_DETECTED", "reason": "test"}
         baseline_model = Mock()
-        baseline_model.signature = "test-codebert"
+        baseline_model.signature = "test-linevul"
         baseline_model.predict.return_value = verdict
 
         with tempfile.TemporaryDirectory() as directory:
@@ -117,7 +117,7 @@ class CheckpointTests(unittest.TestCase):
             ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[]
             ), patch(
-                "semantic_demo.cli.CodeBERTBaseline", return_value=baseline_model
+                "semantic_demo.cli.LineVulBaseline", return_value=baseline_model
             ), patch("semantic_demo.cli.analyze", return_value=verdict):
                 with self.assertRaisesRegex(RuntimeError, "interrupted"):
                     detect(
