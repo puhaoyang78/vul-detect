@@ -541,7 +541,8 @@ def validate_summary(
 
 def _simple_caller_expression(expression: str) -> bool:
     compact = normalize_expression(expression)
-    if any(compact == f"arg{index}" for index in range(128)):
+    indices = _arg_indices(compact)
+    if len(indices) == 1 and compact == f"arg{indices[0]}":
         return True
     try:
         int(compact, 0)
