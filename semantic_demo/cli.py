@@ -23,6 +23,7 @@ from .semantics import (
     NORMALIZATION_SCHEMA_VERSION,
     NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
+    candidate_validation_error,
     discover_candidates,
     llm_normalize,
     load_replay,
@@ -312,11 +313,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     candidate.function.start_line,
                     fingerprint,
                 )
-                skip_reason = (
-                    "candidate function contains parser error nodes"
-                    if candidate.function.parse_has_error
-                    else None
-                )
+                skip_reason = candidate_validation_error(candidate.function)
                 cached = cache.get(cache_key)
                 if (
                     skip_reason is None
