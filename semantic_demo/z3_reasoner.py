@@ -221,7 +221,7 @@ def _local_array_capacities(entry: FunctionSource) -> dict[str, CapacityInfo]:
     capacities: dict[str, CapacityInfo] = {}
     for array in entry.local_arrays():
         capacities[array.name] = CapacityInfo(
-            byte_capacity=f"sizeof({array.name})",
+            byte_capacity=array.byte_capacity or f"sizeof({array.name})",
             element_capacity=array.elements,
         )
     return capacities
@@ -454,6 +454,22 @@ def _check_access(
     solver = Solver()
     path_constraints = _add_program_constraints(solver, encoder, entry, line)
     conditions: list[VerificationCondition] = []
+
+    base, _ = _buffer_base_and_offset(buffer_text)
+    local_array = next(
+        (array for array in entry.local_arrays() if array.name == base),
+        None,
+    )
+    if local_array is not None and local_array.byte_capacity is not None:
+        try:
+            solver.add(
+                encoder.equality(
+                    f"sizeof({base})",
+                    local_array.byte_capacity,
+                )
+            )
+        except Exception:
+            pass
 
     try:
         extent = encoder.encode(extent_text)
