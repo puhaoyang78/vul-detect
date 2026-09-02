@@ -1,8 +1,17 @@
+import subprocess
 import unittest
+from unittest.mock import patch
 
 from semantic_demo.analyzer import Operation, analyze
 from semantic_demo.z3_reasoner import reason_memory_safety
-from semantic_demo.joern import JoernCall, JoernError, JoernFacts, JoernMethodNotFound
+from semantic_demo.joern import (
+    JoernCall,
+    JoernError,
+    JoernFacts,
+    JoernMethodNotFound,
+    JoernTimeout,
+    JoernValidator,
+)
 from semantic_demo.semantics import (
     Candidate,
     Validation,
@@ -158,6 +167,35 @@ class SemanticValidationTests(unittest.TestCase):
                 joern=BrokenValidator(),
             )
 
+    def test_joern_timeout_rejects_only_the_summary(self):
+        class TimeoutValidator:
+            def facts(self, _candidate):
+                raise JoernTimeout("Joern timed out after 180s for copy_wrap")
+
+        result = validate_summary(
+            self.candidate,
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            joern=TimeoutValidator(),
+        )
+
+        self.assertFalse(result.passed)
+        self.assertIn("timed out after 180s", result.reason)
+
+    def test_joern_timeout_is_cached_per_function(self):
+        validator = JoernValidator(timeout=1)
+        validator.ensure_available = lambda: None
+
+        with patch(
+            "semantic_demo.joern.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("joern", 1),
+        ) as run:
+            with self.assertRaises(JoernTimeout):
+                validator.facts(self.candidate)
+            with self.assertRaises(JoernTimeout):
+                validator.facts(self.candidate)
+
+        self.assertEqual(1, run.call_count)
+
     def test_response_content_accepts_final_answer(self):
         result = {
             "choices": [
@@ -264,7 +302,7 @@ class Z3ReasonerTests(unittest.TestCase):
             ],
         )
         self.assertEqual("POTENTIAL_VIOLATION", result.status)
-        self.assertIn("res.len <= buflen", result.reason)
+        self.assertIn("res.len<=buflen", result.reason)
 
     def test_unrelated_guard_is_not_used_as_access_bound(self):
         entry = parse_functions(
@@ -408,7 +446,7 @@ class PropagationTests(unittest.TestCase):
         )
         verdict = analyze(entry, [validation], proposed=True)
         self.assertEqual("VULNERABLE", verdict.verdict)
-        self.assertIn("res.len <= buflen", verdict.reason)
+        self.assertIn("res.len<=buflen", verdict.reason)
 
 
 if __name__ == "__main__":

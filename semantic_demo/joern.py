@@ -16,6 +16,10 @@ class JoernMethodNotFound(JoernError):
     """The candidate fragment parsed, but Joern produced no matching method."""
 
 
+class JoernTimeout(JoernError):
+    """Joern exceeded the per-function validation budget."""
+
+
 @dataclass(frozen=True)
 class JoernCall:
     line: int
@@ -61,6 +65,7 @@ class JoernValidator:
         self._cache: dict[str, JoernFacts] = {}
         self._errors: dict[str, str] = {}
         self._missing_methods: dict[str, str] = {}
+        self._timeouts: dict[str, str] = {}
 
     def ensure_available(self) -> None:
         if not self.joern.is_file():
@@ -87,6 +92,8 @@ class JoernValidator:
             return self._cache[key]
         if key in self._missing_methods:
             raise JoernMethodNotFound(self._missing_methods[key])
+        if key in self._timeouts:
+            raise JoernTimeout(self._timeouts[key])
         if key in self._errors:
             raise JoernError(self._errors[key])
 
@@ -114,15 +121,23 @@ class JoernValidator:
                 + os.pathsep
                 + environment.get("PATH", "")
             )
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=self.timeout,
-                check=False,
-                env=environment,
-            )
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=self.timeout,
+                    check=False,
+                    env=environment,
+                )
+            except subprocess.TimeoutExpired as error:
+                message = (
+                    f"Joern timed out after {self.timeout}s for "
+                    f"{candidate.function.name}"
+                )
+                self._timeouts[key] = message
+                raise JoernTimeout(message) from error
             if result.returncode != 0:
                 message = (
                     f"Joern failed for {candidate.function.name}: "

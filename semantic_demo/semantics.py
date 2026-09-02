@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .joern import JoernMethodNotFound, JoernValidator
+from .joern import JoernMethodNotFound, JoernTimeout, JoernValidator
 from .source import FunctionSource, GitRepository, normalize_expression
 
 
@@ -641,6 +641,9 @@ def validate_summary(
         except JoernMethodNotFound as error:
             passed = False
             reason = f"Joern candidate method unavailable: {error}"
+        except JoernTimeout as error:
+            passed = False
+            reason = f"Joern candidate validation timed out: {error}"
         return Validation(
             candidate.sample_key,
             function.name,

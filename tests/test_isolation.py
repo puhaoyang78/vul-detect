@@ -16,9 +16,9 @@ class IsolationTests(unittest.TestCase):
         for sample in samples:
             self.assertFalse(FORBIDDEN_DETECTION_FIELDS & set(sample))
 
-    def test_all_vulnerable_entries_are_locally_available(self):
+    def test_all_entries_are_locally_available(self):
         samples = read_jsonl("data/detection_samples.jsonl")
-        self.assertEqual(10, len(samples))
+        self.assertEqual(60, len(samples))
         for sample in samples:
             _, entry = _load_entry(sample)
             self.assertEqual(sample["entry_function"], entry.name)
