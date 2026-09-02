@@ -99,9 +99,10 @@ class JoernValidator:
 
         with tempfile.TemporaryDirectory(prefix="memsem-joern-") as directory:
             root = Path(directory)
-            source_path = root / "candidate.c"
+            suffix = Path(candidate.function.path).suffix or ".c"
+            source_path = root / f"candidate{suffix}"
             output_path = root / "facts.tsv"
-            source_path.write_text(candidate.function.text)
+            source_path.write_text(candidate.function.translation_unit)
 
             command = [
                 str(self.joern),
