@@ -635,6 +635,27 @@ class Z3ReasonerTests(unittest.TestCase):
         ]
         self.assertEqual("SAFE", writes[0]["status"])
 
+    def test_non_allocation_pointer_redefinition_remains_unknown(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const char *src, unsigned long new_size)
+            {
+                char *tmp = malloc(new_size);
+                tmp = choose_buffer(tmp);
+                memcpy(tmp, src, new_size);
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        writes = [
+            access
+            for access in result.constraint_result["accesses"]
+            if access["access_kind"] == "WRITE"
+        ]
+        self.assertEqual("UNKNOWN", writes[0]["status"])
+        self.assertIn("reaching value definition", writes[0]["reason"])
+
     def test_memcpy_exposes_read_and_write(self):
         entry = parse_functions(
             "entry.c",
