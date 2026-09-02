@@ -413,6 +413,14 @@ def _validate_by_composition(
     return False, "no validated callee summary composes to the claimed semantic role"
 
 
+def candidate_validation_error(function: FunctionSource) -> str | None:
+    if function.parse_has_error:
+        return "candidate function contains parser error nodes"
+    if function.has_indirect_calls():
+        return "candidate function contains unresolved indirect calls"
+    return None
+
+
 def validate_summary(
     candidate: Candidate,
     summary: dict[str, object],
@@ -420,15 +428,9 @@ def validate_summary(
     callee_summaries: dict[tuple[str, str], list[dict[str, str]]] | None = None,
 ) -> Validation:
     function = candidate.function
-    error = (
-        "candidate function contains parser error nodes"
-        if function.parse_has_error
-        else (
-            "candidate function contains unresolved indirect calls"
-            if function.has_indirect_calls()
-            else _schema_error(summary, len(function.parameters))
-        )
-    )
+    error = candidate_validation_error(function)
+    if error is None:
+        error = _schema_error(summary, len(function.parameters))
     clean_summary = canonicalize_summary(function, summary)
 
     if not error and clean_summary.get("kind") in {"READ", "WRITE"}:
@@ -589,6 +591,17 @@ def _response_content(result: dict[str, object]) -> str:
         message = choice["message"]
     except (KeyError, IndexError, TypeError) as error:
         raise ValueError("LLM response has no choices[0].message") from error
+
+    finish_reason = choice.get("finish_reason")
+    if finish_reason == "length":
+        usage = result.get("usage")
+        completion_tokens = (
+            usage.get("completion_tokens") if isinstance(usage, dict) else None
+        )
+        raise ValueError(
+            "LLM response was truncated at max_tokens "
+            f"(completion_tokens={completion_tokens!r})"
+        )
 
     content = message.get("content")
     if isinstance(content, str) and content.strip():
