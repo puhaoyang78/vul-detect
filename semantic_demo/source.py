@@ -36,6 +36,7 @@ class MemoryAccess:
     buffer: str
     extent: str
     line: int
+    origin: str
 
 
 @dataclass(frozen=True)
@@ -286,30 +287,18 @@ def _known_element_size(type_text: str, declarator: Node | None) -> int | None:
         return None
     text = normalize_expression(type_text)
     text = re.sub(r"\b(?:const|volatile|restrict|_Atomic)\b", "", text)
+    # Only sizes guaranteed by the spelling itself are encoded. ABI-dependent
+    # C fundamental types intentionally remain unknown.
     known = {
         "char": 1,
         "signedchar": 1,
         "unsignedchar": 1,
         "int8_t": 1,
         "uint8_t": 1,
-        "short": 2,
-        "shortint": 2,
-        "signedshort": 2,
-        "unsignedshort": 2,
         "int16_t": 2,
         "uint16_t": 2,
-        "int": 4,
-        "signed": 4,
-        "signedint": 4,
-        "unsigned": 4,
-        "unsignedint": 4,
-        "float": 4,
         "int32_t": 4,
         "uint32_t": 4,
-        "longlong": 8,
-        "longlongint": 8,
-        "unsignedlonglong": 8,
-        "double": 8,
         "int64_t": 8,
         "uint64_t": 8,
     }
@@ -467,20 +456,6 @@ def _subscript_write_kind(node: Node, source: bytes) -> tuple[str, ...]:
     return ("READ",)
 
 
-def _pointer_dereference_access(node: Node, source: bytes) -> MemoryAccess | None:
-    if node.type != "pointer_expression":
-        return None
-    text = _text(node, source).lstrip()
-    if not text.startswith("*"):
-        return None
-    operand = next((child for child in node.named_children), None)
-    if operand is None:
-        return None
-    kind = _subscript_write_kind(node, source)
-    # Compound updates require both read and write; the caller expands the tuple.
-    return MemoryAccess(kind=kind[0], buffer=_text(operand, source), extent="1", line=0)
-
-
 def _direct_memory_accesses(
     root: Node, source: bytes, line_offset: int
 ) -> list[MemoryAccess]:
@@ -504,6 +479,7 @@ def _direct_memory_accesses(
                         buffer=f"{base}+({offset})",
                         extent="1",
                         line=line_offset + node.start_point.row,
+                        origin="AST_SUBSCRIPT",
                     )
                 )
             continue
@@ -522,6 +498,7 @@ def _direct_memory_accesses(
                         buffer=_text(operand, source),
                         extent="1",
                         line=line_offset + node.start_point.row,
+                        origin="AST_DEREF",
                     )
                 )
     return accesses
