@@ -430,40 +430,32 @@ class CandidateDiscoveryTests(unittest.TestCase):
         def find_functions(self, *_args, **_kwargs):
             return self.definitions
 
-    def test_binds_definition_matching_call_preprocessor_context(self):
+    def test_ambiguous_void_no_argument_helpers_are_outside_summary_schema(self):
         definitions = parse_functions(
             "defs.c",
             """
             #ifdef FEATURE
-            int inner(char *buffer) { return buffer[0]; }
+            void inner(void) { }
             #else
-            int inner(char *buffer) { return buffer[1]; }
+            void inner(void) { }
             #endif
             """,
         )
         entry = parse_functions(
             "wrapper.c",
-            """
-            int outer(char *buffer)
-            {
-            #ifdef FEATURE
-                return inner(buffer);
-            #else
-                return 0;
-            #endif
-            }
-            """,
+            "void outer(void) { inner(); }",
         )[0]
-        candidates = discover_candidates(
-            "sample",
-            self.StaticRepository(definitions),
-            entry,
-            (),
+        self.assertEqual(
+            [],
+            discover_candidates(
+                "sample",
+                self.StaticRepository(definitions),
+                entry,
+                (),
+            ),
         )
-        self.assertEqual(1, len(candidates))
-        self.assertEqual({"FEATURE": True}, dict(candidates[0].function.preprocessor_context or ()))
 
-    def test_unconditional_call_keeps_conditional_definitions_ambiguous(self):
+    def test_ambiguous_summary_capable_helpers_are_rejected(self):
         definitions = parse_functions(
             "defs.c",
             """
