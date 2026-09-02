@@ -358,6 +358,15 @@ def _validate_with_joern(
     return False, f"unsupported semantic kind: {kind}"
 
 
+def _source_call_returns_value(candidate: Candidate, source_call, facts) -> bool:
+    if source_call.returned:
+        return True
+    if source_call.result is None:
+        return False
+    returned = {_normalized_return_expression(value) for value in facts.returns}
+    return normalize_expression(source_call.result) in returned
+
+
 def _validate_by_composition(
     candidate: Candidate,
     summary: dict[str, str],
@@ -412,7 +421,10 @@ def _validate_by_composition(
                     ),
                     None,
                 )
-                if source_call is not None and source_call.returned:
+                if (
+                    source_call is not None
+                    and _source_call_returns_value(candidate, source_call, facts)
+                ):
                     return (
                         True,
                         f"composition verified allocation through "
@@ -435,7 +447,10 @@ def _validate_by_composition(
                     ),
                     None,
                 )
-                if source_call is None or not source_call.returned:
+                if (
+                    source_call is None
+                    or not _source_call_returns_value(candidate, source_call, facts)
+                ):
                     continue
                 if _joern_expr_reaches(
                     facts, summary["expression"], call, (child_args[0],)
