@@ -24,7 +24,7 @@ class IsolationTests(unittest.TestCase):
             self.assertEqual(sample["entry_function"], entry.name)
 
     def test_llm_normalization_defaults_to_local_qwen(self):
-        args = build_parser().parse_args(["normalize", "--normalizer", "llm"])
+        args = build_parser().parse_args(["normalize"])
         self.assertEqual("local", args.llm_backend)
         self.assertTrue(args.llama_server.endswith("/llama-server"))
         self.assertTrue(args.local_model.endswith(".gguf"))
@@ -33,7 +33,6 @@ class IsolationTests(unittest.TestCase):
         args = build_parser().parse_args(["run"])
         self.assertEqual("/home/phy/joern", args.joern_dir)
         self.assertEqual("/home/phy/jdk21", args.java_home)
-        self.assertFalse(args.no_joern)
         self.assertFalse(args.refresh)
         self.assertEqual("/home/PublicData/PHY-data/resource/codebert-base", args.linevul_codebert_path)
         self.assertEqual("/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin", args.linevul_checkpoint)
