@@ -630,17 +630,16 @@ def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]
 
 def _normalization_endpoints(
     function: FunctionSource,
-) -> list[tuple[str, int | None, str]]:
-    endpoints: list[tuple[str, int | None, str]] = []
+) -> list[tuple[str, str]]:
+    endpoints: list[tuple[str, str]] = []
     if function.has_value_return():
-        endpoints.append(("return", None, "function return statements"))
+        endpoints.append(("return", "function return statements"))
     for call in function.calls():
         if call.indirect or call.name in STANDARD_CALLS:
             continue
         endpoints.append(
             (
                 "call",
-                call.line,
                 f"direct call {call.name}({', '.join(call.arguments)}) at line {call.line}",
             )
         )
@@ -676,9 +675,7 @@ def llm_normalize(
     ]
     opaque_text = ", ".join(indirect_calls) if indirect_calls else "none"
 
-    for endpoint_kind, endpoint_line, endpoint_text in _normalization_endpoints(
-        candidate.function
-    ):
+    for endpoint_kind, endpoint_text in _normalization_endpoints(candidate.function):
         if endpoint_kind == "return":
             allowed = "ALLOC or VALUE"
             instruction = (
