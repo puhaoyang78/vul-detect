@@ -294,25 +294,10 @@ def normalize_command(args: argparse.Namespace) -> None:
                     fingerprint,
                 )
                 cached = cache.get(cache_key)
-                if cached is None:
-                    # Legacy normalization files predate source fingerprints. The
-                    # vulnerable revision is immutable, so sample/path/function is
-                    # sufficient to reuse those records safely within this dataset.
-                    cached = cache.get(
-                        (
-                            candidate.sample_key,
-                            candidate.function.path,
-                            candidate.function.name,
-                            "",
-                        )
-                    )
                 if (
                     cached is not None
-                    and cached.get("normalizer") == args.normalizer
-                    and (
-                        args.normalizer != "llm"
-                        or cached.get("llm_backend") == args.llm_backend
-                    )
+                    and cached.get("normalizer") == "llm"
+                    and cached.get("llm_backend") == args.llm_backend
                 ):
                     records.append(cached)
                     reused += 1
