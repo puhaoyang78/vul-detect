@@ -661,6 +661,35 @@ class ParsingRegressionTests(unittest.TestCase):
         self.assertTrue(function.has_indirect_calls())
 
 
+    def test_direct_call_assignment_records_result(self):
+        function = parse_functions(
+            "sample.c",
+            """
+            void *entry(unsigned long n)
+            {
+                void *tmp = malloc(n);
+                return tmp;
+            }
+            """,
+        )[0]
+        call = next(call for call in function.calls() if call.name == "malloc")
+        self.assertEqual("tmp", call.result)
+        self.assertFalse(call.returned)
+
+    def test_nested_call_expression_is_not_direct_assignment_result(self):
+        function = parse_functions(
+            "sample.c",
+            """
+            void *entry(unsigned long n)
+            {
+                void *tmp = malloc(n) + 1;
+                return tmp;
+            }
+            """,
+        )[0]
+        call = next(call for call in function.calls() if call.name == "malloc")
+        self.assertIsNone(call.result)
+
     def test_local_function_pointer_is_marked_indirect(self):
         function = parse_functions(
             "sample.c",
