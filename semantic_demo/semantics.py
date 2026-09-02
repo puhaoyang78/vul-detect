@@ -106,35 +106,8 @@ class Validation:
         return asdict(self)
 
 
-def _same_function_signature(function: FunctionSource) -> tuple[str, ...]:
-    return tuple(
-        normalize_expression(
-            re.sub(rf"\b{re.escape(parameter)}\b", "", parameter_type)
-        )
-        for parameter, parameter_type in zip(
-            function.parameters, function.parameter_types
-        )
-    )
-
-
-def _is_conditional_definition_set(
-    definitions: list[FunctionSource],
-) -> bool:
-    if len({definition.path for definition in definitions}) != 1:
-        return False
-    if len({_same_function_signature(definition) for definition in definitions}) != 1:
-        return False
-    contexts = [definition.preprocessor_context for definition in definitions]
-    if any(context is None for context in contexts):
-        return False
-    branch_maps = [dict(context or ()) for context in contexts]
-    common_groups = set(branch_maps[0])
-    for branch_map in branch_maps[1:]:
-        common_groups.intersection_update(branch_map)
-    return any(
-        len({branch_map[group] for branch_map in branch_maps}) == len(definitions)
-        for group in common_groups
-    )
+def _can_produce_summary(function: FunctionSource) -> bool:
+    return any(function.parameter_pointer_like) or function.has_value_return()
 
 
 def discover_candidates(
@@ -167,13 +140,15 @@ def discover_candidates(
             )
             if callee is None:
                 definitions = repository.find_functions(call.name, scopes)
+                if not definitions:
+                    continue
                 if len(definitions) > 1:
-                    if _is_conditional_definition_set(definitions):
+                    if all(not _can_produce_summary(item) for item in definitions):
                         continue
                     raise RuntimeError(
                         f"{sample_key}: ambiguous repository binding for {call.name}"
                     )
-                continue
+                callee = definitions[0]
             key = (callee.path, callee.name)
             existing = discovered.get(key)
             lines = set(existing.call_lines if existing else ())
