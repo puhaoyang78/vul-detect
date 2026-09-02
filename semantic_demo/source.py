@@ -309,7 +309,7 @@ def _parameters(
         return (), (), (), ()
     parameter_list = function_decl.child_by_field_name("parameters")
     if parameter_list is None:
-        return (), (), ()
+        return (), (), (), ()
     names: list[str] = []
     types: list[str] = []
     pointer_like: list[bool] = []
