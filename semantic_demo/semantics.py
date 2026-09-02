@@ -106,34 +106,16 @@ class Validation:
         return asdict(self)
 
 
-def _same_function_signature(function: FunctionSource) -> tuple[str, ...]:
-    return tuple(
-        normalize_expression(
-            re.sub(rf"\b{re.escape(parameter)}\b", "", parameter_type)
-        )
-        for parameter, parameter_type in zip(
-            function.parameters, function.parameter_types
-        )
-    )
-
-
-def _is_conditional_definition_set(
-    definitions: list[FunctionSource],
+def _preprocessor_contexts_compatible(
+    call_context: tuple[tuple[str, bool], ...] | None,
+    definition_context: tuple[tuple[str, bool], ...] | None,
 ) -> bool:
-    if len({definition.path for definition in definitions}) != 1:
-        return False
-    if len({_same_function_signature(definition) for definition in definitions}) != 1:
-        return False
-    contexts = [definition.preprocessor_context for definition in definitions]
-    if any(context is None for context in contexts):
-        return False
-    branch_maps = [dict(context or ()) for context in contexts]
-    common_groups = set(branch_maps[0])
-    for branch_map in branch_maps[1:]:
-        common_groups.intersection_update(branch_map)
-    return any(
-        len({branch_map[group] for branch_map in branch_maps}) == len(definitions)
-        for group in common_groups
+    if call_context is None or definition_context is None:
+        return True
+    call_conditions = dict(call_context)
+    return all(
+        macro not in call_conditions or call_conditions[macro] == enabled
+        for macro, enabled in definition_context
     )
 
 
@@ -167,13 +149,21 @@ def discover_candidates(
             )
             if callee is None:
                 definitions = repository.find_functions(call.name, scopes)
-                if len(definitions) > 1:
-                    if _is_conditional_definition_set(definitions):
-                        continue
+                if not definitions:
+                    continue
+                compatible = [
+                    definition
+                    for definition in definitions
+                    if _preprocessor_contexts_compatible(
+                        call.preprocessor_context,
+                        definition.preprocessor_context,
+                    )
+                ]
+                if len(compatible) != 1:
                     raise RuntimeError(
                         f"{sample_key}: ambiguous repository binding for {call.name}"
                     )
-                continue
+                callee = compatible[0]
             key = (callee.path, callee.name)
             existing = discovered.get(key)
             lines = set(existing.call_lines if existing else ())
