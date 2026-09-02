@@ -299,17 +299,20 @@ class SemanticValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not valid JSON"):
             _extract_json_object('prefix {"summaries":[]}')
 
-    def test_response_content_rejects_reasoning_without_final_answer(self):
+    def test_response_content_rejects_truncated_output_even_with_content(self):
         result = {
             "choices": [
                 {
                     "finish_reason": "length",
-                    "message": {"content": "", "reasoning_content": "unfinished"},
+                    "message": {
+                        "content": '{"summaries":[{"kind":"VALUE"',
+                        "reasoning_content": "",
+                    },
                 }
             ],
-            "usage": {"completion_tokens": 384},
+            "usage": {"completion_tokens": 2048},
         }
-        with self.assertRaisesRegex(ValueError, "finish_reason='length'"):
+        with self.assertRaisesRegex(ValueError, "truncated at max_tokens"):
             _response_content(result)
 
     def test_llm_normalize_passes_explicit_response_schema(self):
