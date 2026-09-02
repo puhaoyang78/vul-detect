@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from z3 import Int, IntVal, Not, Solver, sat, unsat
+from z3 import If, Int, IntVal, Not, Solver, sat, unsat
 
 from .source import FunctionSource, normalize_expression
 
@@ -66,7 +66,6 @@ class ExpressionEncoder:
         r"""
         sizeof\s*\([^()]*\)
         |[A-Za-z_][A-Za-z0-9_]*(?:->|\.)[A-Za-z_][A-Za-z0-9_.>-]*
-        |[A-Za-z_][A-Za-z0-9_]*\s*\([^()]*\)
         """,
         re.X,
     )
@@ -156,6 +155,18 @@ class ExpressionEncoder:
                 return -value
             if isinstance(node.op, ast.UAdd):
                 return value
+        if isinstance(node, ast.Call):
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id in {"min", "max"}
+                and len(node.args) == 2
+            ):
+                left = self._node(node.args[0])
+                right = self._node(node.args[1])
+                if node.func.id == "min":
+                    return If(left <= right, left, right)
+                return If(left >= right, left, right)
+            raise ValueError(f"unsupported function call: {ast.dump(node)}")
         if isinstance(node, ast.BinOp):
             left = self._node(node.left)
             right = self._node(node.right)
@@ -619,8 +630,11 @@ def reason_memory_safety(
 
     if accesses:
         return ConstraintResult(
-            "SAFE",
-            "all analyzed memory accesses satisfy their generated bounds conditions",
+            "UNKNOWN",
+            (
+                "all currently modeled memory accesses satisfy their generated bounds "
+                "conditions, but complete function-level memory-access coverage is not established"
+            ),
             accesses,
         )
 
