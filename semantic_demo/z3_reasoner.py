@@ -670,6 +670,12 @@ def reason_memory_safety(
             "target function contains parser error nodes; semantic verification is incomplete",
             tuple(),
         )
+    if entry.has_indirect_calls():
+        return ConstraintResult(
+            "UNKNOWN",
+            "target function contains unresolved indirect calls",
+            tuple(),
+        )
 
     accesses = tuple(
         _check_access(entry, operation, capacities, signed, unsigned, operations)
