@@ -476,6 +476,30 @@ class Z3ReasonerTests(unittest.TestCase):
         self.assertIn(("WRITE", "dst"), effects)
         self.assertIn(("READ", "src"), effects)
 
+    def test_array_subscript_becomes_explicit_memory_access(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(int index)
+            {
+                char buf[8];
+                buf[index] = 0;
+                return 0;
+            }
+            """,
+        )[0]
+        verdict = analyze(entry)
+        ast_writes = [
+            item
+            for item in verdict.as_json()["operations"]
+            if item["callee"] == "AST_SUBSCRIPT" and item["kind"] == "WRITE"
+        ]
+        self.assertEqual(1, len(ast_writes))
+        self.assertEqual("buf+(index)", ast_writes[0]["buffer"])
+        self.assertEqual("VULNERABLE", verdict.verdict)
+        self.assertIn("offset may be negative", verdict.reason)
+
+
 
 class PropagationTests(unittest.TestCase):
     def test_custom_write_exposes_capacity_mismatch(self):
