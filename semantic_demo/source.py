@@ -45,6 +45,7 @@ class Call:
     result: str | None = None
     returned: bool = False
     indirect: bool = False
+    preprocessor_context: tuple[tuple[str, bool], ...] | None = ()
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,7 @@ class FunctionSource:
     parameter_pointer_like: tuple[bool, ...]
     start_line: int
     parse_has_error: bool = False
-    preprocessor_context: tuple[tuple[int, int], ...] | None = None
+    preprocessor_context: tuple[tuple[str, bool], ...] | None = ()
 
     def calls(self) -> list[Call]:
         source = self.text.encode()
@@ -103,6 +104,15 @@ class FunctionSource:
         source = self.text.encode()
         tree = _parser_for_language(self.language).parse(source)
         return _reaching_value_relations_before(tree.root_node, source, self.start_line, line)
+
+    def direct_call_definitions_before(
+        self, line: int
+    ) -> list[tuple[str, str, int]]:
+        source = self.text.encode()
+        tree = _parser_for_language(self.language).parse(source)
+        return _reaching_direct_call_definitions_before(
+            tree.root_node, source, self.start_line, line
+        )
 
     def continuation_constraints_before(self, line: int) -> list[str]:
         source = self.text.encode()
@@ -334,7 +344,7 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 parameter_pointer_like=pointer_like,
                 start_line=node.start_point.row + 1,
                 parse_has_error=bool(node.has_error),
-                preprocessor_context=_preprocessor_context(node, source_text),
+                preprocessor_context=_preprocessor_context(node, source),
             )
         )
     return functions
@@ -342,28 +352,42 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
 
 def _preprocessor_context(
     node: Node,
-    source_text: str,
-) -> tuple[tuple[int, int], ...] | None:
-    """Return every conditional group and branch containing a node."""
-    stack: list[tuple[int, int]] = []
-    byte_offset = 0
-    for line in source_text.splitlines(keepends=True):
-        if byte_offset >= node.start_byte:
-            break
-        match = re.match(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b", line)
-        if match:
-            directive = match.group(1)
-            if directive in {"if", "ifdef", "ifndef"}:
-                stack.append((byte_offset, byte_offset))
-            elif directive in {"elif", "else"} and stack:
-                group, _ = stack[-1]
-                stack[-1] = (group, byte_offset)
-            elif directive == "endif" and stack:
-                stack.pop()
-        byte_offset += len(line.encode())
-    if not stack:
-        return None
-    return tuple(stack)
+    source: bytes,
+) -> tuple[tuple[str, bool], ...] | None:
+    """Return simple #ifdef/#ifndef conditions containing a syntax node."""
+    conditions: dict[str, bool] = {}
+    original = node
+    current = node
+    while current.parent is not None:
+        parent = current.parent
+        if parent.type == "preproc_if":
+            return None
+        if parent.type == "preproc_ifdef":
+            name_node = parent.child_by_field_name("name")
+            if name_node is None:
+                return None
+            macro = _text(name_node, source)
+            directive = source[parent.start_byte : name_node.start_byte].decode(
+                errors="replace"
+            ).strip()
+            enabled = not directive.startswith("#ifndef")
+            alternative = parent.child_by_field_name("alternative")
+            if (
+                alternative is not None
+                and alternative.start_byte <= original.start_byte
+                and original.end_byte <= alternative.end_byte
+            ):
+                if alternative.type != "preproc_else":
+                    return None
+                enabled = not enabled
+            previous = conditions.get(macro)
+            if previous is not None and previous != enabled:
+                return None
+            conditions[macro] = enabled
+        elif parent.type in {"preproc_elif", "preproc_elifdef"}:
+            return None
+        current = parent
+    return tuple(sorted(conditions.items()))
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:
@@ -535,37 +559,28 @@ def _callee_name(node: Node | None, source: bytes) -> str | None:
 
 def _call_context(node: Node, source: bytes) -> tuple[str | None, bool]:
     current = node
-    result: str | None = None
-    returned = False
-    while True:
-        parent = current.parent
-        if parent is None:
-            break
-        if parent.type == "return_statement":
-            returned = True
-            break
-        if parent.type == "assignment_expression":
-            right = parent.child_by_field_name("right")
-            left = parent.child_by_field_name("left")
-            if right is not None and left is not None and (
-                right.start_byte <= current.start_byte
-                and current.end_byte <= right.end_byte
-            ):
-                result = _text(left, source)
-                break
-        if parent.type == "init_declarator":
-            value = parent.child_by_field_name("value")
-            declarator = parent.child_by_field_name("declarator")
-            if value is not None and declarator is not None and (
-                value.start_byte <= current.start_byte
-                and current.end_byte <= value.end_byte
-            ):
-                result = _identifier(declarator, source) or _text(declarator, source)
-                break
-        if parent.type in {"expression_statement", "argument_list"}:
-            break
-        current = parent
-    return result, returned
+    while (
+        current.parent is not None
+        and current.parent.type in {"parenthesized_expression", "cast_expression"}
+    ):
+        current = current.parent
+
+    parent = current.parent
+    if parent is None:
+        return None, False
+    if parent.type == "return_statement":
+        return None, True
+    if parent.type == "assignment_expression":
+        right = parent.child_by_field_name("right")
+        left = parent.child_by_field_name("left")
+        if right is current and left is not None:
+            return _text(left, source), False
+    if parent.type == "init_declarator":
+        value = parent.child_by_field_name("value")
+        declarator = parent.child_by_field_name("declarator")
+        if value is current and declarator is not None:
+            return _identifier(declarator, source) or _text(declarator, source), False
+    return None, False
 
 
 def _calls(
@@ -602,6 +617,7 @@ def _calls(
                 result=result,
                 returned=returned,
                 indirect=indirect,
+                preprocessor_context=_preprocessor_context(item, source),
             )
         )
     return calls
@@ -882,6 +898,105 @@ def _simple_assignment(node: Node, source: bytes) -> tuple[str, str] | None:
             return None
         return name, _text(value, source)
     return None
+
+
+def _direct_call_assignment(
+    node: Node,
+    source: bytes,
+    line_offset: int,
+) -> tuple[str, str, int] | None:
+    if node.type == "expression_statement" and node.named_children:
+        node = node.named_children[0]
+
+    left: Node | None = None
+    value: Node | None = None
+    if node.type == "assignment_expression":
+        left = node.child_by_field_name("left")
+        value = node.child_by_field_name("right")
+        if left is None or left.type != "identifier":
+            return None
+    elif node.type == "declaration":
+        init_nodes = [
+            item for item in node.named_children if item.type == "init_declarator"
+        ]
+        if len(init_nodes) != 1:
+            return None
+        init = init_nodes[0]
+        left = init.child_by_field_name("declarator")
+        value = init.child_by_field_name("value")
+    else:
+        return None
+
+    if left is None or value is None:
+        return None
+    target = _identifier(left, source)
+    if not target:
+        return None
+
+    current = value
+    while current.type in {"parenthesized_expression", "cast_expression"}:
+        named = current.named_children
+        if not named:
+            return None
+        current = named[-1]
+    if current.type != "call_expression":
+        return None
+    function = current.child_by_field_name("function")
+    callee = _callee_name(function, source)
+    if callee is None:
+        return None
+    return target, callee, line_offset + current.start_point.row
+
+
+def _reaching_direct_call_definitions_before(
+    root: Node,
+    source: bytes,
+    line_offset: int,
+    access_line: int,
+) -> list[tuple[str, str, int]]:
+    containers = [
+        node
+        for node in _walk(root)
+        if node.type == "compound_statement"
+        and _node_contains_line(node, line_offset, access_line)
+    ]
+    containers.sort(key=lambda node: (node.end_byte - node.start_byte), reverse=True)
+
+    definitions: dict[str, tuple[str, int]] = {}
+    for compound in containers:
+        for child in compound.named_children:
+            if _node_contains_line(child, line_offset, access_line):
+                break
+            if _absolute_line(child, line_offset) >= access_line:
+                break
+            relation = _direct_call_assignment(child, source, line_offset)
+            if relation is not None:
+                definitions[relation[0]] = (relation[1], relation[2])
+            else:
+                simple = _simple_assignment(child, source)
+                if simple is not None:
+                    definitions.pop(simple[0], None)
+
+    for node in _walk(root):
+        if node.type != "for_statement" or not _node_contains_line(
+            node, line_offset, access_line
+        ):
+            continue
+        initializer = node.child_by_field_name("initializer")
+        if initializer is None:
+            continue
+        relation = _direct_call_assignment(initializer, source, line_offset)
+        if relation is not None:
+            definitions[relation[0]] = (relation[1], relation[2])
+        else:
+            simple = _simple_assignment(initializer, source)
+            if simple is not None:
+                definitions.pop(simple[0], None)
+
+    return [
+        (target, callee, line)
+        for target, (callee, line) in definitions.items()
+    ]
 
 
 def _reaching_value_relations_before(
