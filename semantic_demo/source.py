@@ -74,6 +74,7 @@ class FunctionSource:
     parameters: tuple[str, ...]
     parameter_types: tuple[str, ...]
     parameter_pointer_like: tuple[bool, ...]
+    parameter_signatures: tuple[str, ...]
     start_line: int
     parse_has_error: bool = False
 
@@ -292,21 +293,27 @@ def _function_name(node: Node, source: bytes) -> str | None:
 
 def _parameters(
     node: Node, source: bytes
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[bool, ...]]:
+) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[bool, ...],
+    tuple[str, ...],
+]:
     declarator = node.child_by_field_name("declarator")
     if declarator is None:
-        return (), (), ()
+        return (), (), (), ()
     function_decl = next(
         (item for item in _walk(declarator) if item.type == "function_declarator"), None
     )
     if function_decl is None:
-        return (), (), ()
+        return (), (), (), ()
     parameter_list = function_decl.child_by_field_name("parameters")
     if parameter_list is None:
         return (), (), ()
     names: list[str] = []
     types: list[str] = []
     pointer_like: list[bool] = []
+    signatures: list[str] = []
     for child in parameter_list.named_children:
         if child.type not in {"parameter_declaration", "optional_parameter_declaration"}:
             continue
@@ -323,7 +330,29 @@ def _parameters(
                 for item in _walk(parameter_decl)
             )
         )
-    return tuple(names), tuple(types), tuple(pointer_like)
+        identifier_node = next(
+            (
+                item
+                for item in _walk(parameter_decl)
+                if item.type == "identifier" and _text(item, source) == name
+            ),
+            None,
+        ) if parameter_decl is not None else None
+        if identifier_node is None:
+            signatures.append(normalize_expression(_text(child, source)))
+        else:
+            signature = (
+                source[child.start_byte : identifier_node.start_byte]
+                + b"$"
+                + source[identifier_node.end_byte : child.end_byte]
+            ).decode(errors="replace")
+            signatures.append(normalize_expression(signature))
+    return (
+        tuple(names),
+        tuple(types),
+        tuple(pointer_like),
+        tuple(signatures),
+    )
 
 
 def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
@@ -337,7 +366,7 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
         name = _function_name(node, source)
         if not name:
             continue
-        parameters, types, pointer_like = _parameters(node, source)
+        parameters, types, pointer_like, signatures = _parameters(node, source)
         functions.append(
             FunctionSource(
                 path=path,
@@ -348,6 +377,7 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 parameters=parameters,
                 parameter_types=types,
                 parameter_pointer_like=pointer_like,
+                parameter_signatures=signatures,
                 start_line=node.start_point.row + 1,
                 parse_has_error=bool(node.has_error),
             )
