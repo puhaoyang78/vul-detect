@@ -52,53 +52,28 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
             elif indices and len(call.arguments) > indices[0]:
                 size = call.arguments[indices[0]]
             else:
-                continue
-            operations.append(
-                Operation(
-                    "ALLOC",
-                    call.name,
-                    call.result or "return",
-                    size,
-                    call.line,
-                    False,
-                )
-            )
-        elif call.name in WRITES:
+                size = ""
+            if size:
+                operations.append(Operation("ALLOC", call.name, call.result or "return", size, call.line, False))
+
+        if call.name in WRITES:
             buffer_index, length_index = WRITES[call.name]
             if len(call.arguments) > max(buffer_index, length_index):
                 length = call.arguments[length_index]
                 if call.name == "fread" and len(call.arguments) >= 3:
                     length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                operations.append(
-                    Operation(
-                        "WRITE",
-                        call.name,
-                        call.arguments[buffer_index],
-                        length,
-                        call.line,
-                        False,
-                    )
-                )
-        elif call.name in READS:
+                operations.append(Operation("WRITE", call.name, call.arguments[buffer_index], length, call.line, False))
+
+        if call.name in READS:
             buffer_index, length_index = READS[call.name]
             if len(call.arguments) > max(buffer_index, length_index):
                 length = call.arguments[length_index]
                 if call.name == "fwrite" and len(call.arguments) >= 3:
                     length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                operations.append(
-                    Operation(
-                        "READ",
-                        call.name,
-                        call.arguments[buffer_index],
-                        length,
-                        call.line,
-                        False,
-                    )
-                )
-        elif call.name in UNBOUNDED_WRITES and call.arguments:
-            operations.append(
-                Operation("WRITE", call.name, call.arguments[0], "UNBOUNDED", call.line, False)
-            )
+                operations.append(Operation("READ", call.name, call.arguments[buffer_index], length, call.line, False))
+
+        if call.name in UNBOUNDED_WRITES and call.arguments:
+            operations.append(Operation("WRITE", call.name, call.arguments[0], "UNBOUNDED", call.line, False))
     return operations
 
 
@@ -352,48 +327,26 @@ def _risky_custom_access(
 def analyze(
     entry: FunctionSource,
     validations: Iterable[Validation] = (),
-    proposed: bool = False,
 ) -> Verdict:
     operations = _standard_operations(entry)
-    if proposed:
-        operations.extend(_custom_operations(entry, validations))
+    operations.extend(_custom_operations(entry, validations))
 
-    # Keep the baseline-compatible checks only for direct, syntactically obvious cases.
-    checks = [
-        _risky_unbounded_write(entry, operations),
-        _risky_offset_write(entry, operations),
-        _risky_allocation_arithmetic(entry, operations),
-    ]
-    reason = next((item for item in checks if item), None)
-    if reason:
-        return Verdict("VULNERABLE", reason, tuple(operations))
-
-    if proposed:
-        constraint_result = reason_memory_safety(entry, operations)
-        constraint_json = constraint_result.as_json()
-        if constraint_result.status == "POTENTIAL_VIOLATION":
-            return Verdict(
-                "VULNERABLE",
-                f"Z3: {constraint_result.reason}",
-                tuple(operations),
-                constraint_json,
-            )
-        if constraint_result.status == "SAFE":
-            return Verdict(
-                "NOT_DETECTED",
-                "Z3 proved the generated bounds conditions under the available constraints",
-                tuple(operations),
-                constraint_json,
-            )
+    constraint_result = reason_memory_safety(entry, operations)
+    constraint_json = constraint_result.as_json()
+    if constraint_result.status == "POTENTIAL_VIOLATION":
         return Verdict(
-            "NOT_DETECTED",
-            f"Z3 could not decide: {constraint_result.reason}",
+            "VULNERABLE",
+            f"Z3: {constraint_result.reason}",
             tuple(operations),
             constraint_json,
         )
-
     return Verdict(
         "NOT_DETECTED",
-        "no direct supported sink established a capacity violation in the entry function",
+        (
+            "verification incomplete: " + constraint_result.reason
+            if constraint_result.status == "UNKNOWN"
+            else constraint_result.reason
+        ),
         tuple(operations),
+        constraint_json,
     )
