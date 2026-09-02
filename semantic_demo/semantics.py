@@ -29,8 +29,6 @@ WRITES = {
     "recvfrom": (1, 2),
     "fread": (0, 1),
     "ReadFile": (1, 2),
-    "strncpy": (0, 2),
-    "strncat": (0, 2),
 }
 READS = {
     "memcpy": (1, 2),
@@ -40,8 +38,6 @@ READS = {
     "sendto": (1, 2),
     "fwrite": (0, 1),
     "memcmp": (0, 2),
-    "strncpy": (1, 2),
-    "strncat": (1, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
 STANDARD_CALLS = (
@@ -157,16 +153,12 @@ def _schema_error(summary: dict[str, object], parameter_count: int) -> str | Non
         required = {"kind", "buffer", "length"}
         if set(summary) != required:
             return f"{kind} must contain exactly kind/buffer/length"
-    elif kind == "GUARD":
-        required = {"kind", "relation"}
-        if set(summary) != required:
-            return "GUARD must contain exactly kind/relation"
     elif kind == "VALUE":
         required = {"kind", "target", "expression"}
         if set(summary) != required or summary.get("target") != "return":
             return "VALUE must contain exactly kind/target/expression and target=return"
     else:
-        return "kind must be ALLOC, READ, WRITE, GUARD, or VALUE"
+        return "kind must be ALLOC, READ, WRITE, or VALUE"
 
     for value in summary.values():
         if not isinstance(value, str):
@@ -291,17 +283,6 @@ def _validate_with_joern(
                     f"Joern verified {kind.lower()} flow to specified API {call.name}",
                 )
         return False, f"Joern found no specified API matching the declared {kind.lower()}"
-
-    if kind == "GUARD":
-        relation = _substitute_args(summary["relation"], candidate.function.parameters)
-        expected = _comparison_variants(relation)
-        if expected & {
-            variant
-            for condition in facts.conditions
-            for variant in _comparison_variants(condition)
-        }:
-            return True, "Joern verified exact guard comparison"
-        return False, "Joern found no exact matching guard comparison"
 
     if kind == "VALUE":
         expression = normalize_expression(
@@ -466,7 +447,7 @@ def llm_normalize(
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY is not set")
 
-    prompt = f"""Normalize only security-relevant memory semantics implemented by this candidate C function.
+    prompt = f"""Normalize only security-relevant memory semantics implemented by this candidate C/C++ function.
 Return one JSON object with key summaries, whose value is a JSON array. Use only these exact schemas:
 {{"kind":"ALLOC","buffer":"return","size":"arg0"}}
 {{"kind":"READ","buffer":"arg0","length":"arg2"}}
@@ -481,7 +462,6 @@ Meaning:
 - WRITE: bytes are written INTO a caller-supplied buffer. read(fd, buf, n) or recv(fd, buf, n)
   implies WRITE(buffer=buf,length=n).
 - For memcpy(dst, src, n), emit WRITE(dst,n) and READ(src,n). Never swap these roles.
-- GUARD: a real comparison in this function constrains an argument's size, capacity, index, or offset.
 - VALUE: return value is a direct value/cast/arithmetic transformation of caller arguments.
 
 Preserve the candidate signature exactly: arg0 is the first parameter, arg1 the second, etc.
@@ -490,7 +470,8 @@ extent/count used by the underlying operation. Every source parameter reference 
 with positional argN form. A field is arg0->field, never the source parameter name. Do not emit
 local variables or internal buffers as READ/WRITE buffers.
 Do not guess implied checks, library contracts, caller behavior, or vulnerability labels. Emit only
-semantics directly implemented by this function. Expressions may combine argN with constants, fields,
+semantics directly implemented by this function. Do not emit standalone guard/check summaries:
+a comparison without an explicit return contract cannot be propagated safely across a call boundary. Expressions may combine argN with constants, fields,
 casts, sizeof, and arithmetic. Emit {{"summaries":[]}} when none applies. Do not inspect anything
 beyond this function.
 
