@@ -10,6 +10,10 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 检测输入为 data/detection_samples.jsonl，其中不含 CVE、fixing commit、补丁、漏洞描述
 或人工结论。data/oracle.jsonl 只在检测结果落盘之后用于评估。
 
+Baseline 为独立的函数级 CodeBERT sequence-classification 模型，只读取目标函数源码；
+默认从 /home/PublicData/PHY-data/resource/codebert 加载本地微调 checkpoint。Proposed 不复用
+任何 baseline 启发式判定规则，所有漏洞结论均来自统一的 memory-effect / constraint / VC 路径。
+
 ## 当前分析流程
 
 1. **Selective semantic frontier**
@@ -38,11 +42,14 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 
 5. **Per-access bounds verification**
    - 每一个 READ/WRITE 单独生成 Verification Condition。
+   - memcpy/memmove 同时建模 destination WRITE 与 source READ。
    - 典型条件包括 extent >= 0、extent <= capacity、offset + extent <= capacity。
-   - Z3 为每个 memory access 单独返回 SAFE / POTENTIAL_VIOLATION / UNKNOWN。
+   - Z3 为每个已建模 memory access 单独返回 SAFE / POTENTIAL_VIOLATION / UNKNOWN。
    - POTENTIAL_VIOLATION 表示当前已知 Path/Value Constraints 下存在违反 VC 的满足解；
-     UNKNOWN 表示缺少 capacity、valid extent 或无法可靠编码的关系，不强行判漏洞。
-   - 函数级结果最后再由各 memory-access 结果聚合，因此无关访问的 UNKNOWN 不会覆盖真正的违规访问。
+     UNKNOWN 表示缺少 capacity、valid extent、完整 access coverage 或无法可靠编码的关系。
+   - 未支持的函数表达式不会作为自由整数交给求解器；min/max 具有显式语义。
+   - 在尚未证明完整函数级 memory-access coverage 前，不把“当前已分析 access 全部 SAFE”
+     提升为函数级 SAFE。
 
 ## 环境
 
@@ -56,6 +63,7 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
     JDK: /home/phy/jdk21
     llama.cpp: /home/phy/llama.cpp/build/bin/llama-server
     Qwen: /home/phy/models/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MXFP4_MOE.gguf
+    CodeBERT baseline: /home/PublicData/PHY-data/resource/codebert
 
 ## 推荐运行顺序
 
@@ -73,9 +81,15 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 
     python -m semantic_demo.cli normalize --normalizer llm --refresh
 
-然后重新执行 Joern fixed-point validation 和 Z3 bounds verification：
+然后重新执行 CodeBERT baseline、Joern fixed-point validation 和 Z3 bounds verification：
 
     python -m semantic_demo.cli run --joern-dir /home/phy/joern
+
+如 CodeBERT 微调 checkpoint 不在默认目录：
+
+    python -m semantic_demo.cli run \
+      --joern-dir /home/phy/joern \
+      --codebert-path /path/to/fine-tuned-codebert
 
 Joern 验证每完成一个样本就保存检查点。重新执行同一命令时，输入指纹一致的样本会
 直接复用。需要忽略现有检查点并从 S01 重新运行时使用：
@@ -95,8 +109,10 @@ Joern 验证每完成一个样本就保存检查点。重新执行同一命令�
   compositional fixed-point summary validation。
 - semantic_demo/joern.py / joern_extract.sc
   CPG、参数到调用角色的数据流、比较和返回关系。
+- semantic_demo/codebert_baseline.py
+  独立函数级 CodeBERT baseline，仅使用目标函数源码。
 - semantic_demo/analyzer.py
-  标准内存操作与验证后的跨过程语义统一传播到目标函数。
+  标准内存操作与验证后的跨过程语义统一传播到目标函数，不包含漏洞启发式规则。
 - semantic_demo/z3_reasoner.py
   per-memory-access Verification Condition 生成与 Z3 求解。
 - semantic_demo/cli.py
@@ -109,9 +125,8 @@ Joern 验证每完成一个样本就保存检查点。重新执行同一命令�
 - results/results.csv：包含 Z3 status、Verification Conditions 和 counterexample model。
 - results/summary.md：整体结果摘要。
 
-results/ 目录中的现有数字来自本次方法重构之前的运行，仅作为历史对照。由于候选发现、
-组合验证和 Z3 聚合方式均已改变，必须重新运行 normalization 和 run 后再评价新结果。
-
+results/ 目录中的既有数字不适用于当前 CodeBERT baseline 与统一 VC 推理版本。
+修改方法实现后应重新运行 run（必要时使用 --refresh）再评价结果。
 
 Z3 中 Path Constraint 与 buffer capacity 已严格分离。Guard 只作为路径约束；
 当缺少显式 capacity 时，只有 guarded value 与实际 access extent 之间存在可编码的
