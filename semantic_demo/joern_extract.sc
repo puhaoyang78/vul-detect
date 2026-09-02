@@ -36,15 +36,11 @@ import io.joern.dataflowengineoss.language._
             argIndex + "\t" + clean(call.code) + "\t" + clean(arg.code)
           )
           params.foreach { p =>
-            try {
-              if (arg.reachableBy(p).l.nonEmpty) {
-                lines += (
-                  "FLOW\t" + (p.index - 1) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
-                  clean(call.name) + "\t" + argIndex
-                )
-              }
-            } catch {
-              case _: Throwable => ()
+            if (arg.reachableBy(p).l.nonEmpty) {
+              lines += (
+                "FLOW\t" + (p.index - 1) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
+                clean(call.name) + "\t" + argIndex
+              )
             }
           }
         }
@@ -53,12 +49,8 @@ import io.joern.dataflowengineoss.language._
       method.ast.isReturn.l.foreach { ret =>
         lines += ("RET\t" + clean(ret.code))
         params.foreach { p =>
-          try {
-            if (ret.reachableBy(p).l.nonEmpty) {
-              lines += ("RETFLOW\t" + (p.index - 1))
-            }
-          } catch {
-            case _: Throwable => ()
+          if (ret.reachableBy(p).l.nonEmpty) {
+            lines += ("RETFLOW\t" + (p.index - 1))
           }
         }
       }
