@@ -23,6 +23,7 @@ from .semantics import (
     NORMALIZATION_SCHEMA_VERSION,
     NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
+    candidate_validation_error,
     discover_candidates,
     llm_normalize,
     load_replay,
@@ -324,19 +325,24 @@ def normalize_command(args: argparse.Namespace) -> None:
                     reused += 1
                     continue
 
-                try:
-                    summaries = llm_normalize(candidate, **llm_options)
-                except (
-                    RuntimeError,
-                    ValueError,
-                    urllib.error.URLError,
-                    TimeoutError,
-                ) as error:
-                    raise RuntimeError(
-                        f"{candidate.sample_key}:{candidate.function.name}: "
-                        "normalization failed"
-                    ) from error
-                generated += 1
+                skip_reason = candidate_validation_error(candidate.function)
+                if skip_reason is None:
+                    try:
+                        summaries = llm_normalize(candidate, **llm_options)
+                    except (
+                        RuntimeError,
+                        ValueError,
+                        urllib.error.URLError,
+                        TimeoutError,
+                    ) as error:
+                        raise RuntimeError(
+                            f"{candidate.sample_key}:{candidate.function.name}: "
+                            "normalization failed"
+                        ) from error
+                    generated += 1
+                else:
+                    summaries = []
+
                 record = {
                     "schema_version": NORMALIZATION_SCHEMA_VERSION,
                     "sample_key": candidate.sample_key,
@@ -350,11 +356,14 @@ def normalize_command(args: argparse.Namespace) -> None:
                     "llm_model": llm_options.get("model"),
                     "summaries": summaries,
                 }
+                if skip_reason is not None:
+                    record["skip_reason"] = skip_reason
                 records.append(record)
                 cache[cache_key] = record
                 write_jsonl(args.output, cache.values())
+                status = "skipped" if skip_reason is not None else "done"
                 print(
-                    f"normalize_candidate_done={candidate.sample_key}:"
+                    f"normalize_candidate_{status}={candidate.sample_key}:"
                     f"{candidate.function.name}@{candidate.function.start_line} "
                     f"checkpoint={args.output}",
                     flush=True,
