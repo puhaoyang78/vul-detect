@@ -452,6 +452,62 @@ class SemanticValidationTests(unittest.TestCase):
             summaries,
         )
 
+    def test_invalid_llm_summary_is_rejected_without_aborting_candidate(self):
+        candidate = Candidate(
+            "sample",
+            parse_functions(
+                "level.c",
+                """
+                int level(int lvl)
+                {
+                    if (lvl)
+                        return 1;
+                    return 0;
+                }
+                """,
+            )[0],
+            (),
+        )
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+        response.read.return_value = json.dumps(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summaries": [
+                                        {
+                                            "kind": "VALUE",
+                                            "target": "return",
+                                            "expression": "arg1",
+                                        }
+                                    ]
+                                }
+                            )
+                        },
+                    }
+                ]
+            }
+        ).encode()
+
+        with patch(
+            "semantic_demo.semantics.urllib.request.urlopen",
+            return_value=response,
+        ):
+            summaries = llm_normalize(
+                candidate,
+                api_key="local",
+                base_url="http://127.0.0.1:1/v1",
+                model="test",
+                response_schema=NORMALIZATION_RESPONSE_SCHEMA,
+            )
+
+        self.assertEqual([], summaries)
+
     def test_llm_normalize_passes_explicit_response_schema(self):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
