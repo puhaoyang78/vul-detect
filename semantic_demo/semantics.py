@@ -40,31 +40,15 @@ READS = {
     "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 3
+NORMALIZATION_SCHEMA_VERSION = 4
 MAX_LLM_SOURCE_CHARS = 50000
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "summaries": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "enum": ["ALLOC", "READ", "WRITE", "VALUE"],
-                    },
-                    "buffer": {"type": "string"},
-                    "size": {"type": "string"},
-                    "length": {"type": "string"},
-                    "target": {"type": "string"},
-                    "expression": {"type": "string"},
-                },
-                "additionalProperties": False,
-            },
-        },
+        "matched": {"type": "boolean"},
+        "value": {"type": "string"},
     },
-    "required": ["summaries"],
+    "required": ["matched", "value"],
     "additionalProperties": False,
 }
 
@@ -306,13 +290,28 @@ def _validate_with_joern(
     kind = summary["kind"]
 
     if kind == "ALLOC":
+        returned = {_normalized_return_expression(value) for value in facts.returns}
+        source_calls = {
+            (call.line, call.name): call
+            for call in candidate.function.calls()
+            if not call.indirect
+        }
         for call in facts.call_list():
             _, size_indices = _known_call_indices(call.name, "ALLOC")
             if not size_indices:
                 continue
+            source_call = source_calls.get((call.line, call.name))
+            if source_call is None:
+                continue
+            returns_allocation = source_call.returned or (
+                source_call.result is not None
+                and normalize_expression(source_call.result) in returned
+            )
+            if not returns_allocation:
+                continue
             if _joern_expr_reaches(facts, summary["size"], call, size_indices):
-                return True, "Joern verified allocation-size flow to a specified allocator"
-        return False, "Joern found no specified allocator receiving the declared size"
+                return True, "Joern verified returned allocation and its size flow"
+        return False, "Joern found no returned specified allocator matching the declared size"
 
     if kind in {"READ", "WRITE"}:
         for call in facts.call_list():
@@ -337,13 +336,6 @@ def _validate_with_joern(
         returned = {_normalized_return_expression(value) for value in facts.returns}
         if expression and expression in returned:
             return True, "Joern verified exact returned value expression"
-        param_indices = _arg_indices(summary["expression"])
-        if (
-            len(param_indices) == 1
-            and summary["expression"] == f"arg{param_indices[0]}"
-            and param_indices[0] in facts.return_flows
-        ):
-            return True, "Joern verified direct parameter-to-return flow"
         return False, "Joern found no exact return matching the declared VALUE expression"
 
     return False, f"unsupported semantic kind: {kind}"
@@ -416,8 +408,6 @@ def _validate_by_composition(
 def candidate_validation_error(function: FunctionSource) -> str | None:
     if function.parse_has_error:
         return "candidate function contains parser error nodes"
-    if function.has_indirect_calls():
-        return "candidate function contains unresolved indirect calls"
     return None
 
 
@@ -490,13 +480,36 @@ def validate_summary(
 
 
 
+def _normalization_queries(function: FunctionSource) -> list[tuple[str, str]]:
+    queries: list[tuple[str, str]] = []
+    if function.has_value_return():
+        queries.extend((("ALLOC", "return"), ("VALUE", "return")))
+    for index, pointer_like in enumerate(function.parameter_pointer_like):
+        if pointer_like:
+            queries.append(("READ", f"arg{index}"))
+            queries.append(("WRITE", f"arg{index}"))
+    return queries
+
+
+def _summary_from_query(
+    kind: str,
+    anchor: str,
+    value: str,
+) -> dict[str, str]:
+    if kind == "ALLOC":
+        return {"kind": "ALLOC", "buffer": "return", "size": value}
+    if kind == "VALUE":
+        return {"kind": "VALUE", "target": "return", "expression": value}
+    return {"kind": kind, "buffer": anchor, "length": value}
+
+
 def llm_normalize(
     candidate: Candidate,
     *,
     api_key: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
-    max_tokens: int = 2048,
+    max_tokens: int = 256,
     disable_proxy: bool = False,
     response_schema: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
@@ -511,79 +524,112 @@ def llm_normalize(
             f"({len(candidate.function.text)} > {MAX_LLM_SOURCE_CHARS} chars)"
         )
 
-    prompt = f"""Normalize only security-relevant memory semantics implemented by this candidate C/C++ function.
-Return one JSON object with key summaries, whose value is a JSON array. Use only these exact schemas:
-{{"kind":"ALLOC","buffer":"return","size":"arg0"}}
-{{"kind":"READ","buffer":"arg0","length":"arg2"}}
-{{"kind":"WRITE","buffer":"arg0","length":"arg2"}}
-{{"kind":"VALUE","target":"return","expression":"arg0"}}
+    indirect_calls = [
+        f"{call.name}@{call.line}"
+        for call in candidate.function.calls()
+        if call.indirect
+    ]
+    opaque_text = (
+        ", ".join(indirect_calls)
+        if indirect_calls
+        else "none"
+    )
+    summaries: list[dict[str, str]] = []
 
-Meaning:
-- ALLOC: returned object is allocated/resized with the given size expression.
-- READ: bytes are consumed FROM a caller-supplied buffer. write(fd, buf, n) or send(fd, buf, n)
-  implies READ(buffer=buf,length=n).
-- WRITE: bytes are written INTO a caller-supplied buffer. read(fd, buf, n) or recv(fd, buf, n)
-  implies WRITE(buffer=buf,length=n).
-- For memcpy(dst, src, n), emit WRITE(dst,n) and READ(src,n). Never swap these roles.
-- VALUE: return value is a direct value/cast/arithmetic transformation of caller arguments.
+    for kind, anchor in _normalization_queries(candidate.function):
+        if kind in {"READ", "WRITE"}:
+            task = (
+                f"Determine only whether caller buffer {anchor} has a propagatable "
+                f"{kind} byte effect. If yes, value must be the exact byte-count "
+                "expression in positional argN form."
+            )
+        elif kind == "ALLOC":
+            task = (
+                "Determine only whether the function return value is an allocated "
+                "or resized object. If yes, value must be its exact size expression "
+                "in positional argN form."
+            )
+        else:
+            task = (
+                "Determine only whether every propagated return represented here is "
+                "the same direct value/cast/arithmetic expression of caller arguments. "
+                "If yes, value must be that exact expression in positional argN form."
+            )
 
-Preserve the candidate signature exactly: arg0 is the first parameter, arg1 the second, etc.
-A READ/WRITE buffer must be rooted at a pointer-like caller parameter, while length denotes the
-extent/count used by the underlying operation. Every source parameter reference must be replaced
-with positional argN form. A field is arg0->field, never the source parameter name. Do not emit
-local variables or internal buffers as READ/WRITE buffers.
-Do not guess implied checks, library contracts, caller behavior, or vulnerability labels. Emit only
-semantics directly implemented by this function. Do not emit standalone guard/check summaries:
-a comparison without an explicit return contract cannot be propagated safely across a call boundary. Expressions may combine argN with constants, fields,
-casts, sizeof, and arithmetic. Emit {{"summaries":[]}} when none applies. Do not inspect anything
-beyond this function.
+        prompt = f"""Analyze one bounded interprocedural summary slot for this C/C++ function.
+{task}
+
+Return exactly one JSON object:
+{{"matched":true,"value":"argN expression"}}
+or
+{{"matched":false,"value":""}}
+
+Do not enumerate any other summaries. Do not infer vulnerability labels, guards, caller behavior,
+or library contracts. Unresolved indirect/function-pointer calls are opaque: never infer semantics
+through them, but they do not invalidate unrelated direct evidence. A relation through a direct
+named callee may be proposed only when the argument/return wiring in this function exposes this
+exact slot; downstream validation will require a validated callee summary.
 
 Function: {candidate.function.name}
 Parameters: {json.dumps(list(candidate.function.parameters))}
+Opaque indirect calls: {opaque_text}
 Source:
 {candidate.function.text}
 """
-    response_format: dict[str, object] = {"type": "json_object"}
-    if response_schema is not None:
-        response_format["schema"] = response_schema
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "You output strict JSON only."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-            "max_tokens": max_tokens,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": response_format,
-        }
-    ).encode()
-    request = urllib.request.Request(
-        f"{base_url.rstrip('/')}/chat/completions",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    if disable_proxy:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        response_context = opener.open(request, timeout=180)
-    else:
-        response_context = urllib.request.urlopen(request, timeout=180)
-    with response_context as response:
-        result = json.load(response)
-    content = _response_content(result)
-    parsed = _extract_json_object(content)
-    summaries = parsed.get("summaries", [])
-    if not isinstance(summaries, list):
-        raise ValueError("LLM output field summaries is not a list")
-    if not all(isinstance(item, dict) for item in summaries):
-        raise ValueError("LLM output field summaries must contain only JSON objects")
-    return summaries
+        response_format: dict[str, object] = {"type": "json_object"}
+        if response_schema is not None:
+            response_format["schema"] = response_schema
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You output strict JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0,
+                "max_tokens": max_tokens,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "response_format": response_format,
+            }
+        ).encode()
+        request = urllib.request.Request(
+            f"{base_url.rstrip('/')}/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        if disable_proxy:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            response_context = opener.open(request, timeout=180)
+        else:
+            response_context = urllib.request.urlopen(request, timeout=180)
+        with response_context as response:
+            result = json.load(response)
 
+        parsed = _extract_json_object(_response_content(result))
+        if set(parsed) != {"matched", "value"}:
+            raise ValueError("LLM response must contain exactly matched and value")
+        matched = parsed["matched"]
+        value = parsed["value"]
+        if not isinstance(matched, bool) or not isinstance(value, str):
+            raise ValueError("LLM matched/value fields have invalid types")
+        value = value.strip()
+        if not matched:
+            if value:
+                raise ValueError("LLM unmatched response must use an empty value")
+            continue
+        if not value:
+            raise ValueError("LLM matched response must contain a value")
+
+        summary = _summary_from_query(kind, anchor, value)
+        summary = canonicalize_summary(candidate.function, summary)
+        if summary not in summaries:
+            summaries.append(summary)
+
+    return summaries
 
 def _response_content(result: dict[str, object]) -> str:
     try:
