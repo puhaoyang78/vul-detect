@@ -45,7 +45,6 @@ class Call:
     result: str | None = None
     returned: bool = False
     indirect: bool = False
-    preprocessor_context: tuple[tuple[str, bool], ...] | None = ()
 
 
 @dataclass(frozen=True)
@@ -77,7 +76,6 @@ class FunctionSource:
     parameter_pointer_like: tuple[bool, ...]
     start_line: int
     parse_has_error: bool = False
-    preprocessor_context: tuple[tuple[str, bool], ...] | None = ()
 
     def calls(self) -> list[Call]:
         source = self.text.encode()
@@ -99,6 +97,14 @@ class FunctionSource:
 
     def has_indirect_calls(self) -> bool:
         return any(call.indirect for call in self.calls())
+
+    def has_value_return(self) -> bool:
+        source = self.text.encode()
+        tree = _parser_for_language(self.language).parse(source)
+        return any(
+            node.type == "return_statement" and bool(node.named_children)
+            for node in _walk(tree.root_node)
+        )
 
     def value_relations_before(self, line: int) -> list[tuple[str, str]]:
         source = self.text.encode()
@@ -344,50 +350,9 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 parameter_pointer_like=pointer_like,
                 start_line=node.start_point.row + 1,
                 parse_has_error=bool(node.has_error),
-                preprocessor_context=_preprocessor_context(node, source),
             )
         )
     return functions
-
-
-def _preprocessor_context(
-    node: Node,
-    source: bytes,
-) -> tuple[tuple[str, bool], ...] | None:
-    """Return simple #ifdef/#ifndef conditions containing a syntax node."""
-    conditions: dict[str, bool] = {}
-    original = node
-    current = node
-    while current.parent is not None:
-        parent = current.parent
-        if parent.type == "preproc_if":
-            return None
-        if parent.type == "preproc_ifdef":
-            name_node = parent.child_by_field_name("name")
-            if name_node is None:
-                return None
-            macro = _text(name_node, source)
-            directive = source[parent.start_byte : name_node.start_byte].decode(
-                errors="replace"
-            ).strip()
-            enabled = not directive.startswith("#ifndef")
-            alternative = parent.child_by_field_name("alternative")
-            if (
-                alternative is not None
-                and alternative.start_byte <= original.start_byte
-                and original.end_byte <= alternative.end_byte
-            ):
-                if alternative.type != "preproc_else":
-                    return None
-                enabled = not enabled
-            previous = conditions.get(macro)
-            if previous is not None and previous != enabled:
-                return None
-            conditions[macro] = enabled
-        elif parent.type in {"preproc_elif", "preproc_elifdef"}:
-            return None
-        current = parent
-    return tuple(sorted(conditions.items()))
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:
@@ -617,7 +582,6 @@ def _calls(
                 result=result,
                 returned=returned,
                 indirect=indirect,
-                preprocessor_context=_preprocessor_context(item, source),
             )
         )
     return calls
