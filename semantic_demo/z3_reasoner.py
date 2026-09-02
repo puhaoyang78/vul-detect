@@ -473,6 +473,19 @@ def _check_access(
 
     capacity = _capacity_for_buffer(buffer_text, capacities)
     if capacity is None:
+        _, unresolved_offset = _buffer_base_and_offset(buffer_text)
+        if normalize_expression(unresolved_offset) != "0":
+            return AccessCheck(
+                kind,
+                buffer_text,
+                extent_text,
+                line,
+                "UNKNOWN",
+                f"capacity is unknown for indexed/pointer-offset access {buffer_text}",
+                tuple(conditions),
+                path_constraints,
+                {},
+            )
         guard_vc_text = _guard_coverage_condition(
             entry, line, extent_text, path_constraints
         )
