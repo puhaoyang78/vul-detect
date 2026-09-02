@@ -439,7 +439,6 @@ class Z3ReasonerTests(unittest.TestCase):
             }
             """,
         )[0]
-        access = next(op for op in entry.direct_memory_accesses() if op.origin == "AST_SUBSCRIPT") if False else None
         line = entry.start_line + 4
         self.assertIn("len<=8", entry.continuation_constraints_before(line))
 
