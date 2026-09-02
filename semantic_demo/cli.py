@@ -24,7 +24,6 @@ from .semantics import (
     discover_candidates,
     llm_normalize,
     load_replay,
-    rule_normalize,
     validate_summary,
 )
 from .source import GitRepository
@@ -39,7 +38,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 6
+ANALYSIS_CHECKPOINT_VERSION = 7
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -270,12 +269,10 @@ def normalize_command(args: argparse.Namespace) -> None:
         write_jsonl(args.output, [])
     reused = 0
     generated = 0
-    if args.normalizer == "llm" and args.llm_backend == "local":
+    if args.llm_backend == "local":
         llm_context = local_llm_server(args.llama_server, args.local_model)
-    elif args.normalizer == "llm":
-        llm_context = contextlib.nullcontext({"max_tokens": 8192})
     else:
-        llm_context = contextlib.nullcontext({})
+        llm_context = contextlib.nullcontext({"max_tokens": 8192})
 
     with llm_context as llm_options:
         for sample in samples:
@@ -320,11 +317,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     continue
 
                 try:
-                    summaries = (
-                        llm_normalize(candidate, **llm_options)
-                        if args.normalizer == "llm"
-                        else rule_normalize(candidate)
-                    )
+                    summaries = llm_normalize(candidate, **llm_options)
                 except (
                     RuntimeError,
                     ValueError,
@@ -342,15 +335,9 @@ def normalize_command(args: argparse.Namespace) -> None:
                     "function": candidate.function.name,
                     "parameters": list(candidate.function.parameters),
                     "source_fingerprint": fingerprint,
-                    "normalizer": args.normalizer,
-                    "llm_backend": (
-                        args.llm_backend if args.normalizer == "llm" else None
-                    ),
-                    "llm_model": (
-                        llm_options.get("model")
-                        if args.normalizer == "llm"
-                        else None
-                    ),
+                    "normalizer": "llm",
+                    "llm_backend": args.llm_backend,
+                    "llm_model": llm_options.get("model"),
                     "summaries": summaries,
                 }
                 records.append(record)
@@ -375,7 +362,6 @@ def detect(
     detections_path: str,
     joern_dir: str = "/home/phy/joern",
     java_home: str = "/home/phy/jdk21",
-    use_joern: bool = True,
     resume: bool = True,
     linevul_codebert_path: str = "/home/PublicData/PHY-data/resource/codebert-base",
     linevul_checkpoint: str = "/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin",
@@ -391,9 +377,8 @@ def detect(
         threshold=linevul_threshold,
         device=linevul_device,
     )
-    joern = JoernValidator(joern_dir, java_home=java_home) if use_joern else None
-    if joern is not None:
-        joern.ensure_available()
+    joern = JoernValidator(joern_dir, java_home=java_home)
+    joern.ensure_available()
     semantic_records: list[dict[str, object]] = []
     detection_records: list[dict[str, object]] = []
     detection_cache = (
@@ -405,7 +390,7 @@ def detect(
         else {}
     )
 
-    backend = "joern" if use_joern else "lightweight"
+    backend = "joern"
     print(f"validation_start samples={len(samples)} backend={backend}", flush=True)
     for sample_index, sample in enumerate(samples, 1):
         sample_key = str(sample["sample_key"])
@@ -428,7 +413,7 @@ def detect(
             candidates,
             replay,
             backend,
-            joern.timeout if joern is not None else None,
+            joern.timeout,
             baseline_model.signature,
         )
 
@@ -456,7 +441,7 @@ def detect(
 
         # Fixed-point validation: primitive-backed summaries seed the process;
         # wrapper summaries may then be validated from already accepted callees.
-        accepted: dict[str, list[dict[str, str]]] = {}
+        accepted: dict[tuple[str, str], list[dict[str, str]]] = {}
         pending = list(range(len(summary_entries)))
         final: dict[int, Validation] = {}
 
@@ -478,7 +463,9 @@ def detect(
                     ) from error
                 final[index] = validation
                 if validation.passed:
-                    bucket = accepted.setdefault(validation.function, [])
+                    bucket = accepted.setdefault(
+                        (validation.source_path, validation.function), []
+                    )
                     if validation.summary not in bucket:
                         bucket.append(validation.summary)
                     progress = True
@@ -628,10 +615,14 @@ def evaluate(
         writer.writerows(rows)
 
     def _classification_metrics(prefix: str) -> dict[str, float | int]:
-        tp = fp = tn = fn = 0
+        tp = fp = tn = fn = unknown = 0
         for row in rows:
             truth_label = row["ground_truth"]
-            predicted = "VULNERABLE" if row[f"{prefix}_verdict"] == "VULNERABLE" else "BENIGN"
+            verdict = row[f"{prefix}_verdict"]
+            if verdict == "UNKNOWN":
+                unknown += 1
+                continue
+            predicted = "VULNERABLE" if verdict == "VULNERABLE" else "BENIGN"
             if truth_label == "VULNERABLE" and predicted == "VULNERABLE":
                 tp += 1
             elif truth_label == "BENIGN" and predicted == "VULNERABLE":
@@ -640,13 +631,16 @@ def evaluate(
                 tn += 1
             else:
                 fn += 1
+        decided = tp + fp + tn + fn
         precision = tp / (tp + fp) if tp + fp else 0.0
         recall = tp / (tp + fn) if tp + fn else 0.0
         f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-        accuracy = (tp + tn) / len(rows) if rows else 0.0
+        accuracy = (tp + tn) / decided if decided else 0.0
+        coverage = decided / len(rows) if rows else 0.0
         return {
-            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
-            "precision": precision, "recall": recall, "f1": f1, "accuracy": accuracy,
+            "tp": tp, "fp": fp, "tn": tn, "fn": fn, "unknown": unknown,
+            "precision": precision, "recall": recall, "f1": f1,
+            "accuracy": accuracy, "coverage": coverage,
         }
 
     baseline_metrics = _classification_metrics("baseline")
@@ -666,17 +660,21 @@ def evaluate(
             "- LineVul Baseline："
             f"TP={baseline_metrics['tp']}, FP={baseline_metrics['fp']}, "
             f"TN={baseline_metrics['tn']}, FN={baseline_metrics['fn']}, "
+            f"UNKNOWN={baseline_metrics['unknown']}, "
             f"Precision={baseline_metrics['precision']:.4f}, "
             f"Recall={baseline_metrics['recall']:.4f}, F1={baseline_metrics['f1']:.4f}, "
-            f"Accuracy={baseline_metrics['accuracy']:.4f}"
+            f"Accuracy={baseline_metrics['accuracy']:.4f}, "
+            f"Coverage={baseline_metrics['coverage']:.4f}"
         ),
         (
             "- Proposed："
             f"TP={proposed_metrics['tp']}, FP={proposed_metrics['fp']}, "
             f"TN={proposed_metrics['tn']}, FN={proposed_metrics['fn']}, "
+            f"UNKNOWN={proposed_metrics['unknown']}, "
             f"Precision={proposed_metrics['precision']:.4f}, "
             f"Recall={proposed_metrics['recall']:.4f}, F1={proposed_metrics['f1']:.4f}, "
-            f"Accuracy={proposed_metrics['accuracy']:.4f}"
+            f"Accuracy={proposed_metrics['accuracy']:.4f}, "
+            f"Coverage={proposed_metrics['coverage']:.4f}"
         ),
         f"- 静态验证拒绝的语义摘要：{rejected} 条",
         (
@@ -704,7 +702,6 @@ def run_command(args: argparse.Namespace) -> None:
         args.detections,
         joern_dir=args.joern_dir,
         java_home=args.java_home,
-        use_joern=not args.no_joern,
         resume=not args.refresh,
         linevul_codebert_path=args.linevul_codebert_path,
         linevul_checkpoint=args.linevul_checkpoint,
@@ -720,7 +717,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     normalize = subparsers.add_parser("normalize", help="normalize candidate functions")
     normalize.add_argument("--samples", default="data/detection_samples.jsonl")
-    normalize.add_argument("--normalizer", choices=("rules", "llm"), default="rules")
     normalize.add_argument(
         "--llm-backend",
         choices=("local", "api"),
@@ -774,11 +770,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--java-home",
         default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
-    )
-    run.add_argument(
-        "--no-joern",
-        action="store_true",
-        help="use the lightweight fallback validator instead of Joern",
     )
     run.add_argument(
         "--refresh",
