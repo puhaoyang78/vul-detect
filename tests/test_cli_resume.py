@@ -139,7 +139,7 @@ class CheckpointTests(unittest.TestCase):
             ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[]
             ), patch(
-                "semantic_demo.cli.CodeBERTBaseline", return_value=baseline_model
+                "semantic_demo.cli.LineVulBaseline", return_value=baseline_model
             ), patch("semantic_demo.cli.analyze", return_value=verdict) as analyze:
                 detect(
                     str(samples_path),
