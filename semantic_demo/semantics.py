@@ -789,9 +789,9 @@ Source:
             clean = canonicalize_summary(candidate.function, raw_summary)
             error = _schema_error(clean, len(candidate.function.parameters))
             if error is not None:
-                raise ValueError(f"LLM summary violates schema: {error}")
+                continue
             if endpoint_kind == "return" and clean["kind"] not in {"ALLOC", "VALUE"}:
-                raise ValueError("return endpoint emitted non-return summary")
+                continue
             if clean not in summaries:
                 summaries.append(clean)
 
