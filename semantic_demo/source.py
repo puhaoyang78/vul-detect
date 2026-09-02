@@ -82,25 +82,35 @@ class FunctionSource:
 
     def value_relations_before(self, line: int) -> list[tuple[str, str]]:
         source = self.text.encode()
-        tree = _PARSER.parse(source)
+        tree = _parser_for_language(self.language).parse(source)
         return _reaching_value_relations_before(tree.root_node, source, self.start_line, line)
 
     def continuation_constraints_before(self, line: int) -> list[str]:
         source = self.text.encode()
-        tree = _PARSER.parse(source)
+        tree = _parser_for_language(self.language).parse(source)
         return _continuation_constraints_before(
             tree.root_node, source, self.start_line, line
         )
 
     def direct_memory_accesses(self) -> list[MemoryAccess]:
         source = self.text.encode()
-        tree = _PARSER.parse(source)
+        tree = _parser_for_language(self.language).parse(source)
         return _direct_memory_accesses(tree.root_node, source, self.start_line)
 
     def local_arrays(self) -> list[LocalArray]:
         source = self.text.encode()
-        tree = _PARSER.parse(source)
+        tree = _parser_for_language(self.language).parse(source)
         return _local_arrays(tree.root_node, source)
+
+    def integer_domains(self) -> tuple[set[str], set[str]]:
+        source = self.text.encode()
+        tree = _parser_for_language(self.language).parse(source)
+        return _integer_domains_from_ast(
+            tree.root_node,
+            source,
+            self.parameters,
+            self.parameter_types,
+        )
 
 
 class GitRepository:
@@ -299,6 +309,66 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
     return functions
 
 
+def _integer_domain_from_type(type_text: str) -> str | None:
+    if re.search(r"\b(?:unsigned|size_t|uint\d+_t)\b", type_text):
+        return "unsigned"
+    if re.search(r"\b(?:signed|ssize_t|int\d+_t|char|short|int|long)\b", type_text):
+        return "signed"
+    return None
+
+
+def _integer_domains_from_ast(
+    root: Node,
+    source: bytes,
+    parameters: tuple[str, ...],
+    parameter_types: tuple[str, ...],
+) -> tuple[set[str], set[str]]:
+    signed: set[str] = set()
+    unsigned: set[str] = set()
+
+    for name, type_text in zip(parameters, parameter_types):
+        domain = _integer_domain_from_type(type_text)
+        if domain == "unsigned":
+            unsigned.add(name)
+        elif domain == "signed":
+            signed.add(name)
+
+    for declaration in _walk(root):
+        if declaration.type != "declaration":
+            continue
+        type_node = declaration.child_by_field_name("type")
+        if type_node is None:
+            continue
+        domain = _integer_domain_from_type(_text(type_node, source))
+        if domain is None:
+            continue
+
+        for child in declaration.named_children:
+            if child is type_node:
+                continue
+            declarator = (
+                child.child_by_field_name("declarator")
+                if child.type == "init_declarator"
+                else child
+            )
+            if declarator is None or any(
+                item.type in {"pointer_declarator", "array_declarator", "reference_declarator"}
+                for item in _walk(declarator)
+            ):
+                continue
+            name = _identifier(declarator, source)
+            if not name:
+                continue
+            if domain == "unsigned":
+                unsigned.add(name)
+                signed.discard(name)
+            else:
+                signed.add(name)
+                unsigned.discard(name)
+
+    return signed, unsigned
+
+
 def _known_element_size(type_text: str, declarator: Node | None) -> int | None:
     if declarator is not None and any(
         node.type == "pointer_declarator" for node in _walk(declarator)
@@ -366,7 +436,7 @@ def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
                     byte_capacity=byte_capacity,
                 )
             )
-    # If nested scopes reuse an array name, this lightweight representation
+    # If nested scopes reuse an array name, this conservative representation
     # cannot resolve which declaration reaches a later textual access. Treat the
     # capacity as ambiguous instead of choosing one unsafely.
     by_name: dict[str, list[LocalArray]] = {}
