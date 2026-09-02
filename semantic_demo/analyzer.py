@@ -212,16 +212,9 @@ def analyze(
             tuple(operations),
             constraint_json,
         )
-    if constraint_result.status == "UNKNOWN":
-        return Verdict(
-            "UNKNOWN",
-            "verification incomplete: " + constraint_result.reason,
-            tuple(operations),
-            constraint_json,
-        )
     return Verdict(
-        "NOT_DETECTED",
-        constraint_result.reason,
+        "UNKNOWN",
+        "verification incomplete: " + constraint_result.reason,
         tuple(operations),
         constraint_json,
     )
