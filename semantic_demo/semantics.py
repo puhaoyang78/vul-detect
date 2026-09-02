@@ -106,17 +106,8 @@ class Validation:
         return asdict(self)
 
 
-def _preprocessor_contexts_compatible(
-    call_context: tuple[tuple[str, bool], ...] | None,
-    definition_context: tuple[tuple[str, bool], ...] | None,
-) -> bool:
-    if call_context is None or definition_context is None:
-        return True
-    call_conditions = dict(call_context)
-    return all(
-        macro not in call_conditions or call_conditions[macro] == enabled
-        for macro, enabled in definition_context
-    )
+def _can_produce_summary(function: FunctionSource) -> bool:
+    return any(function.parameter_pointer_like) or function.has_value_return()
 
 
 def discover_candidates(
@@ -151,19 +142,13 @@ def discover_candidates(
                 definitions = repository.find_functions(call.name, scopes)
                 if not definitions:
                     continue
-                compatible = [
-                    definition
-                    for definition in definitions
-                    if _preprocessor_contexts_compatible(
-                        call.preprocessor_context,
-                        definition.preprocessor_context,
-                    )
-                ]
-                if len(compatible) != 1:
+                if len(definitions) > 1:
+                    if all(not _can_produce_summary(item) for item in definitions):
+                        continue
                     raise RuntimeError(
                         f"{sample_key}: ambiguous repository binding for {call.name}"
                     )
-                callee = compatible[0]
+                callee = definitions[0]
             key = (callee.path, callee.name)
             existing = discovered.get(key)
             lines = set(existing.call_lines if existing else ())
