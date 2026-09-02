@@ -32,7 +32,6 @@ class JoernFacts:
     parameters: dict[int, tuple[str, str]] = field(default_factory=dict)
     calls: dict[tuple[int, str], JoernCall] = field(default_factory=dict)
     flows: set[tuple[int, int, str, int]] = field(default_factory=set)
-    conditions: list[str] = field(default_factory=list)
     returns: list[str] = field(default_factory=list)
     return_flows: set[int] = field(default_factory=set)
 
@@ -190,8 +189,6 @@ class JoernValidator:
                 facts.flows.add(
                     (int(parts[1]), int(parts[2]), parts[3], int(parts[4]))
                 )
-            elif tag in {"COND", "OP"} and len(parts) >= 2:
-                facts.conditions.append(parts[1])
             elif tag == "RET" and len(parts) >= 2:
                 facts.returns.append(parts[1])
             elif tag == "RETFLOW" and len(parts) >= 2:
