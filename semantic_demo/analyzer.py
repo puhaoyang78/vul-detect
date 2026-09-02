@@ -131,7 +131,7 @@ def _direct_ast_operations(entry: FunctionSource) -> list[Operation]:
     return [
         Operation(
             access.kind,
-            "AST_SUBSCRIPT",
+            access.origin,
             access.buffer,
             access.extent,
             access.line,
