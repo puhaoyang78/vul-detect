@@ -472,7 +472,27 @@ def _check_access(
 
     # Non-negativity is a standard precondition for signed access extents.
     extent_tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", extent_text))
-    if extent_tokens & signed:
+    signed_extent_tokens = extent_tokens & signed
+    if signed_extent_tokens:
+        constrained_text = " ".join(path_constraints)
+        unconstrained_parameters = sorted(
+            token
+            for token in signed_extent_tokens
+            if token in entry.parameters and token not in constrained_text
+        )
+        if unconstrained_parameters:
+            return AccessCheck(
+                kind,
+                buffer_text,
+                extent_text,
+                line,
+                "UNKNOWN",
+                "signed access extent depends on unconstrained parameter domain: "
+                + ", ".join(unconstrained_parameters),
+                tuple(conditions),
+                path_constraints,
+                {},
+            )
         condition_text = f"{extent_text} >= 0"
         condition = extent >= 0
         conditions.append(
