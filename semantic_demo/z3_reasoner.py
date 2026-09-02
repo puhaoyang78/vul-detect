@@ -280,19 +280,6 @@ def _buffer_base_and_offset(buffer: str) -> tuple[str, str]:
     return text, "0"
 
 
-def _allocation_element_count(extent: str) -> str | None:
-    text = normalize_expression(extent)
-    patterns = (
-        r"^\((.+)\)\*\(sizeof\([^()]+\)\)$",
-        r"^(.+)\*sizeof\([^()]+\)$",
-        r"^sizeof\([^()]+\)\*(.+)$",
-    )
-    for pattern in patterns:
-        match = re.match(pattern, text)
-        if match:
-            return normalize_expression(match.group(1))
-    return None
-
 
 def _collect_capacity_relations(
     entry: FunctionSource, operations: Iterable[object]
@@ -308,7 +295,7 @@ def _collect_capacity_relations(
             continue
         capacities[buffer] = CapacityInfo(
             byte_capacity=extent,
-            element_capacity=_allocation_element_count(extent),
+            element_capacity=None,
         )
     return capacities
 
@@ -322,7 +309,7 @@ def _capacity_for_buffer(
     info = capacities.get(base)
     if info is None:
         return None
-    if getattr(operation, "callee", "") == "AST_SUBSCRIPT":
+    if getattr(operation, "callee", "") in {"AST_SUBSCRIPT", "AST_DEREF"}:
         capacity = info.element_capacity
     else:
         capacity = info.byte_capacity
