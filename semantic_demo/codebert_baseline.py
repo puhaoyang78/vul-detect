@@ -67,12 +67,6 @@ class CodeBERTBaseline:
         self.checkpoint = _resolve_checkpoint(model_path)
         config = AutoConfig.from_pretrained(self.checkpoint, local_files_only=True)
         architectures = tuple(config.architectures or ())
-        if not any("SequenceClassification" in item for item in architectures):
-            raise ValueError(
-                "the configured CodeBERT path is not a fine-tuned sequence-classification "
-                f"checkpoint: {self.checkpoint}. A base encoder with a randomly initialized "
-                "classification head is not accepted as a baseline."
-            )
         if int(getattr(config, "num_labels", 0) or 0) < 2:
             raise ValueError(
                 f"CodeBERT checkpoint must have at least two labels: {self.checkpoint}"
@@ -81,9 +75,22 @@ class CodeBERTBaseline:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.checkpoint, local_files_only=True, use_fast=True
         )
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.checkpoint, local_files_only=True
+        self.model, loading_info = AutoModelForSequenceClassification.from_pretrained(
+            self.checkpoint,
+            local_files_only=True,
+            output_loading_info=True,
         )
+        missing_head = [
+            key
+            for key in loading_info.get("missing_keys", [])
+            if any(token in key.lower() for token in ("classifier", "score", "out_proj"))
+        ]
+        if missing_head:
+            raise ValueError(
+                "the configured CodeBERT path does not contain a trained classification "
+                f"head ({', '.join(missing_head)}). Point --codebert-path to a fine-tuned "
+                "function-level vulnerability checkpoint rather than a base encoder."
+            )
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
