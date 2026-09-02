@@ -384,6 +384,74 @@ class SemanticValidationTests(unittest.TestCase):
             summaries,
         )
 
+    def test_local_length_standard_call_uses_one_localized_llm_endpoint(self):
+        candidate = Candidate(
+            "sample",
+            parse_functions(
+                "copy.c",
+                """
+                void copy(char *dst, const char *src, unsigned long len)
+                {
+                    unsigned long n = len;
+                    memcpy(dst, src, n);
+                }
+                """,
+            )[0],
+            (),
+        )
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+        response.read.return_value = json.dumps(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summaries": [
+                                        {
+                                            "kind": "WRITE",
+                                            "buffer": "arg0",
+                                            "length": "arg2",
+                                        },
+                                        {
+                                            "kind": "READ",
+                                            "buffer": "arg1",
+                                            "length": "arg2",
+                                        },
+                                    ]
+                                }
+                            )
+                        },
+                    }
+                ]
+            }
+        ).encode()
+
+        with patch(
+            "semantic_demo.semantics.urllib.request.urlopen",
+            return_value=response,
+        ) as open_url:
+            summaries = llm_normalize(
+                candidate,
+                api_key="local",
+                base_url="http://127.0.0.1:1/v1",
+                model="test",
+                response_schema=NORMALIZATION_RESPONSE_SCHEMA,
+            )
+
+        self.assertEqual(1, open_url.call_count)
+        self.assertIn(
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            summaries,
+        )
+        self.assertIn(
+            {"kind": "READ", "buffer": "arg1", "length": "arg2"},
+            summaries,
+        )
+
     def test_llm_normalize_passes_explicit_response_schema(self):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
