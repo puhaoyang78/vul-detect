@@ -374,7 +374,11 @@ def validate_summary(
     callee_summaries: dict[tuple[str, str], list[dict[str, str]]] | None = None,
 ) -> Validation:
     function = candidate.function
-    error = _schema_error(summary, len(function.parameters))
+    error = (
+        "candidate function contains parser error nodes"
+        if function.parse_has_error
+        else _schema_error(summary, len(function.parameters))
+    )
     clean_summary = canonicalize_summary(function, summary)
 
     referenced_names = set().union(
