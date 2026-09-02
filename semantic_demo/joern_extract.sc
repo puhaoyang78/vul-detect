@@ -50,12 +50,6 @@ import io.joern.dataflowengineoss.language._
         }
       }
 
-      method.controlStructure.condition.code.l.foreach { condition =>
-        lines += ("COND\t" + clean(condition))
-      }
-      method.call.name("<operator>.*").code.l.foreach { operator =>
-        lines += ("OP\t" + clean(operator))
-      }
       method.ast.isReturn.l.foreach { ret =>
         lines += ("RET\t" + clean(ret.code))
         params.foreach { p =>
