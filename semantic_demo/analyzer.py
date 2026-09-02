@@ -156,7 +156,7 @@ def _custom_operations(
         if validation.summary not in bucket:
             bucket.append(validation.summary)
 
-    unique_by_name: dict[str, list[dict[str, str]]] = {}
+    summaries_by_name: dict[str, list[list[dict[str, str]]]] = {}
     for (path, name), by_line in passed.items():
         expected = 1 if variant_counts is None else variant_counts.get((path, name), 1)
         if len(by_line) != expected:
@@ -168,10 +168,13 @@ def _custom_operations(
             if all(summary in summaries for summaries in variants[1:])
         ]
         if common:
-            if name in unique_by_name:
-                unique_by_name.pop(name, None)
-            else:
-                unique_by_name[name] = common
+            summaries_by_name.setdefault(name, []).append(common)
+
+    unique_by_name = {
+        name: groups[0]
+        for name, groups in summaries_by_name.items()
+        if len(groups) == 1
+    }
 
     operations: list[Operation] = []
     for call in entry.calls():
