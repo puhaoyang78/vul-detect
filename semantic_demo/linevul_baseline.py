@@ -4,7 +4,6 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 
 @dataclass(frozen=True)
