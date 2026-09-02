@@ -39,8 +39,10 @@ memory-effect / constraint / VC 路径。
 
 4. **Program-constraint extraction**
    - Tree-sitter AST 直接提取数组下标访问，并统一为显式 READ/WRITE memory access。
+   - 局部数组容量只从 declaration -> array_declarator 恢复，普通 buf[i] 访问不会再污染对象容量。
+   - 数组下标使用 element capacity；memcpy/read/write 等字节访问使用 byte capacity，二者不混用。
    - Tree-sitter AST 提取赋值/初始化得到 Value Constraint。
-   - AST 提取 early-exit 分支在后续访问点成立的 Path Constraint。
+   - AST 提取 early-exit 分支以及 enclosing for/while/do 条件在访问点成立的 Path Constraint。
    - 分配返回值和局部数组提供显式 buffer capacity。
    - 若缺少显式 capacity，但支配访问的边界条件约束了与访问长度存在数据依赖的值，则推导
      guard-derived access bound；该过程基于数据依赖，不依赖 buflen/size/capacity 等变量名。
@@ -53,6 +55,8 @@ memory-effect / constraint / VC 路径。
    - POTENTIAL_VIOLATION 表示当前已知 Path/Value Constraints 下存在违反 VC 的满足解；
      UNKNOWN 表示缺少 capacity、valid extent、完整 access coverage 或无法可靠编码的关系。
    - 未支持的函数表达式不会作为自由整数交给求解器；min/max 具有显式语义。
+   - 未约束的 signed 参数值域不会仅凭 SAT 反例直接判漏洞，而是标记为 UNKNOWN。
+   - strcpy/strcat 被转换为显式 READ/WRITE 语义；无法可靠恢复字符串长度时保持 UNKNOWN。
    - 在尚未证明完整函数级 memory-access coverage 前，不把“当前已分析 access 全部 SAFE”
      提升为函数级 SAFE。
 
