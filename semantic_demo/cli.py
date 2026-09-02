@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from .analyzer import analyze
-from .codebert_baseline import CodeBERTBaseline
+from .linevul_baseline import LineVulBaseline
 from .joern import JoernError, JoernValidator
 from .semantics import (
     Validation,
@@ -39,7 +39,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 3
+ANALYSIS_CHECKPOINT_VERSION = 4
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -377,17 +377,19 @@ def detect(
     java_home: str = "/home/phy/jdk21",
     use_joern: bool = True,
     resume: bool = True,
-    codebert_path: str = "/home/PublicData/PHY-data/resource/codebert",
-    codebert_threshold: float = 0.5,
-    codebert_device: str = "auto",
+    linevul_codebert_path: str = "/home/PublicData/PHY-data/resource/codebert-base",
+    linevul_checkpoint: str = "/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin",
+    linevul_threshold: float = 0.5,
+    linevul_device: str = "auto",
 ) -> None:
     samples = read_jsonl(samples_path)
     validate_detection_manifest(samples)
     replay = load_replay(replay_path)
-    baseline_model = CodeBERTBaseline(
-        codebert_path,
-        threshold=codebert_threshold,
-        device=codebert_device,
+    baseline_model = LineVulBaseline(
+        linevul_codebert_path,
+        linevul_checkpoint,
+        threshold=linevul_threshold,
+        device=linevul_device,
     )
     joern = JoernValidator(joern_dir, java_home=java_home) if use_joern else None
     if joern is not None:
@@ -661,7 +663,7 @@ def evaluate(
         "",
         f"- 函数级样本：{len(rows)}（VULNERABLE={vulnerable_count}, BENIGN={benign_count}）",
         (
-            "- CodeBERT Baseline："
+            "- LineVul Baseline："
             f"TP={baseline_metrics['tp']}, FP={baseline_metrics['fp']}, "
             f"TN={baseline_metrics['tn']}, FN={baseline_metrics['fn']}, "
             f"Precision={baseline_metrics['precision']:.4f}, "
@@ -704,9 +706,10 @@ def run_command(args: argparse.Namespace) -> None:
         java_home=args.java_home,
         use_joern=not args.no_joern,
         resume=not args.refresh,
-        codebert_path=args.codebert_path,
-        codebert_threshold=args.codebert_threshold,
-        codebert_device=args.codebert_device,
+        linevul_codebert_path=args.linevul_codebert_path,
+        linevul_checkpoint=args.linevul_checkpoint,
+        linevul_threshold=args.linevul_threshold,
+        linevul_device=args.linevul_device,
     )
     evaluate(args.detections, args.oracle, args.table, args.summary)
 
@@ -752,13 +755,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--table", default="results/results.csv")
     run.add_argument("--summary", default="results/summary.md")
     run.add_argument(
-        "--codebert-path",
-        default="/home/PublicData/PHY-data/resource/codebert",
-        help="local fine-tuned CodeBERT sequence-classification checkpoint",
+        "--linevul-codebert-path",
+        default="/home/PublicData/PHY-data/resource/codebert-base",
+        help="local CodeBERT base model used by LineVul",
     )
-    run.add_argument("--codebert-threshold", type=float, default=0.5)
     run.add_argument(
-        "--codebert-device",
+        "--linevul-checkpoint",
+        default="/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin",
+        help="official LineVul RQ1 checkpoint",
+    )
+    run.add_argument("--linevul-threshold", type=float, default=0.5)
+    run.add_argument(
+        "--linevul-device",
         default="auto",
         help="auto, cpu, cuda, cuda:0, etc.",
     )
