@@ -21,6 +21,7 @@ from .linevul_baseline import LineVulBaseline
 from .joern import JoernError, JoernValidator
 from .semantics import (
     NORMALIZATION_SCHEMA_VERSION,
+    NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
     discover_candidates,
     llm_normalize,
@@ -184,6 +185,7 @@ def local_llm_server(
                 "model": model.stem,
                 "max_tokens": 512,
                 "disable_proxy": True,
+                "response_schema": NORMALIZATION_RESPONSE_SCHEMA,
             }
         finally:
             if process.poll() is None:

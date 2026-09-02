@@ -76,6 +76,7 @@ class FunctionSource:
     parameter_pointer_like: tuple[bool, ...]
     start_line: int
     parse_has_error: bool = False
+    preprocessor_context: tuple[tuple[int, int], ...] | None = None
 
     def calls(self) -> list[Call]:
         source = self.text.encode()
@@ -333,9 +334,36 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 parameter_pointer_like=pointer_like,
                 start_line=node.start_point.row + 1,
                 parse_has_error=bool(node.has_error),
+                preprocessor_context=_preprocessor_context(node, source_text),
             )
         )
     return functions
+
+
+def _preprocessor_context(
+    node: Node,
+    source_text: str,
+) -> tuple[tuple[int, int], ...] | None:
+    """Return every conditional group and branch containing a node."""
+    stack: list[tuple[int, int]] = []
+    byte_offset = 0
+    for line in source_text.splitlines(keepends=True):
+        if byte_offset >= node.start_byte:
+            break
+        match = re.match(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b", line)
+        if match:
+            directive = match.group(1)
+            if directive in {"if", "ifdef", "ifndef"}:
+                stack.append((byte_offset, byte_offset))
+            elif directive in {"elif", "else"} and stack:
+                group, _ = stack[-1]
+                stack[-1] = (group, byte_offset)
+            elif directive == "endif" and stack:
+                stack.pop()
+        byte_offset += len(line.encode())
+    if not stack:
+        return None
+    return tuple(stack)
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:

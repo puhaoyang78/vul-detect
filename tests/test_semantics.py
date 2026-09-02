@@ -1,6 +1,7 @@
+import json
 import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from semantic_demo.analyzer import Operation, analyze
 from semantic_demo.joern import (
@@ -13,8 +14,11 @@ from semantic_demo.joern import (
 )
 from semantic_demo.semantics import (
     Candidate,
+    NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
     _extract_json_object,
+    discover_candidates,
+    llm_normalize,
     _response_content,
     _validate_by_composition,
     validate_summary,
@@ -308,6 +312,40 @@ class SemanticValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "finish_reason='length'"):
             _response_content(result)
 
+    def test_llm_normalize_passes_explicit_response_schema(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+        response.read.return_value = json.dumps(
+            {"choices": [{"message": {"content": '{"summaries":[]}'}}]}
+        ).encode()
+
+        with patch(
+            "semantic_demo.semantics.urllib.request.urlopen", return_value=response
+        ) as open_url:
+            candidate = Candidate(
+                "sample",
+                parse_functions("simple.c", "int simple(int value) { return value; }")[0],
+                (),
+            )
+            self.assertEqual(
+                [],
+                llm_normalize(
+                    candidate,
+                    api_key="local",
+                    base_url="http://127.0.0.1:1/v1",
+                    model="test",
+                    response_schema=NORMALIZATION_RESPONSE_SCHEMA,
+                ),
+            )
+
+        request = open_url.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(
+            NORMALIZATION_RESPONSE_SCHEMA,
+            payload["response_format"]["schema"],
+        )
+
 
 class CompositionalValidationTests(unittest.TestCase):
     def test_parent_write_summary_composes_from_unique_validated_callee(self):
@@ -379,6 +417,90 @@ class CompositionalValidationTests(unittest.TestCase):
             },
         )
         self.assertFalse(passed)
+
+
+class CandidateDiscoveryTests(unittest.TestCase):
+    class StaticRepository:
+        def __init__(self, definitions):
+            self.definitions = definitions
+
+        def find_function(self, *_args, **_kwargs):
+            return None
+
+        def find_functions(self, *_args, **_kwargs):
+            return self.definitions
+
+    def test_skips_same_signature_conditional_definitions_without_choosing_one(self):
+        functions = parse_functions(
+            "sample.c",
+            """
+            #ifdef OUTER_FEATURE
+            #ifndef INNER_FEATURE
+            int inner(char *buffer) { return buffer[0]; }
+            #else
+            int inner(char *buffer) { return buffer[1]; }
+            #endif
+            #endif
+            int outer(char *buffer) { return inner(buffer); }
+            """,
+        )
+        definitions = [function for function in functions if function.name == "inner"]
+        entry = next(function for function in functions if function.name == "outer")
+        self.assertEqual(2, len(definitions))
+        contexts = [dict(item.preprocessor_context or ()) for item in definitions]
+        self.assertEqual(
+            set(contexts[0]),
+            set(contexts[1]),
+        )
+        self.assertNotEqual(
+            contexts[0],
+            contexts[1],
+        )
+        self.assertEqual(
+            [],
+            discover_candidates(
+                "sample",
+                self.StaticRepository(definitions),
+                entry,
+                (),
+            ),
+        )
+
+    def test_rejects_cross_file_or_different_signature_ambiguity(self):
+        entry = parse_functions(
+            "wrapper.c",
+            "int outer(char *buffer) { return inner(buffer); }",
+        )[0]
+        cases = (
+            (
+                "cross-file",
+                [
+                    parse_functions("a.c", "int inner(char *buffer) { return buffer[0]; }")[0],
+                    parse_functions("b.c", "int inner(char *buffer) { return buffer[1]; }")[0],
+                ],
+            ),
+            (
+                "different-signature",
+                parse_functions(
+                    "same.c",
+                    """
+                    int inner(int value) { return value; }
+                    int inner(char *buffer) { return buffer[0]; }
+                    """,
+                ),
+            ),
+        )
+        for label, definitions in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                    RuntimeError, "ambiguous repository binding for inner"
+                ):
+                    discover_candidates(
+                        "sample",
+                        self.StaticRepository(definitions),
+                        entry,
+                        (),
+                    )
 
 
 class ParsingRegressionTests(unittest.TestCase):

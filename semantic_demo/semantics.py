@@ -42,6 +42,31 @@ READS = {
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
 NORMALIZATION_SCHEMA_VERSION = 2
 MAX_LLM_SOURCE_CHARS = 50000
+NORMALIZATION_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summaries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["ALLOC", "READ", "WRITE", "VALUE"],
+                    },
+                    "buffer": {"type": "string"},
+                    "size": {"type": "string"},
+                    "length": {"type": "string"},
+                    "target": {"type": "string"},
+                    "expression": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["summaries"],
+    "additionalProperties": False,
+}
 
 STANDARD_CALLS = (
     set(ALLOCATORS)
@@ -81,6 +106,37 @@ class Validation:
         return asdict(self)
 
 
+def _same_function_signature(function: FunctionSource) -> tuple[str, ...]:
+    return tuple(
+        normalize_expression(
+            re.sub(rf"\b{re.escape(parameter)}\b", "", parameter_type)
+        )
+        for parameter, parameter_type in zip(
+            function.parameters, function.parameter_types
+        )
+    )
+
+
+def _is_conditional_definition_set(
+    definitions: list[FunctionSource],
+) -> bool:
+    if len({definition.path for definition in definitions}) != 1:
+        return False
+    if len({_same_function_signature(definition) for definition in definitions}) != 1:
+        return False
+    contexts = [definition.preprocessor_context for definition in definitions]
+    if any(context is None for context in contexts):
+        return False
+    branch_maps = [dict(context or ()) for context in contexts]
+    common_groups = set(branch_maps[0])
+    for branch_map in branch_maps[1:]:
+        common_groups.intersection_update(branch_map)
+    return any(
+        len({branch_map[group] for branch_map in branch_maps}) == len(definitions)
+        for group in common_groups
+    )
+
+
 def discover_candidates(
     sample_key: str,
     repository: GitRepository,
@@ -88,12 +144,7 @@ def discover_candidates(
     scopes: Iterable[str],
     max_functions: int = 128,
 ) -> list[Candidate]:
-    """Traverse the repository-resolved project call graph without name heuristics.
-
-    Standard-library calls are leaves. Ambiguous repository call resolution is
-    skipped rather than guessed. Hitting the explicit resource budget aborts
-    discovery so a truncated frontier can never silently produce a verdict.
-    """
+    """Traverse the repository-resolved project call graph without name heuristics."""
     scopes = tuple(scopes)
     discovered: dict[tuple[str, str], Candidate] = {}
     queue: list[FunctionSource] = [entry]
@@ -117,6 +168,8 @@ def discover_candidates(
             if callee is None:
                 definitions = repository.find_functions(call.name, scopes)
                 if len(definitions) > 1:
+                    if _is_conditional_definition_set(definitions):
+                        continue
                     raise RuntimeError(
                         f"{sample_key}: ambiguous repository binding for {call.name}"
                     )
@@ -441,6 +494,7 @@ def llm_normalize(
     model: str | None = None,
     max_tokens: int = 2048,
     disable_proxy: bool = False,
+    response_schema: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
     api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
     base_url = base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -485,6 +539,9 @@ Parameters: {json.dumps(list(candidate.function.parameters))}
 Source:
 {candidate.function.text}
 """
+    response_format: dict[str, object] = {"type": "json_object"}
+    if response_schema is not None:
+        response_format["schema"] = response_schema
     payload = json.dumps(
         {
             "model": model,
@@ -495,7 +552,7 @@ Source:
             "temperature": 0,
             "max_tokens": max_tokens,
             "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": {"type": "json_object"},
+            "response_format": response_format,
         }
     ).encode()
     request = urllib.request.Request(
