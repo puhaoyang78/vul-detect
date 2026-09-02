@@ -23,6 +23,7 @@ from .semantics import (
     NORMALIZATION_SCHEMA_VERSION,
     NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
+    candidate_validation_error,
     discover_candidates,
     llm_normalize,
     load_replay,
@@ -183,7 +184,7 @@ def local_llm_server(
                 "api_key": "local",
                 "base_url": f"http://127.0.0.1:{port}/v1",
                 "model": model.stem,
-                "max_tokens": 512,
+                "max_tokens": 2048,
                 "disable_proxy": True,
                 "response_schema": NORMALIZATION_RESPONSE_SCHEMA,
             }
@@ -312,9 +313,11 @@ def normalize_command(args: argparse.Namespace) -> None:
                     candidate.function.start_line,
                     fingerprint,
                 )
+                skip_reason = candidate_validation_error(candidate.function)
                 cached = cache.get(cache_key)
                 if (
-                    cached is not None
+                    skip_reason is None
+                    and cached is not None
                     and cached.get("schema_version") == NORMALIZATION_SCHEMA_VERSION
                     and cached.get("normalizer") == "llm"
                     and cached.get("llm_backend") == args.llm_backend
@@ -324,19 +327,23 @@ def normalize_command(args: argparse.Namespace) -> None:
                     reused += 1
                     continue
 
-                try:
-                    summaries = llm_normalize(candidate, **llm_options)
-                except (
-                    RuntimeError,
-                    ValueError,
-                    urllib.error.URLError,
-                    TimeoutError,
-                ) as error:
-                    raise RuntimeError(
-                        f"{candidate.sample_key}:{candidate.function.name}: "
-                        "normalization failed"
-                    ) from error
-                generated += 1
+                if skip_reason is None:
+                    try:
+                        summaries = llm_normalize(candidate, **llm_options)
+                    except (
+                        RuntimeError,
+                        ValueError,
+                        urllib.error.URLError,
+                        TimeoutError,
+                    ) as error:
+                        raise RuntimeError(
+                            f"{candidate.sample_key}:{candidate.function.name}: "
+                            "normalization failed"
+                        ) from error
+                    generated += 1
+                else:
+                    summaries = []
+
                 record = {
                     "schema_version": NORMALIZATION_SCHEMA_VERSION,
                     "sample_key": candidate.sample_key,
@@ -345,16 +352,22 @@ def normalize_command(args: argparse.Namespace) -> None:
                     "source_line": candidate.function.start_line,
                     "parameters": list(candidate.function.parameters),
                     "source_fingerprint": fingerprint,
-                    "normalizer": "llm",
-                    "llm_backend": args.llm_backend,
-                    "llm_model": llm_options.get("model"),
+                    "normalizer": (
+                        "static-skip" if skip_reason is not None else "llm"
+                    ),
                     "summaries": summaries,
                 }
+                if skip_reason is None:
+                    record["llm_backend"] = args.llm_backend
+                    record["llm_model"] = llm_options.get("model")
+                else:
+                    record["skip_reason"] = skip_reason
                 records.append(record)
                 cache[cache_key] = record
                 write_jsonl(args.output, cache.values())
+                status = "skipped" if skip_reason is not None else "done"
                 print(
-                    f"normalize_candidate_done={candidate.sample_key}:"
+                    f"normalize_candidate_{status}={candidate.sample_key}:"
                     f"{candidate.function.name}@{candidate.function.start_line} "
                     f"checkpoint={args.output}",
                     flush=True,

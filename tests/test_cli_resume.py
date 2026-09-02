@@ -77,6 +77,55 @@ class CheckpointTests(unittest.TestCase):
                 [record["function"] for record in read_jsonl(output_path)],
             )
 
+    def test_unverifiable_candidate_skips_llm_normalization(self):
+        entry = parse_functions("entry.c", "void entry(void) {}\n")[0]
+        function = parse_functions(
+            "evict.c",
+            """
+            void evict(struct item *item)
+            {
+                item->drop(item);
+            }
+            """,
+        )[0]
+        candidate = Candidate("S03", function, (1,))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            samples_path = root / "samples.jsonl"
+            output_path = root / "normalizer.jsonl"
+            write_jsonl(
+                samples_path,
+                [
+                    {
+                        "sample_key": "S03",
+                        "repository_git_dir": "/unused",
+                        "vulnerable_commit": "a" * 40,
+                        "entry_path": "entry.c",
+                        "entry_function": "entry",
+                        "scan_paths": [],
+                    }
+                ],
+            )
+            args = SimpleNamespace(
+                samples=str(samples_path),
+                output=str(output_path),
+                llm_backend="api",
+                llama_server="/unused",
+                local_model="/unused",
+                refresh=False,
+            )
+
+            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+                "semantic_demo.cli.discover_candidates", return_value=[candidate]
+            ), patch("semantic_demo.cli.llm_normalize") as normalize:
+                normalize_command(args)
+
+            normalize.assert_not_called()
+            record = read_jsonl(output_path)[0]
+            self.assertEqual([], record["summaries"])
+            self.assertIn("unresolved indirect calls", record["skip_reason"])
+
     def test_llm_normalization_cache_is_model_specific(self):
         entry = parse_functions("entry.c", "void entry(void) {}\n")[0]
         function = parse_functions(
