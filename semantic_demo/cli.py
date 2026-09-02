@@ -20,6 +20,7 @@ from .analyzer import analyze
 from .linevul_baseline import LineVulBaseline
 from .joern import JoernError, JoernValidator
 from .semantics import (
+    NORMALIZATION_SCHEMA_VERSION,
     Validation,
     discover_candidates,
     llm_normalize,
@@ -317,6 +318,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     ) from error
                 generated += 1
                 record = {
+                    "schema_version": NORMALIZATION_SCHEMA_VERSION,
                     "sample_key": candidate.sample_key,
                     "source_path": candidate.function.path,
                     "function": candidate.function.name,
