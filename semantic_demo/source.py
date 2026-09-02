@@ -554,6 +554,16 @@ def _callee_name(node: Node | None, source: bytes) -> str | None:
     return None
 
 
+def _same_node(left: Node | None, right: Node | None) -> bool:
+    return (
+        left is not None
+        and right is not None
+        and left.type == right.type
+        and left.start_byte == right.start_byte
+        and left.end_byte == right.end_byte
+    )
+
+
 def _call_context(node: Node, source: bytes) -> tuple[str | None, bool]:
     current = node
     while (
@@ -570,12 +580,12 @@ def _call_context(node: Node, source: bytes) -> tuple[str | None, bool]:
     if parent.type == "assignment_expression":
         right = parent.child_by_field_name("right")
         left = parent.child_by_field_name("left")
-        if right is current and left is not None:
+        if _same_node(right, current) and left is not None:
             return _text(left, source), False
     if parent.type == "init_declarator":
         value = parent.child_by_field_name("value")
         declarator = parent.child_by_field_name("declarator")
-        if value is current and declarator is not None:
+        if _same_node(value, current) and declarator is not None:
             return _identifier(declarator, source) or _text(declarator, source), False
     return None, False
 
