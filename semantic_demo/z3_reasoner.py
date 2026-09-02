@@ -561,6 +561,37 @@ def _check_access(
             {},
         )
 
+    offset_tokens = set(
+        re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", normalize_expression(offset_text))
+    )
+    if normalize_expression(offset_text) != "0" and offset_tokens & signed:
+        offset_condition_text = f"{offset_text} >= 0"
+        offset_condition = offset_expr >= 0
+        conditions.append(
+            VerificationCondition(
+                kind,
+                buffer_text,
+                extent_text,
+                offset_condition_text,
+                line,
+            )
+        )
+        check = Solver()
+        check.add(*solver.assertions())
+        check.add(Not(offset_condition))
+        if check.check() == sat:
+            return AccessCheck(
+                kind,
+                buffer_text,
+                extent_text,
+                line,
+                "POTENTIAL_VIOLATION",
+                f"access offset may be negative: {offset_condition_text}",
+                tuple(conditions),
+                path_constraints,
+                encoder.model_dict(check.model()),
+            )
+
     condition_text = (
         f"{offset_text} + {extent_text} <= {capacity_text}"
         if normalize_expression(offset_text) != "0"
