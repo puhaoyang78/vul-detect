@@ -520,6 +520,20 @@ def _check_access(
         | _expression_identifiers(capacity_text)
         | _expression_identifiers(offset_text)
     )
+    for uncertain_condition in entry.uncertain_control_conditions_before(line):
+        if _expression_identifiers(uncertain_condition) & relevant_identifiers:
+            return AccessCheck(
+                kind,
+                buffer_text,
+                extent_text,
+                line,
+                "UNKNOWN",
+                "control-flow effect of a call-containing guard is unresolved: "
+                + uncertain_condition,
+                tuple(conditions),
+                path_constraints,
+                {},
+            )
     unresolved_definitions = sorted(skipped_targets & relevant_identifiers)
     if unresolved_definitions:
         return AccessCheck(
