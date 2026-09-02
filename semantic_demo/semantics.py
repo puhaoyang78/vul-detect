@@ -40,13 +40,14 @@ READS = {
     "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 3
+NORMALIZATION_SCHEMA_VERSION = 4
 MAX_LLM_SOURCE_CHARS = 50000
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "summaries": {
             "type": "array",
+            "maxItems": 4,
             "items": {
                 "type": "object",
                 "properties": {
@@ -306,13 +307,28 @@ def _validate_with_joern(
     kind = summary["kind"]
 
     if kind == "ALLOC":
+        returned = {_normalized_return_expression(value) for value in facts.returns}
+        source_calls = {
+            (call.line, call.name): call
+            for call in candidate.function.calls()
+            if not call.indirect
+        }
         for call in facts.call_list():
             _, size_indices = _known_call_indices(call.name, "ALLOC")
             if not size_indices:
                 continue
+            source_call = source_calls.get((call.line, call.name))
+            if source_call is None:
+                continue
+            returns_allocation = source_call.returned or (
+                source_call.result is not None
+                and normalize_expression(source_call.result) in returned
+            )
+            if not returns_allocation:
+                continue
             if _joern_expr_reaches(facts, summary["size"], call, size_indices):
-                return True, "Joern verified allocation-size flow to a specified allocator"
-        return False, "Joern found no specified allocator receiving the declared size"
+                return True, "Joern verified returned allocation and its size flow"
+        return False, "Joern found no returned specified allocator matching the declared size"
 
     if kind in {"READ", "WRITE"}:
         for call in facts.call_list():
@@ -337,16 +353,18 @@ def _validate_with_joern(
         returned = {_normalized_return_expression(value) for value in facts.returns}
         if expression and expression in returned:
             return True, "Joern verified exact returned value expression"
-        param_indices = _arg_indices(summary["expression"])
-        if (
-            len(param_indices) == 1
-            and summary["expression"] == f"arg{param_indices[0]}"
-            and param_indices[0] in facts.return_flows
-        ):
-            return True, "Joern verified direct parameter-to-return flow"
         return False, "Joern found no exact return matching the declared VALUE expression"
 
     return False, f"unsupported semantic kind: {kind}"
+
+
+def _source_call_returns_value(source_call, facts) -> bool:
+    if source_call.returned:
+        return True
+    if source_call.result is None:
+        return False
+    returned = {_normalized_return_expression(value) for value in facts.returns}
+    return normalize_expression(source_call.result) in returned
 
 
 def _validate_by_composition(
@@ -403,10 +421,43 @@ def _validate_by_composition(
                     ),
                     None,
                 )
-                if source_call is not None and source_call.returned:
+                if (
+                    source_call is not None
+                    and _source_call_returns_value(source_call, facts)
+                ):
                     return (
                         True,
                         f"composition verified allocation through "
+                        f"validated callee summary {call.name}",
+                    )
+
+            elif kind == "VALUE":
+                child_expression = child.get("expression", "")
+                child_args = _arg_indices(child_expression)
+                if (
+                    len(child_args) != 1
+                    or child_expression != f"arg{child_args[0]}"
+                ):
+                    continue
+                source_call = next(
+                    (
+                        source_call
+                        for source_call in candidate.function.calls()
+                        if source_call.name == call.name and source_call.line == call.line
+                    ),
+                    None,
+                )
+                if (
+                    source_call is None
+                    or not _source_call_returns_value(source_call, facts)
+                ):
+                    continue
+                if _joern_expr_reaches(
+                    facts, summary["expression"], call, (child_args[0],)
+                ):
+                    return (
+                        True,
+                        f"composition verified value through "
                         f"validated callee summary {call.name}",
                     )
 
@@ -416,8 +467,6 @@ def _validate_by_composition(
 def candidate_validation_error(function: FunctionSource) -> str | None:
     if function.parse_has_error:
         return "candidate function contains parser error nodes"
-    if function.has_indirect_calls():
-        return "candidate function contains unresolved indirect calls"
     return None
 
 
@@ -490,13 +539,152 @@ def validate_summary(
 
 
 
+def _simple_caller_expression(expression: str) -> bool:
+    compact = normalize_expression(expression)
+    indices = _arg_indices(compact)
+    if len(indices) == 1 and compact == f"arg{indices[0]}":
+        return True
+    try:
+        int(compact, 0)
+    except ValueError:
+        return False
+    return True
+
+
+def _expected_standard_effect_count(call) -> int:
+    count = 0
+    if call.name in WRITES:
+        buffer_index, length_index = WRITES[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            count += 1
+    if call.name in READS:
+        buffer_index, length_index = READS[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            count += 1
+            if call.name == "memcmp" and len(call.arguments) >= 3:
+                count += 1
+    if call.name in ALLOCATORS and call.returned:
+        indices = ALLOCATORS[call.name]
+        if (
+            call.name == "calloc" and len(call.arguments) >= 2
+        ) or (
+            indices and len(call.arguments) > indices[0]
+        ):
+            count += 1
+    return count
+
+
+def _standard_call_summaries(
+    function: FunctionSource,
+    call,
+) -> list[dict[str, str]]:
+    summaries: list[dict[str, str]] = []
+
+    def append_memory(kind: str, buffer: str, length: str) -> None:
+        summary = canonicalize_summary(
+            function,
+            {"kind": kind, "buffer": buffer, "length": length},
+        )
+        root = _buffer_root_index(summary["buffer"])
+        if (
+            root is None
+            or root >= len(function.parameter_pointer_like)
+            or not function.parameter_pointer_like[root]
+            or not _simple_caller_expression(summary["length"])
+        ):
+            return
+        summaries.append(summary)
+
+    if call.name in WRITES:
+        buffer_index, length_index = WRITES[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            length = call.arguments[length_index]
+            if call.name == "fread" and len(call.arguments) >= 3:
+                length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+            append_memory(
+                "WRITE",
+                call.arguments[buffer_index],
+                length,
+            )
+
+    if call.name in READS:
+        buffer_index, length_index = READS[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            length = call.arguments[length_index]
+            if call.name == "fwrite" and len(call.arguments) >= 3:
+                length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+            append_memory(
+                "READ",
+                call.arguments[buffer_index],
+                length,
+            )
+            if call.name == "memcmp" and len(call.arguments) >= 3:
+                append_memory(
+                    "READ",
+                    call.arguments[1],
+                    call.arguments[2],
+                )
+
+    if call.name in ALLOCATORS and call.returned:
+        indices = ALLOCATORS[call.name]
+        if call.name == "calloc" and len(call.arguments) >= 2:
+            size = f"({call.arguments[0]}) * ({call.arguments[1]})"
+        elif indices and len(call.arguments) > indices[0]:
+            size = call.arguments[indices[0]]
+        else:
+            size = ""
+        if size:
+            summary = canonicalize_summary(
+                function,
+                {"kind": "ALLOC", "buffer": "return", "size": size},
+            )
+            if _simple_caller_expression(summary["size"]):
+                summaries.append(summary)
+
+    return summaries
+
+
+def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]:
+    summaries: list[dict[str, str]] = []
+    for call in function.calls():
+        if call.indirect:
+            continue
+        for summary in _standard_call_summaries(function, call):
+            if summary not in summaries:
+                summaries.append(summary)
+    return summaries
+
+
+def _normalization_endpoints(
+    function: FunctionSource,
+) -> list[tuple[str, str]]:
+    endpoints: list[tuple[str, str]] = []
+    if function.has_value_return():
+        endpoints.append(("return", "function return statements"))
+    for call in function.calls():
+        if call.indirect:
+            continue
+        if call.name in STANDARD_CALLS:
+            expected = _expected_standard_effect_count(call)
+            direct = len(_standard_call_summaries(function, call))
+            if expected == direct:
+                continue
+        endpoints.append(
+            (
+                "call",
+                f"direct call {call.name}({', '.join(call.arguments)}) at line {call.line}",
+            )
+        )
+    return endpoints
+
+
 def llm_normalize(
     candidate: Candidate,
     *,
     api_key: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
-    max_tokens: int = 2048,
+    max_tokens: int = 512,
     disable_proxy: bool = False,
     response_schema: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
@@ -511,79 +699,103 @@ def llm_normalize(
             f"({len(candidate.function.text)} > {MAX_LLM_SOURCE_CHARS} chars)"
         )
 
-    prompt = f"""Normalize only security-relevant memory semantics implemented by this candidate C/C++ function.
-Return one JSON object with key summaries, whose value is a JSON array. Use only these exact schemas:
-{{"kind":"ALLOC","buffer":"return","size":"arg0"}}
-{{"kind":"READ","buffer":"arg0","length":"arg2"}}
-{{"kind":"WRITE","buffer":"arg0","length":"arg2"}}
-{{"kind":"VALUE","target":"return","expression":"arg0"}}
+    summaries = _direct_standard_summaries(candidate.function)
+    indirect_calls = [
+        f"{call.name}@{call.line}"
+        for call in candidate.function.calls()
+        if call.indirect
+    ]
+    opaque_text = ", ".join(indirect_calls) if indirect_calls else "none"
 
-Meaning:
-- ALLOC: returned object is allocated/resized with the given size expression.
-- READ: bytes are consumed FROM a caller-supplied buffer. write(fd, buf, n) or send(fd, buf, n)
-  implies READ(buffer=buf,length=n).
-- WRITE: bytes are written INTO a caller-supplied buffer. read(fd, buf, n) or recv(fd, buf, n)
-  implies WRITE(buffer=buf,length=n).
-- For memcpy(dst, src, n), emit WRITE(dst,n) and READ(src,n). Never swap these roles.
-- VALUE: return value is a direct value/cast/arithmetic transformation of caller arguments.
+    for endpoint_kind, endpoint_text in _normalization_endpoints(candidate.function):
+        if endpoint_kind == "return":
+            allowed = "ALLOC or VALUE"
+            instruction = (
+                "Report only return semantics that hold for this function's return "
+                "behavior. Do not report READ/WRITE effects here."
+            )
+        else:
+            allowed = "ALLOC, READ, WRITE, or VALUE"
+            instruction = (
+                "Report only caller-visible summaries mediated by this one direct "
+                "named call. Do not report effects from any other call site."
+            )
 
-Preserve the candidate signature exactly: arg0 is the first parameter, arg1 the second, etc.
-A READ/WRITE buffer must be rooted at a pointer-like caller parameter, while length denotes the
-extent/count used by the underlying operation. Every source parameter reference must be replaced
-with positional argN form. A field is arg0->field, never the source parameter name. Do not emit
-local variables or internal buffers as READ/WRITE buffers.
-Do not guess implied checks, library contracts, caller behavior, or vulnerability labels. Emit only
-semantics directly implemented by this function. Do not emit standalone guard/check summaries:
-a comparison without an explicit return contract cannot be propagated safely across a call boundary. Expressions may combine argN with constants, fields,
-casts, sizeof, and arithmetic. Emit {{"summaries":[]}} when none applies. Do not inspect anything
-beyond this function.
+        prompt = f"""Normalize one statically localized semantic endpoint in this C/C++ function.
+Endpoint: {endpoint_text}
+Allowed summary kinds: {allowed}
+{instruction}
+
+Return exactly one JSON object with key summaries. The array may contain at most four summaries.
+Use only:
+{{"kind":"ALLOC","buffer":"return","size":"argN expression"}}
+{{"kind":"READ","buffer":"argN expression","length":"argN expression"}}
+{{"kind":"WRITE","buffer":"argN expression","length":"argN expression"}}
+{{"kind":"VALUE","target":"return","expression":"argN expression"}}
+
+Use positional argN names only. READ/WRITE buffers must be rooted at caller pointer parameters.
+Do not infer vulnerability labels, guards, caller behavior, or library contracts. Unresolved
+indirect/function-pointer calls are opaque: never infer semantics through them, but they do not
+invalidate unrelated direct evidence. Emit {{"summaries":[]}} when this endpoint exposes none.
 
 Function: {candidate.function.name}
 Parameters: {json.dumps(list(candidate.function.parameters))}
+Opaque indirect calls: {opaque_text}
 Source:
 {candidate.function.text}
 """
-    response_format: dict[str, object] = {"type": "json_object"}
-    if response_schema is not None:
-        response_format["schema"] = response_schema
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "You output strict JSON only."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-            "max_tokens": max_tokens,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": response_format,
-        }
-    ).encode()
-    request = urllib.request.Request(
-        f"{base_url.rstrip('/')}/chat/completions",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    if disable_proxy:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        response_context = opener.open(request, timeout=180)
-    else:
-        response_context = urllib.request.urlopen(request, timeout=180)
-    with response_context as response:
-        result = json.load(response)
-    content = _response_content(result)
-    parsed = _extract_json_object(content)
-    summaries = parsed.get("summaries", [])
-    if not isinstance(summaries, list):
-        raise ValueError("LLM output field summaries is not a list")
-    if not all(isinstance(item, dict) for item in summaries):
-        raise ValueError("LLM output field summaries must contain only JSON objects")
-    return summaries
+        response_format: dict[str, object] = {"type": "json_object"}
+        if response_schema is not None:
+            response_format["schema"] = response_schema
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You output strict JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0,
+                "max_tokens": max_tokens,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "response_format": response_format,
+            }
+        ).encode()
+        request = urllib.request.Request(
+            f"{base_url.rstrip('/')}/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        if disable_proxy:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            response_context = opener.open(request, timeout=180)
+        else:
+            response_context = urllib.request.urlopen(request, timeout=180)
+        with response_context as response:
+            result = json.load(response)
 
+        parsed = _extract_json_object(_response_content(result))
+        endpoint_summaries = parsed.get("summaries")
+        if not isinstance(endpoint_summaries, list):
+            raise ValueError("LLM response summaries must be a list")
+        if len(endpoint_summaries) > 4:
+            raise ValueError("LLM response exceeds the endpoint summary bound")
+        for raw_summary in endpoint_summaries:
+            if not isinstance(raw_summary, dict):
+                raise ValueError("LLM summary must be one JSON object")
+            clean = canonicalize_summary(candidate.function, raw_summary)
+            error = _schema_error(clean, len(candidate.function.parameters))
+            if error is not None:
+                raise ValueError(f"LLM summary violates schema: {error}")
+            if endpoint_kind == "return" and clean["kind"] not in {"ALLOC", "VALUE"}:
+                raise ValueError("return endpoint emitted non-return summary")
+            if clean not in summaries:
+                summaries.append(clean)
+
+    return summaries
 
 def _response_content(result: dict[str, object]) -> str:
     try:
