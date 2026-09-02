@@ -430,41 +430,63 @@ class CandidateDiscoveryTests(unittest.TestCase):
         def find_functions(self, *_args, **_kwargs):
             return self.definitions
 
-    def test_skips_same_signature_conditional_definitions_without_choosing_one(self):
-        functions = parse_functions(
-            "sample.c",
+    def test_binds_definition_matching_call_preprocessor_context(self):
+        definitions = parse_functions(
+            "defs.c",
             """
-            #ifdef OUTER_FEATURE
-            #ifndef INNER_FEATURE
+            #ifdef FEATURE
             int inner(char *buffer) { return buffer[0]; }
             #else
             int inner(char *buffer) { return buffer[1]; }
             #endif
-            #endif
-            int outer(char *buffer) { return inner(buffer); }
             """,
         )
-        definitions = [function for function in functions if function.name == "inner"]
-        entry = next(function for function in functions if function.name == "outer")
-        self.assertEqual(2, len(definitions))
-        contexts = [dict(item.preprocessor_context or ()) for item in definitions]
-        self.assertEqual(
-            set(contexts[0]),
-            set(contexts[1]),
+        entry = parse_functions(
+            "wrapper.c",
+            """
+            int outer(char *buffer)
+            {
+            #ifdef FEATURE
+                return inner(buffer);
+            #else
+                return 0;
+            #endif
+            }
+            """,
+        )[0]
+        candidates = discover_candidates(
+            "sample",
+            self.StaticRepository(definitions),
+            entry,
+            (),
         )
-        self.assertNotEqual(
-            contexts[0],
-            contexts[1],
+        self.assertEqual(1, len(candidates))
+        self.assertEqual({"FEATURE": True}, dict(candidates[0].function.preprocessor_context or ()))
+
+    def test_unconditional_call_keeps_conditional_definitions_ambiguous(self):
+        definitions = parse_functions(
+            "defs.c",
+            """
+            #ifdef FEATURE
+            int inner(char *buffer) { return buffer[0]; }
+            #else
+            int inner(char *buffer) { return buffer[1]; }
+            #endif
+            """,
         )
-        self.assertEqual(
-            [],
+        entry = parse_functions(
+            "wrapper.c",
+            "int outer(char *buffer) { return inner(buffer); }",
+        )[0]
+        with self.assertRaisesRegex(
+            RuntimeError, "ambiguous repository binding for inner"
+        ):
             discover_candidates(
                 "sample",
                 self.StaticRepository(definitions),
                 entry,
                 (),
-            ),
-        )
+            )
 
     def test_rejects_cross_file_or_different_signature_ambiguity(self):
         entry = parse_functions(
@@ -756,6 +778,26 @@ class Z3ReasonerTests(unittest.TestCase):
             if access["access_kind"] == "WRITE"
         ]
         self.assertEqual("SAFE", writes[0]["status"])
+
+    def test_nested_allocator_call_is_not_treated_as_direct_definition(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const char *src, unsigned long n)
+            {
+                char *tmp = malloc(n) + 1;
+                memcpy(tmp, src, n);
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        writes = [
+            access
+            for access in result.constraint_result["accesses"]
+            if access["access_kind"] == "WRITE"
+        ]
+        self.assertEqual("UNKNOWN", writes[0]["status"])
+        self.assertIn("object capacity", writes[0]["reason"])
 
     def test_non_allocation_pointer_redefinition_remains_unknown(self):
         entry = parse_functions(
