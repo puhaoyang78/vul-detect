@@ -40,7 +40,6 @@ class CheckpointTests(unittest.TestCase):
             args = SimpleNamespace(
                 samples=str(samples_path),
                 output=str(output_path),
-                normalizer="llm",
                 llm_backend="api",
                 llama_server="/unused",
                 local_model="/unused",
@@ -111,6 +110,10 @@ class CheckpointTests(unittest.TestCase):
             write_jsonl(samples_path, samples)
             write_jsonl(replay_path, [])
 
+            joern = Mock()
+            joern.timeout = 180
+            joern.ensure_available.return_value = None
+
             with patch(
                 "semantic_demo.cli._load_entry",
                 side_effect=[(None, entries[0]), RuntimeError("interrupted")],
@@ -118,6 +121,8 @@ class CheckpointTests(unittest.TestCase):
                 "semantic_demo.cli.discover_candidates", return_value=[]
             ), patch(
                 "semantic_demo.cli.LineVulBaseline", return_value=baseline_model
+            ), patch(
+                "semantic_demo.cli.JoernValidator", return_value=joern
             ), patch("semantic_demo.cli.analyze", return_value=verdict):
                 with self.assertRaisesRegex(RuntimeError, "interrupted"):
                     detect(
@@ -125,7 +130,6 @@ class CheckpointTests(unittest.TestCase):
                         str(replay_path),
                         str(semantics_path),
                         str(detections_path),
-                        use_joern=False,
                     )
 
             self.assertEqual(
@@ -140,13 +144,14 @@ class CheckpointTests(unittest.TestCase):
                 "semantic_demo.cli.discover_candidates", return_value=[]
             ), patch(
                 "semantic_demo.cli.LineVulBaseline", return_value=baseline_model
+            ), patch(
+                "semantic_demo.cli.JoernValidator", return_value=joern
             ), patch("semantic_demo.cli.analyze", return_value=verdict) as analyze:
                 detect(
                     str(samples_path),
                     str(replay_path),
                     str(semantics_path),
                     str(detections_path),
-                    use_joern=False,
                 )
 
             self.assertEqual(1, analyze.call_count)
