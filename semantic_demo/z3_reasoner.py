@@ -296,25 +296,28 @@ def _expression_identifiers(expression: str) -> set[str]:
 
 
 def _is_represented_allocation_definition(
+    entry: FunctionSource,
     target: str,
-    expression: str,
     operations: Iterable[object],
     access_line: int,
 ) -> bool:
-    """Whether an unencodable initializer is already modeled as ALLOC."""
-    compact = normalize_expression(expression)
-    for operation in operations:
-        if getattr(operation, "kind", "") != "ALLOC":
-            continue
-        if int(getattr(operation, "line", 0)) >= access_line:
-            continue
-        buffer = _strip_outer_casts(getattr(operation, "buffer", ""))
-        callee = normalize_expression(getattr(operation, "callee", ""))
-        if buffer != target or not callee:
-            continue
-        if re.search(rf"(?<![A-Za-z0-9_]){re.escape(callee)}\s*\(", compact):
-            return True
-    return False
+    """Whether the latest direct call definition is already modeled as ALLOC."""
+    direct_definitions = {
+        name: (callee, line)
+        for name, callee, line in entry.direct_call_definitions_before(access_line)
+    }
+    definition = direct_definitions.get(target)
+    if definition is None:
+        return False
+    callee, definition_line = definition
+    return any(
+        getattr(operation, "kind", "") == "ALLOC"
+        and int(getattr(operation, "line", 0)) == definition_line
+        and _strip_outer_casts(getattr(operation, "buffer", "")) == target
+        and normalize_expression(getattr(operation, "callee", ""))
+        == normalize_expression(callee)
+        for operation in operations
+    )
 
 
 def _add_program_constraints(
@@ -347,7 +350,7 @@ def _add_program_constraints(
     for left, right in entry.value_relations_before(line):
         target = normalize_expression(left)
         if _is_represented_allocation_definition(
-            target, right, operations, line
+            entry, target, operations, line
         ):
             continue
         if _has_unresolved_compile_time_symbol(left, right) or _has_unmodeled_c_arithmetic(right):
