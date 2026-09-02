@@ -114,7 +114,7 @@ class ExpressionEncoder:
             reverse=True,
         )
         for name in identifiers:
-            if name.startswith("v_"):
+            if name.startswith("v_") or name in {"min", "max"}:
                 continue
             text = re.sub(
                 rf"\b{re.escape(name)}\b", str(self.symbol(name)), text
@@ -420,6 +420,17 @@ def _check_access(
     solver = Solver()
     path_constraints = _add_program_constraints(solver, encoder, entry, line)
     conditions: list[VerificationCondition] = []
+
+    # Connect C sizeof(local_array) guards to the array element capacity used by
+    # this bounds model. This is only valid for concrete local arrays, not
+    # arbitrary pointers or heap objects.
+    local_arrays = _local_array_capacities(entry)
+    base, _ = _buffer_base_and_offset(buffer_text)
+    if base in local_arrays:
+        try:
+            solver.add(encoder.equality(f"sizeof({base})", local_arrays[base]))
+        except Exception:
+            pass
 
     try:
         extent = encoder.encode(extent_text)
