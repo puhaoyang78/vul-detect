@@ -76,6 +76,7 @@ class FunctionSource:
     parameter_pointer_like: tuple[bool, ...]
     parameter_signatures: tuple[str, ...]
     start_line: int
+    end_line: int
     parse_has_error: bool = False
 
     def calls(self) -> list[Call]:
@@ -379,6 +380,7 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 parameter_pointer_like=pointer_like,
                 parameter_signatures=signatures,
                 start_line=node.start_point.row + 1,
+                end_line=node.end_point.row + 1,
                 parse_has_error=bool(node.has_error),
             )
         )
