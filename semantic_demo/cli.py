@@ -589,6 +589,7 @@ def evaluate(
             {
                 "CVE": truth["cve"],
                 "repository": truth["repository"],
+                "ground_truth": truth["ground_truth"],
                 "vulnerable_commit": result["vulnerable_commit"],
                 "custom_functions": ", ".join(truth["custom_functions"]),
                 "automatic_semantics": automatic_semantics,
@@ -624,59 +625,72 @@ def evaluate(
         writer.writeheader()
         writer.writerows(rows)
 
-    baseline_hits = sum(row["baseline_verdict"] == "VULNERABLE" for row in rows)
-    proposed_hits = sum(row["proposed_verdict"] == "VULNERABLE" for row in rows)
-    corrections = sum(row["proposed_corrected_baseline"] == "YES" for row in rows)
+    def _classification_metrics(prefix: str) -> dict[str, float | int]:
+        tp = fp = tn = fn = 0
+        for row in rows:
+            truth_label = row["ground_truth"]
+            predicted = "VULNERABLE" if row[f"{prefix}_verdict"] == "VULNERABLE" else "BENIGN"
+            if truth_label == "VULNERABLE" and predicted == "VULNERABLE":
+                tp += 1
+            elif truth_label == "BENIGN" and predicted == "VULNERABLE":
+                fp += 1
+            elif truth_label == "BENIGN":
+                tn += 1
+            else:
+                fn += 1
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        accuracy = (tp + tn) / len(rows) if rows else 0.0
+        return {
+            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            "precision": precision, "recall": recall, "f1": f1, "accuracy": accuracy,
+        }
+
+    baseline_metrics = _classification_metrics("baseline")
+    proposed_metrics = _classification_metrics("proposed")
     rejected = sum(int(row["rejected_semantics"]) for row in rows)
-    z3_statuses = Counter(
-        row["z3_status"] for row in rows if row.get("z3_status")
-    )
+    z3_statuses = Counter(row["z3_status"] for row in rows if row.get("z3_status"))
     failures = Counter(
-        row["proposed_reason"]
-        for row in rows
-        if row["proposed_verdict"] != "VULNERABLE"
+        row["proposed_reason"] for row in rows if row["proposed_verdict"] != "VULNERABLE"
     )
+    vulnerable_count = sum(row["ground_truth"] == "VULNERABLE" for row in rows)
+    benign_count = len(rows) - vulnerable_count
     lines = [
         "# Demo 结果摘要",
         "",
-        f"- 真实 C/C++ 内存安全 CVE：{len(rows)} 个",
-        f"- Baseline 检出：{baseline_hits}/{len(rows)}",
-        f"- Proposed 检出：{proposed_hits}/{len(rows)}",
-        f"- Proposed 纠正 Baseline 漏检：{corrections} 个",
+        f"- 函数级样本：{len(rows)}（VULNERABLE={vulnerable_count}, BENIGN={benign_count}）",
+        (
+            "- CodeBERT Baseline："
+            f"TP={baseline_metrics['tp']}, FP={baseline_metrics['fp']}, "
+            f"TN={baseline_metrics['tn']}, FN={baseline_metrics['fn']}, "
+            f"Precision={baseline_metrics['precision']:.4f}, "
+            f"Recall={baseline_metrics['recall']:.4f}, F1={baseline_metrics['f1']:.4f}, "
+            f"Accuracy={baseline_metrics['accuracy']:.4f}"
+        ),
+        (
+            "- Proposed："
+            f"TP={proposed_metrics['tp']}, FP={proposed_metrics['fp']}, "
+            f"TN={proposed_metrics['tn']}, FN={proposed_metrics['fn']}, "
+            f"Precision={proposed_metrics['precision']:.4f}, "
+            f"Recall={proposed_metrics['recall']:.4f}, F1={proposed_metrics['f1']:.4f}, "
+            f"Accuracy={proposed_metrics['accuracy']:.4f}"
+        ),
         f"- 静态验证拒绝的语义摘要：{rejected} 条",
         (
             "- Z3 状态：" + ", ".join(
                 f"{status}={count}" for status, count in sorted(z3_statuses.items())
-            )
-            if z3_statuses
-            else "- Z3 状态：无"
+            ) if z3_statuses else "- Z3 状态：无"
         ),
         "",
-        (
-            "结论：出现明确但有限的正向信号。自动恢复并验证的项目语义使检出数从 "
-            f"{baseline_hits} 增加到 {proposed_hits}，纠正了 {corrections} 个漏检。"
-        ),
-        (
-            "该样本集全部为漏洞样本，并且优先选择了自定义内存函数，因此这里只能说明"
-            "召回方向值得继续，不能据此判断误报率或泛化效果。"
-        ),
-        "",
-        "## 主要失败原因",
+        "## 主要未解析原因",
         "",
     ]
     lines.extend(f"- {count} 个：{reason}" for reason, count in failures.most_common())
-    lines.extend(
-        [
-            "- BSON 样本的模型摘要未严格归一化或未通过同一写入点的数据流验证。",
-            "- ImageMagick 样本需要关联分配大小与后续循环读取范围，新增 READ/VALUE 后需重新评估。",
-            "- Sofia SIP 样本依赖剩余输入长度与越界读取关系，新增 READ 语义后需重新评估。",
-            "- FreeType 样本依赖宏、回调和整数偏移，直接调用候选筛选未恢复到写入语义。",
-        ]
-    )
     Path(summary_path).write_text("\n".join(lines) + "\n")
     print(
-        f"samples={len(rows)} baseline={baseline_hits} proposed={proposed_hits} "
-        f"corrections={corrections} table={table_path}"
+        f"samples={len(rows)} baseline_f1={baseline_metrics['f1']:.4f} "
+        f"proposed_f1={proposed_metrics['f1']:.4f} table={table_path}"
     )
 
 
