@@ -45,10 +45,27 @@ MAX_LLM_SOURCE_CHARS = 50000
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "matched": {"type": "boolean"},
-        "value": {"type": "string"},
+        "summaries": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["ALLOC", "READ", "WRITE", "VALUE"],
+                    },
+                    "buffer": {"type": "string"},
+                    "size": {"type": "string"},
+                    "length": {"type": "string"},
+                    "target": {"type": "string"},
+                    "expression": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["matched", "value"],
+    "required": ["summaries"],
     "additionalProperties": False,
 }
 
@@ -402,6 +419,33 @@ def _validate_by_composition(
                         f"validated callee summary {call.name}",
                     )
 
+            elif kind == "VALUE":
+                child_expression = child.get("expression", "")
+                child_args = _arg_indices(child_expression)
+                if (
+                    len(child_args) != 1
+                    or child_expression != f"arg{child_args[0]}"
+                ):
+                    continue
+                source_call = next(
+                    (
+                        source_call
+                        for source_call in candidate.function.calls()
+                        if source_call.name == call.name and source_call.line == call.line
+                    ),
+                    None,
+                )
+                if source_call is None or not source_call.returned:
+                    continue
+                if _joern_expr_reaches(
+                    facts, summary["expression"], call, (child_args[0],)
+                ):
+                    return (
+                        True,
+                        f"composition verified value through "
+                        f"validated callee summary {call.name}",
+                    )
+
     return False, "no validated callee summary composes to the claimed semantic role"
 
 
@@ -480,27 +524,108 @@ def validate_summary(
 
 
 
-def _normalization_queries(function: FunctionSource) -> list[tuple[str, str]]:
-    queries: list[tuple[str, str]] = []
+def _canonical_call_expression(
+    function: FunctionSource,
+    expression: str,
+) -> str:
+    summary = canonicalize_summary(
+        function,
+        {"kind": "VALUE", "target": "return", "expression": expression},
+    )
+    return summary["expression"]
+
+
+def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]:
+    summaries: list[dict[str, str]] = []
+    for call in function.calls():
+        if call.indirect:
+            continue
+
+        if call.name in WRITES:
+            buffer_index, length_index = WRITES[call.name]
+            if len(call.arguments) > max(buffer_index, length_index):
+                length = call.arguments[length_index]
+                if call.name == "fread" and len(call.arguments) >= 3:
+                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+                summaries.append(
+                    canonicalize_summary(
+                        function,
+                        {
+                            "kind": "WRITE",
+                            "buffer": call.arguments[buffer_index],
+                            "length": length,
+                        },
+                    )
+                )
+
+        if call.name in READS:
+            buffer_index, length_index = READS[call.name]
+            if len(call.arguments) > max(buffer_index, length_index):
+                length = call.arguments[length_index]
+                if call.name == "fwrite" and len(call.arguments) >= 3:
+                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+                summaries.append(
+                    canonicalize_summary(
+                        function,
+                        {
+                            "kind": "READ",
+                            "buffer": call.arguments[buffer_index],
+                            "length": length,
+                        },
+                    )
+                )
+                if call.name == "memcmp" and len(call.arguments) >= 3:
+                    summaries.append(
+                        canonicalize_summary(
+                            function,
+                            {
+                                "kind": "READ",
+                                "buffer": call.arguments[1],
+                                "length": call.arguments[2],
+                            },
+                        )
+                    )
+
+        if call.name in ALLOCATORS and call.returned:
+            indices = ALLOCATORS[call.name]
+            if call.name == "calloc" and len(call.arguments) >= 2:
+                size = f"({call.arguments[0]}) * ({call.arguments[1]})"
+            elif indices and len(call.arguments) > indices[0]:
+                size = call.arguments[indices[0]]
+            else:
+                size = ""
+            if size:
+                summaries.append(
+                    canonicalize_summary(
+                        function,
+                        {"kind": "ALLOC", "buffer": "return", "size": size},
+                    )
+                )
+
+    unique: list[dict[str, str]] = []
+    for summary in summaries:
+        if summary not in unique:
+            unique.append(summary)
+    return unique
+
+
+def _normalization_endpoints(
+    function: FunctionSource,
+) -> list[tuple[str, int | None, str]]:
+    endpoints: list[tuple[str, int | None, str]] = []
     if function.has_value_return():
-        queries.extend((("ALLOC", "return"), ("VALUE", "return")))
-    for index, pointer_like in enumerate(function.parameter_pointer_like):
-        if pointer_like:
-            queries.append(("READ", f"arg{index}"))
-            queries.append(("WRITE", f"arg{index}"))
-    return queries
-
-
-def _summary_from_query(
-    kind: str,
-    anchor: str,
-    value: str,
-) -> dict[str, str]:
-    if kind == "ALLOC":
-        return {"kind": "ALLOC", "buffer": "return", "size": value}
-    if kind == "VALUE":
-        return {"kind": "VALUE", "target": "return", "expression": value}
-    return {"kind": kind, "buffer": anchor, "length": value}
+        endpoints.append(("return", None, "function return statements"))
+    for call in function.calls():
+        if call.indirect or call.name in STANDARD_CALLS:
+            continue
+        endpoints.append(
+            (
+                "call",
+                call.line,
+                f"direct call {call.name}({', '.join(call.arguments)}) at line {call.line}",
+            )
+        )
+    return endpoints
 
 
 def llm_normalize(
@@ -509,7 +634,7 @@ def llm_normalize(
     api_key: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
-    max_tokens: int = 256,
+    max_tokens: int = 512,
     disable_proxy: bool = False,
     response_schema: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
@@ -524,51 +649,46 @@ def llm_normalize(
             f"({len(candidate.function.text)} > {MAX_LLM_SOURCE_CHARS} chars)"
         )
 
+    summaries = _direct_standard_summaries(candidate.function)
     indirect_calls = [
         f"{call.name}@{call.line}"
         for call in candidate.function.calls()
         if call.indirect
     ]
-    opaque_text = (
-        ", ".join(indirect_calls)
-        if indirect_calls
-        else "none"
-    )
-    summaries: list[dict[str, str]] = []
+    opaque_text = ", ".join(indirect_calls) if indirect_calls else "none"
 
-    for kind, anchor in _normalization_queries(candidate.function):
-        if kind in {"READ", "WRITE"}:
-            task = (
-                f"Determine only whether caller buffer {anchor} has a propagatable "
-                f"{kind} byte effect. If yes, value must be the exact byte-count "
-                "expression in positional argN form."
-            )
-        elif kind == "ALLOC":
-            task = (
-                "Determine only whether the function return value is an allocated "
-                "or resized object. If yes, value must be its exact size expression "
-                "in positional argN form."
+    for endpoint_kind, endpoint_line, endpoint_text in _normalization_endpoints(
+        candidate.function
+    ):
+        if endpoint_kind == "return":
+            allowed = "ALLOC or VALUE"
+            instruction = (
+                "Report only return semantics that hold for this function's return "
+                "behavior. Do not report READ/WRITE effects here."
             )
         else:
-            task = (
-                "Determine only whether every propagated return represented here is "
-                "the same direct value/cast/arithmetic expression of caller arguments. "
-                "If yes, value must be that exact expression in positional argN form."
+            allowed = "ALLOC, READ, WRITE, or VALUE"
+            instruction = (
+                "Report only caller-visible summaries mediated by this one direct "
+                "named call. Do not report effects from any other call site."
             )
 
-        prompt = f"""Analyze one bounded interprocedural summary slot for this C/C++ function.
-{task}
+        prompt = f"""Normalize one statically localized semantic endpoint in this C/C++ function.
+Endpoint: {endpoint_text}
+Allowed summary kinds: {allowed}
+{instruction}
 
-Return exactly one JSON object:
-{{"matched":true,"value":"argN expression"}}
-or
-{{"matched":false,"value":""}}
+Return exactly one JSON object with key summaries. The array may contain at most four summaries.
+Use only:
+{{"kind":"ALLOC","buffer":"return","size":"argN expression"}}
+{{"kind":"READ","buffer":"argN expression","length":"argN expression"}}
+{{"kind":"WRITE","buffer":"argN expression","length":"argN expression"}}
+{{"kind":"VALUE","target":"return","expression":"argN expression"}}
 
-Do not enumerate any other summaries. Do not infer vulnerability labels, guards, caller behavior,
-or library contracts. Unresolved indirect/function-pointer calls are opaque: never infer semantics
-through them, but they do not invalidate unrelated direct evidence. A relation through a direct
-named callee may be proposed only when the argument/return wiring in this function exposes this
-exact slot; downstream validation will require a validated callee summary.
+Use positional argN names only. READ/WRITE buffers must be rooted at caller pointer parameters.
+Do not infer vulnerability labels, guards, caller behavior, or library contracts. Unresolved
+indirect/function-pointer calls are opaque: never infer semantics through them, but they do not
+invalidate unrelated direct evidence. Emit {{"summaries":[]}} when this endpoint exposes none.
 
 Function: {candidate.function.name}
 Parameters: {json.dumps(list(candidate.function.parameters))}
@@ -610,24 +730,22 @@ Source:
             result = json.load(response)
 
         parsed = _extract_json_object(_response_content(result))
-        if set(parsed) != {"matched", "value"}:
-            raise ValueError("LLM response must contain exactly matched and value")
-        matched = parsed["matched"]
-        value = parsed["value"]
-        if not isinstance(matched, bool) or not isinstance(value, str):
-            raise ValueError("LLM matched/value fields have invalid types")
-        value = value.strip()
-        if not matched:
-            if value:
-                raise ValueError("LLM unmatched response must use an empty value")
-            continue
-        if not value:
-            raise ValueError("LLM matched response must contain a value")
-
-        summary = _summary_from_query(kind, anchor, value)
-        summary = canonicalize_summary(candidate.function, summary)
-        if summary not in summaries:
-            summaries.append(summary)
+        endpoint_summaries = parsed.get("summaries")
+        if not isinstance(endpoint_summaries, list):
+            raise ValueError("LLM response summaries must be a list")
+        if len(endpoint_summaries) > 4:
+            raise ValueError("LLM response exceeds the endpoint summary bound")
+        for raw_summary in endpoint_summaries:
+            if not isinstance(raw_summary, dict):
+                raise ValueError("LLM summary must be one JSON object")
+            clean = canonicalize_summary(candidate.function, raw_summary)
+            error = _schema_error(clean, len(candidate.function.parameters))
+            if error is not None:
+                raise ValueError(f"LLM summary violates schema: {error}")
+            if endpoint_kind == "return" and clean["kind"] not in {"ALLOC", "VALUE"}:
+                raise ValueError("return endpoint emitted non-return summary")
+            if clean not in summaries:
+                summaries.append(clean)
 
     return summaries
 
