@@ -10,11 +10,13 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 检测输入为 data/detection_samples.jsonl，其中不含 CVE、fixing commit、补丁、漏洞描述
 或人工结论。data/oracle.jsonl 只在检测结果落盘之后用于评估。
 
-Baseline 为独立的函数级 CodeBERT sequence-classification 模型，只读取目标函数源码；
-默认从 /home/PublicData/PHY-data/resource/codebert 加载本地微调 checkpoint。该目录必须包含
-训练过的分类头；仅有预训练 base encoder 时程序会拒绝运行，避免随机分类头造成无效 baseline。
-Proposed 不复用
-任何 baseline 启发式判定规则，所有漏洞结论均来自统一的 memory-effect / constraint / VC 路径。
+Baseline 使用 LineVul 的函数级漏洞分类模型，只读取目标函数源码。实现兼容官方 RQ1 设置：
+以 CodeBERT 为 encoder/tokenizer、block size 512、12 attention heads、阈值 0.5，并加载官方
+12heads_linevul_model.bin checkpoint。默认 CodeBERT base 位于
+/home/PublicData/PHY-data/resource/codebert-base，LineVul checkpoint 位于
+/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin。
+Proposed 不复用任何 baseline 启发式判定规则，所有漏洞结论均来自统一的
+memory-effect / constraint / VC 路径。
 
 ## 当前分析流程
 
@@ -66,7 +68,8 @@ Proposed 不复用
     JDK: /home/phy/jdk21
     llama.cpp: /home/phy/llama.cpp/build/bin/llama-server
     Qwen: /home/phy/models/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MXFP4_MOE.gguf
-    CodeBERT baseline: /home/PublicData/PHY-data/resource/codebert
+    LineVul CodeBERT base: /home/PublicData/PHY-data/resource/codebert-base
+    LineVul checkpoint: /home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin
 
 ## 推荐运行顺序
 
@@ -84,15 +87,16 @@ Proposed 不复用
 
     python -m semantic_demo.cli normalize --normalizer llm --refresh
 
-然后重新执行 CodeBERT baseline、Joern fixed-point validation 和 Z3 bounds verification：
+然后重新执行 LineVul baseline、Joern fixed-point validation 和 Z3 bounds verification：
 
     python -m semantic_demo.cli run --joern-dir /home/phy/joern
 
-如 CodeBERT 微调 checkpoint 不在默认目录：
+如 LineVul 模型不在默认目录：
 
     python -m semantic_demo.cli run \
       --joern-dir /home/phy/joern \
-      --codebert-path /path/to/fine-tuned-codebert
+      --linevul-codebert-path /path/to/codebert-base \
+      --linevul-checkpoint /path/to/12heads_linevul_model.bin
 
 Joern 验证每完成一个样本就保存检查点。重新执行同一命令时，输入指纹一致的样本会
 直接复用。需要忽略现有检查点并从 S01 重新运行时使用：
@@ -112,8 +116,8 @@ Joern 验证每完成一个样本就保存检查点。重新执行同一命令�
   compositional fixed-point summary validation。
 - semantic_demo/joern.py / joern_extract.sc
   CPG、参数到调用角色的数据流、比较和返回关系。
-- semantic_demo/codebert_baseline.py
-  独立函数级 CodeBERT baseline，仅使用目标函数源码。
+- semantic_demo/linevul_baseline.py
+  独立函数级 LineVul baseline，仅使用目标函数源码。
 - semantic_demo/analyzer.py
   标准内存操作与验证后的跨过程语义统一传播到目标函数，不包含漏洞启发式规则。
 - semantic_demo/z3_reasoner.py
@@ -128,7 +132,7 @@ Joern 验证每完成一个样本就保存检查点。重新执行同一命令�
 - results/results.csv：包含 Z3 status、Verification Conditions 和 counterexample model。
 - results/summary.md：整体结果摘要。
 
-results/ 目录中的既有数字不适用于当前 CodeBERT baseline 与统一 VC 推理版本。
+results/ 目录中的既有数字不适用于当前 LineVul baseline 与统一 VC 推理版本。
 修改方法实现后应重新运行 run（必要时使用 --refresh）再评价结果。
 
 Z3 中 Path Constraint 与 buffer capacity 已严格分离。Guard 只作为路径约束；
