@@ -519,7 +519,9 @@ Source:
     summaries = parsed.get("summaries", [])
     if not isinstance(summaries, list):
         raise ValueError("LLM output field summaries is not a list")
-    return [item for item in summaries if isinstance(item, dict)]
+    if not all(isinstance(item, dict) for item in summaries):
+        raise ValueError("LLM output field summaries must contain only JSON objects")
+    return summaries
 
 
 def _response_content(result: dict[str, object]) -> str:
@@ -567,6 +569,11 @@ def load_replay(path: str | Path) -> dict[tuple[str, str, str], list[dict[str, s
                 raise ValueError(
                     f"{path}: obsolete normalization schema; rerun normalize --refresh"
                 )
+            summaries = record.get("summaries")
+            if not isinstance(summaries, list) or not all(
+                isinstance(item, dict) for item in summaries
+            ):
+                raise ValueError(f"{path}: invalid summaries field")
             key = (record["sample_key"], record["source_path"], record["function"])
-            replay[key] = record["summaries"]
+            replay[key] = summaries
     return replay
