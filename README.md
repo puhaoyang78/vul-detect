@@ -11,7 +11,9 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 或人工结论。data/oracle.jsonl 只在检测结果落盘之后用于评估。
 
 Baseline 为独立的函数级 CodeBERT sequence-classification 模型，只读取目标函数源码；
-默认从 /home/PublicData/PHY-data/resource/codebert 加载本地微调 checkpoint。Proposed 不复用
+默认从 /home/PublicData/PHY-data/resource/codebert 加载本地微调 checkpoint。该目录必须包含
+训练过的分类头；仅有预训练 base encoder 时程序会拒绝运行，避免随机分类头造成无效 baseline。
+Proposed 不复用
 任何 baseline 启发式判定规则，所有漏洞结论均来自统一的 memory-effect / constraint / VC 路径。
 
 ## 当前分析流程
@@ -34,6 +36,7 @@ Baseline 为独立的函数级 CodeBERT sequence-classification 模型，只读�
    - 采用 fixed-point 迭代直到没有新的摘要能够通过验证，因此支持 wrapper -> wrapper -> primitive。
 
 4. **Program-constraint extraction**
+   - Tree-sitter AST 直接提取数组下标访问，并统一为显式 READ/WRITE memory access。
    - Tree-sitter AST 提取赋值/初始化得到 Value Constraint。
    - AST 提取 early-exit 分支在后续访问点成立的 Path Constraint。
    - 分配返回值和局部数组提供显式 buffer capacity。
