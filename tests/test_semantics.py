@@ -364,7 +364,8 @@ class Z3ReasonerTests(unittest.TestCase):
                 )
             ],
         )
-        self.assertEqual("SAFE", result.status)
+        self.assertEqual("UNKNOWN", result.status)
+        self.assertEqual("SAFE", result.accesses[0].status)
 
     def test_signed_length_without_guard_is_feasible(self):
         entry = parse_functions(
@@ -420,6 +421,61 @@ class Z3ReasonerTests(unittest.TestCase):
         self.assertEqual("UNKNOWN", result.status)
         self.assertIn("capacity/valid extent is unknown", result.reason)
 
+    def test_compound_early_exit_constraints_use_de_morgan(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(const char *src, unsigned long slen)
+            {
+                char buf[16];
+                if (slen == 0 || slen >= sizeof(buf))
+                    return 0;
+                memcpy(buf, src, slen);
+                return 1;
+            }
+            """,
+        )[0]
+        line = entry.start_line + 5
+        constraints = entry.continuation_constraints_before(line)
+        compact = set(constraints)
+        self.assertIn("slen!=0", compact)
+        self.assertIn("slen<sizeof(buf)", compact)
+
+    def test_min_is_encoded_semantically_not_as_free_symbol(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const char *src, unsigned long cur_size, unsigned long new_size)
+            {
+                char *tmp = malloc(new_size);
+                memcpy(tmp, src, min(cur_size, new_size));
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        self.assertNotEqual("VULNERABLE", result.verdict)
+        writes = [
+            access
+            for access in result.constraint_result["accesses"]
+            if access["access_kind"] == "WRITE"
+        ]
+        self.assertEqual("SAFE", writes[0]["status"])
+
+    def test_memcpy_exposes_both_source_read_and_destination_write(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(char *dst, const char *src, unsigned long n)
+            {
+                memcpy(dst, src, n);
+            }
+            """,
+        )[0]
+        verdict = analyze(entry)
+        effects = {(item["kind"], item["buffer"]) for item in verdict.as_json()["operations"]}
+        self.assertIn(("WRITE", "dst"), effects)
+        self.assertIn(("READ", "src"), effects)
+
 
 class PropagationTests(unittest.TestCase):
     def test_custom_write_exposes_capacity_mismatch(self):
@@ -444,7 +500,7 @@ class PropagationTests(unittest.TestCase):
             True,
             "validated",
         )
-        verdict = analyze(entry, [validation], proposed=True)
+        verdict = analyze(entry, [validation])
         self.assertEqual("VULNERABLE", verdict.verdict)
         self.assertIn("res.len<=buflen", verdict.reason)
 
