@@ -35,6 +35,8 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual("/home/phy/jdk21", args.java_home)
         self.assertFalse(args.no_joern)
         self.assertFalse(args.refresh)
+        self.assertEqual("/home/PublicData/PHY-data/resource/codebert", args.codebert_path)
+        self.assertEqual(0.5, args.codebert_threshold)
 
 
 if __name__ == "__main__":
