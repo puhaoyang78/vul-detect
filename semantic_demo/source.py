@@ -31,6 +31,14 @@ class MemoryAccess:
 
 
 @dataclass(frozen=True)
+class LocalArray:
+    name: str
+    elements: str
+    element_type: str
+    byte_capacity: str | None
+
+
+@dataclass(frozen=True)
 class FunctionSource:
     path: str
     name: str
@@ -59,6 +67,11 @@ class FunctionSource:
         source = self.text.encode()
         tree = _PARSER.parse(source)
         return _direct_memory_accesses(tree.root_node, source, self.start_line)
+
+    def local_arrays(self) -> list[LocalArray]:
+        source = self.text.encode()
+        tree = _PARSER.parse(source)
+        return _local_arrays(tree.root_node, source)
 
 
 class GitRepository:
@@ -229,6 +242,87 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
             )
         )
     return functions
+
+
+def _known_element_size(type_text: str, declarator: Node | None) -> int | None:
+    if declarator is not None and any(
+        node.type == "pointer_declarator" for node in _walk(declarator)
+    ):
+        return None
+    text = normalize_expression(type_text)
+    text = re.sub(r"\b(?:const|volatile|restrict|_Atomic)\b", "", text)
+    known = {
+        "char": 1,
+        "signedchar": 1,
+        "unsignedchar": 1,
+        "int8_t": 1,
+        "uint8_t": 1,
+        "short": 2,
+        "shortint": 2,
+        "signedshort": 2,
+        "unsignedshort": 2,
+        "int16_t": 2,
+        "uint16_t": 2,
+        "int": 4,
+        "signed": 4,
+        "signedint": 4,
+        "unsigned": 4,
+        "unsignedint": 4,
+        "float": 4,
+        "int32_t": 4,
+        "uint32_t": 4,
+        "longlong": 8,
+        "longlongint": 8,
+        "unsignedlonglong": 8,
+        "double": 8,
+        "int64_t": 8,
+        "uint64_t": 8,
+    }
+    return known.get(text)
+
+
+def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
+    arrays: list[LocalArray] = []
+    for declaration in _walk(root):
+        if declaration.type != "declaration":
+            continue
+        type_node = declaration.child_by_field_name("type")
+        if type_node is None:
+            continue
+        type_text = _text(type_node, source)
+        for node in _walk(declaration):
+            if node.type != "array_declarator":
+                continue
+            # Nested array declarators require multidimensional shape tracking.
+            if node.parent is not None and node.parent.type == "array_declarator":
+                continue
+            size = node.child_by_field_name("size")
+            declarator = node.child_by_field_name("declarator")
+            name = _identifier(declarator, source)
+            if not name or size is None:
+                continue
+            elements = normalize_expression(_text(size, source))
+            if not elements:
+                continue
+            element_size = _known_element_size(type_text, declarator)
+            byte_capacity = (
+                f"({elements})*{element_size}" if element_size is not None else None
+            )
+            arrays.append(
+                LocalArray(
+                    name=normalize_expression(name),
+                    elements=elements,
+                    element_type=normalize_expression(type_text),
+                    byte_capacity=byte_capacity,
+                )
+            )
+    # A function scope cannot contain two simultaneously live declarations with
+    # the same name in this lightweight model. Keep the first declaration rather
+    # than letting later array uses overwrite capacity.
+    unique: dict[str, LocalArray] = {}
+    for array in arrays:
+        unique.setdefault(array.name, array)
+    return list(unique.values())
 
 
 def _callee_name(node: Node | None, source: bytes) -> str | None:
