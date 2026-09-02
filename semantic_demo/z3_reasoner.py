@@ -373,6 +373,7 @@ def _add_program_constraints(
             continue
         try:
             solver.add(encoder.equality(target, expression))
+            skipped_targets.discard(target)
         except Exception:
             skipped_targets.add(target)
 
