@@ -277,7 +277,15 @@ def normalize_command(args: argparse.Namespace) -> None:
     if args.llm_backend == "local":
         llm_context = local_llm_server(args.llama_server, args.local_model)
     else:
-        llm_context = contextlib.nullcontext({"max_tokens": 8192})
+        llm_context = contextlib.nullcontext(
+            {
+                "max_tokens": 8192,
+                "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+                "base_url": os.environ.get(
+                    "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+                ),
+            }
+        )
 
     with llm_context as llm_options:
         for sample in samples:
@@ -302,6 +310,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     and cached.get("schema_version") == NORMALIZATION_SCHEMA_VERSION
                     and cached.get("normalizer") == "llm"
                     and cached.get("llm_backend") == args.llm_backend
+                    and cached.get("llm_model") == llm_options.get("model")
                 ):
                     records.append(cached)
                     reused += 1

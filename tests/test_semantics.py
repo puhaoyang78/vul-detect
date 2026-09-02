@@ -14,6 +14,7 @@ from semantic_demo.joern import (
 from semantic_demo.semantics import (
     Candidate,
     Validation,
+    _extract_json_object,
     _response_content,
     _validate_by_composition,
     validate_summary,
@@ -284,6 +285,16 @@ class SemanticValidationTests(unittest.TestCase):
         }
         self.assertEqual('{"summaries":[]}', _response_content(result))
 
+    def test_llm_json_requires_one_strict_object(self):
+        self.assertEqual(
+            {"summaries": []},
+            _extract_json_object('{"summaries":[]}'),
+        )
+        with self.assertRaisesRegex(ValueError, "must be one JSON object"):
+            _extract_json_object('[]')
+        with self.assertRaisesRegex(ValueError, "not valid JSON"):
+            _extract_json_object('prefix {"summaries":[]}')
+
     def test_response_content_rejects_reasoning_without_final_answer(self):
         result = {
             "choices": [
@@ -387,6 +398,21 @@ class ParsingRegressionTests(unittest.TestCase):
             "sample.c",
             "int entry(int (*cb)(int), int x) { return cb(x); }",
         )[0]
+        self.assertTrue(function.has_indirect_calls())
+
+
+    def test_local_function_pointer_is_marked_indirect(self):
+        function = parse_functions(
+            "sample.c",
+            """
+            int target(int x) { return x; }
+            int entry(int x)
+            {
+                int (*cb)(int) = target;
+                return cb(x);
+            }
+            """,
+        )[1]
         self.assertTrue(function.has_indirect_calls())
 
 
@@ -528,6 +554,23 @@ class Z3ReasonerTests(unittest.TestCase):
         )[0]
         relations = dict(entry.value_relations_before(entry.start_line + 6))
         self.assertEqual("4", relations["n"])
+
+    def test_signed_parameter_name_is_not_matched_by_constraint_substring(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const char *src, int n, int length)
+            {
+                char buf[8];
+                if (length < 8) {
+                    memcpy(buf, src, n);
+                }
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        self.assertEqual("UNKNOWN", result.verdict)
+        self.assertIn("unconstrained parameter domain", result.reason)
 
     def test_signed_length_without_domain_is_unknown(self):
         entry = parse_functions(

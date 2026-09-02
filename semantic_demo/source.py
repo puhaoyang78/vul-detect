@@ -78,18 +78,21 @@ class FunctionSource:
     parse_has_error: bool = False
 
     def calls(self) -> list[Call]:
-        tree = _parser_for_language(self.language).parse(self.text.encode())
+        source = self.text.encode()
+        tree = _parser_for_language(self.language).parse(source)
+        pointer_callables = {
+            parameter
+            for parameter, pointer_like in zip(
+                self.parameters, self.parameter_pointer_like
+            )
+            if pointer_like
+        }
+        pointer_callables.update(_function_pointer_names(tree.root_node, source))
         return _calls(
             tree.root_node,
-            self.text.encode(),
+            source,
             self.start_line,
-            set(
-                parameter
-                for parameter, pointer_like in zip(
-                    self.parameters, self.parameter_pointer_like
-                )
-                if pointer_like
-            ),
+            pointer_callables,
         )
 
     def has_indirect_calls(self) -> bool:
@@ -475,6 +478,22 @@ def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
     ]
 
 
+def _function_pointer_names(root: Node, source: bytes) -> set[str]:
+    names: set[str] = set()
+    for node in _walk(root):
+        if node.type != "function_declarator":
+            continue
+        declarator = node.child_by_field_name("declarator")
+        if declarator is None:
+            continue
+        if not any(item.type == "pointer_declarator" for item in _walk(declarator)):
+            continue
+        name = _identifier(declarator, source)
+        if name:
+            names.add(name)
+    return names
+
+
 def _callee_name(node: Node | None, source: bytes) -> str | None:
     if node is None:
         return None
@@ -525,7 +544,7 @@ def _calls(
     node: Node,
     source: bytes,
     line_offset: int,
-    pointer_parameters: set[str],
+    pointer_callables: set[str],
 ) -> list[Call]:
     calls: list[Call] = []
     for item in _walk(node):
@@ -541,7 +560,7 @@ def _calls(
             direct_name is None
             or (
                 function_node.type == "identifier"
-                and direct_name in pointer_parameters
+                and direct_name in pointer_callables
             )
         )
         name = direct_name or function_text

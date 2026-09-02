@@ -459,11 +459,13 @@ def _check_access(
     extent_tokens = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", extent_text))
     signed_extent_tokens = extent_tokens & signed
     if signed_extent_tokens:
-        constrained_text = " ".join(path_constraints)
+        constrained_identifiers = set().union(
+            *(_expression_identifiers(relation) for relation in path_constraints)
+        )
         unconstrained_parameters = sorted(
             token
             for token in signed_extent_tokens
-            if token in entry.parameters and token not in constrained_text
+            if token in entry.parameters and token not in constrained_identifiers
         )
         if unconstrained_parameters:
             return AccessCheck(
