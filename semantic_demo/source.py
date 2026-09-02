@@ -374,11 +374,14 @@ def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
 def _callee_name(node: Node | None, source: bytes) -> str | None:
     if node is None:
         return None
-    if node.type == "identifier":
+    if node.type in {"identifier", "field_identifier"}:
         return _text(node, source)
-    if node.type == "field_expression":
+    if node.type in {"field_expression", "field_access_expression"}:
         field = node.child_by_field_name("field")
         return _text(field, source) if field is not None else None
+    if node.type in {"qualified_identifier", "scoped_identifier"}:
+        name = node.child_by_field_name("name")
+        return _text(name, source) if name is not None else _identifier(node, source)
     return None
 
 
@@ -464,34 +467,63 @@ def _subscript_write_kind(node: Node, source: bytes) -> tuple[str, ...]:
     return ("READ",)
 
 
+def _pointer_dereference_access(node: Node, source: bytes) -> MemoryAccess | None:
+    if node.type != "pointer_expression":
+        return None
+    text = _text(node, source).lstrip()
+    if not text.startswith("*"):
+        return None
+    operand = next((child for child in node.named_children), None)
+    if operand is None:
+        return None
+    kind = _subscript_write_kind(node, source)
+    # Compound updates require both read and write; the caller expands the tuple.
+    return MemoryAccess(kind=kind[0], buffer=_text(operand, source), extent="1", line=0)
+
+
 def _direct_memory_accesses(
     root: Node, source: bytes, line_offset: int
 ) -> list[MemoryAccess]:
     accesses: list[MemoryAccess] = []
     for node in _walk(root):
-        if node.type != "subscript_expression":
-            continue
-        # For multidimensional expressions, model only the outermost subscript.
-        if node.parent is not None and node.parent.type == "subscript_expression":
-            continue
-        if _is_address_taken(node, source):
-            continue
-        argument = node.child_by_field_name("argument")
-        index = node.child_by_field_name("index")
-        if argument is None or index is None:
-            continue
-        base = _text(argument, source)
-        offset = _text(index, source)
-        buffer = f"{base}+({offset})"
-        for kind in _subscript_write_kind(node, source):
-            accesses.append(
-                MemoryAccess(
-                    kind=kind,
-                    buffer=buffer,
-                    extent="1",
-                    line=line_offset + node.start_point.row,
+        if node.type == "subscript_expression":
+            if node.parent is not None and node.parent.type == "subscript_expression":
+                continue
+            if _is_address_taken(node, source):
+                continue
+            argument = node.child_by_field_name("argument")
+            index = node.child_by_field_name("index")
+            if argument is None or index is None:
+                continue
+            base = _text(argument, source)
+            offset = _text(index, source)
+            for kind in _subscript_write_kind(node, source):
+                accesses.append(
+                    MemoryAccess(
+                        kind=kind,
+                        buffer=f"{base}+({offset})",
+                        extent="1",
+                        line=line_offset + node.start_point.row,
+                    )
                 )
-            )
+            continue
+
+        if node.type == "pointer_expression":
+            text = _text(node, source).lstrip()
+            if not text.startswith("*"):
+                continue
+            operand = next((child for child in node.named_children), None)
+            if operand is None:
+                continue
+            for kind in _subscript_write_kind(node, source):
+                accesses.append(
+                    MemoryAccess(
+                        kind=kind,
+                        buffer=_text(operand, source),
+                        extent="1",
+                        line=line_offset + node.start_point.row,
+                    )
+                )
     return accesses
 
 
