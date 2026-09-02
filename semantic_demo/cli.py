@@ -313,9 +313,11 @@ def normalize_command(args: argparse.Namespace) -> None:
                     candidate.function.start_line,
                     fingerprint,
                 )
+                skip_reason = candidate_validation_error(candidate.function)
                 cached = cache.get(cache_key)
                 if (
-                    cached is not None
+                    skip_reason is None
+                    and cached is not None
                     and cached.get("schema_version") == NORMALIZATION_SCHEMA_VERSION
                     and cached.get("normalizer") == "llm"
                     and cached.get("llm_backend") == args.llm_backend
@@ -325,7 +327,6 @@ def normalize_command(args: argparse.Namespace) -> None:
                     reused += 1
                     continue
 
-                skip_reason = candidate_validation_error(candidate.function)
                 if skip_reason is None:
                     try:
                         summaries = llm_normalize(candidate, **llm_options)
@@ -351,12 +352,15 @@ def normalize_command(args: argparse.Namespace) -> None:
                     "source_line": candidate.function.start_line,
                     "parameters": list(candidate.function.parameters),
                     "source_fingerprint": fingerprint,
-                    "normalizer": "llm",
-                    "llm_backend": args.llm_backend,
-                    "llm_model": llm_options.get("model"),
+                    "normalizer": (
+                        "static-skip" if skip_reason is not None else "llm"
+                    ),
                     "summaries": summaries,
                 }
-                if skip_reason is not None:
+                if skip_reason is None:
+                    record["llm_backend"] = args.llm_backend
+                    record["llm_model"] = llm_options.get("model")
+                else:
                     record["skip_reason"] = skip_reason
                 records.append(record)
                 cache[cache_key] = record
