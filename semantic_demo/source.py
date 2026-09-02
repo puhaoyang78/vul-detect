@@ -309,6 +309,44 @@ def _invert_comparison(expression: str) -> str | None:
     return f"{left}{inverse}{right}"
 
 
+def _condition_terms(node: Node | None, source: bytes, truth: bool) -> list[str]:
+    """Return conjunctive path facts implied by a condition branch.
+
+    We only emit facts when the selected branch can be represented as a
+    conjunction. This safely handles A&&B on the true branch and A||B on the
+    false branch (De Morgan), while declining disjunctive cases.
+    """
+    if node is None:
+        return []
+    if node.type == "parenthesized_expression":
+        child = next((item for item in node.named_children), None)
+        return _condition_terms(child, source, truth)
+    if node.type == "unary_expression":
+        text = _text(node, source).lstrip()
+        if text.startswith("!") and node.named_children:
+            return _condition_terms(node.named_children[0], source, not truth)
+    if node.type == "binary_expression":
+        left = node.child_by_field_name("left")
+        right = node.child_by_field_name("right")
+        if left is not None and right is not None:
+            operator = source[left.end_byte:right.start_byte].decode(errors="replace").strip()
+            if operator == "&&":
+                if truth:
+                    return _condition_terms(left, source, True) + _condition_terms(right, source, True)
+                return []
+            if operator == "||":
+                if not truth:
+                    return _condition_terms(left, source, False) + _condition_terms(right, source, False)
+                return []
+    compact = normalize_expression(_text(node, source))
+    if not re.match(r"^.*?(<=|>=|==|!=|<|>).*?$", compact):
+        return []
+    if truth:
+        return [compact]
+    inverted = _invert_comparison(compact)
+    return [inverted] if inverted else []
+
+
 def _continuation_constraints_before(
     root: Node,
     source: bytes,
@@ -326,15 +364,10 @@ def _continuation_constraints_before(
         alternative = node.child_by_field_name("alternative")
         if condition is None:
             continue
-        condition_text = _text(condition, source)
         if _contains_exit(consequence):
-            inverted = _invert_comparison(condition_text)
-            if inverted:
-                constraints.append(inverted)
+            constraints.extend(_condition_terms(condition, source, False))
         elif _contains_exit(alternative):
-            compact = normalize_expression(condition_text)
-            if re.match(r"^.*?(<=|>=|==|!=|<|>).*?$", compact):
-                constraints.append(compact)
+            constraints.extend(_condition_terms(condition, source, True))
     return constraints
 
 
