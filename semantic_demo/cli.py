@@ -297,6 +297,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                 cached = cache.get(cache_key)
                 if (
                     cached is not None
+                    and cached.get("schema_version") == NORMALIZATION_SCHEMA_VERSION
                     and cached.get("normalizer") == "llm"
                     and cached.get("llm_backend") == args.llm_backend
                 ):
