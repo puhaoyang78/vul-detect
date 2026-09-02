@@ -40,7 +40,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 7
+ANALYSIS_CHECKPOINT_VERSION = 8
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -210,11 +210,13 @@ def _candidate_fingerprint(candidate) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _normalization_cache(path: str | Path) -> dict[tuple[str, str, str, str], dict[str, object]]:
+def _normalization_cache(
+    path: str | Path,
+) -> dict[tuple[str, str, str, int, str], dict[str, object]]:
     target = Path(path)
     if not target.is_file():
         return {}
-    cache: dict[tuple[str, str, str, str], dict[str, object]] = {}
+    cache: dict[tuple[str, str, str, int, str], dict[str, object]] = {}
     for record in read_jsonl(target):
         if record.get("schema_version") != NORMALIZATION_SCHEMA_VERSION:
             continue
@@ -223,6 +225,7 @@ def _normalization_cache(path: str | Path) -> dict[tuple[str, str, str, str], di
             str(record.get("sample_key", "")),
             str(record.get("source_path", "")),
             str(record.get("function", "")),
+            int(record.get("source_line", 0)),
             fingerprint,
         )
         cache[key] = record
@@ -233,7 +236,7 @@ def _analysis_fingerprint(
     sample: dict[str, object],
     entry,
     candidates,
-    replay: dict[tuple[str, str, str], list[dict[str, str]]],
+    replay: dict[tuple[str, str, str, int], list[dict[str, str]]],
     backend: str,
     joern_timeout: int | None,
     baseline_signature: str,
@@ -245,11 +248,13 @@ def _analysis_fingerprint(
             sample_key,
             candidate.function.path,
             candidate.function.name,
+            candidate.function.start_line,
         )
         candidate_inputs.append(
             {
                 "source_path": candidate.function.path,
                 "function": candidate.function.name,
+                "source_line": candidate.function.start_line,
                 "source_fingerprint": _candidate_fingerprint(candidate),
                 "summaries": replay.get(replay_key, []),
             }
@@ -304,6 +309,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     candidate.sample_key,
                     candidate.function.path,
                     candidate.function.name,
+                    candidate.function.start_line,
                     fingerprint,
                 )
                 cached = cache.get(cache_key)
@@ -336,6 +342,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     "sample_key": candidate.sample_key,
                     "source_path": candidate.function.path,
                     "function": candidate.function.name,
+                    "source_line": candidate.function.start_line,
                     "parameters": list(candidate.function.parameters),
                     "source_fingerprint": fingerprint,
                     "normalizer": "llm",
@@ -348,7 +355,8 @@ def normalize_command(args: argparse.Namespace) -> None:
                 write_jsonl(args.output, cache.values())
                 print(
                     f"normalize_candidate_done={candidate.sample_key}:"
-                    f"{candidate.function.name} checkpoint={args.output}",
+                    f"{candidate.function.name}@{candidate.function.start_line} "
+                    f"checkpoint={args.output}",
                     flush=True,
                 )
     write_jsonl(args.output, records)
@@ -406,7 +414,12 @@ def detect(
         )
         summary_entries: list[tuple[object, dict[str, str]]] = []
         for candidate in candidates:
-            key = (sample_key, candidate.function.path, candidate.function.name)
+            key = (
+                sample_key,
+                candidate.function.path,
+                candidate.function.name,
+                candidate.function.start_line,
+            )
             for summary in replay.get(key, []):
                 summary_entries.append((candidate, summary))
 
@@ -443,10 +456,36 @@ def detect(
             continue
 
         # Fixed-point validation: primitive-backed summaries seed the process;
-        # wrapper summaries may then be validated from already accepted callees.
+        # wrapper summaries may then be validated from summaries accepted by every
+        # same-file C implementation variant of a callee.
+        accepted_by_variant: dict[
+            tuple[str, str, int], list[dict[str, str]]
+        ] = {}
         accepted: dict[tuple[str, str], list[dict[str, str]]] = {}
+        variant_counts = Counter(
+            (candidate.function.path, candidate.function.name)
+            for candidate in candidates
+        )
         pending = list(range(len(summary_entries)))
         final: dict[int, Validation] = {}
+
+        def publish_common_summaries() -> None:
+            accepted.clear()
+            groups: dict[
+                tuple[str, str], list[list[dict[str, str]]]
+            ] = {}
+            for (path, name, source_line), summaries in accepted_by_variant.items():
+                groups.setdefault((path, name), []).append(summaries)
+            for key, variants in groups.items():
+                if len(variants) != variant_counts[key]:
+                    continue
+                common = [
+                    summary
+                    for summary in variants[0]
+                    if all(summary in variant for variant in variants[1:])
+                ]
+                if common:
+                    accepted[key] = common
 
         while pending:
             progress = False
@@ -466,14 +505,20 @@ def detect(
                     ) from error
                 final[index] = validation
                 if validation.passed:
-                    bucket = accepted.setdefault(
-                        (validation.source_path, validation.function), []
+                    bucket = accepted_by_variant.setdefault(
+                        (
+                            validation.source_path,
+                            validation.function,
+                            validation.source_line,
+                        ),
+                        [],
                     )
                     if validation.summary not in bucket:
                         bucket.append(validation.summary)
-                    progress = True
+                        progress = True
                 else:
                     next_pending.append(index)
+            publish_common_summaries()
             if not progress:
                 break
             pending = next_pending
@@ -493,7 +538,11 @@ def detect(
         semantic_records.extend(item.as_json() for item in validations)
 
         baseline = baseline_model.predict(entry.text)
-        proposed = analyze(entry, validations=validations)
+        proposed = analyze(
+            entry,
+            validations=validations,
+            variant_counts=dict(variant_counts),
+        )
         detection_records.append(
             {
                 "sample_key": sample_key,
@@ -502,7 +551,10 @@ def detect(
                 "vulnerable_commit": sample["vulnerable_commit"],
                 "entry_path": entry.path,
                 "entry_function": entry.name,
-                "candidate_functions": [candidate.function.name for candidate in candidates],
+                "candidate_functions": [
+                    f"{candidate.function.name}@{candidate.function.start_line}"
+                    for candidate in candidates
+                ],
                 "baseline": baseline.as_json(),
                 "proposed": proposed.as_json(),
                 "validated_semantic_count": sum(item.passed for item in validations),

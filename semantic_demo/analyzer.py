@@ -142,18 +142,39 @@ def _direct_ast_operations(entry: FunctionSource) -> list[Operation]:
 
 
 def _custom_operations(
-    entry: FunctionSource, validations: Iterable[Validation]
+    entry: FunctionSource,
+    validations: Iterable[Validation],
+    variant_counts: dict[tuple[str, str], int] | None = None,
 ) -> list[Operation]:
-    passed: dict[str, list[Validation]] = {}
+    passed: dict[tuple[str, str], dict[int, list[dict[str, str]]]] = {}
     for validation in validations:
-        if validation.passed:
-            passed.setdefault(validation.function, []).append(validation)
+        if not validation.passed:
+            continue
+        key = (validation.source_path, validation.function)
+        by_line = passed.setdefault(key, {})
+        bucket = by_line.setdefault(validation.source_line, [])
+        if validation.summary not in bucket:
+            bucket.append(validation.summary)
 
-    unique_by_name: dict[str, list[dict[str, str]]] = {}
-    for name, items in passed.items():
-        source_paths = {item.source_path for item in items}
-        if len(source_paths) == 1:
-            unique_by_name[name] = [item.summary for item in items]
+    summaries_by_name: dict[str, list[list[dict[str, str]]]] = {}
+    for (path, name), by_line in passed.items():
+        expected = 1 if variant_counts is None else variant_counts.get((path, name), 1)
+        if len(by_line) != expected:
+            continue
+        variants = list(by_line.values())
+        common = [
+            summary
+            for summary in variants[0]
+            if all(summary in summaries for summaries in variants[1:])
+        ]
+        if common:
+            summaries_by_name.setdefault(name, []).append(common)
+
+    unique_by_name = {
+        name: groups[0]
+        for name, groups in summaries_by_name.items()
+        if len(groups) == 1
+    }
 
     operations: list[Operation] = []
     for call in entry.calls():
@@ -198,10 +219,11 @@ def _custom_operations(
 def analyze(
     entry: FunctionSource,
     validations: Iterable[Validation] = (),
+    variant_counts: dict[tuple[str, str], int] | None = None,
 ) -> Verdict:
     operations = _standard_operations(entry)
     operations.extend(_direct_ast_operations(entry))
-    operations.extend(_custom_operations(entry, validations))
+    operations.extend(_custom_operations(entry, validations, variant_counts))
 
     constraint_result = reason_memory_safety(entry, operations)
     constraint_json = constraint_result.as_json()

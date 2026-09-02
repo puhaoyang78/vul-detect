@@ -82,7 +82,9 @@ class JoernValidator:
 
     def _key(self, function) -> str:
         payload = (
-            f"{function.path}\0{function.name}\0{function.text}\0"
+            f"{function.path}\0{function.name}\0"
+            f"{function.start_line}\0{function.end_line}\0"
+            f"{function.text}\0"
             + hashlib.sha256(function.translation_unit.encode()).hexdigest()
         ).encode()
         return hashlib.sha256(payload).hexdigest()
@@ -116,6 +118,10 @@ class JoernValidator:
                 f"outFile={output_path}",
                 "--param",
                 f"functionName={candidate.function.name}",
+                "--param",
+                f"functionStartLine={candidate.function.start_line}",
+                "--param",
+                f"functionEndLine={candidate.function.end_line}",
             ]
             environment = os.environ.copy()
             environment["JAVA_HOME"] = str(self.java_home)

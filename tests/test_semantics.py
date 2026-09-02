@@ -430,32 +430,7 @@ class CandidateDiscoveryTests(unittest.TestCase):
         def find_functions(self, *_args, **_kwargs):
             return self.definitions
 
-    def test_ambiguous_void_no_argument_helpers_are_outside_summary_schema(self):
-        definitions = parse_functions(
-            "defs.c",
-            """
-            #ifdef FEATURE
-            void inner(void) { }
-            #else
-            void inner(void) { }
-            #endif
-            """,
-        )
-        entry = parse_functions(
-            "wrapper.c",
-            "void outer(void) { inner(); }",
-        )[0]
-        self.assertEqual(
-            [],
-            discover_candidates(
-                "sample",
-                self.StaticRepository(definitions),
-                entry,
-                (),
-            ),
-        )
-
-    def test_ambiguous_summary_capable_helpers_are_rejected(self):
+    def test_same_file_c_definitions_are_explicit_variants(self):
         definitions = parse_functions(
             "defs.c",
             """
@@ -470,15 +445,17 @@ class CandidateDiscoveryTests(unittest.TestCase):
             "wrapper.c",
             "int outer(char *buffer) { return inner(buffer); }",
         )[0]
-        with self.assertRaisesRegex(
-            RuntimeError, "ambiguous repository binding for inner"
-        ):
-            discover_candidates(
-                "sample",
-                self.StaticRepository(definitions),
-                entry,
-                (),
-            )
+        candidates = discover_candidates(
+            "sample",
+            self.StaticRepository(definitions),
+            entry,
+            (),
+        )
+        self.assertEqual(2, len(candidates))
+        self.assertEqual(
+            2,
+            len({candidate.function.start_line for candidate in candidates}),
+        )
 
     def test_rejects_cross_file_or_different_signature_ambiguity(self):
         entry = parse_functions(
@@ -908,6 +885,35 @@ class Z3ReasonerTests(unittest.TestCase):
         ]
         self.assertEqual("4", writes[0]["extent"])
 
+    def test_variant_specific_summary_does_not_propagate(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const char *src, unsigned long n)
+            {
+                char buf[8];
+                unsigned long len = identity(n);
+                memcpy(buf, src, len);
+            }
+            """,
+        )[0]
+        summary = {"kind": "VALUE", "target": "return", "expression": "arg0"}
+        validation = Validation(
+            "sample",
+            "identity",
+            "identity.c",
+            10,
+            summary,
+            True,
+            "validated",
+        )
+        result = analyze(
+            entry,
+            [validation],
+            variant_counts={("identity.c", "identity"): 2},
+        )
+        self.assertEqual("UNKNOWN", result.verdict)
+
     def test_validated_value_summary_enters_caller_constraints(self):
         entry = parse_functions(
             "entry.c",
@@ -924,6 +930,7 @@ class Z3ReasonerTests(unittest.TestCase):
             "sample",
             "identity",
             "identity.c",
+            1,
             {"kind": "VALUE", "target": "return", "expression": "arg0"},
             True,
             "validated",

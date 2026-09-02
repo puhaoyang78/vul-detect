@@ -40,7 +40,7 @@ READS = {
     "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 2
+NORMALIZATION_SCHEMA_VERSION = 3
 MAX_LLM_SOURCE_CHARS = 50000
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -98,6 +98,7 @@ class Validation:
     sample_key: str
     function: str
     source_path: str
+    source_line: int
     summary: dict[str, str]
     passed: bool
     reason: str
@@ -106,8 +107,19 @@ class Validation:
         return asdict(self)
 
 
-def _can_produce_summary(function: FunctionSource) -> bool:
-    return any(function.parameter_pointer_like) or function.has_value_return()
+def _variant_definitions(
+    sample_key: str,
+    name: str,
+    definitions: list[FunctionSource],
+) -> list[FunctionSource]:
+    if len(definitions) <= 1:
+        return definitions
+    paths = {item.path for item in definitions}
+    languages = {item.language for item in definitions}
+    signatures = {item.parameter_signatures for item in definitions}
+    if len(paths) == 1 and languages == {"c"} and len(signatures) == 1:
+        return definitions
+    raise RuntimeError(f"{sample_key}: ambiguous repository binding for {name}")
 
 
 def discover_candidates(
@@ -119,13 +131,13 @@ def discover_candidates(
 ) -> list[Candidate]:
     """Traverse the repository-resolved project call graph without name heuristics."""
     scopes = tuple(scopes)
-    discovered: dict[tuple[str, str], Candidate] = {}
+    discovered: dict[tuple[str, str, int], Candidate] = {}
     queue: list[FunctionSource] = [entry]
-    expanded: set[tuple[str, str]] = set()
+    expanded: set[tuple[str, str, int]] = set()
 
     while queue:
         caller = queue.pop(0)
-        caller_key = (caller.path, caller.name)
+        caller_key = (caller.path, caller.name, caller.start_line)
         if caller_key in expanded:
             continue
         expanded.add(caller_key)
@@ -138,37 +150,45 @@ def discover_candidates(
             callee = repository.find_function(
                 call.name, preferred_path=caller.path, scopes=scopes
             )
-            if callee is None:
+            if callee is not None:
+                definitions = [callee]
+            else:
                 definitions = repository.find_functions(call.name, scopes)
                 if not definitions:
                     continue
-                if len(definitions) > 1:
-                    if all(not _can_produce_summary(item) for item in definitions):
-                        continue
-                    raise RuntimeError(
-                        f"{sample_key}: ambiguous repository binding for {call.name}"
-                    )
-                callee = definitions[0]
-            key = (callee.path, callee.name)
-            existing = discovered.get(key)
-            lines = set(existing.call_lines if existing else ())
-            lines.add(call.line)
-            discovered[key] = Candidate(
-                sample_key=sample_key,
-                function=callee,
-                call_lines=tuple(sorted(lines)),
-            )
-            if len(discovered) > max_functions:
-                raise RuntimeError(
-                    f"{sample_key}: candidate frontier exceeds explicit budget "
-                    f"({max_functions}); analysis aborted rather than truncated"
+                definitions = _variant_definitions(
+                    sample_key, call.name, definitions
                 )
-            if key not in expanded:
-                queue.append(callee)
+
+            for definition in definitions:
+                key = (
+                    definition.path,
+                    definition.name,
+                    definition.start_line,
+                )
+                existing = discovered.get(key)
+                lines = set(existing.call_lines if existing else ())
+                lines.add(call.line)
+                discovered[key] = Candidate(
+                    sample_key=sample_key,
+                    function=definition,
+                    call_lines=tuple(sorted(lines)),
+                )
+                if len(discovered) > max_functions:
+                    raise RuntimeError(
+                        f"{sample_key}: candidate frontier exceeds explicit budget "
+                        f"({max_functions}); analysis aborted rather than truncated"
+                    )
+                if key not in expanded:
+                    queue.append(definition)
 
     return sorted(
         discovered.values(),
-        key=lambda item: (item.function.path, item.function.name),
+        key=lambda item: (
+            item.function.path,
+            item.function.name,
+            item.function.start_line,
+        ),
     )
 
 
@@ -430,7 +450,13 @@ def validate_summary(
 
     if error:
         return Validation(
-            candidate.sample_key, function.name, function.path, clean_summary, False, error
+            candidate.sample_key,
+            function.name,
+            function.path,
+            function.start_line,
+            clean_summary,
+            False,
+            error,
         )
 
     try:
@@ -454,6 +480,7 @@ def validate_summary(
         candidate.sample_key,
         function.name,
         function.path,
+        function.start_line,
         clean_summary,
         passed,
         reason,
@@ -590,8 +617,10 @@ def _extract_json_object(content: str) -> dict[str, object]:
     return value
 
 
-def load_replay(path: str | Path) -> dict[tuple[str, str, str], list[dict[str, str]]]:
-    replay: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+def load_replay(
+    path: str | Path,
+) -> dict[tuple[str, str, str, int], list[dict[str, str]]]:
+    replay: dict[tuple[str, str, str, int], list[dict[str, str]]] = {}
     with Path(path).open() as handle:
         for line in handle:
             if not line.strip():
@@ -606,6 +635,11 @@ def load_replay(path: str | Path) -> dict[tuple[str, str, str], list[dict[str, s
                 isinstance(item, dict) for item in summaries
             ):
                 raise ValueError(f"{path}: invalid summaries field")
-            key = (record["sample_key"], record["source_path"], record["function"])
+            key = (
+                record["sample_key"],
+                record["source_path"],
+                record["function"],
+                int(record["source_line"]),
+            )
             replay[key] = summaries
     return replay
