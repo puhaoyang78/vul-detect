@@ -116,7 +116,8 @@ def _variant_definitions(
         return definitions
     paths = {item.path for item in definitions}
     languages = {item.language for item in definitions}
-    if len(paths) == 1 and languages == {"c"}:
+    signatures = {item.parameter_signatures for item in definitions}
+    if len(paths) == 1 and languages == {"c"} and len(signatures) == 1:
         return definitions
     raise RuntimeError(f"{sample_key}: ambiguous repository binding for {name}")
 
