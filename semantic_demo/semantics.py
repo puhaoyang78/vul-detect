@@ -383,11 +383,6 @@ def validate_summary(
     )
     clean_summary = canonicalize_summary(function, summary)
 
-    referenced_names = set().union(
-        *(_identifier_tokens(value) for value in clean_summary.values())
-    )
-    if not error and referenced_names & set(function.parameters):
-        error = "source parameter names must be normalized to argN"
     if not error and clean_summary.get("kind") in {"READ", "WRITE"}:
         buffer = clean_summary.get("buffer", "")
         root_index = _buffer_root_index(buffer)
@@ -552,25 +547,13 @@ def _response_content(result: dict[str, object]) -> str:
 
 
 def _extract_json_object(content: str) -> dict[str, object]:
-    decoder = json.JSONDecoder()
     try:
-        whole = json.loads(content)
-    except json.JSONDecodeError:
-        whole = None
-    if isinstance(whole, list):
-        return {"summaries": whole}
-    if isinstance(whole, dict):
-        return whole
-    for index, character in enumerate(content):
-        if character != "{":
-            continue
-        try:
-            value, _ = decoder.raw_decode(content[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    raise ValueError(f"LLM response contains no JSON object: {content[:500]!r}")
+        value = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise ValueError("LLM response is not valid JSON") from error
+    if not isinstance(value, dict):
+        raise ValueError("LLM response must be one JSON object")
+    return value
 
 
 def load_replay(path: str | Path) -> dict[tuple[str, str, str], list[dict[str, str]]]:
