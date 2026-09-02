@@ -82,7 +82,10 @@ class JoernValidator:
             raise JoernError(f"Joern extraction script not found: {self.script}")
 
     def _key(self, function) -> str:
-        payload = f"{function.path}\0{function.name}\0{function.text}".encode()
+        payload = (
+            f"{function.path}\0{function.name}\0{function.text}\0"
+            + hashlib.sha256(function.translation_unit.encode()).hexdigest()
+        ).encode()
         return hashlib.sha256(payload).hexdigest()
 
     def facts(self, candidate) -> JoernFacts:
