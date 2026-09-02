@@ -358,7 +358,7 @@ def _validate_with_joern(
     return False, f"unsupported semantic kind: {kind}"
 
 
-def _source_call_returns_value(candidate: Candidate, source_call, facts) -> bool:
+def _source_call_returns_value(source_call, facts) -> bool:
     if source_call.returned:
         return True
     if source_call.result is None:
@@ -423,7 +423,7 @@ def _validate_by_composition(
                 )
                 if (
                     source_call is not None
-                    and _source_call_returns_value(candidate, source_call, facts)
+                    and _source_call_returns_value(source_call, facts)
                 ):
                     return (
                         True,
@@ -449,7 +449,7 @@ def _validate_by_composition(
                 )
                 if (
                     source_call is None
-                    or not _source_call_returns_value(candidate, source_call, facts)
+                    or not _source_call_returns_value(source_call, facts)
                 ):
                     continue
                 if _joern_expr_reaches(
