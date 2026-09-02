@@ -65,7 +65,7 @@ class FunctionSource:
     def value_relations_before(self, line: int) -> list[tuple[str, str]]:
         source = self.text.encode()
         tree = _PARSER.parse(source)
-        return _value_relations_before(tree.root_node, source, self.start_line, line)
+        return _reaching_value_relations_before(tree.root_node, source, self.start_line, line)
 
     def continuation_constraints_before(self, line: int) -> list[str]:
         source = self.text.encode()
@@ -328,8 +328,15 @@ def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
         for node in _walk(declaration):
             if node.type != "array_declarator":
                 continue
-            # Nested array declarators require multidimensional shape tracking.
-            if node.parent is not None and node.parent.type == "array_declarator":
+            # Multidimensional arrays require shape-aware indexing; do not
+            # publish a partial capacity that could be interpreted as 1-D.
+            if (
+                (node.parent is not None and node.parent.type == "array_declarator")
+                or any(
+                    item is not node and item.type == "array_declarator"
+                    for item in _walk(node)
+                )
+            ):
                 continue
             size = node.child_by_field_name("size")
             declarator = node.child_by_field_name("declarator")
@@ -492,13 +499,25 @@ def _absolute_line(node: Node, line_offset: int) -> int:
     return line_offset + node.start_point.row
 
 
-def _contains_exit(node: Node | None) -> bool:
+def _must_terminate(node: Node | None) -> bool:
+    """Whether every path through this statement returns from the function."""
     if node is None:
         return False
-    return any(
-        item.type in {"return_statement", "goto_statement", "break_statement"}
-        for item in _walk(node)
-    )
+    if node.type == "return_statement":
+        return True
+    if node.type == "compound_statement":
+        named = node.named_children
+        return bool(named) and _must_terminate(named[-1])
+    if node.type == "if_statement":
+        consequence = node.child_by_field_name("consequence")
+        alternative = node.child_by_field_name("alternative")
+        return (
+            consequence is not None
+            and alternative is not None
+            and _must_terminate(consequence)
+            and _must_terminate(alternative)
+        )
+    return False
 
 
 def _invert_comparison(expression: str) -> str | None:
@@ -519,12 +538,6 @@ def _invert_comparison(expression: str) -> str | None:
 
 
 def _condition_terms(node: Node | None, source: bytes, truth: bool) -> list[str]:
-    """Return conjunctive path facts implied by a condition branch.
-
-    We only emit facts when the selected branch can be represented as a
-    conjunction. This safely handles A&&B on the true branch and A||B on the
-    false branch (De Morgan), while declining disjunctive cases.
-    """
     if node is None:
         return []
     if node.type == "parenthesized_expression":
@@ -540,13 +553,19 @@ def _condition_terms(node: Node | None, source: bytes, truth: bool) -> list[str]
         if left is not None and right is not None:
             operator = source[left.end_byte:right.start_byte].decode(errors="replace").strip()
             if operator == "&&":
-                if truth:
-                    return _condition_terms(left, source, True) + _condition_terms(right, source, True)
-                return []
+                return (
+                    _condition_terms(left, source, True)
+                    + _condition_terms(right, source, True)
+                    if truth
+                    else []
+                )
             if operator == "||":
-                if not truth:
-                    return _condition_terms(left, source, False) + _condition_terms(right, source, False)
-                return []
+                return (
+                    _condition_terms(left, source, False)
+                    + _condition_terms(right, source, False)
+                    if not truth
+                    else []
+                )
     compact = normalize_expression(_text(node, source))
     if not re.match(r"^.*?(<=|>=|==|!=|<|>).*?$", compact):
         return []
@@ -562,15 +581,36 @@ def _node_contains_line(node: Node, line_offset: int, absolute_line: int) -> boo
     return start <= absolute_line <= end
 
 
+def _branch_constraint_for_access(
+    node: Node, source: bytes, line_offset: int, access_line: int
+) -> list[str]:
+    condition = node.child_by_field_name("condition")
+    if condition is None:
+        return []
+    consequence = node.child_by_field_name("consequence")
+    alternative = node.child_by_field_name("alternative")
+    if consequence is not None and _node_contains_line(consequence, line_offset, access_line):
+        return _condition_terms(condition, source, True)
+    if alternative is not None and _node_contains_line(alternative, line_offset, access_line):
+        return _condition_terms(condition, source, False)
+    return []
+
+
 def _continuation_constraints_before(
     root: Node,
     source: bytes,
     line_offset: int,
     access_line: int,
 ) -> list[str]:
+    """Extract only path facts that are structurally implied at the access."""
     constraints: list[str] = []
     for node in _walk(root):
         if node.type == "if_statement":
+            if _node_contains_line(node, line_offset, access_line):
+                constraints.extend(
+                    _branch_constraint_for_access(node, source, line_offset, access_line)
+                )
+                continue
             if _absolute_line(node, line_offset) >= access_line:
                 continue
             condition = node.child_by_field_name("condition")
@@ -578,9 +618,9 @@ def _continuation_constraints_before(
             alternative = node.child_by_field_name("alternative")
             if condition is None:
                 continue
-            if _contains_exit(consequence):
+            if _must_terminate(consequence):
                 constraints.extend(_condition_terms(condition, source, False))
-            elif _contains_exit(alternative):
+            elif _must_terminate(alternative):
                 constraints.extend(_condition_terms(condition, source, True))
             continue
 
@@ -588,37 +628,82 @@ def _continuation_constraints_before(
             if not _node_contains_line(node, line_offset, access_line):
                 continue
             condition = node.child_by_field_name("condition")
-            if condition is None:
-                continue
-            constraints.extend(_condition_terms(condition, source, True))
+            if condition is not None:
+                constraints.extend(_condition_terms(condition, source, True))
 
-    # Preserve order while removing duplicates.
     return list(dict.fromkeys(constraints))
 
 
-def _value_relations_before(
+def _simple_assignment(node: Node, source: bytes) -> tuple[str, str] | None:
+    if node.type == "expression_statement" and node.named_children:
+        node = node.named_children[0]
+    if node.type == "assignment_expression":
+        left = node.child_by_field_name("left")
+        right = node.child_by_field_name("right")
+        if left is None or right is None or left.type != "identifier":
+            return None
+        return _text(left, source), _text(right, source)
+    if node.type == "declaration":
+        init_nodes = [
+            item for item in node.named_children if item.type == "init_declarator"
+        ]
+        if len(init_nodes) != 1:
+            return None
+        init = init_nodes[0]
+        declarator = init.child_by_field_name("declarator")
+        value = init.child_by_field_name("value")
+        name = _identifier(declarator, source)
+        if not name or value is None:
+            return None
+        return name, _text(value, source)
+    return None
+
+
+def _reaching_value_relations_before(
     root: Node,
     source: bytes,
     line_offset: int,
     access_line: int,
 ) -> list[tuple[str, str]]:
-    relations: list[tuple[str, str]] = []
+    """Conservative lexical reaching definitions for the access path.
+
+    Only simple assignments/declarations in enclosing sequential blocks are
+    considered. Assignments hidden in sibling branches/loops are intentionally
+    excluded instead of being merged path-insensitively.
+    """
+    containers = [
+        node
+        for node in _walk(root)
+        if node.type == "compound_statement"
+        and _node_contains_line(node, line_offset, access_line)
+    ]
+    containers.sort(key=lambda node: (node.end_byte - node.start_byte), reverse=True)
+
+    definitions: dict[str, str] = {}
+    for compound in containers:
+        for child in compound.named_children:
+            if _node_contains_line(child, line_offset, access_line):
+                break
+            if _absolute_line(child, line_offset) >= access_line:
+                break
+            relation = _simple_assignment(child, source)
+            if relation is not None:
+                definitions[relation[0]] = relation[1]
+
+    # Loop initializers dominate accesses in their body.
     for node in _walk(root):
-        if _absolute_line(node, line_offset) >= access_line:
+        if node.type != "for_statement" or not _node_contains_line(
+            node, line_offset, access_line
+        ):
             continue
-        if node.type == "assignment_expression":
-            left = node.child_by_field_name("left")
-            right = node.child_by_field_name("right")
-            if left is not None and right is not None:
-                relations.append((_text(left, source), _text(right, source)))
-        elif node.type == "init_declarator":
-            declarator = node.child_by_field_name("declarator")
-            value = node.child_by_field_name("value")
-            if declarator is not None and value is not None:
-                name = _identifier(declarator, source)
-                if name:
-                    relations.append((name, _text(value, source)))
-    return relations
+        initializer = node.child_by_field_name("initializer")
+        if initializer is not None:
+            relation = _simple_assignment(initializer, source)
+            if relation is not None:
+                definitions[relation[0]] = relation[1]
+
+    return list(definitions.items())
+
 
 
 def normalize_expression(expression: str) -> str:
