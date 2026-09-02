@@ -40,6 +40,9 @@ READS = {
     "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
+NORMALIZATION_SCHEMA_VERSION = 2
+MAX_LLM_SOURCE_CHARS = 50000
+
 STANDARD_CALLS = (
     set(ALLOCATORS)
     | set(WRITES)
@@ -450,6 +453,11 @@ def llm_normalize(
     model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY is not set")
+    if len(candidate.function.text) > MAX_LLM_SOURCE_CHARS:
+        raise ValueError(
+            f"{candidate.function.name}: function source exceeds explicit LLM budget "
+            f"({len(candidate.function.text)} > {MAX_LLM_SOURCE_CHARS} chars)"
+        )
 
     prompt = f"""Normalize only security-relevant memory semantics implemented by this candidate C/C++ function.
 Return one JSON object with key summaries, whose value is a JSON array. Use only these exact schemas:
@@ -573,6 +581,10 @@ def load_replay(path: str | Path) -> dict[tuple[str, str, str], list[dict[str, s
             if not line.strip():
                 continue
             record = json.loads(line)
+            if record.get("schema_version") != NORMALIZATION_SCHEMA_VERSION:
+                raise ValueError(
+                    f"{path}: obsolete normalization schema; rerun normalize --refresh"
+                )
             key = (record["sample_key"], record["source_path"], record["function"])
             replay[key] = record["summaries"]
     return replay
