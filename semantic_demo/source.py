@@ -244,6 +244,10 @@ def _identifier(node: Node | None, source: bytes) -> str | None:
         return None
     if node.type in {"identifier", "field_identifier"}:
         return _text(node, source)
+    if node.type in {"qualified_identifier", "scoped_identifier"}:
+        name = node.child_by_field_name("name")
+        if name is not None:
+            return _identifier(name, source) or _text(name, source)
     declarator = node.child_by_field_name("declarator")
     if declarator is not None:
         found = _identifier(declarator, source)
