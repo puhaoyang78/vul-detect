@@ -16,9 +16,25 @@ _CPP_PARSER = Parser(Language(tree_sitter_cpp.language()))
 _SOURCE_EXTENSIONS = (".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx")
 
 
-def _parser_for_path(path: str) -> Parser:
+def _parser_for_language(language: str) -> Parser:
+    return _CPP_PARSER if language == "cpp" else _C_PARSER
+
+
+def _language_for_path(path: str, source_text: str | None = None) -> str:
     suffix = Path(path).suffix.lower()
-    return _CPP_PARSER if suffix in {".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"} else _C_PARSER
+    if suffix in {".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"}:
+        return "cpp"
+    if suffix != ".h" or source_text is None:
+        return "c"
+    source = source_text.encode()
+    c_tree = _C_PARSER.parse(source)
+    cpp_tree = _CPP_PARSER.parse(source)
+    def error_count(root: Node) -> int:
+        return sum(
+            1 for node in _walk(root)
+            if node.type == "ERROR" or node.is_missing
+        )
+    return "cpp" if error_count(cpp_tree.root_node) < error_count(c_tree.root_node) else "c"
 
 
 @dataclass(frozen=True)
@@ -53,6 +69,7 @@ class FunctionSource:
     name: str
     text: str
     translation_unit: str
+    language: str
     parameters: tuple[str, ...]
     parameter_types: tuple[str, ...]
     parameter_pointer_like: tuple[bool, ...]
@@ -60,7 +77,7 @@ class FunctionSource:
     parse_has_error: bool = False
 
     def calls(self) -> list[Call]:
-        tree = _parser_for_path(self.path).parse(self.text.encode())
+        tree = _parser_for_language(self.language).parse(self.text.encode())
         return _calls(tree.root_node, self.text.encode(), self.start_line)
 
     def value_relations_before(self, line: int) -> list[tuple[str, str]]:
@@ -255,7 +272,8 @@ def _parameters(
 
 def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
     source = source_text.encode()
-    tree = _parser_for_path(path).parse(source)
+    language = _language_for_path(path, source_text)
+    tree = _parser_for_language(language).parse(source)
     functions: list[FunctionSource] = []
     for node in _walk(tree.root_node):
         if node.type != "function_definition":
@@ -270,6 +288,7 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 name=name,
                 text=_text(node, source),
                 translation_unit=source_text,
+                language=language,
                 parameters=parameters,
                 parameter_types=types,
                 parameter_pointer_like=pointer_like,
