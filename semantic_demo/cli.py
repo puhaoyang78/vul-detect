@@ -201,6 +201,8 @@ def _candidate_fingerprint(candidate) -> str:
         + candidate.function.name
         + "\0"
         + candidate.function.text
+        + "\0"
+        + hashlib.sha256(candidate.function.translation_unit.encode()).hexdigest()
     ).encode()
     return hashlib.sha256(payload).hexdigest()
 
@@ -615,12 +617,15 @@ def evaluate(
         writer.writerows(rows)
 
     def _classification_metrics(prefix: str) -> dict[str, float | int]:
-        tp = fp = tn = fn = unknown = 0
+        tp = fp = tn = fn = unknown_vulnerable = unknown_benign = 0
         for row in rows:
             truth_label = row["ground_truth"]
             verdict = row[f"{prefix}_verdict"]
             if verdict == "UNKNOWN":
-                unknown += 1
+                if truth_label == "VULNERABLE":
+                    unknown_vulnerable += 1
+                else:
+                    unknown_benign += 1
                 continue
             predicted = "VULNERABLE" if verdict == "VULNERABLE" else "BENIGN"
             if truth_label == "VULNERABLE" and predicted == "VULNERABLE":
@@ -632,15 +637,23 @@ def evaluate(
             else:
                 fn += 1
         decided = tp + fp + tn + fn
+        unknown = unknown_vulnerable + unknown_benign
         precision = tp / (tp + fp) if tp + fp else 0.0
-        recall = tp / (tp + fn) if tp + fn else 0.0
+        recall = (
+            tp / (tp + fn + unknown_vulnerable)
+            if tp + fn + unknown_vulnerable
+            else 0.0
+        )
         f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-        accuracy = (tp + tn) / decided if decided else 0.0
+        accuracy_decided = (tp + tn) / decided if decided else 0.0
         coverage = decided / len(rows) if rows else 0.0
         return {
-            "tp": tp, "fp": fp, "tn": tn, "fn": fn, "unknown": unknown,
+            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            "unknown": unknown,
+            "unknown_vulnerable": unknown_vulnerable,
+            "unknown_benign": unknown_benign,
             "precision": precision, "recall": recall, "f1": f1,
-            "accuracy": accuracy, "coverage": coverage,
+            "accuracy": accuracy_decided, "coverage": coverage,
         }
 
     baseline_metrics = _classification_metrics("baseline")
@@ -660,7 +673,8 @@ def evaluate(
             "- LineVul Baseline："
             f"TP={baseline_metrics['tp']}, FP={baseline_metrics['fp']}, "
             f"TN={baseline_metrics['tn']}, FN={baseline_metrics['fn']}, "
-            f"UNKNOWN={baseline_metrics['unknown']}, "
+            f"UNKNOWN={baseline_metrics['unknown']} "
+            f"(V={baseline_metrics['unknown_vulnerable']}, B={baseline_metrics['unknown_benign']}), "
             f"Precision={baseline_metrics['precision']:.4f}, "
             f"Recall={baseline_metrics['recall']:.4f}, F1={baseline_metrics['f1']:.4f}, "
             f"Accuracy={baseline_metrics['accuracy']:.4f}, "
@@ -670,7 +684,8 @@ def evaluate(
             "- Proposed："
             f"TP={proposed_metrics['tp']}, FP={proposed_metrics['fp']}, "
             f"TN={proposed_metrics['tn']}, FN={proposed_metrics['fn']}, "
-            f"UNKNOWN={proposed_metrics['unknown']}, "
+            f"UNKNOWN={proposed_metrics['unknown']} "
+            f"(V={proposed_metrics['unknown_vulnerable']}, B={proposed_metrics['unknown_benign']}), "
             f"Precision={proposed_metrics['precision']:.4f}, "
             f"Recall={proposed_metrics['recall']:.4f}, F1={proposed_metrics['f1']:.4f}, "
             f"Accuracy={proposed_metrics['accuracy']:.4f}, "
