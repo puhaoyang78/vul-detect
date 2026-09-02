@@ -59,6 +59,12 @@ class ConstraintResult:
         }
 
 
+@dataclass(frozen=True)
+class CapacityInfo:
+    byte_capacity: str | None = None
+    element_capacity: str | None = None
+
+
 class ExpressionEncoder:
     """Encode integer and bounds relations while preserving unknown terms symbolically."""
 
@@ -211,13 +217,14 @@ def _signed_names(entry: FunctionSource) -> set[str]:
     return names
 
 
-def _local_array_capacities(entry: FunctionSource) -> dict[str, str]:
-    return {
-        normalize_expression(name): normalize_expression(size)
-        for name, size in re.findall(
-            r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*([^\]]+)\s*\]", entry.text
+def _local_array_capacities(entry: FunctionSource) -> dict[str, CapacityInfo]:
+    capacities: dict[str, CapacityInfo] = {}
+    for array in entry.local_arrays():
+        capacities[array.name] = CapacityInfo(
+            byte_capacity=f"sizeof({array.name})",
+            element_capacity=array.elements,
         )
-    }
+    return capacities
 
 
 def _strip_outer_casts(expression: str) -> str:
@@ -242,28 +249,55 @@ def _buffer_base_and_offset(buffer: str) -> tuple[str, str]:
     return text, "0"
 
 
+def _allocation_element_count(extent: str) -> str | None:
+    text = normalize_expression(extent)
+    patterns = (
+        r"^\((.+)\)\*\(sizeof\([^()]+\)\)$",
+        r"^(.+)\*sizeof\([^()]+\)$",
+        r"^sizeof\([^()]+\)\*(.+)$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, text)
+        if match:
+            return normalize_expression(match.group(1))
+    return None
+
+
 def _collect_capacity_relations(
     entry: FunctionSource, operations: Iterable[object]
-) -> dict[str, str]:
-    """Collect capacities from concrete allocation bindings and local arrays only."""
+) -> dict[str, CapacityInfo]:
+    """Collect byte capacities and, when justified, element counts."""
     capacities = _local_array_capacities(entry)
     for operation in operations:
         if getattr(operation, "kind", "") != "ALLOC":
             continue
         buffer = _strip_outer_casts(getattr(operation, "buffer", ""))
         extent = normalize_expression(getattr(operation, "extent", ""))
-        if buffer and buffer != "return" and extent:
-            capacities[buffer] = extent
+        if not buffer or buffer == "return" or not extent:
+            continue
+        capacities[buffer] = CapacityInfo(
+            byte_capacity=extent,
+            element_capacity=_allocation_element_count(extent),
+        )
     return capacities
 
 
 def _capacity_for_buffer(
-    buffer: str, capacities: dict[str, str]
+    operation: object,
+    buffer: str,
+    capacities: dict[str, CapacityInfo],
 ) -> tuple[str, str] | None:
     base, offset = _buffer_base_and_offset(buffer)
-    if base in capacities:
-        return capacities[base], offset
-    return None
+    info = capacities.get(base)
+    if info is None:
+        return None
+    if getattr(operation, "callee", "") == "AST_SUBSCRIPT":
+        capacity = info.element_capacity
+    else:
+        capacity = info.byte_capacity
+    if capacity is None:
+        return None
+    return capacity, offset
 
 
 def _identifier_terms(expression: str) -> set[str]:
@@ -395,7 +429,7 @@ def _add_program_constraints(
 def _check_access(
     entry: FunctionSource,
     operation: object,
-    capacities: dict[str, str],
+    capacities: dict[str, CapacityInfo],
     signed: set[str],
 ) -> AccessCheck:
     kind = getattr(operation, "kind", "")
@@ -420,17 +454,6 @@ def _check_access(
     solver = Solver()
     path_constraints = _add_program_constraints(solver, encoder, entry, line)
     conditions: list[VerificationCondition] = []
-
-    # Connect C sizeof(local_array) guards to the array element capacity used by
-    # this bounds model. This is only valid for concrete local arrays, not
-    # arbitrary pointers or heap objects.
-    local_arrays = _local_array_capacities(entry)
-    base, _ = _buffer_base_and_offset(buffer_text)
-    if base in local_arrays:
-        try:
-            solver.add(encoder.equality(f"sizeof({base})", local_arrays[base]))
-        except Exception:
-            pass
 
     try:
         extent = encoder.encode(extent_text)
@@ -471,7 +494,7 @@ def _check_access(
                 encoder.model_dict(check.model()),
             )
 
-    capacity = _capacity_for_buffer(buffer_text, capacities)
+    capacity = _capacity_for_buffer(operation, buffer_text, capacities)
     if capacity is None:
         _, unresolved_offset = _buffer_base_and_offset(buffer_text)
         if normalize_expression(unresolved_offset) != "0":
