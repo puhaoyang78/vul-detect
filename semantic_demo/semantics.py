@@ -524,17 +524,6 @@ def validate_summary(
 
 
 
-def _canonical_call_expression(
-    function: FunctionSource,
-    expression: str,
-) -> str:
-    summary = canonicalize_summary(
-        function,
-        {"kind": "VALUE", "target": "return", "expression": expression},
-    )
-    return summary["expression"]
-
-
 def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]:
     summaries: list[dict[str, str]] = []
     for call in function.calls():
@@ -547,16 +536,21 @@ def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]
                 length = call.arguments[length_index]
                 if call.name == "fread" and len(call.arguments) >= 3:
                     length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                summaries.append(
-                    canonicalize_summary(
-                        function,
-                        {
-                            "kind": "WRITE",
-                            "buffer": call.arguments[buffer_index],
-                            "length": length,
-                        },
-                    )
+                summary = canonicalize_summary(
+                    function,
+                    {
+                        "kind": "WRITE",
+                        "buffer": call.arguments[buffer_index],
+                        "length": length,
+                    },
                 )
+                root = _buffer_root_index(summary["buffer"])
+                if (
+                    root is not None
+                    and root < len(function.parameter_pointer_like)
+                    and function.parameter_pointer_like[root]
+                ):
+                    summaries.append(summary)
 
         if call.name in READS:
             buffer_index, length_index = READS[call.name]
@@ -564,27 +558,37 @@ def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]
                 length = call.arguments[length_index]
                 if call.name == "fwrite" and len(call.arguments) >= 3:
                     length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                summaries.append(
-                    canonicalize_summary(
+                summary = canonicalize_summary(
+                    function,
+                    {
+                        "kind": "READ",
+                        "buffer": call.arguments[buffer_index],
+                        "length": length,
+                    },
+                )
+                root = _buffer_root_index(summary["buffer"])
+                if (
+                    root is not None
+                    and root < len(function.parameter_pointer_like)
+                    and function.parameter_pointer_like[root]
+                ):
+                    summaries.append(summary)
+                if call.name == "memcmp" and len(call.arguments) >= 3:
+                    summary = canonicalize_summary(
                         function,
                         {
                             "kind": "READ",
-                            "buffer": call.arguments[buffer_index],
-                            "length": length,
+                            "buffer": call.arguments[1],
+                            "length": call.arguments[2],
                         },
                     )
-                )
-                if call.name == "memcmp" and len(call.arguments) >= 3:
-                    summaries.append(
-                        canonicalize_summary(
-                            function,
-                            {
-                                "kind": "READ",
-                                "buffer": call.arguments[1],
-                                "length": call.arguments[2],
-                            },
-                        )
-                    )
+                    root = _buffer_root_index(summary["buffer"])
+                    if (
+                        root is not None
+                        and root < len(function.parameter_pointer_like)
+                        and function.parameter_pointer_like[root]
+                    ):
+                        summaries.append(summary)
 
         if call.name in ALLOCATORS and call.returned:
             indices = ALLOCATORS[call.name]
