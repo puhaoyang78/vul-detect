@@ -97,7 +97,10 @@ class CheckpointTests(unittest.TestCase):
             for index, entry in enumerate(entries, 1)
         ]
         verdict = Mock()
-        verdict.as_json.return_value = {"verdict": "UNKNOWN", "reason": "test"}
+        verdict.as_json.return_value = {"verdict": "NOT_DETECTED", "reason": "test"}
+        baseline_model = Mock()
+        baseline_model.signature = "test-codebert"
+        baseline_model.predict.return_value = verdict
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -113,6 +116,8 @@ class CheckpointTests(unittest.TestCase):
                 side_effect=[(None, entries[0]), RuntimeError("interrupted")],
             ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[]
+            ), patch(
+                "semantic_demo.cli.CodeBERTBaseline", return_value=baseline_model
             ), patch("semantic_demo.cli.analyze", return_value=verdict):
                 with self.assertRaisesRegex(RuntimeError, "interrupted"):
                     detect(
@@ -133,6 +138,8 @@ class CheckpointTests(unittest.TestCase):
                 side_effect=[(None, entries[0]), (None, entries[1])],
             ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[]
+            ), patch(
+                "semantic_demo.cli.CodeBERTBaseline", return_value=baseline_model
             ), patch("semantic_demo.cli.analyze", return_value=verdict) as analyze:
                 detect(
                     str(samples_path),
