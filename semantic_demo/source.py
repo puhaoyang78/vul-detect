@@ -107,6 +107,13 @@ class FunctionSource:
             tree.root_node, source, self.start_line, line
         )
 
+    def uncertain_control_conditions_before(self, line: int) -> list[str]:
+        source = self.text.encode()
+        tree = _parser_for_language(self.language).parse(source)
+        return _uncertain_control_conditions_before(
+            tree.root_node, source, self.start_line, line
+        )
+
     def direct_memory_accesses(self) -> list[MemoryAccess]:
         source = self.text.encode()
         tree = _parser_for_language(self.language).parse(source)
@@ -720,6 +727,47 @@ def _branch_constraint_for_access(
     if alternative is not None and _node_contains_line(alternative, line_offset, access_line):
         return _condition_terms(condition, source, False)
     return []
+
+
+def _contains_call_expression(node: Node | None) -> bool:
+    return node is not None and any(
+        item.type == "call_expression" for item in _walk(node)
+    )
+
+
+def _uncertain_control_conditions_before(
+    root: Node,
+    source: bytes,
+    line_offset: int,
+    access_line: int,
+) -> list[str]:
+    """Conditions whose preceding branch contains unresolved call effects.
+
+    These are not treated as path facts. They only mark that feasibility may
+    depend on a call whose return/termination semantics are unavailable.
+    """
+    conditions: list[str] = []
+    for node in _walk(root):
+        if node.type != "if_statement":
+            continue
+        if _node_contains_line(node, line_offset, access_line):
+            continue
+        if _absolute_line(node, line_offset) >= access_line:
+            continue
+        condition = node.child_by_field_name("condition")
+        consequence = node.child_by_field_name("consequence")
+        alternative = node.child_by_field_name("alternative")
+        if condition is None:
+            continue
+        uncertain = (
+            (_contains_call_expression(consequence) and not _must_terminate(consequence))
+            or (_contains_call_expression(alternative) and not _must_terminate(alternative))
+        )
+        if uncertain:
+            compact = normalize_expression(_text(condition, source))
+            if compact:
+                conditions.append(compact)
+    return list(dict.fromkeys(conditions))
 
 
 def _continuation_constraints_before(
