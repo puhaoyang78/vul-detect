@@ -18,6 +18,8 @@ import io.joern.dataflowengineoss.language._
     val methods = cpg.method.nameExact(functionName).l
     if (methods.isEmpty) {
       lines += ("ERROR\tmethod_not_found:" + clean(functionName))
+    } else if (methods.size != 1) {
+      lines += ("ERROR\tambiguous_method:" + clean(functionName))
     } else {
       val method = methods.head
       val params = method.parameter.l
