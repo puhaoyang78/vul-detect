@@ -456,7 +456,6 @@ Return one JSON object with key summaries, whose value is a JSON array. Use only
 {{"kind":"ALLOC","buffer":"return","size":"arg0"}}
 {{"kind":"READ","buffer":"arg0","length":"arg2"}}
 {{"kind":"WRITE","buffer":"arg0","length":"arg2"}}
-{{"kind":"GUARD","relation":"arg1 <= arg0"}}
 {{"kind":"VALUE","target":"return","expression":"arg0"}}
 
 Meaning:
