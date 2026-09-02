@@ -23,11 +23,14 @@ ALLOCATORS = {
 WRITES = {
     "memcpy": (0, 2),
     "memmove": (0, 2),
+    "memset": (0, 2),
     "read": (1, 2),
     "recv": (1, 2),
     "recvfrom": (1, 2),
     "fread": (0, 1),
     "ReadFile": (1, 2),
+    "strncpy": (0, 2),
+    "strncat": (0, 2),
 }
 READS = {
     "memcpy": (1, 2),
@@ -37,23 +40,26 @@ READS = {
     "sendto": (1, 2),
     "fwrite": (0, 1),
     "memcmp": (0, 2),
+    "strncpy": (1, 2),
+    "strncat": (1, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
+STANDARD_CALLS = (
+    set(ALLOCATORS)
+    | set(WRITES)
+    | set(READS)
+    | UNBOUNDED_WRITES
+    | {
+        "free",
+        "strlen",
+        "sizeof",
+        "strcmp",
+        "strchr",
+        "snprintf",
+        "vsnprintf",
+    }
+)
 
-IGNORED_CALLS = set(ALLOCATORS) | set(WRITES) | set(READS) | UNBOUNDED_WRITES | {
-    "free",
-    "strlen",
-    "sizeof",
-    "return",
-    "if",
-    "while",
-    "for",
-    "switch",
-    "assert",
-    "memset",
-    "strcmp",
-    "strchr",
-}
 
 
 @dataclass(frozen=True)
@@ -76,147 +82,59 @@ class Validation:
         return asdict(self)
 
 
-def _contains_known_memory_primitive(function: FunctionSource) -> bool:
-    return any(
-        call.name in ALLOCATORS
-        or call.name in WRITES
-        or call.name in READS
-        or call.name in UNBOUNDED_WRITES
-        for call in function.calls()
-    )
-
-
-def _call_forwards_parameters(function: FunctionSource, call) -> bool:
-    """Whether a call carries values derived from the current function parameters."""
-    arguments = " ".join(call.arguments)
-    argument_tokens = _identifier_tokens(arguments)
-    for parameter in function.parameters:
-        if _tainted_tokens(function, parameter) & argument_tokens:
-            return True
-    return False
-
-
-def _call_result_is_returned(function: FunctionSource, call_name: str) -> bool:
-    return bool(
-        re.search(
-            rf"\breturn\s+[^;]*\b{re.escape(call_name)}\s*\(",
-            function.text,
-            re.S,
-        )
-    )
-
-
 def discover_candidates(
     sample_key: str,
     repository: GitRepository,
     entry: FunctionSource,
     scopes: Iterable[str],
-    max_functions: int = 32,
+    max_functions: int = 128,
 ) -> list[Candidate]:
-    """Build a selective interprocedural semantic frontier.
+    """Traverse the repository-resolved project call graph without name heuristics.
 
-    Direct project calls from the target function form the initial frontier. A
-    frontier function is expanded only when it does not already expose a known
-    memory primitive, and only through child calls that carry values derived from
-    the frontier function's parameters (or whose result is directly returned).
-    This preserves wrapper chains without constructing the whole reachable call
-    graph. max_functions is a resource guard rather than a semantic hop limit.
+    Standard-library calls are leaves. Ambiguous repository call resolution is
+    skipped rather than guessed. Hitting the explicit resource budget aborts
+    discovery so a truncated frontier can never silently produce a verdict.
     """
     scopes = tuple(scopes)
     discovered: dict[tuple[str, str], Candidate] = {}
-    queue: list[FunctionSource] = []
+    queue: list[FunctionSource] = [entry]
     expanded: set[tuple[str, str]] = set()
 
-    def add_call(caller: FunctionSource, call) -> None:
-        if call.name in IGNORED_CALLS or call.name == caller.name:
-            return
-        callee = repository.find_function(
-            call.name, preferred_path=caller.path, scopes=scopes
-        )
-        if callee is None:
-            return
-        key = (callee.path, callee.name)
-        existing = discovered.get(key)
-        lines = set(existing.call_lines if existing else ())
-        lines.add(call.line)
-        discovered[key] = Candidate(
-            sample_key=sample_key,
-            function=callee,
-            call_lines=tuple(sorted(lines)),
-        )
-        if key not in expanded and callee not in queue:
-            queue.append(callee)
-
-    # Target-level project calls are the semantic entry points. This avoids
-    # guessing vulnerability relevance from function names.
-    for call in entry.calls():
-        add_call(entry, call)
-        if len(discovered) >= max_functions:
-            break
-
-    while queue and len(discovered) < max_functions:
-        function = queue.pop(0)
-        key = (function.path, function.name)
-        if key in expanded:
+    while queue:
+        caller = queue.pop(0)
+        caller_key = (caller.path, caller.name)
+        if caller_key in expanded:
             continue
-        expanded.add(key)
+        expanded.add(caller_key)
 
-        # Once a function reaches a modeled primitive, its summary can be grounded
-        # locally; expanding unrelated descendants only adds cost and noise.
-        if _contains_known_memory_primitive(function):
-            continue
-
-        for call in function.calls():
-            if call.name in IGNORED_CALLS or call.name == function.name:
+        for call in caller.calls():
+            if call.name in STANDARD_CALLS or call.name == caller.name:
                 continue
-            if not (
-                _call_forwards_parameters(function, call)
-                or _call_result_is_returned(function, call.name)
-            ):
+            callee = repository.find_function(
+                call.name, preferred_path=caller.path, scopes=scopes
+            )
+            if callee is None:
                 continue
-            add_call(function, call)
-            if len(discovered) >= max_functions:
-                break
+            key = (callee.path, callee.name)
+            existing = discovered.get(key)
+            lines = set(existing.call_lines if existing else ())
+            lines.add(call.line)
+            discovered[key] = Candidate(
+                sample_key=sample_key,
+                function=callee,
+                call_lines=tuple(sorted(lines)),
+            )
+            if len(discovered) > max_functions:
+                raise RuntimeError(
+                    f"{sample_key}: candidate frontier exceeds explicit budget "
+                    f"({max_functions}); analysis aborted rather than truncated"
+                )
+            if key not in expanded:
+                queue.append(callee)
 
-    candidates = list(discovered.values())
-    candidates.sort(
-        key=lambda item: (
-            0 if _contains_known_memory_primitive(item.function) else 1,
-            item.function.name,
-            item.function.path,
-        )
-    )
-    return candidates
-
-
-def _is_memory_candidate(function: FunctionSource) -> bool:
-    """Keep LLM input focused while allowing value/size helpers."""
-    lowered = function.name.lower()
-    name_hints = (
-        "alloc",
-        "append",
-        "bound",
-        "capacity",
-        "check",
-        "copy",
-        "ensure",
-        "length",
-        "memory",
-        "offset",
-        "read",
-        "recv",
-        "size",
-        "valid",
-        "write",
-    )
-    if any(hint in lowered for hint in name_hints):
-        return True
-    return any(
-        _looks_like_alloc(call.name)
-        or _looks_like_write(call.name)
-        or _looks_like_read(call.name)
-        or call.name in UNBOUNDED_WRITES
-        for call in function.calls()
+    return sorted(
+        discovered.values(),
+        key=lambda item: (item.function.path, item.function.name),
     )
 
 
@@ -227,10 +145,6 @@ def _arg_indices(value: str) -> list[int]:
 def _buffer_root_index(value: str) -> int | None:
     match = re.match(r"^\s*arg(\d+)\b", value)
     return int(match.group(1)) if match else None
-
-
-def _pointer_like(declaration: str) -> bool:
-    return "*" in declaration or "[" in declaration
 
 
 def _schema_error(summary: dict[str, object], parameter_count: int) -> str | None:
@@ -288,126 +202,6 @@ def _substitute_args(expression: str, parameters: tuple[str, ...]) -> str:
     return result
 
 
-def _looks_like_alloc(name: str) -> bool:
-    lowered = name.lower()
-    return name in ALLOCATORS or any(
-        token in lowered for token in ("alloc", "malloc", "realloc", "resize")
-    )
-
-
-def _looks_like_write(name: str) -> bool:
-    lowered = name.lower()
-    return name in WRITES or any(
-        token in lowered for token in ("memcpy", "memmove", "read", "recv", "copy")
-    )
-
-
-def _looks_like_read(name: str) -> bool:
-    lowered = name.lower()
-    return name in READS or any(
-        token in lowered for token in ("memcmp", "write", "send", "consume", "parse")
-    )
-
-
-def _identifier_tokens(expression: str) -> set[str]:
-    return set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expression))
-
-
-def _tainted_tokens(function: FunctionSource, source_expression: str) -> set[str]:
-    """Small fallback used only when Joern is disabled in unit tests/debugging."""
-    tokens = _identifier_tokens(source_expression)
-    assignments = re.findall(
-        r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);", function.text, flags=re.S
-    )
-    changed = True
-    while changed:
-        changed = False
-        for target, value in assignments:
-            if target not in tokens and tokens & _identifier_tokens(value):
-                tokens.add(target)
-                changed = True
-    return tokens
-
-
-def _sink_arguments(
-    call_name: str, arguments: tuple[str, ...], role: str
-) -> tuple[str, ...]:
-    if role == "alloc" and call_name in ALLOCATORS:
-        indices = ALLOCATORS[call_name]
-        return tuple(arguments[index] for index in indices if index < len(arguments))
-    if role in {"write_buffer", "write_length"} and call_name in WRITES:
-        buffer_index, length_index = WRITES[call_name]
-        if call_name == "fread" and role == "write_length" and len(arguments) >= 3:
-            return arguments[1:3]
-        index = buffer_index if role == "write_buffer" else length_index
-        return arguments[index : index + 1]
-    if role in {"read_buffer", "read_length"} and call_name in READS:
-        buffer_index, length_index = READS[call_name]
-        if call_name == "fwrite" and role == "read_length" and len(arguments) >= 3:
-            return arguments[1:3]
-        index = buffer_index if role == "read_buffer" else length_index
-        return arguments[index : index + 1]
-    return arguments
-
-
-def _flow_visible(function: FunctionSource, source_expression: str, role: str) -> bool:
-    tokens = _tainted_tokens(function, source_expression)
-    if not tokens:
-        return False
-    for call in function.calls():
-        if role == "alloc":
-            predicate = _looks_like_alloc
-        elif role.startswith("read_"):
-            predicate = _looks_like_read
-        else:
-            predicate = _looks_like_write
-        if not predicate(call.name):
-            continue
-        joined = " ".join(_sink_arguments(call.name, call.arguments, role))
-        if tokens & _identifier_tokens(joined):
-            return True
-    return False
-
-
-def _expression_reaches(
-    function: FunctionSource, expression: str, sink_arguments: tuple[str, ...]
-) -> bool:
-    joined = " ".join(sink_arguments)
-    parameter_sources = _identifier_tokens(expression) & set(function.parameters)
-    if parameter_sources:
-        sink_tokens = _identifier_tokens(joined)
-        return all(
-            _tainted_tokens(function, source) & sink_tokens
-            for source in parameter_sources
-        )
-    compact = normalize_expression(expression)
-    return bool(compact) and compact in normalize_expression(joined)
-
-
-def _access_flow_visible(
-    function: FunctionSource,
-    buffer_expression: str,
-    length_expression: str,
-    kind: str,
-) -> bool:
-    role_prefix = "read" if kind == "READ" else "write"
-    predicate = _looks_like_read if kind == "READ" else _looks_like_write
-    for call in function.calls():
-        if not predicate(call.name):
-            continue
-        buffer_sink = _sink_arguments(
-            call.name, call.arguments, f"{role_prefix}_buffer"
-        )
-        length_sink = _sink_arguments(
-            call.name, call.arguments, f"{role_prefix}_length"
-        )
-        if _expression_reaches(
-            function, buffer_expression, buffer_sink
-        ) and _expression_reaches(function, length_expression, length_sink):
-            return True
-    return False
-
-
 def _known_call_indices(name: str, kind: str) -> tuple[tuple[int, ...], tuple[int, ...]]:
     if kind == "ALLOC" and name in ALLOCATORS:
         return (), ALLOCATORS[name]
@@ -421,27 +215,6 @@ def _known_call_indices(name: str, kind: str) -> tuple[tuple[int, ...], tuple[in
         if name == "fwrite":
             return (buffer,), (1, 2)
         return (buffer,), (length,)
-    return (), ()
-
-
-def _family_role_indices(
-    name: str, kind: str, argument_count: int
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """Conservative role models for common I/O wrapper families."""
-    lowered = name.lower()
-    if argument_count < 3:
-        return (), ()
-
-    if kind == "WRITE" and (
-        "recv" in lowered or lowered.startswith("read") or "_read" in lowered
-    ):
-        return (1,), (2,)
-
-    if kind == "READ" and (
-        "send" in lowered or lowered.startswith("write") or "_write" in lowered
-    ):
-        return (1,), (2,)
-
     return (), ()
 
 
@@ -459,9 +232,31 @@ def _joern_expr_reaches(
         )
     compact = normalize_expression(expression)
     return any(
-        compact and compact in normalize_expression(call.arguments.get(index, ""))
+        compact
+        and compact == normalize_expression(call.arguments.get(index, ""))
         for index in argument_indices
     )
+
+
+def _normalized_return_expression(value: str) -> str:
+    compact = normalize_expression(value)
+    if compact.startswith("return"):
+        compact = compact[len("return"):]
+    if compact.endswith(";"):
+        compact = compact[:-1]
+    return compact
+
+
+def _comparison_variants(expression: str) -> set[str]:
+    compact = normalize_expression(expression)
+    match = re.match(r"^(.*?)(<=|>=|==|!=|<|>)(.*)$", compact)
+    if not match:
+        return {compact} if compact else set()
+    left, operator, right = match.groups()
+    reverse = {
+        "<=": ">=", ">=": "<=", "<": ">", ">": "<", "==": "==", "!=": "!="
+    }[operator]
+    return {compact, f"{right}{reverse}{left}"}
 
 
 def _validate_with_joern(
@@ -474,22 +269,16 @@ def _validate_with_joern(
 
     if kind == "ALLOC":
         for call in facts.call_list():
-            if not _looks_like_alloc(call.name):
-                continue
             _, size_indices = _known_call_indices(call.name, "ALLOC")
             if not size_indices:
-                size_indices = tuple(call.arguments)
+                continue
             if _joern_expr_reaches(facts, summary["size"], call, size_indices):
-                return True, "Joern verified allocation-size data flow"
-        return False, "Joern found no allocation receiving the declared size"
+                return True, "Joern verified allocation-size flow to a specified allocator"
+        return False, "Joern found no specified allocator receiving the declared size"
 
     if kind in {"READ", "WRITE"}:
         for call in facts.call_list():
             buffer_indices, length_indices = _known_call_indices(call.name, kind)
-            if not buffer_indices or not length_indices:
-                buffer_indices, length_indices = _family_role_indices(
-                    call.name, kind, len(call.arguments)
-                )
             if not buffer_indices or not length_indices:
                 continue
             if _joern_expr_reaches(
@@ -499,39 +288,36 @@ def _validate_with_joern(
             ):
                 return (
                     True,
-                    f"Joern verified role-sensitive {kind.lower()} "
-                    f"buffer/length flow through {call.name}",
+                    f"Joern verified {kind.lower()} flow to specified API {call.name}",
                 )
-        return (
-            False,
-            f"Joern found no role-compatible {kind.lower()} operation "
-            "matching both buffer and length",
-        )
+        return False, f"Joern found no specified API matching the declared {kind.lower()}"
 
     if kind == "GUARD":
-        relation = normalize_expression(
-            _substitute_args(summary["relation"], candidate.function.parameters)
-        )
-        if not relation:
-            return False, "empty GUARD relation"
-        for condition in facts.conditions:
-            compact = normalize_expression(condition)
-            if relation in compact or compact in relation:
-                return True, "Joern verified guard expression"
-        return False, "Joern found no matching control/boolean comparison"
+        relation = _substitute_args(summary["relation"], candidate.function.parameters)
+        expected = _comparison_variants(relation)
+        if expected & {
+            variant
+            for condition in facts.conditions
+            for variant in _comparison_variants(condition)
+        }:
+            return True, "Joern verified exact guard comparison"
+        return False, "Joern found no exact matching guard comparison"
 
     if kind == "VALUE":
         expression = normalize_expression(
             _substitute_args(summary["expression"], candidate.function.parameters)
         )
-        for returned in facts.returns:
-            compact = normalize_expression(returned)
-            if expression and (expression in compact or compact in expression):
-                return True, "Joern verified returned value expression"
+        returned = {_normalized_return_expression(value) for value in facts.returns}
+        if expression and expression in returned:
+            return True, "Joern verified exact returned value expression"
         param_indices = _arg_indices(summary["expression"])
-        if param_indices and any(index in facts.return_flows for index in param_indices):
-            return True, "Joern verified parameter-to-return data flow"
-        return False, "Joern found no return matching the declared VALUE expression"
+        if (
+            len(param_indices) == 1
+            and summary["expression"] == f"arg{param_indices[0]}"
+            and param_indices[0] in facts.return_flows
+        ):
+            return True, "Joern verified direct parameter-to-return flow"
+        return False, "Joern found no exact return matching the declared VALUE expression"
 
     return False, f"unsupported semantic kind: {kind}"
 
@@ -540,14 +326,21 @@ def _validate_by_composition(
     candidate: Candidate,
     summary: dict[str, str],
     validator: JoernValidator,
-    callee_summaries: dict[str, list[dict[str, str]]],
+    callee_summaries: dict[tuple[str, str], list[dict[str, str]]],
 ) -> tuple[bool, str]:
     """Validate a wrapper summary from already validated callee summaries."""
     facts = validator.facts(candidate)
     kind = summary["kind"]
 
     for call in facts.call_list():
-        for child in callee_summaries.get(call.name, []):
+        matches = [
+            summaries
+            for (path, name), summaries in callee_summaries.items()
+            if name == call.name
+        ]
+        if len(matches) != 1:
+            continue
+        for child in matches[0]:
             if child.get("kind") != kind:
                 continue
 
@@ -575,12 +368,15 @@ def _validate_by_composition(
                     facts, summary["size"], call, child_size_args
                 ):
                     continue
-                # Allocation result must be returned by the wrapper.
-                if re.search(
-                    rf"\breturn\s+[^;]*\b{re.escape(call.name)}\s*\(",
-                    candidate.function.text,
-                    re.S,
-                ):
+                source_call = next(
+                    (
+                        source_call
+                        for source_call in candidate.function.calls()
+                        if source_call.name == call.name and source_call.line == call.line
+                    ),
+                    None,
+                )
+                if source_call is not None and source_call.returned:
                     return (
                         True,
                         f"composition verified allocation through "
@@ -593,8 +389,8 @@ def _validate_by_composition(
 def validate_summary(
     candidate: Candidate,
     summary: dict[str, object],
-    joern: JoernValidator | None = None,
-    callee_summaries: dict[str, list[dict[str, str]]] | None = None,
+    joern: JoernValidator,
+    callee_summaries: dict[tuple[str, str], list[dict[str, str]]] | None = None,
 ) -> Validation:
     function = candidate.function
     error = _schema_error(summary, len(function.parameters))
@@ -613,8 +409,9 @@ def validate_summary(
                 f"{clean_summary.get('kind')} buffer must be rooted at a "
                 "caller-supplied argN"
             )
-        elif root_index >= len(function.parameter_types) or not _pointer_like(
-            function.parameter_types[root_index]
+        elif (
+            root_index >= len(function.parameter_pointer_like)
+            or not function.parameter_pointer_like[root_index]
         ):
             error = (
                 f"{clean_summary.get('kind')} buffer root arg{root_index} "
@@ -626,170 +423,32 @@ def validate_summary(
             candidate.sample_key, function.name, function.path, clean_summary, False, error
         )
 
-    if joern is not None:
-        try:
-            passed, reason = _validate_with_joern(candidate, clean_summary, joern)
-            if not passed and callee_summaries:
-                composed, composed_reason = _validate_by_composition(
-                    candidate,
-                    clean_summary,
-                    joern,
-                    callee_summaries,
-                )
-                if composed:
-                    passed, reason = composed, composed_reason
-        except JoernMethodNotFound as error:
-            passed = False
-            reason = f"Joern candidate method unavailable: {error}"
-        except JoernTimeout as error:
-            passed = False
-            reason = f"Joern candidate validation timed out: {error}"
-        return Validation(
-            candidate.sample_key,
-            function.name,
-            function.path,
-            clean_summary,
-            passed,
-            reason,
-        )
-
-    # Lightweight fallback for unit tests and debugging without Joern.
-    kind = clean_summary["kind"]
-    if kind == "ALLOC":
-        size = _substitute_args(clean_summary["size"], function.parameters)
-        if not _flow_visible(function, size, "alloc"):
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
+    try:
+        passed, reason = _validate_with_joern(candidate, clean_summary, joern)
+        if not passed and callee_summaries:
+            composed, composed_reason = _validate_by_composition(
+                candidate,
                 clean_summary,
-                False,
-                "declared size does not flow to an allocation-like operation",
+                joern,
+                callee_summaries,
             )
-        if "return" not in function.text:
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
-                clean_summary,
-                False,
-                "candidate has no returned object",
-            )
-    elif kind in {"READ", "WRITE"}:
-        buffer_expr = _substitute_args(clean_summary["buffer"], function.parameters)
-        length_expr = _substitute_args(clean_summary["length"], function.parameters)
-        if not _access_flow_visible(function, buffer_expr, length_expr, kind):
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
-                clean_summary,
-                False,
-                f"declared buffer and length do not reach the same {kind.lower()}-like operation",
-            )
-    elif kind == "GUARD":
-        relation = _substitute_args(clean_summary["relation"], function.parameters)
-        match = re.search(r"(.+?)(<=|>=|<|>|==|!=)(.+)", relation)
-        if match is None:
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
-                clean_summary,
-                False,
-                "GUARD relation has no supported comparison",
-            )
-        left, operator, right = match.groups()
-        compact = normalize_expression(function.text)
-        expected = normalize_expression(f"{left}{operator}{right}")
-        reverse = {
-            "<=": ">=",
-            ">=": "<=",
-            "<": ">",
-            ">": "<",
-            "==": "==",
-            "!=": "!=",
-        }[operator]
-        reversed_expected = normalize_expression(f"{right}{reverse}{left}")
-        if expected not in compact and reversed_expected not in compact:
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
-                clean_summary,
-                False,
-                "declared comparison is absent from the candidate body",
-            )
-    else:
-        expression = normalize_expression(
-            _substitute_args(clean_summary["expression"], function.parameters)
-        )
-        returns = re.findall(r"\breturn\s+([^;]+);", function.text, flags=re.S)
-        if not any(expression in normalize_expression(value) for value in returns):
-            return Validation(
-                candidate.sample_key,
-                function.name,
-                function.path,
-                clean_summary,
-                False,
-                "declared VALUE expression is absent from returned expressions",
-            )
-
+            if composed:
+                passed, reason = composed, composed_reason
+    except JoernMethodNotFound as validation_error:
+        passed = False
+        reason = f"Joern candidate method unavailable: {validation_error}"
+    except JoernTimeout as validation_error:
+        passed = False
+        reason = f"Joern candidate validation timed out: {validation_error}"
     return Validation(
         candidate.sample_key,
         function.name,
         function.path,
         clean_summary,
-        True,
-        "validated by lightweight fallback",
+        passed,
+        reason,
     )
 
-
-def rule_normalize(candidate: Candidate) -> list[dict[str, str]]:
-    function = candidate.function
-    summaries: list[dict[str, str]] = []
-    for index, parameter in enumerate(function.parameters):
-        if _flow_visible(function, parameter, "alloc") and "return" in function.text:
-            summaries.append(
-                {"kind": "ALLOC", "buffer": "return", "size": f"arg{index}"}
-            )
-            break
-
-    for kind, predicate in (("WRITE", _looks_like_write), ("READ", _looks_like_read)):
-        calls = [call for call in function.calls() if predicate(call.name)]
-        for call in calls:
-            parameter_hits: list[int] = []
-            for index, parameter in enumerate(function.parameters):
-                if any(parameter in _identifier_tokens(argument) for argument in call.arguments):
-                    parameter_hits.append(index)
-            if len(parameter_hits) >= 2:
-                pointer_hits = [
-                    index
-                    for index in parameter_hits
-                    if "*" in function.parameter_types[index]
-                ]
-                scalar_hits = [
-                    index for index in parameter_hits if index not in pointer_hits
-                ]
-                if pointer_hits and scalar_hits:
-                    summaries.append(
-                        {
-                            "kind": kind,
-                            "buffer": f"arg{pointer_hits[-1]}",
-                            "length": f"arg{scalar_hits[-1]}",
-                        }
-                    )
-                    break
-
-    for match in re.finditer(r"\breturn\s+([^;]+);", function.text, flags=re.S):
-        expression = normalize_expression(match.group(1))
-        for index, parameter in enumerate(function.parameters):
-            if normalize_expression(parameter) == expression:
-                summaries.append(
-                    {"kind": "VALUE", "target": "return", "expression": f"arg{index}"}
-                )
-                return summaries
-    return summaries
 
 
 def llm_normalize(
@@ -838,7 +497,7 @@ beyond this function.
 Function: {candidate.function.name}
 Parameters: {json.dumps(list(candidate.function.parameters))}
 Source:
-{candidate.function.text[:12000]}
+{candidate.function.text}
 """
     payload = json.dumps(
         {
