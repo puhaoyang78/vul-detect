@@ -6,7 +6,8 @@ Baseline 使用官方 LineVul 函数级模型。Proposed 不使用漏洞启发�
 
     target function + repository revision
         -> repository-resolved call graph
-        -> LLM semantic normalization
+        -> static semantic endpoints / standard effects
+        -> localized LLM normalization for unresolved custom endpoints
         -> Joern data-flow validation
         -> validated ALLOC / READ / WRITE / VALUE effects
         -> Tree-sitter path / reaching-definition facts
@@ -37,24 +38,24 @@ LineVul 只读取目标函数源码：
 - Tree-sitter 从目标函数开始提取项目调用。
 - 标准 API 是明确 leaf，不依赖函数名相似度判断。
 - 自定义调用通过 repository revision 中的真实函数定义解析。
-- 同名定义无法唯一绑定时不猜测。
+- 同一 C 文件、同参数签名的条件编译实现作为显式 variants；跨文件、C++ 或不同签名歧义仍不猜测。
 - 不再使用固定 hop、函数名 hints、read/copy/alloc family rule。
 - 候选数存在显式资源上限；超过上限直接终止该样本分析，不静默截断。
 
 ### 2. Semantic normalization
 
-LLM 只允许输出四种 schema：
+Normalization 采用静态定位优先的混合流程。Tree-sitter 先确定标准 API effect、return
+以及自定义直接调用 endpoint；memcpy/read/write/malloc 等明确标准语义直接结构化，不再交给 LLM。
+LLM 只处理单个 return 或自定义 direct-call endpoint，每次最多输出 4 条 summary，且仍只允许：
 
     ALLOC(return, size)
     READ(buffer, length)
     WRITE(buffer, length)
     VALUE(return, expression)
 
-GUARD 已从跨过程 schema 删除。单独“某函数内部存在一个比较”不能安全推出 caller 上的
-后置条件，因此在没有明确 return contract 前不传播。
-
-Normalization 输出带 schema version。旧 schema、旧 prompt 或旧缓存不会被新主流程静默复用。
-函数过长超过显式 LLM source budget 时直接报错，不做静默字符截断。
+间接调用作为 opaque edge：不会据此推导 summary，但也不会使函数中与其无关的直接语义整体失效。
+GUARD 仍不进入跨过程 schema。Normalization 输出带 schema version；旧 schema、旧 prompt 或旧缓存
+不会被新主流程静默复用。函数过长超过显式 LLM source budget 时直接报错，不做静默字符截断。
 
 ### 3. Joern validation
 
@@ -62,9 +63,9 @@ Normalization 输出带 schema version。旧 schema、旧 prompt 或旧缓存不
 - 验证基于明确标准 API 的参数角色或已经验证的 callee summary composition。
 - 不再根据 custom API 名称中是否包含 read、recv、send、copy、alloc、parse 等词猜角色。
 - GUARD/VALUE 不再通过 substring 匹配。
-- VALUE 只接受精确 return expression 或直接 parameter-to-return data flow。
+- VALUE 接受精确 return expression；wrapper VALUE 仅在已验证 callee summary 可组合时传播。
 - Joern 使用候选函数所在的完整 translation unit，而不是只把函数体写成孤立 candidate.c。
-- 同一 translation unit 中方法名无法唯一解析时拒绝该验证结果。
+- 同名 C variants 使用源码范围定位 Joern method；无法按候选源码范围唯一解析时拒绝该验证结果。
 
 ### 4. Source parsing and access recovery
 

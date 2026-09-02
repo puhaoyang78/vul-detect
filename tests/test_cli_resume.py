@@ -77,14 +77,15 @@ class CheckpointTests(unittest.TestCase):
                 [record["function"] for record in read_jsonl(output_path)],
             )
 
-    def test_unverifiable_candidate_skips_llm_normalization(self):
+    def test_indirect_call_candidate_is_normalized_locally(self):
         entry = parse_functions("entry.c", "void entry(void) {}\n")[0]
         function = parse_functions(
-            "evict.c",
+            "mixed.c",
             """
-            void evict(struct item *item)
+            void mixed(char *dst, const char *src, unsigned long len, void (*cb)(char *))
             {
-                item->drop(item);
+                memcpy(dst, src, len);
+                cb(dst);
             }
             """,
         )[0]
@@ -118,13 +119,18 @@ class CheckpointTests(unittest.TestCase):
 
             with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[candidate]
-            ), patch("semantic_demo.cli.llm_normalize") as normalize:
+            ), patch(
+                "semantic_demo.cli.llm_normalize",
+                return_value=[
+                    {"kind": "WRITE", "buffer": "arg0", "length": "arg2"}
+                ],
+            ) as normalize:
                 normalize_command(args)
 
-            normalize.assert_not_called()
+            self.assertEqual(1, normalize.call_count)
             record = read_jsonl(output_path)[0]
-            self.assertEqual([], record["summaries"])
-            self.assertIn("unresolved indirect calls", record["skip_reason"])
+            self.assertEqual("localized-hybrid", record["normalizer"])
+            self.assertNotIn("skip_reason", record)
 
     def test_llm_normalization_cache_is_model_specific(self):
         entry = parse_functions("entry.c", "void entry(void) {}\n")[0]

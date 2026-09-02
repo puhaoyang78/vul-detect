@@ -41,7 +41,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 8
+ANALYSIS_CHECKPOINT_VERSION = 9
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -184,7 +184,7 @@ def local_llm_server(
                 "api_key": "local",
                 "base_url": f"http://127.0.0.1:{port}/v1",
                 "model": model.stem,
-                "max_tokens": 2048,
+                "max_tokens": 512,
                 "disable_proxy": True,
                 "response_schema": NORMALIZATION_RESPONSE_SCHEMA,
             }
@@ -287,7 +287,7 @@ def normalize_command(args: argparse.Namespace) -> None:
     else:
         llm_context = contextlib.nullcontext(
             {
-                "max_tokens": 8192,
+                "max_tokens": 512,
                 "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
                 "base_url": os.environ.get(
                     "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
@@ -319,7 +319,7 @@ def normalize_command(args: argparse.Namespace) -> None:
                     skip_reason is None
                     and cached is not None
                     and cached.get("schema_version") == NORMALIZATION_SCHEMA_VERSION
-                    and cached.get("normalizer") == "llm"
+                    and cached.get("normalizer") == "localized-hybrid"
                     and cached.get("llm_backend") == args.llm_backend
                     and cached.get("llm_model") == llm_options.get("model")
                 ):
@@ -353,7 +353,9 @@ def normalize_command(args: argparse.Namespace) -> None:
                     "parameters": list(candidate.function.parameters),
                     "source_fingerprint": fingerprint,
                     "normalizer": (
-                        "static-skip" if skip_reason is not None else "llm"
+                        "static-skip"
+                        if skip_reason is not None
+                        else "localized-hybrid"
                     ),
                     "summaries": summaries,
                 }

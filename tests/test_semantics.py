@@ -183,6 +183,43 @@ class SemanticValidationTests(unittest.TestCase):
         )
         self.assertTrue(result.passed)
 
+    def test_indirect_call_does_not_reject_unrelated_direct_summary(self):
+        function = parse_functions(
+            "mixed.c",
+            """
+            void mixed(char *dst, const char *src, unsigned long len, void (*cb)(char *))
+            {
+                memcpy(dst, src, len);
+                cb(dst);
+            }
+            """,
+        )[0]
+        call = JoernCall(
+            line=function.start_line + 2,
+            name="memcpy",
+            arguments={0: "dst", 1: "src", 2: "len"},
+        )
+        facts = JoernFacts(
+            parameters={
+                0: ("dst", "char *"),
+                1: ("src", "const char *"),
+                2: ("len", "unsigned long"),
+                3: ("cb", "void (*)(char *)"),
+            },
+            calls={(call.line, call.name): call},
+            flows={
+                (0, call.line, call.name, 0),
+                (1, call.line, call.name, 1),
+                (2, call.line, call.name, 2),
+            },
+        )
+        result = validate_summary(
+            Candidate("sample", function, (1,)),
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            joern=StaticFactsValidator(facts),
+        )
+        self.assertTrue(result.passed)
+
     def test_guard_summary_is_not_part_of_sound_schema(self):
         result = validate_summary(
             self.candidate,
@@ -310,17 +347,124 @@ class SemanticValidationTests(unittest.TestCase):
                     },
                 }
             ],
-            "usage": {"completion_tokens": 2048},
+            "usage": {"completion_tokens": 512},
         }
         with self.assertRaisesRegex(ValueError, "truncated at max_tokens"):
             _response_content(result)
+
+    def test_standard_memcpy_summary_needs_no_llm_call(self):
+        candidate = Candidate(
+            "sample",
+            parse_functions(
+                "copy.c",
+                """
+                void copy(char *dst, const char *src, unsigned long len)
+                {
+                    memcpy(dst, src, len);
+                }
+                """,
+            )[0],
+            (),
+        )
+        with patch("semantic_demo.semantics.urllib.request.urlopen") as open_url:
+            summaries = llm_normalize(
+                candidate,
+                api_key="local",
+                base_url="http://127.0.0.1:1/v1",
+                model="test",
+                response_schema=NORMALIZATION_RESPONSE_SCHEMA,
+            )
+        open_url.assert_not_called()
+        self.assertIn(
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            summaries,
+        )
+        self.assertIn(
+            {"kind": "READ", "buffer": "arg1", "length": "arg2"},
+            summaries,
+        )
+
+    def test_local_length_standard_call_uses_one_localized_llm_endpoint(self):
+        candidate = Candidate(
+            "sample",
+            parse_functions(
+                "copy.c",
+                """
+                void copy(char *dst, const char *src, unsigned long len)
+                {
+                    unsigned long n = len;
+                    memcpy(dst, src, n);
+                }
+                """,
+            )[0],
+            (),
+        )
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+        response.read.return_value = json.dumps(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summaries": [
+                                        {
+                                            "kind": "WRITE",
+                                            "buffer": "arg0",
+                                            "length": "arg2",
+                                        },
+                                        {
+                                            "kind": "READ",
+                                            "buffer": "arg1",
+                                            "length": "arg2",
+                                        },
+                                    ]
+                                }
+                            )
+                        },
+                    }
+                ]
+            }
+        ).encode()
+
+        with patch(
+            "semantic_demo.semantics.urllib.request.urlopen",
+            return_value=response,
+        ) as open_url:
+            summaries = llm_normalize(
+                candidate,
+                api_key="local",
+                base_url="http://127.0.0.1:1/v1",
+                model="test",
+                response_schema=NORMALIZATION_RESPONSE_SCHEMA,
+            )
+
+        self.assertEqual(1, open_url.call_count)
+        self.assertIn(
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            summaries,
+        )
+        self.assertIn(
+            {"kind": "READ", "buffer": "arg1", "length": "arg2"},
+            summaries,
+        )
 
     def test_llm_normalize_passes_explicit_response_schema(self):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=None)
         response.read.return_value = json.dumps(
-            {"choices": [{"message": {"content": '{"summaries":[]}'}}]}
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"summaries":[]}'},
+                    }
+                ]
+            }
         ).encode()
 
         with patch(
