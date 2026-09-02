@@ -316,13 +316,17 @@ def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
                     byte_capacity=byte_capacity,
                 )
             )
-    # A function scope cannot contain two simultaneously live declarations with
-    # the same name in this lightweight model. Keep the first declaration rather
-    # than letting later array uses overwrite capacity.
-    unique: dict[str, LocalArray] = {}
+    # If nested scopes reuse an array name, this lightweight representation
+    # cannot resolve which declaration reaches a later textual access. Treat the
+    # capacity as ambiguous instead of choosing one unsafely.
+    by_name: dict[str, list[LocalArray]] = {}
     for array in arrays:
-        unique.setdefault(array.name, array)
-    return list(unique.values())
+        by_name.setdefault(array.name, []).append(array)
+    return [
+        declarations[0]
+        for declarations in by_name.values()
+        if len(declarations) == 1
+    ]
 
 
 def _callee_name(node: Node | None, source: bytes) -> str | None:
