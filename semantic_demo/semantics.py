@@ -539,93 +539,119 @@ def validate_summary(
 
 
 
+def _simple_caller_expression(expression: str) -> bool:
+    compact = normalize_expression(expression)
+    if any(compact == f"arg{index}" for index in range(128)):
+        return True
+    try:
+        int(compact, 0)
+    except ValueError:
+        return False
+    return True
+
+
+def _expected_standard_effect_count(call) -> int:
+    count = 0
+    if call.name in WRITES:
+        buffer_index, length_index = WRITES[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            count += 1
+    if call.name in READS:
+        buffer_index, length_index = READS[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            count += 1
+            if call.name == "memcmp" and len(call.arguments) >= 3:
+                count += 1
+    if call.name in ALLOCATORS and call.returned:
+        indices = ALLOCATORS[call.name]
+        if (
+            call.name == "calloc" and len(call.arguments) >= 2
+        ) or (
+            indices and len(call.arguments) > indices[0]
+        ):
+            count += 1
+    return count
+
+
+def _standard_call_summaries(
+    function: FunctionSource,
+    call,
+) -> list[dict[str, str]]:
+    summaries: list[dict[str, str]] = []
+
+    def append_memory(kind: str, buffer: str, length: str) -> None:
+        summary = canonicalize_summary(
+            function,
+            {"kind": kind, "buffer": buffer, "length": length},
+        )
+        root = _buffer_root_index(summary["buffer"])
+        if (
+            root is None
+            or root >= len(function.parameter_pointer_like)
+            or not function.parameter_pointer_like[root]
+            or not _simple_caller_expression(summary["length"])
+        ):
+            return
+        summaries.append(summary)
+
+    if call.name in WRITES:
+        buffer_index, length_index = WRITES[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            length = call.arguments[length_index]
+            if call.name == "fread" and len(call.arguments) >= 3:
+                length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+            append_memory(
+                "WRITE",
+                call.arguments[buffer_index],
+                length,
+            )
+
+    if call.name in READS:
+        buffer_index, length_index = READS[call.name]
+        if len(call.arguments) > max(buffer_index, length_index):
+            length = call.arguments[length_index]
+            if call.name == "fwrite" and len(call.arguments) >= 3:
+                length = f"({call.arguments[1]}) * ({call.arguments[2]})"
+            append_memory(
+                "READ",
+                call.arguments[buffer_index],
+                length,
+            )
+            if call.name == "memcmp" and len(call.arguments) >= 3:
+                append_memory(
+                    "READ",
+                    call.arguments[1],
+                    call.arguments[2],
+                )
+
+    if call.name in ALLOCATORS and call.returned:
+        indices = ALLOCATORS[call.name]
+        if call.name == "calloc" and len(call.arguments) >= 2:
+            size = f"({call.arguments[0]}) * ({call.arguments[1]})"
+        elif indices and len(call.arguments) > indices[0]:
+            size = call.arguments[indices[0]]
+        else:
+            size = ""
+        if size:
+            summary = canonicalize_summary(
+                function,
+                {"kind": "ALLOC", "buffer": "return", "size": size},
+            )
+            if _simple_caller_expression(summary["size"]):
+                summaries.append(summary)
+
+    return summaries
+
+
 def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]:
     summaries: list[dict[str, str]] = []
     for call in function.calls():
         if call.indirect:
             continue
-
-        if call.name in WRITES:
-            buffer_index, length_index = WRITES[call.name]
-            if len(call.arguments) > max(buffer_index, length_index):
-                length = call.arguments[length_index]
-                if call.name == "fread" and len(call.arguments) >= 3:
-                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                summary = canonicalize_summary(
-                    function,
-                    {
-                        "kind": "WRITE",
-                        "buffer": call.arguments[buffer_index],
-                        "length": length,
-                    },
-                )
-                root = _buffer_root_index(summary["buffer"])
-                if (
-                    root is not None
-                    and root < len(function.parameter_pointer_like)
-                    and function.parameter_pointer_like[root]
-                ):
-                    summaries.append(summary)
-
-        if call.name in READS:
-            buffer_index, length_index = READS[call.name]
-            if len(call.arguments) > max(buffer_index, length_index):
-                length = call.arguments[length_index]
-                if call.name == "fwrite" and len(call.arguments) >= 3:
-                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                summary = canonicalize_summary(
-                    function,
-                    {
-                        "kind": "READ",
-                        "buffer": call.arguments[buffer_index],
-                        "length": length,
-                    },
-                )
-                root = _buffer_root_index(summary["buffer"])
-                if (
-                    root is not None
-                    and root < len(function.parameter_pointer_like)
-                    and function.parameter_pointer_like[root]
-                ):
-                    summaries.append(summary)
-                if call.name == "memcmp" and len(call.arguments) >= 3:
-                    summary = canonicalize_summary(
-                        function,
-                        {
-                            "kind": "READ",
-                            "buffer": call.arguments[1],
-                            "length": call.arguments[2],
-                        },
-                    )
-                    root = _buffer_root_index(summary["buffer"])
-                    if (
-                        root is not None
-                        and root < len(function.parameter_pointer_like)
-                        and function.parameter_pointer_like[root]
-                    ):
-                        summaries.append(summary)
-
-        if call.name in ALLOCATORS and call.returned:
-            indices = ALLOCATORS[call.name]
-            if call.name == "calloc" and len(call.arguments) >= 2:
-                size = f"({call.arguments[0]}) * ({call.arguments[1]})"
-            elif indices and len(call.arguments) > indices[0]:
-                size = call.arguments[indices[0]]
-            else:
-                size = ""
-            if size:
-                summaries.append(
-                    canonicalize_summary(
-                        function,
-                        {"kind": "ALLOC", "buffer": "return", "size": size},
-                    )
-                )
-
-    unique: list[dict[str, str]] = []
-    for summary in summaries:
-        if summary not in unique:
-            unique.append(summary)
-    return unique
+        for summary in _standard_call_summaries(function, call):
+            if summary not in summaries:
+                summaries.append(summary)
+    return summaries
 
 
 def _normalization_endpoints(
@@ -635,8 +661,13 @@ def _normalization_endpoints(
     if function.has_value_return():
         endpoints.append(("return", "function return statements"))
     for call in function.calls():
-        if call.indirect or call.name in STANDARD_CALLS:
+        if call.indirect:
             continue
+        if call.name in STANDARD_CALLS:
+            expected = _expected_standard_effect_count(call)
+            direct = len(_standard_call_summaries(function, call))
+            if expected == direct:
+                continue
         endpoints.append(
             (
                 "call",
