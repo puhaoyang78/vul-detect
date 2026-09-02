@@ -391,8 +391,8 @@ class Z3ReasonerTests(unittest.TestCase):
                 )
             ],
         )
-        self.assertEqual("POTENTIAL_VIOLATION", result.status)
-        self.assertIn("len >= 0", result.reason)
+        self.assertEqual("UNKNOWN", result.status)
+        self.assertIn("unconstrained parameter domain", result.reason)
 
     def test_unknown_capacity_is_reported(self):
         entry = parse_functions(
@@ -475,6 +475,100 @@ class Z3ReasonerTests(unittest.TestCase):
         effects = {(item["kind"], item["buffer"]) for item in verdict.as_json()["operations"]}
         self.assertIn(("WRITE", "dst"), effects)
         self.assertIn(("READ", "src"), effects)
+
+    def test_array_use_does_not_overwrite_declared_capacity(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(unsigned int index)
+            {
+                char buf[8];
+                if (index >= 8)
+                    return 0;
+                buf[index] = 0;
+                return buf[0];
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        ast_accesses = [
+            access
+            for access in result.constraint_result["accesses"]
+            if access["buffer"].startswith("buf+")
+        ]
+        self.assertTrue(ast_accesses)
+        self.assertTrue(all(access["status"] == "SAFE" for access in ast_accesses))
+        conditions = " | ".join(
+            condition["condition"]
+            for access in ast_accesses
+            for condition in access["conditions"]
+        )
+        self.assertNotIn("<= 0", conditions)
+        self.assertNotIn("<= index", conditions)
+
+    def test_loop_condition_bounds_subscript_access(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            int entry(const int *items, unsigned int count)
+            {
+                unsigned int i;
+                int sum = 0;
+                for (i = 0; i < count; ++i)
+                    sum += items[i];
+                return sum;
+            }
+            """,
+        )[0]
+        access = entry.direct_memory_accesses()[0]
+        constraints = entry.continuation_constraints_before(access.line)
+        self.assertIn("i<count", constraints)
+
+    def test_local_array_byte_and_element_capacity_are_distinct(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(const unsigned char *src)
+            {
+                unsigned short buf[8];
+                memcpy(buf, src, 16);
+                buf[7] = 0;
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        accesses = result.constraint_result["accesses"]
+        write_memcpy = next(
+            access
+            for access in accesses
+            if access["access_kind"] == "WRITE" and access["extent"] == "16"
+        )
+        subscript = next(
+            access
+            for access in accesses
+            if access["access_kind"] == "WRITE" and access["buffer"] == "buf+(7)"
+        )
+        self.assertEqual("SAFE", write_memcpy["status"])
+        self.assertEqual("SAFE", subscript["status"])
+
+    def test_strcpy_is_modeled_with_source_length(self):
+        entry = parse_functions(
+            "entry.c",
+            """
+            void entry(void)
+            {
+                char buf[8];
+                strcpy(buf, "abc");
+            }
+            """,
+        )[0]
+        result = analyze(entry)
+        writes = [
+            operation
+            for operation in result.as_json()["operations"]
+            if operation["callee"] == "strcpy" and operation["kind"] == "WRITE"
+        ]
+        self.assertEqual("4", writes[0]["extent"])
 
     def test_array_subscript_becomes_explicit_memory_access(self):
         entry = parse_functions(
