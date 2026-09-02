@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from .analyzer import analyze
+from .codebert_baseline import CodeBERTBaseline
 from .joern import JoernError, JoernValidator
 from .semantics import (
     Validation,
@@ -229,6 +230,7 @@ def _analysis_fingerprint(
     replay: dict[tuple[str, str, str], list[dict[str, str]]],
     backend: str,
     joern_timeout: int | None,
+    baseline_signature: str,
 ) -> str:
     candidate_inputs = []
     sample_key = str(sample["sample_key"])
@@ -253,6 +255,7 @@ def _analysis_fingerprint(
         "candidates": candidate_inputs,
         "backend": backend,
         "joern_timeout": joern_timeout,
+        "baseline_signature": baseline_signature,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -374,10 +377,18 @@ def detect(
     java_home: str = "/home/phy/jdk21",
     use_joern: bool = True,
     resume: bool = True,
+    codebert_path: str = "/home/PublicData/PHY-data/resource/codebert",
+    codebert_threshold: float = 0.5,
+    codebert_device: str = "auto",
 ) -> None:
     samples = read_jsonl(samples_path)
     validate_detection_manifest(samples)
     replay = load_replay(replay_path)
+    baseline_model = CodeBERTBaseline(
+        codebert_path,
+        threshold=codebert_threshold,
+        device=codebert_device,
+    )
     joern = JoernValidator(joern_dir, java_home=java_home) if use_joern else None
     if joern is not None:
         joern.ensure_available()
@@ -416,6 +427,7 @@ def detect(
             replay,
             backend,
             joern.timeout if joern is not None else None,
+            baseline_model.signature,
         )
 
         summary_count = len(summary_entries)
@@ -488,8 +500,8 @@ def detect(
         validations = [final[index] for index in range(len(summary_entries))]
         semantic_records.extend(item.as_json() for item in validations)
 
-        baseline = analyze(entry, proposed=False)
-        proposed = analyze(entry, validations=validations, proposed=True)
+        baseline = baseline_model.predict(entry.text)
+        proposed = analyze(entry, validations=validations)
         detection_records.append(
             {
                 "sample_key": sample_key,
@@ -678,6 +690,9 @@ def run_command(args: argparse.Namespace) -> None:
         java_home=args.java_home,
         use_joern=not args.no_joern,
         resume=not args.refresh,
+        codebert_path=args.codebert_path,
+        codebert_threshold=args.codebert_threshold,
+        codebert_device=args.codebert_device,
     )
     evaluate(args.detections, args.oracle, args.table, args.summary)
 
@@ -722,6 +737,17 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--detections", default="results/detections.jsonl")
     run.add_argument("--table", default="results/results.csv")
     run.add_argument("--summary", default="results/summary.md")
+    run.add_argument(
+        "--codebert-path",
+        default="/home/PublicData/PHY-data/resource/codebert",
+        help="local fine-tuned CodeBERT sequence-classification checkpoint",
+    )
+    run.add_argument("--codebert-threshold", type=float, default=0.5)
+    run.add_argument(
+        "--codebert-device",
+        default="auto",
+        help="auto, cpu, cuda, cuda:0, etc.",
+    )
     run.add_argument("--joern-dir", default="/home/phy/joern")
     run.add_argument(
         "--java-home",
