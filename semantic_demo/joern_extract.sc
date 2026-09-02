@@ -5,7 +5,13 @@ import scala.collection.mutable.ArrayBuffer
 import io.shiftleft.semanticcpg.language._
 import io.joern.dataflowengineoss.language._
 
-@main def exec(sourceFile: String, outFile: String, functionName: String, functionLine: Int) = {
+@main def exec(
+  sourceFile: String,
+  outFile: String,
+  functionName: String,
+  functionStartLine: Int,
+  functionEndLine: Int
+) = {
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
@@ -15,12 +21,21 @@ import io.joern.dataflowengineoss.language._
     importCode.c.fromString(code)
     run.ossdataflow
 
-    val methods = cpg.method.nameExact(functionName).l
-      .filter(_.lineNumber.contains(functionLine))
+    val methods = cpg.method.nameExact(functionName).l.filter { method =>
+      method.lineNumber.exists { line =>
+        line >= functionStartLine && line <= functionEndLine
+      }
+    }
     if (methods.isEmpty) {
-      lines += ("ERROR\tmethod_not_found:" + clean(functionName) + "@" + functionLine)
+      lines += (
+        "ERROR\tmethod_not_found:" + clean(functionName) + "@" +
+        functionStartLine + "-" + functionEndLine
+      )
     } else if (methods.size != 1) {
-      lines += ("ERROR\tambiguous_method:" + clean(functionName) + "@" + functionLine)
+      lines += (
+        "ERROR\tambiguous_method:" + clean(functionName) + "@" +
+        functionStartLine + "-" + functionEndLine
+      )
     } else {
       val method = methods.head
       val params = method.parameter.l
