@@ -77,6 +77,20 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
     return operations
 
 
+def _direct_ast_operations(entry: FunctionSource) -> list[Operation]:
+    return [
+        Operation(
+            access.kind,
+            "AST_SUBSCRIPT",
+            access.buffer,
+            access.extent,
+            access.line,
+            False,
+        )
+        for access in entry.direct_memory_accesses()
+    ]
+
+
 def _custom_operations(
     entry: FunctionSource, validations: Iterable[Validation]
 ) -> list[Operation]:
@@ -141,6 +155,7 @@ def analyze(
     validations: Iterable[Validation] = (),
 ) -> Verdict:
     operations = _standard_operations(entry)
+    operations.extend(_direct_ast_operations(entry))
     operations.extend(_custom_operations(entry, validations))
 
     constraint_result = reason_memory_safety(entry, operations)
