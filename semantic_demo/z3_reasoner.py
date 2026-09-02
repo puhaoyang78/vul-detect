@@ -199,33 +199,6 @@ class ExpressionEncoder:
         return result
 
 
-def _integer_domains(entry: FunctionSource) -> tuple[set[str], set[str]]:
-    signed: set[str] = set()
-    unsigned: set[str] = set()
-
-    for parameter, declaration in zip(entry.parameters, entry.parameter_types):
-        compact = normalize_expression(declaration)
-        if re.search(r"\b(?:unsigned|size_t|uint\d+_t)\b", declaration):
-            unsigned.add(parameter)
-        elif re.search(r"\b(?:signed|int|short|ssize_t|long|int\d+_t)\b", declaration):
-            signed.add(parameter)
-
-    # Local declaration classification is intentionally limited to explicit
-    # integer spellings. Unknown typedefs remain unclassified rather than guessed.
-    for match in re.finditer(
-        r"\b((?:unsigned\s+)?(?:char|short|int|long(?:\s+long)?)|"
-        r"size_t|ssize_t|u?int\d+_t)\s+([A-Za-z_][A-Za-z0-9_]*)",
-        entry.text,
-    ):
-        declaration, name = match.groups()
-        if re.search(r"\b(?:unsigned|size_t|uint\d+_t)\b", declaration):
-            unsigned.add(name)
-            signed.discard(name)
-        elif name != entry.name:
-            signed.add(name)
-            unsigned.discard(name)
-    return signed, unsigned
-
 
 def _uppercase_symbols(expression: str) -> set[str]:
     return {
@@ -412,6 +385,23 @@ def _check_access(
         solver, encoder, entry, line, operations, unsigned
     )
     conditions: list[VerificationCondition] = []
+
+    base, _ = _buffer_base_and_offset(buffer_text)
+    local_array = next(
+        (array for array in entry.local_arrays() if array.name == base),
+        None,
+    )
+    if local_array is not None and local_array.byte_capacity is not None:
+        try:
+            solver.add(
+                encoder.equality(
+                    f"sizeof({base})",
+                    local_array.byte_capacity,
+                )
+            )
+        except Exception:
+            pass
+
     if incomplete_paths:
         return AccessCheck(
             kind,
@@ -672,7 +662,7 @@ def reason_memory_safety(
 ) -> ConstraintResult:
     operations = list(operations)
     capacities = _collect_capacity_relations(entry, operations)
-    signed, unsigned = _integer_domains(entry)
+    signed, unsigned = entry.integer_domains()
 
     if entry.parse_has_error:
         return ConstraintResult(
