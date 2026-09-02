@@ -8,10 +8,17 @@ from typing import Iterable
 
 from tree_sitter import Language, Node, Parser
 import tree_sitter_c
+import tree_sitter_cpp
 
 
-_LANGUAGE = Language(tree_sitter_c.language())
-_PARSER = Parser(_LANGUAGE)
+_C_PARSER = Parser(Language(tree_sitter_c.language()))
+_CPP_PARSER = Parser(Language(tree_sitter_cpp.language()))
+_SOURCE_EXTENSIONS = (".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx")
+
+
+def _parser_for_path(path: str) -> Parser:
+    suffix = Path(path).suffix.lower()
+    return _CPP_PARSER if suffix in {".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"} else _C_PARSER
 
 
 @dataclass(frozen=True)
@@ -20,6 +27,7 @@ class Call:
     arguments: tuple[str, ...]
     line: int
     result: str | None = None
+    returned: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,12 +51,15 @@ class FunctionSource:
     path: str
     name: str
     text: str
+    translation_unit: str
     parameters: tuple[str, ...]
     parameter_types: tuple[str, ...]
+    parameter_pointer_like: tuple[bool, ...]
     start_line: int
+    parse_has_error: bool = False
 
     def calls(self) -> list[Call]:
-        tree = _PARSER.parse(self.text.encode())
+        tree = _parser_for_path(self.path).parse(self.text.encode())
         return _calls(tree.root_node, self.text.encode(), self.start_line)
 
     def value_relations_before(self, line: int) -> list[tuple[str, str]]:
@@ -108,19 +119,18 @@ class GitRepository:
         if cache_key in self._function_cache:
             return self._function_cache[cache_key]
 
-        pattern = rf"(^|[^A-Za-z0-9_]){re.escape(name)}[[:space:]]*\("
-        args = ["grep", "-l", "-E", pattern, self.revision, "--"]
-        args.extend(scope_tuple or ("*.c", "*.h"))
+        args = ["grep", "-l", "-F", name, self.revision, "--"]
+        args.extend(scope_tuple or tuple(f"*{ext}" for ext in _SOURCE_EXTENSIONS))
         result = self._git(*args, check=False)
         paths: list[str] = []
         prefix = f"{self.revision}:"
         for line in result.stdout.splitlines():
             path = line[len(prefix) :] if line.startswith(prefix) else line
-            if path.endswith((".c", ".h")):
+            if path.lower().endswith(_SOURCE_EXTENSIONS):
                 paths.append(path)
 
         matches: list[FunctionSource] = []
-        for path in sorted(set(paths))[:40]:
+        for path in sorted(set(paths)):
             try:
                 matches.extend(
                     function
@@ -137,11 +147,20 @@ class GitRepository:
     ) -> FunctionSource | None:
         if preferred_path:
             try:
-                for function in parse_functions(preferred_path, self.read_blob(preferred_path)):
-                    if function.name == name:
-                        return function
+                preferred = [
+                    function
+                    for function in parse_functions(
+                        preferred_path, self.read_blob(preferred_path)
+                    )
+                    if function.name == name
+                ]
+                if len(preferred) == 1:
+                    return preferred[0]
+                if len(preferred) > 1:
+                    return None
             except subprocess.CalledProcessError:
                 pass
+
         functions = self.find_functions(name, scopes)
         if not functions:
             return None
@@ -151,9 +170,11 @@ class GitRepository:
                 for item in functions
                 if Path(item.path).parent == Path(preferred_path).parent
             ]
-            if same_directory:
+            if len(same_directory) == 1:
                 return same_directory[0]
-        return functions[0]
+            if len(same_directory) > 1:
+                return None
+        return functions[0] if len(functions) == 1 else None
 
 
 def _text(node: Node, source: bytes) -> str:
@@ -195,34 +216,45 @@ def _function_name(node: Node, source: bytes) -> str | None:
     return _identifier(declarator, source)
 
 
-def _parameters(node: Node, source: bytes) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def _parameters(
+    node: Node, source: bytes
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[bool, ...]]:
     declarator = node.child_by_field_name("declarator")
     if declarator is None:
-        return (), ()
+        return (), (), ()
     function_decl = next(
         (item for item in _walk(declarator) if item.type == "function_declarator"), None
     )
     if function_decl is None:
-        return (), ()
+        return (), (), ()
     parameter_list = function_decl.child_by_field_name("parameters")
     if parameter_list is None:
-        return (), ()
+        return (), (), ()
     names: list[str] = []
     types: list[str] = []
+    pointer_like: list[bool] = []
     for child in parameter_list.named_children:
-        if child.type != "parameter_declaration":
+        if child.type not in {"parameter_declaration", "optional_parameter_declaration"}:
             continue
-        name = _identifier(child.child_by_field_name("declarator"), source)
+        parameter_decl = child.child_by_field_name("declarator")
+        name = _identifier(parameter_decl, source)
         if not name:
             continue
         names.append(name)
         types.append(_text(child, source))
-    return tuple(names), tuple(types)
+        pointer_like.append(
+            parameter_decl is not None
+            and any(
+                item.type in {"pointer_declarator", "array_declarator", "reference_declarator"}
+                for item in _walk(parameter_decl)
+            )
+        )
+    return tuple(names), tuple(types), tuple(pointer_like)
 
 
 def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
     source = source_text.encode()
-    tree = _PARSER.parse(source)
+    tree = _parser_for_path(path).parse(source)
     functions: list[FunctionSource] = []
     for node in _walk(tree.root_node):
         if node.type != "function_definition":
@@ -230,15 +262,18 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
         name = _function_name(node, source)
         if not name:
             continue
-        parameters, types = _parameters(node, source)
+        parameters, types, pointer_like = _parameters(node, source)
         functions.append(
             FunctionSource(
                 path=path,
                 name=name,
                 text=_text(node, source),
+                translation_unit=source_text,
                 parameters=parameters,
                 parameter_types=types,
+                parameter_pointer_like=pointer_like,
                 start_line=node.start_point.row + 1,
+                parse_has_error=bool(node.has_error),
             )
         )
     return functions
@@ -340,12 +375,17 @@ def _callee_name(node: Node | None, source: bytes) -> str | None:
     return None
 
 
-def _call_result(node: Node, source: bytes) -> str | None:
+def _call_context(node: Node, source: bytes) -> tuple[str | None, bool]:
     current = node
-    for _ in range(4):
+    result: str | None = None
+    returned = False
+    while True:
         parent = current.parent
         if parent is None:
-            return None
+            break
+        if parent.type == "return_statement":
+            returned = True
+            break
         if parent.type == "assignment_expression":
             right = parent.child_by_field_name("right")
             left = parent.child_by_field_name("left")
@@ -353,7 +393,8 @@ def _call_result(node: Node, source: bytes) -> str | None:
                 right.start_byte <= current.start_byte
                 and current.end_byte <= right.end_byte
             ):
-                return _text(left, source)
+                result = _text(left, source)
+                break
         if parent.type == "init_declarator":
             value = parent.child_by_field_name("value")
             declarator = parent.child_by_field_name("declarator")
@@ -361,12 +402,12 @@ def _call_result(node: Node, source: bytes) -> str | None:
                 value.start_byte <= current.start_byte
                 and current.end_byte <= value.end_byte
             ):
-                name = _identifier(declarator, source)
-                return name or _text(declarator, source)
-        if parent.type in {"expression_statement", "return_statement", "argument_list"}:
-            return None
+                result = _identifier(declarator, source) or _text(declarator, source)
+                break
+        if parent.type in {"expression_statement", "argument_list"}:
+            break
         current = parent
-    return None
+    return result, returned
 
 
 def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
@@ -379,12 +420,14 @@ def _calls(node: Node, source: bytes, line_offset: int) -> list[Call]:
         if not name or arguments_node is None:
             continue
         arguments = tuple(_text(arg, source) for arg in arguments_node.named_children)
+        result, returned = _call_context(item, source)
         calls.append(
             Call(
                 name=name,
                 arguments=arguments,
                 line=line_offset + item.start_point.row,
-                result=_call_result(item, source),
+                result=result,
+                returned=returned,
             )
         )
     return calls
