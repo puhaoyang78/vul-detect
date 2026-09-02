@@ -214,6 +214,8 @@ def _normalization_cache(path: str | Path) -> dict[tuple[str, str, str, str], di
         return {}
     cache: dict[tuple[str, str, str, str], dict[str, object]] = {}
     for record in read_jsonl(target):
+        if record.get("schema_version") != NORMALIZATION_SCHEMA_VERSION:
+            continue
         fingerprint = str(record.get("source_fingerprint", ""))
         key = (
             str(record.get("sample_key", "")),
