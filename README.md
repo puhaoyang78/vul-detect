@@ -1,144 +1,237 @@
-# C/C++ 跨过程内存安全语义 Demo
+# Function-Level C/C++ Memory-Safety Verification Demo
 
-该 Demo 面向函数级 C/C++ 内存安全检测，目标不是给大模型更多原始代码，而是恢复并验证
-目标函数中缺失的跨过程安全语义，再将这些语义转化为可求解的程序约束。
+该项目面向函数级 C/C++ 源码漏洞检测。Repository 仅作为跨过程上下文来源，最终预测单元始终是目标函数。
 
-当前安全语义包括 ALLOC、READ、WRITE、GUARD 和 VALUE。LLM 只负责把项目自定义函数
-归一化成固定语义；它不直接判断漏洞。Joern 用于验证参数角色和数据流；Z3 用于求解
-Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
+Baseline 使用官方 LineVul 函数级模型。Proposed 不使用漏洞启发式规则；正式主流程固定为：
 
-检测输入为 data/detection_samples.jsonl，其中不含 CVE、fixing commit、补丁、漏洞描述
-或人工结论。data/oracle.jsonl 只在检测结果落盘之后用于评估。
+    target function + repository revision
+        -> repository-resolved call graph
+        -> LLM semantic normalization
+        -> Joern data-flow validation
+        -> validated ALLOC / READ / WRITE / VALUE effects
+        -> Tree-sitter path / reaching-definition facts
+        -> per-access Verification Conditions
+        -> Z3
+        -> VULNERABLE / UNKNOWN
 
-Baseline 使用 LineVul 的函数级漏洞分类模型，只读取目标函数源码。实现兼容官方 RQ1 设置：
-以 CodeBERT 为 encoder/tokenizer、block size 512、12 attention heads、阈值 0.5，并加载官方
-12heads_linevul_model.bin checkpoint。默认 CodeBERT base 位于
-/home/PublicData/PHY-data/resource/codebert-base，LineVul checkpoint 位于
-/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin。
-Proposed 不复用任何 baseline 启发式判定规则，所有漏洞结论均来自统一的
-memory-effect / constraint / VC 路径。
+LLM 不直接判断漏洞。Joern 负责验证自定义函数摘要是否由真实数据流和明确标准 API 支撑；
+Z3 只对已经结构化并可可靠编码的程序事实求解。无法可靠恢复的事实统一进入 UNKNOWN，
+不会通过函数名、变量名、正则漏洞模式或自由符号反例补全。
 
-## 当前分析流程
+## Baseline
 
-1. **Selective semantic frontier**
-   - 目标函数中的项目自定义直接调用构成初始语义前沿。
-   - 若候选函数已经直接接触标准内存 primitive，则在该处停止继续展开。
-   - 只有当函数尚未暴露可验证内存行为时，才沿“参数继续传递给子调用”或“子调用结果继续返回”的调用链扩展。
-   - 该策略不依赖固定 hop，也不构建整个可达调用图，从而减少无关函数和 LLM 调用。
+LineVul 只读取目标函数源码：
 
-2. **Semantic normalization**
-   - LLM 每次只读取一个候选函数。
-   - 输出固定 ALLOC / READ / WRITE / GUARD / VALUE JSON。
-   - READ/WRITE 明确区分 source、destination 和 length 参数角色。
+    CodeBERT base:
+      /home/PublicData/PHY-data/resource/codebert-base
 
-3. **Compositional static validation**
-   - 直接接触 malloc/memcpy/read/recv/write/send 等标准 primitive 的摘要由 Joern 验证。
-   - 已验证摘要作为下一层函数的语义模型。
-   - 父函数摘要可由“已验证子摘要 + caller-to-callee 参数映射”组合验证。
-   - 采用 fixed-point 迭代直到没有新的摘要能够通过验证，因此支持 wrapper -> wrapper -> primitive。
+    Official LineVul checkpoint:
+      /home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin
 
-4. **Program-constraint extraction**
-   - Tree-sitter AST 直接提取数组下标访问，并统一为显式 READ/WRITE memory access。
-   - 局部数组容量只从 declaration -> array_declarator 恢复，普通 buf[i] 访问不会再污染对象容量。
-   - 数组下标使用 element capacity；memcpy/read/write 等字节访问使用 byte capacity，二者不混用。
-   - Tree-sitter AST 提取赋值/初始化得到 Value Constraint。
-   - AST 提取 early-exit 分支以及 enclosing for/while/do 条件在访问点成立的 Path Constraint。
-   - 分配返回值和局部数组提供显式 buffer capacity。
-   - 若缺少显式 capacity，但支配访问的边界条件约束了与访问长度存在数据依赖的值，则推导
-     guard-derived access bound；该过程基于数据依赖，不依赖 buflen/size/capacity 等变量名。
+默认 block size 为 512，函数级阈值为 0.5。
 
-5. **Per-access bounds verification**
-   - 每一个 READ/WRITE 单独生成 Verification Condition。
-   - memcpy/memmove 同时建模 destination WRITE 与 source READ。
-   - 典型条件包括 extent >= 0、extent <= capacity、offset + extent <= capacity。
-   - Z3 为每个已建模 memory access 单独返回 SAFE / POTENTIAL_VIOLATION / UNKNOWN。
-   - POTENTIAL_VIOLATION 表示当前已知 Path/Value Constraints 下存在违反 VC 的满足解；
-     UNKNOWN 表示缺少 capacity、valid extent、完整 access coverage 或无法可靠编码的关系。
-   - 未支持的函数表达式不会作为自由整数交给求解器；min/max 具有显式语义。
-   - 未约束的 signed 参数值域不会仅凭 SAT 反例直接判漏洞，而是标记为 UNKNOWN。
-   - strcpy/strcat 被转换为显式 READ/WRITE 语义；无法可靠恢复字符串长度时保持 UNKNOWN。
-   - 在尚未证明完整函数级 memory-access coverage 前，不把“当前已分析 access 全部 SAFE”
-     提升为函数级 SAFE。
+## Proposed 主流程
 
-## 环境
+### 1. Repository call-graph discovery
 
-安装 Python 依赖：
+- Tree-sitter 从目标函数开始提取项目调用。
+- 标准 API 是明确 leaf，不依赖函数名相似度判断。
+- 自定义调用通过 repository revision 中的真实函数定义解析。
+- 同名定义无法唯一绑定时不猜测。
+- 不再使用固定 hop、函数名 hints、read/copy/alloc family rule。
+- 候选数存在显式资源上限；超过上限直接终止该样本分析，不静默截断。
+
+### 2. Semantic normalization
+
+LLM 只允许输出四种 schema：
+
+    ALLOC(return, size)
+    READ(buffer, length)
+    WRITE(buffer, length)
+    VALUE(return, expression)
+
+GUARD 已从跨过程 schema 删除。单独“某函数内部存在一个比较”不能安全推出 caller 上的
+后置条件，因此在没有明确 return contract 前不传播。
+
+Normalization 输出带 schema version。旧 schema、旧 prompt 或旧缓存不会被新主流程静默复用。
+函数过长超过显式 LLM source budget 时直接报错，不做静默字符截断。
+
+### 3. Joern validation
+
+- Joern 是正式流程必需组件，没有 lightweight fallback。
+- 验证基于明确标准 API 的参数角色或已经验证的 callee summary composition。
+- 不再根据 custom API 名称中是否包含 read、recv、send、copy、alloc、parse 等词猜角色。
+- GUARD/VALUE 不再通过 substring 匹配。
+- VALUE 只接受精确 return expression 或直接 parameter-to-return data flow。
+- Joern 使用候选函数所在的完整 translation unit，而不是只把函数体写成孤立 candidate.c。
+- 同一 translation unit 中方法名无法唯一解析时拒绝该验证结果。
+
+### 4. Source parsing and access recovery
+
+Tree-sitter 根据文件语言选择 C 或 C++ parser：
+
+    C:   .c / C-style .h
+    C++: .cc / .cpp / .cxx / .hh / .hpp / .hxx
+
+.h 文件会比较 C/C++ 解析错误数量后选择更合适的 parser。
+
+直接 memory access 当前包括：
+
+- array subscript: a[i]
+- pointer dereference: *p
+- 明确标准 memory API
+
+局部数组容量只来自 AST declaration -> array_declarator。
+普通 a[i] 访问不会反向污染对象容量。多维数组在当前轻量 shape model 无法可靠建模时不发布
+错误的 1-D capacity。
+
+### 5. Object capacity and units
+
+- AST subscript / dereference 使用 element capacity。
+- memcpy/read/write 等 API 使用 byte capacity。
+- 二者不混用。
+- 只有类型拼写本身能确定字节宽度时才计算 byte capacity，例如 char、uint8_t、uint16_t、
+  uint32_t、uint64_t。
+- ABI 相关的 int、short、long、double、struct 等不会硬编码大小。
+- heap allocation 不再通过字符串正则猜 element count。
+- 无法确定的 sizeof、宏常量或 object bound 直接 UNKNOWN。
+
+### 6. Path and value facts
+
+Path Constraint 只加入结构上必然在访问点成立的条件：
+
+- access 所在 if/else 分支条件；
+- enclosing for/while/do 条件；
+- 只有分支所有路径都 return 时，才对后续访问加入该条件的反条件。
+
+break、goto、块中“存在一个 return”都不会被错误解释成函数路径终止。
+
+Value Constraint 使用保守 reaching-definition：
+
+- 只保留访问点可达顺序块中的简单支配定义；
+- 同一变量保留最后一个顺序定义；
+- sibling branch / loop 中的赋值不与主路径定义混合；
+- 不再把函数中所有历史 assignment 一起塞入 Z3。
+
+Validated VALUE summary 会在 caller 中形成真实 result = expression 等式。
+
+### 7. Solver boundary
+
+Z3 采用 per-access Verification Condition：
+
+    extent >= 0
+    extent <= capacity
+    offset + extent <= capacity
+
+但只有当前模型能可靠表示相关事实时才求解。
+
+以下情况直接 UNKNOWN：
+
+- parser error；
+- unknown object capacity / valid extent；
+- unresolved compile-time macro or sizeof；
+- unsupported expression；
+- 未建模的 C integer overflow / wraparound arithmetic；
+- signed parameter domain 缺失；
+- reaching definition 无法可靠编码；
+- path constraint 无法可靠编码；
+- access coverage 尚不完整。
+
+未知事实不会作为任意 free integer 用于制造 SAT counterexample。
+
+函数级 Proposed 当前是 selective verifier：
+
+    任一 access 有可信 POTENTIAL_VIOLATION -> VULNERABLE
+    否则 -> UNKNOWN
+
+在尚未证明完整 function-level memory-access coverage 前，不输出 SAFE_FUNCTION。
+
+## Standard effects
+
+当前只对参数角色和访问范围足够明确的标准 API 建模，包括 malloc/calloc/realloc、
+memcpy/memmove/memset、read/recv/recvfrom/fread、write/send/sendto/fwrite、memcmp 等。
+
+memcpy/memmove 同时生成 destination WRITE 与 source READ。
+memcmp 同时生成两个 source READ。
+
+strcpy/strcat 只在能够恢复长度表达式时生成结构化 effect；动态 strlen 无法编码时保持 UNKNOWN。
+sprintf/vsprintf 不再使用“出现即漏洞”的规则，无法可靠得到输出长度时保持 UNKNOWN。
+
+## Environment
+
+安装依赖：
 
     python -m pip install -r requirements.txt
 
-默认使用：
+默认路径：
 
     Joern: /home/phy/joern
     JDK: /home/phy/jdk21
     llama.cpp: /home/phy/llama.cpp/build/bin/llama-server
     Qwen: /home/phy/models/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MXFP4_MOE.gguf
-    LineVul CodeBERT base: /home/PublicData/PHY-data/resource/codebert-base
-    LineVul checkpoint: /home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin
 
-## 推荐运行顺序
+## Running
 
-先运行单元测试：
+先运行测试：
 
     python -m unittest discover -s tests -v
 
-生成 semantic normalization。默认会复用同一 sample/path/function 的已有摘要，
-只对 selective frontier 中新增的函数调用 LLM。每完成一个候选函数就原子保存，
-中断后重新执行同一命令会从未完成的候选继续：
+由于 semantic schema 已更新，第一次必须重新生成 normalization：
 
-    python -m semantic_demo.cli normalize --normalizer llm
+    python -m semantic_demo.cli normalize --refresh
 
-如需忽略缓存、强制重新生成全部摘要：
+默认使用本地 Qwen。外部 OpenAI-compatible API：
 
-    python -m semantic_demo.cli normalize --normalizer llm --refresh
+    python -m semantic_demo.cli normalize --llm-backend api --refresh
 
-然后重新执行 LineVul baseline、Joern fixed-point validation 和 Z3 bounds verification：
-
-    python -m semantic_demo.cli run --joern-dir /home/phy/joern
-
-如 LineVul 模型不在默认目录：
-
-    python -m semantic_demo.cli run \
-      --joern-dir /home/phy/joern \
-      --linevul-codebert-path /path/to/codebert-base \
-      --linevul-checkpoint /path/to/12heads_linevul_model.bin
-
-Joern 验证每完成一个样本就保存检查点。重新执行同一命令时，输入指纹一致的样本会
-直接复用。需要忽略现有检查点并从 S01 重新运行时使用：
+然后运行 LineVul、Joern validation 和 Proposed verifier：
 
     python -m semantic_demo.cli run --joern-dir /home/phy/joern --refresh
 
-只有需要外部 OpenAI-compatible API 时才显式指定：
+后续输入 fingerprint 未变化时可以去掉 --refresh 复用检查点。
 
-    python -m semantic_demo.cli normalize --normalizer llm --llm-backend api
+## Evaluation
 
-## 实现
+detection manifest 不包含 CVE、fix commit、patch、mechanism 或 ground truth。
+oracle 只在 detection 结果已经落盘后用于评估。
+
+LineVul 仍按普通 binary classifier 统计。
+
+Proposed 单独报告：
+
+- TP / FP / TN / FN
+- UNKNOWN vulnerable
+- UNKNOWN benign
+- Precision
+- global Recall
+- F1
+- decided-sample Accuracy
+- Coverage / abstention
+
+UNKNOWN 不再自动折算成 benign。
+
+## Files
 
 - semantic_demo/source.py
-  Tree-sitter 函数/调用解析、调用返回值绑定、AST Path/Value Constraint 提取。
+  - C/C++ Tree-sitter parsing
+  - repository function resolution
+  - calls / direct accesses
+  - local arrays
+  - structural path facts
+  - reaching definitions
 - semantic_demo/semantics.py
-  memory-semantic call-graph closure、LLM normalization、Joern role-sensitive validation、
-  compositional fixed-point summary validation。
+  - LLM normalization
+  - schema validation
+  - Joern-backed semantic validation
+  - unique callee composition
 - semantic_demo/joern.py / joern_extract.sc
-  CPG、参数到调用角色的数据流、比较和返回关系。
-- semantic_demo/linevul_baseline.py
-  独立函数级 LineVul baseline，仅使用目标函数源码。
+  - full-translation-unit CPG/data-flow facts
 - semantic_demo/analyzer.py
-  标准内存操作与验证后的跨过程语义统一传播到目标函数，不包含漏洞启发式规则。
+  - standard + validated custom effects
+  - no vulnerability heuristics
 - semantic_demo/z3_reasoner.py
-  per-memory-access Verification Condition 生成与 Z3 求解。
+  - conservative object-bound and VC reasoning
+- semantic_demo/linevul_baseline.py
+  - independent LineVul function-level baseline
 - semantic_demo/cli.py
-  完整运行流程、结果落盘以及与 oracle 的隔离评估。
-
-## 输出
-
-- results/validated_semantics.jsonl：每条摘要的验证结果。
-- results/detections.jsonl：逐样本操作、逐访问 Z3 结果和最终 verdict。
-- results/results.csv：包含 Z3 status、Verification Conditions 和 counterexample model。
-- results/summary.md：整体结果摘要。
-
-results/ 目录中的既有数字不适用于当前 LineVul baseline 与统一 VC 推理版本。
-修改方法实现后应重新运行 run（必要时使用 --refresh）再评价结果。
-
-Z3 中 Path Constraint 与 buffer capacity 已严格分离。Guard 只作为路径约束；
-当缺少显式 capacity 时，只有 guarded value 与实际 access extent 之间存在可编码的
-def-use 数值关系，才会生成 guard-coverage VC。Guard 的右值不会再被解释成对象容量。
+  - normalization, validation, detection, checkpointing and isolated evaluation
