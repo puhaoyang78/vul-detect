@@ -183,7 +183,7 @@ def local_llm_server(
                 "api_key": "local",
                 "base_url": f"http://127.0.0.1:{port}/v1",
                 "model": model.stem,
-                "max_tokens": 256,
+                "max_tokens": 512,
                 "disable_proxy": True,
                 "response_schema": NORMALIZATION_RESPONSE_SCHEMA,
             }
