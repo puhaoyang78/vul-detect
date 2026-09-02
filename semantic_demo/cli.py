@@ -23,7 +23,6 @@ from .semantics import (
     NORMALIZATION_SCHEMA_VERSION,
     NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
-    candidate_validation_error,
     discover_candidates,
     llm_normalize,
     load_replay,
@@ -41,7 +40,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 8
+ANALYSIS_CHECKPOINT_VERSION = 9
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -184,7 +183,7 @@ def local_llm_server(
                 "api_key": "local",
                 "base_url": f"http://127.0.0.1:{port}/v1",
                 "model": model.stem,
-                "max_tokens": 2048,
+                "max_tokens": 256,
                 "disable_proxy": True,
                 "response_schema": NORMALIZATION_RESPONSE_SCHEMA,
             }
@@ -313,7 +312,11 @@ def normalize_command(args: argparse.Namespace) -> None:
                     candidate.function.start_line,
                     fingerprint,
                 )
-                skip_reason = candidate_validation_error(candidate.function)
+                skip_reason = (
+                    "candidate function contains parser error nodes"
+                    if candidate.function.parse_has_error
+                    else None
+                )
                 cached = cache.get(cache_key)
                 if (
                     skip_reason is None
