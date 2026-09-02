@@ -116,6 +116,8 @@ class JoernValidator:
                 f"outFile={output_path}",
                 "--param",
                 f"functionName={candidate.function.name}",
+                "--param",
+                f"functionLine={candidate.function.start_line}",
             ]
             environment = os.environ.copy()
             environment["JAVA_HOME"] = str(self.java_home)
