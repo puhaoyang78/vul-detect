@@ -34,6 +34,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual("/home/phy/joern", args.joern_dir)
         self.assertEqual("/home/phy/jdk21", args.java_home)
         self.assertFalse(args.no_joern)
+        self.assertFalse(args.refresh)
 
 
 if __name__ == "__main__":

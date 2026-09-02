@@ -64,7 +64,8 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
     python -m unittest discover -s tests -v
 
 生成 semantic normalization。默认会复用同一 sample/path/function 的已有摘要，
-只对 selective frontier 中新增的函数调用 LLM：
+只对 selective frontier 中新增的函数调用 LLM。每完成一个候选函数就原子保存，
+中断后重新执行同一命令会从未完成的候选继续：
 
     python -m semantic_demo.cli normalize --normalizer llm
 
@@ -75,6 +76,11 @@ Verification Condition（VC）、Path Constraint 和 Bounds Constraint。
 然后重新执行 Joern fixed-point validation 和 Z3 bounds verification：
 
     python -m semantic_demo.cli run --joern-dir /home/phy/joern
+
+Joern 验证每完成一个样本就保存检查点。重新执行同一命令时，输入指纹一致的样本会
+直接复用。需要忽略现有检查点并从 S01 重新运行时使用：
+
+    python -m semantic_demo.cli run --joern-dir /home/phy/joern --refresh
 
 只有需要外部 OpenAI-compatible API 时才显式指定：
 

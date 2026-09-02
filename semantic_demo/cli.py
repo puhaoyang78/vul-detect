@@ -38,6 +38,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
+ANALYSIS_CHECKPOINT_VERSION = 1
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -56,9 +57,25 @@ def read_jsonl(path: str | Path) -> list[dict[str, object]]:
 def write_jsonl(path: str | Path, records: Iterable[dict[str, object]]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            for record in records:
+                handle.write(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                )
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, target)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 
 def validate_detection_manifest(samples: list[dict[str, object]]) -> None:
@@ -205,11 +222,49 @@ def _normalization_cache(path: str | Path) -> dict[tuple[str, str, str, str], di
     return cache
 
 
+def _analysis_fingerprint(
+    sample: dict[str, object],
+    entry,
+    candidates,
+    replay: dict[tuple[str, str, str], list[dict[str, str]]],
+    backend: str,
+    joern_timeout: int | None,
+) -> str:
+    candidate_inputs = []
+    sample_key = str(sample["sample_key"])
+    for candidate in candidates:
+        replay_key = (
+            sample_key,
+            candidate.function.path,
+            candidate.function.name,
+        )
+        candidate_inputs.append(
+            {
+                "source_path": candidate.function.path,
+                "function": candidate.function.name,
+                "source_fingerprint": _candidate_fingerprint(candidate),
+                "summaries": replay.get(replay_key, []),
+            }
+        )
+    payload = {
+        "checkpoint_version": ANALYSIS_CHECKPOINT_VERSION,
+        "sample": sample,
+        "entry_source": hashlib.sha256(entry.text.encode()).hexdigest(),
+        "candidates": candidate_inputs,
+        "backend": backend,
+        "joern_timeout": joern_timeout,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def normalize_command(args: argparse.Namespace) -> None:
     samples = read_jsonl(args.samples)
     validate_detection_manifest(samples)
     records: list[dict[str, object]] = []
     cache = {} if args.refresh else _normalization_cache(args.output)
+    if args.refresh:
+        write_jsonl(args.output, [])
     reused = 0
     generated = 0
     if args.normalizer == "llm" and args.llm_backend == "local":
@@ -278,24 +333,30 @@ def normalize_command(args: argparse.Namespace) -> None:
                         "normalization failed"
                     ) from error
                 generated += 1
-                records.append(
-                    {
-                        "sample_key": candidate.sample_key,
-                        "source_path": candidate.function.path,
-                        "function": candidate.function.name,
-                        "parameters": list(candidate.function.parameters),
-                        "source_fingerprint": fingerprint,
-                        "normalizer": args.normalizer,
-                        "llm_backend": (
-                            args.llm_backend if args.normalizer == "llm" else None
-                        ),
-                        "llm_model": (
-                            llm_options.get("model")
-                            if args.normalizer == "llm"
-                            else None
-                        ),
-                        "summaries": summaries,
-                    }
+                record = {
+                    "sample_key": candidate.sample_key,
+                    "source_path": candidate.function.path,
+                    "function": candidate.function.name,
+                    "parameters": list(candidate.function.parameters),
+                    "source_fingerprint": fingerprint,
+                    "normalizer": args.normalizer,
+                    "llm_backend": (
+                        args.llm_backend if args.normalizer == "llm" else None
+                    ),
+                    "llm_model": (
+                        llm_options.get("model")
+                        if args.normalizer == "llm"
+                        else None
+                    ),
+                    "summaries": summaries,
+                }
+                records.append(record)
+                cache[cache_key] = record
+                write_jsonl(args.output, cache.values())
+                print(
+                    f"normalize_candidate_done={candidate.sample_key}:"
+                    f"{candidate.function.name} checkpoint={args.output}",
+                    flush=True,
                 )
     write_jsonl(args.output, records)
     print(
@@ -312,6 +373,7 @@ def detect(
     joern_dir: str = "/home/phy/joern",
     java_home: str = "/home/phy/jdk21",
     use_joern: bool = True,
+    resume: bool = True,
 ) -> None:
     samples = read_jsonl(samples_path)
     validate_detection_manifest(samples)
@@ -321,6 +383,14 @@ def detect(
         joern.ensure_available()
     semantic_records: list[dict[str, object]] = []
     detection_records: list[dict[str, object]] = []
+    detection_cache = (
+        {
+            str(record["sample_key"]): record
+            for record in read_jsonl(detections_path)
+        }
+        if resume and Path(detections_path).is_file()
+        else {}
+    )
 
     backend = "joern" if use_joern else "lightweight"
     print(f"validation_start samples={len(samples)} backend={backend}", flush=True)
@@ -339,12 +409,36 @@ def detect(
             for summary in replay.get(key, []):
                 summary_entries.append((candidate, summary))
 
+        analysis_fingerprint = _analysis_fingerprint(
+            sample,
+            entry,
+            candidates,
+            replay,
+            backend,
+            joern.timeout if joern is not None else None,
+        )
+
         summary_count = len(summary_entries)
         print(
             f"validate_sample={sample_index}/{len(samples)} sample={sample_key} "
             f"candidates={len(candidates)} summaries={summary_count}",
             flush=True,
         )
+
+        cached_detection = detection_cache.get(sample_key)
+        if (
+            cached_detection is not None
+            and cached_detection.get("analysis_fingerprint")
+            == analysis_fingerprint
+        ):
+            detection_records.append(cached_detection)
+            semantic_records.extend(
+                cached_detection.get("semantic_validations", [])
+            )
+            write_jsonl(detections_path, detection_records)
+            write_jsonl(semantics_path, semantic_records)
+            print(f"validate_sample_resumed={sample_key}", flush=True)
+            continue
 
         # Fixed-point validation: primitive-backed summaries seed the process;
         # wrapper summaries may then be validated from already accepted callees.
@@ -399,6 +493,7 @@ def detect(
         detection_records.append(
             {
                 "sample_key": sample_key,
+                "analysis_fingerprint": analysis_fingerprint,
                 "repository_git_dir": sample["repository_git_dir"],
                 "vulnerable_commit": sample["vulnerable_commit"],
                 "entry_path": entry.path,
@@ -417,6 +512,8 @@ def detect(
             f"rejected={sum(not item.passed for item in validations)}",
             flush=True,
         )
+        write_jsonl(detections_path, detection_records)
+        write_jsonl(semantics_path, semantic_records)
 
     write_jsonl(semantics_path, semantic_records)
     write_jsonl(detections_path, detection_records)
@@ -580,6 +677,7 @@ def run_command(args: argparse.Namespace) -> None:
         joern_dir=args.joern_dir,
         java_home=args.java_home,
         use_joern=not args.no_joern,
+        resume=not args.refresh,
     )
     evaluate(args.detections, args.oracle, args.table, args.summary)
 
@@ -633,6 +731,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-joern",
         action="store_true",
         help="use the lightweight fallback validator instead of Joern",
+    )
+    run.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore completed sample checkpoints and rerun all validation",
     )
     run.set_defaults(func=run_command)
     return parser
