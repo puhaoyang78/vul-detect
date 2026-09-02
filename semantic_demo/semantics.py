@@ -107,12 +107,19 @@ def discover_candidates(
         expanded.add(caller_key)
 
         for call in caller.calls():
+            if call.indirect:
+                continue
             if call.name in STANDARD_CALLS or call.name == caller.name:
                 continue
             callee = repository.find_function(
                 call.name, preferred_path=caller.path, scopes=scopes
             )
             if callee is None:
+                definitions = repository.find_functions(call.name, scopes)
+                if len(definitions) > 1:
+                    raise RuntimeError(
+                        f"{sample_key}: ambiguous repository binding for {call.name}"
+                    )
                 continue
             key = (callee.path, callee.name)
             existing = discovered.get(key)
@@ -242,18 +249,6 @@ def _normalized_return_expression(value: str) -> str:
     return compact
 
 
-def _comparison_variants(expression: str) -> set[str]:
-    compact = normalize_expression(expression)
-    match = re.match(r"^(.*?)(<=|>=|==|!=|<|>)(.*)$", compact)
-    if not match:
-        return {compact} if compact else set()
-    left, operator, right = match.groups()
-    reverse = {
-        "<=": ">=", ">=": "<=", "<": ">", ">": "<", "==": "==", "!=": "!="
-    }[operator]
-    return {compact, f"{right}{reverse}{left}"}
-
-
 def _validate_with_joern(
     candidate: Candidate,
     summary: dict[str, str],
@@ -380,7 +375,11 @@ def validate_summary(
     error = (
         "candidate function contains parser error nodes"
         if function.parse_has_error
-        else _schema_error(summary, len(function.parameters))
+        else (
+            "candidate function contains unresolved indirect calls"
+            if function.has_indirect_calls()
+            else _schema_error(summary, len(function.parameters))
+        )
     )
     clean_summary = canonicalize_summary(function, summary)
 
