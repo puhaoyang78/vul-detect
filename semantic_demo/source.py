@@ -237,6 +237,30 @@ class GitRepository:
             posixpath.join(posixpath.dirname(path), target)
         )
 
+    def _symlink_materialization_targets(
+        self,
+        path: str,
+        resolving: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
+        if path in resolving:
+            chain = " -> ".join([*resolving, path])
+            raise ValueError(f"repository symlink cycle: {chain}")
+        mode, object_type, _, _ = self._tree_entry(path)
+        if mode != "120000":
+            if mode == "160000" or object_type == "commit":
+                raise ValueError(
+                    f"repository submodule source is unavailable at {path}"
+                )
+            return ()
+        target = self._symlink_target(path)
+        return (
+            target,
+            *self._symlink_materialization_targets(
+                target,
+                (*resolving, path),
+            ),
+        )
+
     def materialization_paths(self, paths: Iterable[str]) -> tuple[str, ...]:
         selected = [
             self._normalize_repository_path(str(path))
@@ -262,17 +286,19 @@ class GitRepository:
             if path not in resolved:
                 resolved.append(path)
             if mode == "120000":
-                target = self._symlink_target(path)
-                if target not in seen:
-                    queued.append(target)
+                for target in self._symlink_materialization_targets(path):
+                    if target not in seen:
+                        queued.append(target)
                 continue
             if object_type != "tree":
                 continue
             for child_mode, child_type, _, child_path in self._recursive_tree_entries(path):
                 if child_mode == "120000":
-                    target = self._symlink_target(child_path)
-                    if target not in seen:
-                        queued.append(target)
+                    for target in self._symlink_materialization_targets(
+                        child_path
+                    ):
+                        if target not in seen:
+                            queued.append(target)
                 elif child_mode == "160000" or child_type == "commit":
                     # Nested submodules remain outside the source snapshot.
                     # Calls into them will stay unresolved/opaque.
