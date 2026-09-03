@@ -874,6 +874,11 @@ class CandidateDiscoveryTests(unittest.TestCase):
             2,
             len({candidate.function.start_line for candidate in candidates}),
         )
+        self.assertEqual({2}, {candidate.variant_count for candidate in candidates})
+        self.assertEqual(
+            1,
+            len({candidate.variant_group for candidate in candidates}),
+        )
 
     def test_unknown_return_type_is_not_pruned(self):
         function = parse_functions(
@@ -1565,12 +1570,10 @@ class Z3ReasonerTests(unittest.TestCase):
             summary,
             True,
             "validated",
+            variant_group="identity.c:identity:group",
+            variant_count=2,
         )
-        result = analyze(
-            entry,
-            [validation],
-            variant_counts={("identity.c", "identity"): 2},
-        )
+        result = analyze(entry, [validation])
         self.assertEqual("UNKNOWN", result.verdict)
 
     def test_validated_value_summary_enters_caller_constraints(self):
