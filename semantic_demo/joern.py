@@ -61,6 +61,7 @@ class RepositoryMethod:
     path: str
     start_line: int
     end_line: int
+    return_type: str
     parameters: tuple[str, ...]
     parameter_types: tuple[str, ...]
     calls: tuple[RepositoryCall, ...]
@@ -101,7 +102,7 @@ class JoernRepositoryIndex:
             {
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
-                "joern_index_schema": 3,
+                "joern_index_schema": 4,
                 "joern_api": "4.0.465",
             },
             sort_keys=True,
@@ -229,13 +230,14 @@ class JoernRepositoryIndex:
             if tag == "ERROR":
                 raise JoernError(parts[1] if len(parts) > 1 else "Joern index error")
 
-            if tag == "METHOD" and len(parts) >= 6:
+            if tag == "METHOD" and len(parts) >= 7:
                 full_name = parts[1]
                 raw_methods[full_name] = {
                     "name": parts[2],
                     "path": parts[3],
                     "start_line": int(parts[4]),
                     "end_line": int(parts[5]),
+                    "return_type": parts[6],
                     "parameters": {},
                     "calls": [],
                 }
@@ -297,6 +299,7 @@ class JoernRepositoryIndex:
                 path=str(raw["path"]),
                 start_line=int(raw["start_line"]),
                 end_line=int(raw["end_line"]),
+                return_type=str(raw["return_type"]),
                 parameters=tuple(item[0] for item in ordered),
                 parameter_types=tuple(item[1] for item in ordered),
                 calls=tuple(raw["calls"]),
@@ -329,6 +332,8 @@ class JoernRepositoryIndex:
         return matches[0] if len(matches) == 1 else None
 
     def callee_methods(self, call: RepositoryCall) -> list[RepositoryMethod]:
+        if call.dispatch_type != "STATIC_DISPATCH":
+            return []
         method = self.methods().get(call.method_full_name)
         return [method] if method is not None else []
 
