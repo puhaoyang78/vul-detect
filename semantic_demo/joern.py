@@ -560,6 +560,7 @@ def _isolated_variant_translation_unit(function) -> str:
     replacement = (
         b"\n" * line_padding
         + function.text.encode()
+        + b"\n"
     )
     return (prefix + replacement + suffix).decode(errors="replace")
 
