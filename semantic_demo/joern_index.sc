@@ -30,9 +30,11 @@ import io.joern.dataflowengineoss.language._
     cpg.method.internal.l.foreach { method =>
       val start = method.lineNumber.getOrElse(-1)
       val end = method.lineNumberEnd.getOrElse(start)
+      val returnType = method.methodReturn.typeFullName.headOption.getOrElse("ANY")
       lines += (
         "METHOD\t" + clean(method.fullName) + "\t" + clean(method.name) + "\t" +
-        clean(relative(method.filename)) + "\t" + start + "\t" + end
+        clean(relative(method.filename)) + "\t" + start + "\t" + end + "\t" +
+        clean(returnType)
       )
       method.parameter.l.foreach { parameter =>
         lines += (
