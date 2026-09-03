@@ -101,13 +101,13 @@ class JoernRepositoryIndex:
             {
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
-                "joern_index_schema": 2,
+                "joern_index_schema": 3,
                 "joern_api": "4.0.465",
             },
             sort_keys=True,
         ).encode()
         self.fingerprint = hashlib.sha256(fingerprint_payload).hexdigest()[:16]
-        self.cpg_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.bin.zip"
+        self.cpg_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.bin"
         self.index_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.tsv"
 
     def _c2cpg(self) -> Path:
