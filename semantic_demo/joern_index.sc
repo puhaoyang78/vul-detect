@@ -1,6 +1,7 @@
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import scala.collection.mutable.ArrayBuffer
+import scala.jdk.CollectionConverters._
 import io.shiftleft.semanticcpg.language._
 
 @main def exec(
@@ -13,7 +14,7 @@ import io.shiftleft.semanticcpg.language._
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
   val sourcePath = Paths.get(sourceRoot).toAbsolutePath.normalize
-  val scopes = Files.readAllLines(Paths.get(scopeFile)).toArray(new Array[String](0)).toSet
+  val scopes = Files.readAllLines(Paths.get(scopeFile)).asScala.toSet
 
   def inAnalysisScope(relativePath: String): Boolean =
     scopes.exists { scope =>
