@@ -373,15 +373,7 @@ def _is_host_function_definition(
     function_like_macros: set[str],
 ) -> bool:
     current = node.parent
-    string_contexts = {
-        "preproc_arg",
-        "string_literal",
-        "concatenated_string",
-        "raw_string_literal",
-    }
     while current is not None:
-        if current.type in string_contexts:
-            return False
         if current.type == "argument_list":
             call = current.parent
             if call is not None and call.type == "call_expression":
