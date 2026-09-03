@@ -36,7 +36,8 @@ LineVul 只读取目标函数源码：
 ### 1. Repository call-graph discovery
 
 - Joern 4.0.465/c2cpg 对每个 sample 的固定 repository revision 构建一份 CPG。
-- 只物化 sample 的 scan_paths 与 entry_path；项目内部 include 路径显式传给 c2cpg，系统 include 使用 auto-discovery。
+- analysis source 只物化 sample 的 scan_paths 与 entry_path；repository-level include/ 作为独立 parse context 物化并通过重复 --include 参数传给 c2cpg，系统 include 使用 auto-discovery。
+- parse-context headers 只参与 CDT 预处理/类型解析，不进入 METHOD/CALL analysis index，不扩大 candidate scope。
 - entry、METHOD、CALL 与 call -> callee binding 均来自 Joern CPG，不再使用 git grep + Tree-sitter 仓库函数索引。
 - 标准 API 是明确 leaf；Joern 无法解析到当前 CPG 内部 METHOD 的调用保持 opaque，不做函数名猜测。
 - 同一已绑定 C 文件中，若 Tree-sitter 明确识别出同签名条件编译 variants，仍保留 variants 并在传播时取共同 summary。
