@@ -2,6 +2,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import scala.collection.mutable.ArrayBuffer
 import io.shiftleft.semanticcpg.language._
+import io.joern.dataflowengineoss.language._
 
 @main def exec(
   cpgFile: String,
@@ -25,6 +26,7 @@ import io.shiftleft.semanticcpg.language._
   val lines = ArrayBuffer[String]()
   try {
     importCpg(cpgFile)
+    run.ossdataflow
     cpg.method.internal.l.foreach { method =>
       val start = method.lineNumber.getOrElse(-1)
       val end = method.lineNumberEnd.getOrElse(start)
@@ -43,6 +45,31 @@ import io.shiftleft.semanticcpg.language._
           "CALL\t" + clean(method.fullName) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
           clean(call.name) + "\t" + clean(call.methodFullName) + "\t" + clean(call.dispatchType)
         )
+        call.argument.l.foreach { arg =>
+          val argIndex = arg.argumentIndex - 1
+          lines += (
+            "ARGFACT\t" + clean(method.fullName) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
+            clean(call.name) + "\t" + argIndex + "\t" + clean(call.code) + "\t" + clean(arg.code)
+          )
+          method.parameter.l.foreach { parameter =>
+            if (arg.reachableBy(parameter).l.nonEmpty) {
+              lines += (
+                "FLOWFACT\t" + clean(method.fullName) + "\t" + (parameter.index - 1) + "\t" +
+                call.lineNumber.getOrElse(-1) + "\t" + clean(call.name) + "\t" + argIndex
+              )
+            }
+          }
+        }
+      }
+      method.ast.isReturn.l.foreach { ret =>
+        lines += ("RETFACT\t" + clean(method.fullName) + "\t" + clean(ret.code))
+        method.parameter.l.foreach { parameter =>
+          if (ret.reachableBy(parameter).l.nonEmpty) {
+            lines += (
+              "RETFLOWFACT\t" + clean(method.fullName) + "\t" + (parameter.index - 1)
+            )
+          }
+        }
       }
     }
   } catch {
