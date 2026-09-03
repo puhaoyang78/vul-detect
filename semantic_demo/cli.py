@@ -431,8 +431,6 @@ def detect(
         threshold=linevul_threshold,
         device=linevul_device,
     )
-    joern = JoernValidator(joern_dir, java_home=java_home)
-    joern.ensure_available()
     semantic_records: list[dict[str, object]] = []
     detection_records: list[dict[str, object]] = []
     detection_cache = (
@@ -458,6 +456,12 @@ def detect(
             index,
             entry_method,
         )
+        joern = JoernValidator(
+            joern_dir,
+            java_home=java_home,
+            repository_index=index,
+        )
+        joern.ensure_available()
         summary_entries: list[tuple[object, dict[str, str]]] = []
         for candidate in candidates:
             key = (
