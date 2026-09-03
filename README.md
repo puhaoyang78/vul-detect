@@ -40,7 +40,8 @@ LineVul 只读取目标函数源码：
 - 自定义调用通过 repository revision 中的真实函数定义解析。
 - 同一 C 文件、同参数签名的条件编译实现作为显式 variants；跨文件、C++ 或不同签名歧义仍不猜测。
 - 不再使用固定 hop、函数名 hints、read/copy/alloc family rule。
-- 候选数存在显式资源上限；超过上限直接终止该样本分析，不静默截断。
+- 仅展开可能产生当前 ALLOC/READ/WRITE/VALUE caller-visible summary 的函数；无值返回且无 pointer-like 形参的 callee 及其后继不进入候选。
+- 调用图按真实函数身份去重，不设置固定 hop 或固定函数数截断。
 
 ### 2. Semantic normalization
 
