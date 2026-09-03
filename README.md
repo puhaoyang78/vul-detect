@@ -65,7 +65,7 @@ GUARD 仍不进入跨过程 schema。Normalization 输出带 schema version；�
 - Joern 是正式流程必需组件，没有 lightweight fallback。
 - 每个 sample 只构建一次 CPG，用于 METHOD/PARAM/CALL 与静态 call binding；repository index 阶段不运行 ossdataflow。
 - normalize 只依赖轻量 repository index，不执行全图数据流分析。
-- run 阶段按 translation-unit 目录构建 contextual CPG；每个 TU 只运行一次 ossdataflow 并缓存全部 METHOD facts，同一 TU 内 candidates 复用。
+- run 阶段以 candidate 所属源码文件作为 TU source，并把其模块目录/配置 include roots 作为 parse context；每个 TU 只运行一次 ossdataflow 并缓存全部 METHOD facts，同一 TU 内 candidates 复用。
 - PARAM 只映射显式非 variadic 参数，C++ 隐式 this(index=0) 与 variadic pseudo-parameter 不进入 argN；CALL/FLOW 使用 Joern node id，不再以 (line,name) 作为主键。
 - 显式条件编译 variants 若不在当前 active CPG branch 中，才使用独立 fragment Joern 验证，并只传播所有分支共有的 summary。
 - 验证基于明确标准 API 的参数角色或已经验证的 callee summary composition。
