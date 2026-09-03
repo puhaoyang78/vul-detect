@@ -513,7 +513,7 @@ def _parameters(
     pointer_like: list[bool] = []
     signatures: list[str] = []
     for child in parameter_list.named_children:
-        if not _node_reliable(child):
+        if child.has_error or child.is_missing:
             continue
         if child.type not in {"parameter_declaration", "optional_parameter_declaration"}:
             continue
