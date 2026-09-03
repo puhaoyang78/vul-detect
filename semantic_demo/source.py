@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import posixpath
 import re
 import subprocess
@@ -268,19 +267,26 @@ class GitRepository:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        stdout, stderr = archive.communicate()
-        if archive.returncode != 0:
+        assert archive.stdout is not None
+        read_error: tarfile.ReadError | None = None
+        try:
+            with tarfile.open(fileobj=archive.stdout, mode="r|") as tar:
+                tar.extractall(target)
+        except tarfile.ReadError as error:
+            read_error = error
+        finally:
+            archive.stdout.close()
+        stderr = archive.stderr.read().decode(errors="replace") if archive.stderr else ""
+        returncode = archive.wait()
+        if returncode != 0:
             raise RuntimeError(
-                f"git archive failed for {self.revision}: "
-                f"{stderr.decode(errors='replace').strip()}"
+                f"git archive failed for {self.revision}: {stderr.strip()}"
             )
-        if not stdout:
+        if read_error is not None:
             raise RuntimeError(
-                f"git archive produced no data for {self.revision}: "
+                f"git archive produced invalid tar data for {self.revision}: "
                 f"{', '.join(selected)}"
-            )
-        with tarfile.open(fileobj=io.BytesIO(stdout), mode="r:") as tar:
-            tar.extractall(target)
+            ) from read_error
         return target
 
     def function_source(
