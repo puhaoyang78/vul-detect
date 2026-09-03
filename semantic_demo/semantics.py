@@ -15,7 +15,12 @@ from .joern import (
     JoernValidator,
     RepositoryMethod,
 )
-from .source import FunctionSource, normalize_expression, parse_functions
+from .source import (
+    FunctionSource,
+    function_body_has_error,
+    normalize_expression,
+    parse_functions,
+)
 
 
 ALLOCATORS = {
@@ -491,8 +496,8 @@ def _validate_by_composition(
 
 
 def candidate_validation_error(function: FunctionSource) -> str | None:
-    if function.parse_has_error:
-        return "candidate function contains parser error nodes"
+    if function.parse_has_error and function_body_has_error(function):
+        return "candidate function body contains parser error nodes"
     return None
 
 
