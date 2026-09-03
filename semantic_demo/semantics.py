@@ -8,8 +8,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .joern import JoernMethodNotFound, JoernTimeout, JoernValidator
-from .source import FunctionSource, GitRepository, normalize_expression
+from .joern import (
+    JoernMethodNotFound,
+    JoernRepositoryIndex,
+    JoernTimeout,
+    JoernValidator,
+    RepositoryMethod,
+)
+from .source import FunctionSource, normalize_expression, parse_functions
 
 
 ALLOCATORS = {
