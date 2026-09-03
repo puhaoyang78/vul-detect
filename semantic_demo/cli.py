@@ -29,7 +29,7 @@ from .semantics import (
     load_replay,
     validate_summary,
 )
-from .source import GitRepository
+from .source import GitRepository, source_language
 
 
 FORBIDDEN_DETECTION_FIELDS = {
@@ -41,7 +41,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 11
+ANALYSIS_CHECKPOINT_VERSION = 12
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -135,6 +135,10 @@ def _load_entry(
         end_line=entry_method.end_line,
         parameters=entry_method.parameters,
         parameter_types=entry_method.parameter_types,
+        language_hint=source_language(
+            entry_method.path,
+            str(sample.get("language", "")) or None,
+        ),
     )
     return repository, index, entry_method, entry
 
@@ -315,19 +319,28 @@ def _preflight_samples(
                 java_home=java_home,
                 cpg_cache_dir=cpg_cache_dir,
             )
-            candidates = discover_candidates(key, index, entry_method)
+            candidates = discover_candidates(
+                key,
+                index,
+                entry_method,
+                entry.language,
+            )
             skipped = [
                 candidate
                 for candidate in candidates
                 if candidate_validation_error(candidate.function) is not None
             ]
             methods = index.methods()
-            unresolved = sum(
-                1
-                for method in methods.values()
-                for call in method.calls
-                if call.dispatch_type == "STATIC_DISPATCH"
-                and not index.callee_methods(call)
+            unresolved = (
+                sum(
+                    1
+                    for method in methods.values()
+                    for call in method.calls
+                    if call.dispatch_type == "STATIC_DISPATCH"
+                    and not index.callee_methods(call)
+                )
+                if isinstance(methods, dict)
+                else 0
             )
             prepared.append(
                 (
@@ -342,7 +355,8 @@ def _preflight_samples(
             print(
                 f"preflight_sample_done={key} candidates={len(candidates)} "
                 f"unrecoverable_candidates={len(skipped)} "
-                f"unresolved_static_calls={unresolved}",
+                f"unresolved_static_calls={unresolved} "
+                f"diagnostics={index.diagnostics_path}",
                 flush=True,
             )
         except Exception as error:
@@ -541,6 +555,7 @@ def detect(
             sample_key,
             index,
             entry_method,
+            entry.language,
         )
         joern = JoernValidator(
             joern_dir,
@@ -899,6 +914,14 @@ def evaluate(
 
 
 def run_command(args: argparse.Namespace) -> None:
+    samples = read_jsonl(args.samples)
+    validate_detection_manifest(samples)
+    _preflight_samples(
+        samples,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
+    )
     detect(
         args.samples,
         args.replay,
