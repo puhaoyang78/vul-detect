@@ -20,6 +20,7 @@ from semantic_demo.semantics import (
     Candidate,
     NORMALIZATION_RESPONSE_SCHEMA,
     Validation,
+    candidate_validation_error,
     _extract_json_object,
     discover_candidates,
     llm_normalize,
@@ -27,7 +28,7 @@ from semantic_demo.semantics import (
     _validate_by_composition,
     validate_summary,
 )
-from semantic_demo.source import GitRepository, parse_functions
+from semantic_demo.source import FunctionSource, GitRepository, parse_functions
 from semantic_demo.z3_reasoner import reason_memory_safety
 
 
@@ -120,6 +121,28 @@ class GitRepositoryTests(unittest.TestCase):
                 "static inline void list_add_tail(void) {}\n",
                 repository.read_blob("include/list.h"),
             )
+
+
+class CandidateParseBoundaryTests(unittest.TestCase):
+    def test_signature_annotation_error_does_not_skip_clean_body(self):
+        function = FunctionSource(
+            path="annotated.c",
+            name="annotated",
+            text=(
+                "RZ_API int annotated(RZ_NONNULL char *p) "
+                "{ if (!p) return -1; return p[0]; }"
+            ),
+            translation_unit="",
+            language="c",
+            parameters=("p",),
+            parameter_types=("char *",),
+            parameter_pointer_like=(True,),
+            parameter_signatures=("char*$",),
+            start_line=1,
+            end_line=1,
+            parse_has_error=True,
+        )
+        self.assertIsNone(candidate_validation_error(function))
 
 
 class SemanticValidationTests(unittest.TestCase):
