@@ -11,14 +11,17 @@ import io.shiftleft.semanticcpg.language._
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
-  def relative(filename: String): String = {
+  val sourcePath = Paths.get(sourceRoot).toAbsolutePath.normalize
+
+  def sourceRelative(filename: String): Option[String] = {
     try {
-      val root = Paths.get(sourceRoot).toAbsolutePath.normalize
       val path = Paths.get(filename).toAbsolutePath.normalize
-      if (path.startsWith(root)) root.relativize(path).toString.replace('\\', '/')
-      else filename.replace('\\', '/')
+      if (path.startsWith(sourcePath))
+        Some(sourcePath.relativize(path).toString.replace('\\', '/'))
+      else
+        None
     } catch {
-      case _: Throwable => filename.replace('\\', '/')
+      case _: Throwable => None
     }
   }
 
@@ -26,25 +29,27 @@ import io.shiftleft.semanticcpg.language._
   try {
     importCpg(cpgFile)
     cpg.method.internal.l.foreach { method =>
-      val start = method.lineNumber.getOrElse(-1)
-      val end = method.lineNumberEnd.getOrElse(start)
-      val returnType = method.methodReturn.typeFullName
-      lines += (
-        "METHOD\t" + clean(method.fullName) + "\t" + clean(method.name) + "\t" +
-        clean(relative(method.filename)) + "\t" + start + "\t" + end + "\t" +
-        clean(returnType)
-      )
-      method.parameter.l.foreach { parameter =>
+      sourceRelative(method.filename).foreach { relativePath =>
+        val start = method.lineNumber.getOrElse(-1)
+        val end = method.lineNumberEnd.getOrElse(start)
+        val returnType = method.methodReturn.typeFullName
         lines += (
-          "PARAM\t" + clean(method.fullName) + "\t" + (parameter.index - 1) + "\t" +
-          clean(parameter.name) + "\t" + clean(parameter.typeFullName)
+          "METHOD\t" + clean(method.fullName) + "\t" + clean(method.name) + "\t" +
+          clean(relativePath) + "\t" + start + "\t" + end + "\t" +
+          clean(returnType)
         )
-      }
-      method.call.l.foreach { call =>
-        lines += (
-          "CALL\t" + clean(method.fullName) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
-          clean(call.name) + "\t" + clean(call.methodFullName) + "\t" + clean(call.dispatchType)
-        )
+        method.parameter.l.foreach { parameter =>
+          lines += (
+            "PARAM\t" + clean(method.fullName) + "\t" + (parameter.index - 1) + "\t" +
+            clean(parameter.name) + "\t" + clean(parameter.typeFullName)
+          )
+        }
+        method.call.l.foreach { call =>
+          lines += (
+            "CALL\t" + clean(method.fullName) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
+            clean(call.name) + "\t" + clean(call.methodFullName) + "\t" + clean(call.dispatchType)
+          )
+        }
       }
     }
   } catch {
