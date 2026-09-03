@@ -6,45 +6,31 @@ import io.joern.dataflowengineoss.language._
 
 @main def exec(
   cpgFile: String,
-  outFile: String,
-  functionName: String,
-  functionPath: String,
-  functionStartLine: Int,
-  functionEndLine: Int
+  outFile: String
 ) = {
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
-  def normalizedPath(value: String): String =
-    value.replace('\\', '/').stripPrefix("./")
 
   val lines = ArrayBuffer[String]()
   try {
     importCpg(cpgFile)
     run.ossdataflow
-    val expectedPath = normalizedPath(functionPath)
-    val methods = cpg.method.nameExact(functionName).l.filter { method =>
-      val pathMatches = normalizedPath(method.filename) == expectedPath
-      val lineMatches = method.lineNumber.exists { line =>
-        line >= functionStartLine && line <= functionEndLine
-      }
-      pathMatches && lineMatches
-    }
-    if (methods.isEmpty) {
-      lines += (
-        "ERROR\tmethod_not_found:" + clean(functionPath) + ":" +
-        clean(functionName) + "@" + functionStartLine + "-" + functionEndLine
-      )
-    } else if (methods.size != 1) {
-      lines += (
-        "ERROR\tambiguous_method:" + clean(functionPath) + ":" +
-        clean(functionName) + "@" + functionStartLine + "-" + functionEndLine
-      )
-    } else {
-      val method = methods.head
-      val params = method.parameter.filter(_.index > 0).l
 
+    cpg.method.internal.l.foreach { method =>
+      val key = clean(method.fullName)
+      val start = method.lineNumber.getOrElse(-1)
+      val end = method.lineNumberEnd.getOrElse(start)
+      lines += (
+        "METHOD\t" + key + "\t" + clean(method.name) + "\t" +
+        clean(method.filename) + "\t" + start + "\t" + end
+      )
+
+      val params = method.parameter.filter(_.index > 0).l
       params.foreach { p =>
-        lines += ("PARAM\t" + (p.index - 1) + "\t" + clean(p.name) + "\t" + clean(p.typeFullName))
+        lines += (
+          "PARAM\t" + key + "\t" + (p.index - 1) + "\t" +
+          clean(p.name) + "\t" + clean(p.typeFullName)
+        )
       }
 
       method.call.l.foreach { call =>
@@ -52,13 +38,15 @@ import io.joern.dataflowengineoss.language._
         call.argument.filter(_.argumentIndex > 0).l.foreach { arg =>
           val argIndex = arg.argumentIndex - 1
           lines += (
-            "ARG\t" + callId + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
-            clean(call.name) + "\t" + argIndex + "\t" + clean(call.code) + "\t" + clean(arg.code)
+            "ARG\t" + key + "\t" + callId + "\t" +
+            call.lineNumber.getOrElse(-1) + "\t" + clean(call.name) + "\t" +
+            argIndex + "\t" + clean(call.code) + "\t" + clean(arg.code)
           )
           params.foreach { p =>
             if (arg.reachableBy(p).l.nonEmpty) {
               lines += (
-                "FLOW\t" + (p.index - 1) + "\t" + callId + "\t" + argIndex
+                "FLOW\t" + key + "\t" + (p.index - 1) + "\t" +
+                callId + "\t" + argIndex
               )
             }
           }
@@ -66,10 +54,10 @@ import io.joern.dataflowengineoss.language._
       }
 
       method.ast.isReturn.l.foreach { ret =>
-        lines += ("RET\t" + clean(ret.code))
+        lines += ("RET\t" + key + "\t" + clean(ret.code))
         params.foreach { p =>
           if (ret.reachableBy(p).l.nonEmpty) {
-            lines += ("RETFLOW\t" + (p.index - 1))
+            lines += ("RETFLOW\t" + key + "\t" + (p.index - 1))
           }
         }
       }
