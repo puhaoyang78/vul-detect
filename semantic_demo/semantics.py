@@ -115,8 +115,14 @@ class Validation:
         return asdict(self)
 
 
-def _can_produce_summary(function: FunctionSource) -> bool:
-    return function.has_value_return() or any(function.parameter_pointer_like)
+def _method_can_produce_summary(method: RepositoryMethod) -> bool:
+    return (
+        method.return_type not in {"void", "<empty>", "ANY"}
+        or any(
+            "*" in type_text or "&" in type_text or "[" in type_text
+            for type_text in method.parameter_types
+        )
+    )
 
 
 def _sources_for_method(
@@ -185,14 +191,11 @@ def discover_candidates(
             for callee in callees:
                 if callee.full_name == caller.full_name:
                     continue
-                sources = _sources_for_method(index, callee)
-                publish = [
-                    source for source in sources if _can_produce_summary(source)
-                ]
-                if not publish:
+                if not _method_can_produce_summary(callee):
                     continue
+                sources = _sources_for_method(index, callee)
 
-                for source in publish:
+                for source in sources:
                     key = (source.path, source.name, source.start_line)
                     existing = discovered.get(key)
                     lines = set(existing.call_lines if existing else ())
