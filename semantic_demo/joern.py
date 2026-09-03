@@ -108,6 +108,20 @@ def _file_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _temporary_cache_file(target: Path, suffix: str) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        prefix=f".{target.name}.",
+        suffix=suffix,
+        dir=target.parent,
+        delete=False,
+    )
+    handle.close()
+    path = Path(handle.name)
+    path.unlink(missing_ok=True)
+    return path
+
+
 def _source_snapshot_identity(repository) -> str:
     methods = (
         repository.resolve_paths,
@@ -359,7 +373,10 @@ class JoernRepositoryIndex:
                     context_root,
                     self.scopes,
                 )
-                temporary_cpg = root / "cpg.bin"
+                temporary_cpg = _temporary_cache_file(
+                    self.cpg_path,
+                    ".bin",
+                )
                 command = self._c2cpg_command(
                     source_root,
                     temporary_cpg,
@@ -390,6 +407,7 @@ class JoernRepositoryIndex:
                     + (result.stderr or "")
                 )
                 if result.returncode != 0 or not temporary_cpg.is_file():
+                    temporary_cpg.unlink(missing_ok=True)
                     raise JoernError(
                         f"{self.sample_key}: c2cpg failed: "
                         f"{result.stderr.strip() or result.stdout.strip()}"
@@ -407,7 +425,10 @@ class JoernRepositoryIndex:
             root = Path(directory)
             source_root = root / "src"
             self.repository.materialize(source_root, self.scopes)
-            temporary_index = root / "index.tsv"
+            temporary_index = _temporary_cache_file(
+                self.index_path,
+                ".tsv",
+            )
             scope_file = root / "scopes.txt"
             scope_file.write_text(
                 "\n".join(
@@ -445,6 +466,7 @@ class JoernRepositoryIndex:
                     f"{self.timeout}s"
                 ) from error
             if result.returncode != 0 or not temporary_index.is_file():
+                temporary_index.unlink(missing_ok=True)
                 raise JoernError(
                     f"{self.sample_key}: Joern index export failed: "
                     f"{result.stderr.strip() or result.stdout.strip()}"
@@ -756,7 +778,10 @@ class JoernValidator:
                     source_paths,
                     extra_context_paths,
                 )
-                temporary_cpg = root / "tu.bin"
+                temporary_cpg = _temporary_cache_file(
+                    cpg_path,
+                    ".bin",
+                )
                 command = index._c2cpg_command(
                     source_root,
                     temporary_cpg,
@@ -764,6 +789,7 @@ class JoernValidator:
                 )
                 result = self._run(command, candidate.function.name)
                 if result.returncode != 0 or not temporary_cpg.is_file():
+                    temporary_cpg.unlink(missing_ok=True)
                     raise JoernError(
                         f"Joern TU c2cpg failed for {candidate.function.name}: "
                         f"{result.stderr.strip() or result.stdout.strip()}"
@@ -774,7 +800,10 @@ class JoernValidator:
             with tempfile.TemporaryDirectory(
                 prefix="vul-tu-facts-"
             ) as directory:
-                temporary_facts = Path(directory) / "facts.tsv"
+                temporary_facts = _temporary_cache_file(
+                    facts_path,
+                    ".tsv",
+                )
                 command = [
                     str(self.joern),
                     "--script",
@@ -786,6 +815,7 @@ class JoernValidator:
                 ]
                 result = self._run(command, candidate.function.name)
                 if result.returncode != 0 or not temporary_facts.is_file():
+                    temporary_facts.unlink(missing_ok=True)
                     raise JoernError(
                         f"Joern TU dataflow failed for "
                         f"{candidate.function.name}: "
