@@ -51,7 +51,7 @@ import io.shiftleft.semanticcpg.language._
           clean(relativePath) + "\t" + start + "\t" + end + "\t" +
           clean(returnType)
         )
-        method.parameter.filter(_.index > 0).l.foreach { parameter =>
+        method.parameter.filter(p => p.index > 0 && !p.isVariadic).l.foreach { parameter =>
           lines += (
             "PARAM\t" + clean(method.fullName) + "\t" + (parameter.index - 1) + "\t" +
             clean(parameter.name) + "\t" + clean(parameter.typeFullName)
