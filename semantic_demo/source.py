@@ -188,6 +188,43 @@ class GitRepository:
         )
         return result.returncode == 0
 
+    def resolve_paths(self, paths: Iterable[str]) -> tuple[str, ...]:
+        resolved: list[str] = []
+        for raw in paths:
+            path = str(raw)
+            if not path:
+                continue
+            if self.has_path(path):
+                normalized = self._normalize_repository_path(path)
+                if normalized not in resolved:
+                    resolved.append(normalized)
+                continue
+            result = self._git(
+                "ls-tree",
+                "-r",
+                "--name-only",
+                self.revision,
+                "--",
+                path,
+                check=False,
+            )
+            matches = [
+                self._normalize_repository_path(line)
+                for line in result.stdout.splitlines()
+                if line
+            ]
+            if result.returncode != 0 or not matches:
+                raise FileNotFoundError(
+                    f"pathspec matched no repository paths at "
+                    f"{self.revision}: {path}"
+                )
+            for match in matches:
+                if match not in resolved:
+                    resolved.append(match)
+        if not resolved:
+            raise ValueError("at least one repository path is required")
+        return tuple(resolved)
+
     def _tree_entry(self, path: str) -> tuple[str, str, str, str]:
         normalized = self._normalize_repository_path(path)
         result = self._git("ls-tree", self.revision, "--", normalized)
@@ -355,14 +392,7 @@ class GitRepository:
     def materialize(self, destination: str | Path, paths: Iterable[str]) -> Path:
         target = Path(destination)
         target.mkdir(parents=True, exist_ok=True)
-        requested = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
-        if not requested:
-            raise ValueError("at least one repository path is required")
-        missing = [path for path in requested if not self.has_path(path)]
-        if missing:
-            raise FileNotFoundError(
-                f"paths not found at {self.revision}: {', '.join(missing)}"
-            )
+        requested = self.resolve_paths(paths)
         selected = self.materialization_paths(requested)
         archive = subprocess.Popen(
             [
