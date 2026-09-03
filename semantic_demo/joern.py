@@ -95,12 +95,14 @@ class JoernRepositoryIndex:
         self.cache_dir = Path(cache_dir)
         self.timeout = timeout
         self._methods: dict[str, RepositoryMethod] | None = None
+        self._facts: dict[str, JoernFacts] | None = None
 
         fingerprint_payload = json.dumps(
             {
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
-                "joern_index_schema": 1,
+                "joern_index_schema": 2,
+                "joern_api": "4.0.465",
             },
             sort_keys=True,
         ).encode()
@@ -141,6 +143,8 @@ class JoernRepositoryIndex:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         if self.cpg_path.is_file() and self.index_path.is_file():
             return
+        self.cpg_path.unlink(missing_ok=True)
+        self.index_path.unlink(missing_ok=True)
 
         with tempfile.TemporaryDirectory(prefix=f"vul-cpg-{self.sample_key}-") as directory:
             source_root = Path(directory) / "src"
@@ -202,14 +206,22 @@ class JoernRepositoryIndex:
         self._build()
 
         raw_methods: dict[str, dict[str, object]] = {}
+        facts: dict[str, JoernFacts] = {}
+        fact_call_args: dict[
+            str, dict[tuple[int, str], dict[int, str]]
+        ] = {}
+
         for raw_line in self.index_path.read_text().splitlines():
             if not raw_line:
                 continue
             parts = raw_line.split("\t")
-            if parts[0] == "ERROR":
+            tag = parts[0]
+            if tag == "ERROR":
                 raise JoernError(parts[1] if len(parts) > 1 else "Joern index error")
-            if parts[0] == "METHOD" and len(parts) >= 6:
-                raw_methods[parts[1]] = {
+
+            if tag == "METHOD" and len(parts) >= 6:
+                full_name = parts[1]
+                raw_methods[full_name] = {
                     "name": parts[2],
                     "path": parts[3],
                     "start_line": int(parts[4]),
@@ -217,12 +229,18 @@ class JoernRepositoryIndex:
                     "parameters": {},
                     "calls": [],
                 }
-            elif parts[0] == "PARAM" and len(parts) >= 5:
-                method = raw_methods.get(parts[1])
+                facts[full_name] = JoernFacts()
+                fact_call_args[full_name] = {}
+            elif tag == "PARAM" and len(parts) >= 5:
+                full_name = parts[1]
+                method = raw_methods.get(full_name)
                 if method is not None:
-                    method["parameters"][int(parts[2])] = (parts[3], parts[4])
-            elif parts[0] == "CALL" and len(parts) >= 6:
-                method = raw_methods.get(parts[1])
+                    index = int(parts[2])
+                    method["parameters"][index] = (parts[3], parts[4])
+                    facts[full_name].parameters[index] = (parts[3], parts[4])
+            elif tag == "CALL" and len(parts) >= 6:
+                full_name = parts[1]
+                method = raw_methods.get(full_name)
                 if method is not None:
                     method["calls"].append(
                         RepositoryCall(
@@ -232,6 +250,32 @@ class JoernRepositoryIndex:
                             dispatch_type=parts[5],
                         )
                     )
+            elif tag == "ARGFACT" and len(parts) >= 7:
+                full_name = parts[1]
+                if full_name in facts:
+                    key = (int(parts[2]), parts[3])
+                    fact_call_args[full_name].setdefault(key, {})[
+                        int(parts[4])
+                    ] = parts[6]
+            elif tag == "FLOWFACT" and len(parts) >= 6:
+                full_name = parts[1]
+                if full_name in facts:
+                    facts[full_name].flows.add(
+                        (
+                            int(parts[2]),
+                            int(parts[3]),
+                            parts[4],
+                            int(parts[5]),
+                        )
+                    )
+            elif tag == "RETFACT" and len(parts) >= 3:
+                full_name = parts[1]
+                if full_name in facts:
+                    facts[full_name].returns.append(parts[2])
+            elif tag == "RETFLOWFACT" and len(parts) >= 3:
+                full_name = parts[1]
+                if full_name in facts:
+                    facts[full_name].return_flows.add(int(parts[2]))
 
         methods: dict[str, RepositoryMethod] = {}
         for full_name, raw in raw_methods.items():
@@ -247,8 +291,24 @@ class JoernRepositoryIndex:
                 parameter_types=tuple(item[1] for item in ordered),
                 calls=tuple(raw["calls"]),
             )
+            for (line, name), arguments in fact_call_args[full_name].items():
+                facts[full_name].calls[(line, name)] = JoernCall(
+                    line=line,
+                    name=name,
+                    arguments=arguments,
+                )
+
         self._methods = methods
+        self._facts = facts
         return methods
+
+    def facts_for(self, method_full_name: str) -> JoernFacts:
+        self.methods()
+        assert self._facts is not None
+        facts = self._facts.get(method_full_name)
+        if facts is None:
+            raise JoernMethodNotFound(f"method_not_found:{method_full_name}")
+        return facts
 
     def find_entry(self, name: str, path: str) -> RepositoryMethod | None:
         matches = [
@@ -280,7 +340,6 @@ class JoernValidator:
         ).expanduser()
         self.java = self.java_home / "bin" / "java"
         self.script = Path(__file__).with_name("joern_extract.sc")
-        self.cpg_script = Path(__file__).with_name("joern_cpg_extract.sc")
         self.timeout = timeout or int(os.environ.get("JOERN_TIMEOUT", "180"))
         self.repository_index = repository_index
         self._cache: dict[str, JoernFacts] = {}
@@ -303,10 +362,6 @@ class JoernValidator:
             raise JoernError(f"Joern extraction script not found: {self.script}")
         if self.repository_index is not None:
             self.repository_index.ensure_available()
-            if not self.cpg_script.is_file():
-                raise JoernError(
-                    f"Joern CPG extraction script not found: {self.cpg_script}"
-                )
 
     def _key(self, function) -> str:
         payload = (
@@ -345,24 +400,9 @@ class JoernValidator:
         )
 
         if use_sample_cpg:
-            self.repository_index._build()
-            with tempfile.TemporaryDirectory(prefix="memsem-joern-cpg-") as directory:
-                output_path = Path(directory) / "facts.tsv"
-                command = [
-                    str(self.joern),
-                    "--script",
-                    str(self.cpg_script),
-                    "--param",
-                    f"cpgFile={self.repository_index.cpg_path.resolve()}",
-                    "--param",
-                    f"outFile={output_path}",
-                    "--param",
-                    f"methodFullName={candidate.method_full_name}",
-                ]
-                result = self._run(command, candidate.function.name)
-                facts = self._load_facts(output_path, result, candidate.function.name)
-                self._cache[key] = facts
-                return facts
+            facts = self.repository_index.facts_for(candidate.method_full_name)
+            self._cache[key] = facts
+            return facts
 
         # Explicit same-file preprocessor variants may not be present in the
         # active sample CPG. Validate those variant bodies independently.
