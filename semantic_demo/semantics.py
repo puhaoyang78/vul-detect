@@ -105,6 +105,8 @@ class Candidate:
     function: FunctionSource
     call_lines: tuple[int, ...]
     method_full_name: str = ""
+    variant_group: str | None = None
+    variant_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,8 @@ class Validation:
     summary: dict[str, str]
     passed: bool
     reason: str
+    variant_group: str | None = None
+    variant_count: int = 1
 
     def as_json(self) -> dict[str, object]:
         return asdict(self)
@@ -243,6 +247,15 @@ def discover_candidates(
                     callee_language,
                 )
 
+                variant_count = (
+                    len(sources)
+                    if len(sources) > 1
+                    and all(
+                        source.preprocessor_group is not None
+                        for source in sources
+                    )
+                    else 1
+                )
                 for source in sources:
                     key = (
                         source.path,
@@ -253,11 +266,21 @@ def discover_candidates(
                     existing = discovered.get(key)
                     lines = set(existing.call_lines if existing else ())
                     lines.add(call.line)
+                    variant_group = (
+                        f"{source.path}:{source.name}:"
+                        f"{source.preprocessor_group[0]}-"
+                        f"{source.preprocessor_group[1]}"
+                        if variant_count > 1
+                        and source.preprocessor_group is not None
+                        else None
+                    )
                     discovered[key] = Candidate(
                         sample_key=sample_key,
                         function=source,
                         call_lines=tuple(sorted(lines)),
                         method_full_name=callee.full_name,
+                        variant_group=variant_group,
+                        variant_count=variant_count,
                     )
                 if callee.full_name in methods:
                     queue.append((callee, callee_language))
@@ -588,6 +611,8 @@ def validate_summary(
             clean_summary,
             False,
             error,
+            variant_group=candidate.variant_group,
+            variant_count=candidate.variant_count,
         )
 
     try:
@@ -615,6 +640,8 @@ def validate_summary(
         clean_summary,
         passed,
         reason,
+        variant_group=candidate.variant_group,
+        variant_count=candidate.variant_count,
     )
 
 
