@@ -42,6 +42,12 @@ class IsolationTests(unittest.TestCase):
             ]
             self.assertEqual([], missing, msg=str(sample["sample_key"]))
 
+    def test_preflight_defaults_to_local_joern_and_jdk(self):
+        args = build_parser().parse_args(["preflight"])
+        self.assertEqual("/home/phy/joern", args.joern_dir)
+        self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertEqual("data/joern_cpg", args.cpg_cache_dir)
+
     def test_llm_normalization_defaults_to_local_qwen(self):
         args = build_parser().parse_args(["normalize"])
         self.assertEqual("local", args.llm_backend)

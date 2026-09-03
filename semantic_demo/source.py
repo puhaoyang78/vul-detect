@@ -22,21 +22,17 @@ def _parser_for_language(language: str) -> Parser:
     return _CPP_PARSER if language == "cpp" else _C_PARSER
 
 
-def _language_for_path(path: str, source_text: str | None = None) -> str:
+def _language_for_path(path: str, language_hint: str | None = None) -> str:
     suffix = Path(path).suffix.lower()
     if suffix in {".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"}:
         return "cpp"
-    if suffix != ".h" or source_text is None:
-        return "c"
-    source = source_text.encode()
-    c_tree = _C_PARSER.parse(source)
-    cpp_tree = _CPP_PARSER.parse(source)
-    def error_count(root: Node) -> int:
-        return sum(
-            1 for node in _walk(root)
-            if node.type == "ERROR" or node.is_missing
-        )
-    return "cpp" if error_count(cpp_tree.root_node) < error_count(c_tree.root_node) else "c"
+    if suffix == ".h" and language_hint in {"c", "cpp"}:
+        return language_hint
+    return "c"
+
+
+def source_language(path: str, inherited: str | None = None) -> str:
+    return _language_for_path(path, inherited)
 
 
 @dataclass(frozen=True)
@@ -44,6 +40,7 @@ class Call:
     name: str
     arguments: tuple[str, ...]
     line: int
+    code: str = ""
     result: str | None = None
     returned: bool = False
     indirect: bool = False
@@ -80,6 +77,8 @@ class FunctionSource:
     start_line: int
     end_line: int
     parse_has_error: bool = False
+    preprocessor_group: tuple[int, int] | None = None
+    preprocessor_branch: tuple[int, int] | None = None
 
     def calls(self) -> list[Call]:
         source = self.text.encode()
@@ -189,6 +188,123 @@ class GitRepository:
         )
         return result.returncode == 0
 
+    def _tree_entry(self, path: str) -> tuple[str, str, str, str]:
+        normalized = self._normalize_repository_path(path)
+        result = self._git("ls-tree", self.revision, "--", normalized)
+        line = result.stdout.rstrip("\n")
+        if not line:
+            raise FileNotFoundError(
+                f"path not found at {self.revision}: {normalized}"
+            )
+        metadata, listed_path = line.split("\t", 1)
+        mode, object_type, object_id = metadata.split()
+        return mode, object_type, object_id, listed_path
+
+    def _recursive_tree_entries(
+        self, path: str
+    ) -> list[tuple[str, str, str, str]]:
+        normalized = self._normalize_repository_path(path)
+        result = subprocess.run(
+            [
+                "git",
+                f"--git-dir={self.git_dir}",
+                "ls-tree",
+                "-r",
+                "-z",
+                self.revision,
+                "--",
+                normalized,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        entries: list[tuple[str, str, str, str]] = []
+        for raw in result.stdout.split(b"\0"):
+            if not raw:
+                continue
+            metadata, raw_path = raw.split(b"\t", 1)
+            mode, object_type, object_id = metadata.decode().split()
+            entries.append(
+                (mode, object_type, object_id, raw_path.decode(errors="replace"))
+            )
+        return entries
+
+    def _symlink_target(self, path: str) -> str:
+        result = self._git("show", f"{self.revision}:{path}")
+        target = result.stdout.strip()
+        return self._normalize_repository_path(
+            posixpath.join(posixpath.dirname(path), target)
+        )
+
+    def _symlink_materialization_targets(
+        self,
+        path: str,
+        resolving: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
+        if path in resolving:
+            chain = " -> ".join([*resolving, path])
+            raise ValueError(f"repository symlink cycle: {chain}")
+        mode, object_type, _, _ = self._tree_entry(path)
+        if mode != "120000":
+            if mode == "160000" or object_type == "commit":
+                raise ValueError(
+                    f"repository submodule source is unavailable at {path}"
+                )
+            return ()
+        target = self._symlink_target(path)
+        return (
+            target,
+            *self._symlink_materialization_targets(
+                target,
+                (*resolving, path),
+            ),
+        )
+
+    def materialization_paths(self, paths: Iterable[str]) -> tuple[str, ...]:
+        selected = [
+            self._normalize_repository_path(str(path))
+            for path in paths
+            if str(path)
+        ]
+        if not selected:
+            raise ValueError("at least one repository path is required")
+
+        resolved: list[str] = []
+        queued = list(dict.fromkeys(selected))
+        seen: set[str] = set()
+        while queued:
+            path = queued.pop(0)
+            if path in seen:
+                continue
+            seen.add(path)
+            mode, object_type, _, _ = self._tree_entry(path)
+            if mode == "160000" or object_type == "commit":
+                raise ValueError(
+                    f"repository submodule source is unavailable at {path}"
+                )
+            if path not in resolved:
+                resolved.append(path)
+            if mode == "120000":
+                for target in self._symlink_materialization_targets(path):
+                    if target not in seen:
+                        queued.append(target)
+                continue
+            if object_type != "tree":
+                continue
+            for child_mode, child_type, _, child_path in self._recursive_tree_entries(path):
+                if child_mode == "120000":
+                    for target in self._symlink_materialization_targets(
+                        child_path
+                    ):
+                        if target not in seen:
+                            queued.append(target)
+                elif child_mode == "160000" or child_type == "commit":
+                    # Nested submodules remain outside the source snapshot.
+                    # Calls into them will stay unresolved/opaque.
+                    continue
+        return tuple(resolved)
+
     @staticmethod
     def _normalize_repository_path(path: str) -> str:
         normalized = posixpath.normpath(path)
@@ -201,14 +317,7 @@ class GitRepository:
         return normalized
 
     def _tree_mode(self, path: str) -> str:
-        result = self._git("ls-tree", self.revision, "--", path)
-        line = result.stdout.rstrip("\n")
-        if not line:
-            raise FileNotFoundError(
-                f"path not found at {self.revision}: {path}"
-            )
-        metadata, listed_path = line.split("\t", 1)
-        mode, object_type, _ = metadata.split()
+        mode, object_type, _, listed_path = self._tree_entry(path)
         if listed_path != path or object_type != "blob":
             raise ValueError(
                 f"expected repository blob at {path}, got {listed_path}"
@@ -246,14 +355,15 @@ class GitRepository:
     def materialize(self, destination: str | Path, paths: Iterable[str]) -> Path:
         target = Path(destination)
         target.mkdir(parents=True, exist_ok=True)
-        selected = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
-        if not selected:
+        requested = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
+        if not requested:
             raise ValueError("at least one repository path is required")
-        missing = [path for path in selected if not self.has_path(path)]
+        missing = [path for path in requested if not self.has_path(path)]
         if missing:
             raise FileNotFoundError(
                 f"paths not found at {self.revision}: {', '.join(missing)}"
             )
+        selected = self.materialization_paths(requested)
         archive = subprocess.Popen(
             [
                 "git",
@@ -298,6 +408,7 @@ class GitRepository:
         end_line: int,
         parameters: tuple[str, ...],
         parameter_types: tuple[str, ...],
+        language_hint: str | None = None,
     ) -> FunctionSource:
         translation_unit = self.read_blob(path)
         lines = translation_unit.splitlines(keepends=True)
@@ -307,7 +418,7 @@ class GitRepository:
                 f"{start_line}-{end_line}"
             )
         text = "".join(lines[start_line - 1 : end_line])
-        language = _language_for_path(path, text)
+        language = _language_for_path(path, language_hint)
         pointer_like = tuple(
             "*" in type_text or "&" in type_text or "[" in type_text
             for type_text in parameter_types
@@ -402,6 +513,8 @@ def _parameters(
     pointer_like: list[bool] = []
     signatures: list[str] = []
     for child in parameter_list.named_children:
+        if child.has_error or child.is_missing:
+            continue
         if child.type not in {"parameter_declaration", "optional_parameter_declaration"}:
             continue
         parameter_decl = child.child_by_field_name("declarator")
@@ -409,7 +522,6 @@ def _parameters(
         if not name:
             continue
         names.append(name)
-        types.append(_text(child, source))
         pointer_like.append(
             parameter_decl is not None
             and any(
@@ -426,14 +538,17 @@ def _parameters(
             None,
         ) if parameter_decl is not None else None
         if identifier_node is None:
-            signatures.append(normalize_expression(_text(child, source)))
+            signature_text = _text(child, source)
         else:
-            signature = (
+            signature_text = (
                 source[child.start_byte : identifier_node.start_byte]
                 + b"$"
                 + source[identifier_node.end_byte : child.end_byte]
             ).decode(errors="replace")
-            signatures.append(normalize_expression(signature))
+        signature = normalize_expression(signature_text)
+        signatures.append(signature)
+        type_text = signature_text.replace("$", "")
+        types.append(" ".join(type_text.split()))
     return (
         tuple(names),
         tuple(types),
@@ -473,9 +588,59 @@ def _is_host_function_definition(
     return False
 
 
-def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
+_PREPROCESSOR_CONDITIONALS = {
+    "preproc_if",
+    "preproc_ifdef",
+    "preproc_ifndef",
+    "preproc_elif",
+    "preproc_elifdef",
+    "preproc_elifndef",
+    "preproc_else",
+}
+
+
+def _preprocessor_context(
+    node: Node,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    nearest: Node | None = None
+    current = node.parent
+    while current is not None:
+        if current.type in _PREPROCESSOR_CONDITIONALS:
+            nearest = current
+            break
+        current = current.parent
+    if nearest is None:
+        return None, None
+
+    group = nearest
+    while group.type in {
+        "preproc_elif",
+        "preproc_elifdef",
+        "preproc_elifndef",
+        "preproc_else",
+    }:
+        parent = group.parent
+        if parent is None or parent.type not in _PREPROCESSOR_CONDITIONALS:
+            break
+        alternative = parent.child_by_field_name("alternative")
+        if not _same_node(alternative, group):
+            break
+        group = parent
+
+    return (
+        (group.start_byte, group.end_byte),
+        (nearest.start_byte, nearest.end_byte),
+    )
+
+
+def parse_functions(
+    path: str,
+    source_text: str,
+    *,
+    language_hint: str | None = None,
+) -> list[FunctionSource]:
     source = source_text.encode()
-    language = _language_for_path(path, source_text)
+    language = _language_for_path(path, language_hint)
     tree = _parser_for_language(language).parse(source)
     function_like_macros = _function_like_macro_names(tree.root_node, source)
     functions: list[FunctionSource] = []
@@ -488,6 +653,7 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
         if not name:
             continue
         parameters, types, pointer_like, signatures = _parameters(node, source)
+        preprocessor_group, preprocessor_branch = _preprocessor_context(node)
         functions.append(
             FunctionSource(
                 path=path,
@@ -502,12 +668,25 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
                 start_line=node.start_point.row + 1,
                 end_line=node.end_point.row + 1,
                 parse_has_error=bool(node.has_error),
+                preprocessor_group=preprocessor_group,
+                preprocessor_branch=preprocessor_branch,
             )
         )
     return functions
 
 
-def function_body_has_error(function: FunctionSource) -> bool:
+def _node_reliable(node: Node | None) -> bool:
+    current = node
+    while current is not None:
+        if current.type == "ERROR" or current.is_missing:
+            return False
+        if current.type == "compound_statement":
+            return True
+        current = current.parent
+    return True
+
+
+def function_body_recoverable(function: FunctionSource) -> bool:
     source = function.text.encode()
     tree = _parser_for_language(function.language).parse(source)
     definitions = [
@@ -516,9 +695,7 @@ def function_body_has_error(function: FunctionSource) -> bool:
         if node.type == "function_definition"
     ]
     if len(definitions) == 1:
-        body = definitions[0].child_by_field_name("body")
-        if body is not None:
-            return bool(body.has_error)
+        return definitions[0].child_by_field_name("body") is not None
 
     outer_blocks: list[Node] = []
     for node in _walk(tree.root_node):
@@ -533,9 +710,7 @@ def function_body_has_error(function: FunctionSource) -> bool:
             parent = parent.parent
         if not nested:
             outer_blocks.append(node)
-    if len(outer_blocks) != 1:
-        return True
-    return bool(outer_blocks[0].has_error)
+    return len(outer_blocks) == 1
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:
@@ -563,7 +738,7 @@ def _integer_domains_from_ast(
             signed.add(name)
 
     for declaration in _walk(root):
-        if declaration.type != "declaration":
+        if declaration.type != "declaration" or not _node_reliable(declaration):
             continue
         type_node = declaration.child_by_field_name("type")
         if type_node is None:
@@ -626,7 +801,7 @@ def _known_element_size(type_text: str, declarator: Node | None) -> int | None:
 def _local_arrays(root: Node, source: bytes) -> list[LocalArray]:
     arrays: list[LocalArray] = []
     for declaration in _walk(root):
-        if declaration.type != "declaration":
+        if declaration.type != "declaration" or not _node_reliable(declaration):
             continue
         type_node = declaration.child_by_field_name("type")
         if type_node is None:
@@ -749,7 +924,7 @@ def _calls(
 ) -> list[Call]:
     calls: list[Call] = []
     for item in _walk(node):
-        if item.type != "call_expression":
+        if item.type != "call_expression" or not _node_reliable(item):
             continue
         function_node = item.child_by_field_name("function")
         arguments_node = item.child_by_field_name("arguments")
@@ -772,6 +947,7 @@ def _calls(
                 name=name,
                 arguments=arguments,
                 line=line_offset + item.start_point.row,
+                code=_text(item, source),
                 result=result,
                 returned=returned,
                 indirect=indirect,
@@ -809,6 +985,8 @@ def _direct_memory_accesses(
 ) -> list[MemoryAccess]:
     accesses: list[MemoryAccess] = []
     for node in _walk(root):
+        if not _node_reliable(node):
+            continue
         if node.type == "subscript_expression":
             if node.parent is not None and node.parent.type == "subscript_expression":
                 continue
@@ -858,7 +1036,7 @@ def _absolute_line(node: Node, line_offset: int) -> int:
 
 def _must_terminate(node: Node | None) -> bool:
     """Whether every path through this statement returns from the function."""
-    if node is None:
+    if node is None or not _node_reliable(node):
         return False
     if node.type == "return_statement":
         return True
@@ -895,7 +1073,7 @@ def _invert_comparison(expression: str) -> str | None:
 
 
 def _condition_terms(node: Node | None, source: bytes, truth: bool) -> list[str]:
-    if node is None:
+    if node is None or not _node_reliable(node):
         return []
     if node.type == "parenthesized_expression":
         child = next((item for item in node.named_children), None)
@@ -955,7 +1133,8 @@ def _branch_constraint_for_access(
 
 def _contains_call_expression(node: Node | None) -> bool:
     return node is not None and any(
-        item.type == "call_expression" for item in _walk(node)
+        item.type == "call_expression" and _node_reliable(item)
+        for item in _walk(node)
     )
 
 
@@ -1033,6 +1212,8 @@ def _continuation_constraints_before(
 
 
 def _simple_assignment(node: Node, source: bytes) -> tuple[str, str] | None:
+    if not _node_reliable(node):
+        return None
     if node.type == "expression_statement" and node.named_children:
         node = node.named_children[0]
     if node.type == "assignment_expression":
@@ -1062,6 +1243,8 @@ def _direct_call_assignment(
     source: bytes,
     line_offset: int,
 ) -> tuple[str, str, int] | None:
+    if not _node_reliable(node):
+        return None
     if node.type == "expression_statement" and node.named_children:
         node = node.named_children[0]
 

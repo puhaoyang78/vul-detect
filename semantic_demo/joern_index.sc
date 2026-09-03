@@ -1,17 +1,25 @@
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import scala.collection.mutable.ArrayBuffer
+import scala.jdk.CollectionConverters._
 import io.shiftleft.semanticcpg.language._
 
 @main def exec(
   cpgFile: String,
   outFile: String,
-  sourceRoot: String
+  sourceRoot: String,
+  scopeFile: String
 ) = {
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
   val sourcePath = Paths.get(sourceRoot).toAbsolutePath.normalize
+  val scopes = Files.readAllLines(Paths.get(scopeFile)).asScala.toSet
+
+  def inAnalysisScope(relativePath: String): Boolean =
+    scopes.exists { scope =>
+      relativePath == scope || relativePath.startsWith(scope.stripSuffix("/") + "/")
+    }
 
   def sourceRelative(filename: String): Option[String] = {
     try {
@@ -19,8 +27,10 @@ import io.shiftleft.semanticcpg.language._
       val path =
         if (rawPath.isAbsolute) rawPath.normalize
         else sourcePath.resolve(rawPath).normalize
-      if (path.startsWith(sourcePath) && Files.isRegularFile(path))
-        Some(sourcePath.relativize(path).toString.replace('\\', '/'))
+      if (path.startsWith(sourcePath) && Files.isRegularFile(path)) {
+        val relative = sourcePath.relativize(path).toString.replace('\\', '/')
+        if (inAnalysisScope(relative)) Some(relative) else None
+      }
       else
         None
     } catch {
@@ -41,7 +51,7 @@ import io.shiftleft.semanticcpg.language._
           clean(relativePath) + "\t" + start + "\t" + end + "\t" +
           clean(returnType)
         )
-        method.parameter.l.foreach { parameter =>
+        method.parameter.filter(p => p.index > 0 && !p.isVariadic).l.foreach { parameter =>
           lines += (
             "PARAM\t" + clean(method.fullName) + "\t" + (parameter.index - 1) + "\t" +
             clean(parameter.name) + "\t" + clean(parameter.typeFullName)
@@ -49,8 +59,9 @@ import io.shiftleft.semanticcpg.language._
         }
         method.call.l.foreach { call =>
           lines += (
-            "CALL\t" + clean(method.fullName) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
-            clean(call.name) + "\t" + clean(call.methodFullName) + "\t" + clean(call.dispatchType)
+            "CALL\t" + clean(method.fullName) + "\t" + call.id + "\t" +
+            call.lineNumber.getOrElse(-1) + "\t" + clean(call.name) + "\t" +
+            clean(call.methodFullName) + "\t" + clean(call.dispatchType)
           )
         }
       }

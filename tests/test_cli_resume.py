@@ -9,6 +9,42 @@ from semantic_demo.semantics import Candidate
 from semantic_demo.source import parse_functions
 
 
+class PreflightTests(unittest.TestCase):
+    def test_normalize_does_not_start_local_llm_when_preflight_fails(self):
+        args = SimpleNamespace(
+            samples="/unused",
+            output="/unused",
+            llm_backend="local",
+            llama_server="/unused",
+            local_model="/unused",
+            refresh=True,
+            joern_dir="/unused",
+            java_home="/unused",
+            cpg_cache_dir="/unused",
+        )
+        with patch(
+            "semantic_demo.cli.read_jsonl",
+            return_value=[
+                {
+                    "sample_key": "S01",
+                    "repository_git_dir": "/unused",
+                    "vulnerable_commit": "a" * 40,
+                    "entry_path": "entry.c",
+                    "entry_function": "entry",
+                    "scan_paths": [],
+                }
+            ],
+        ), patch(
+            "semantic_demo.cli._preflight_samples",
+            side_effect=RuntimeError("preflight failed"),
+        ), patch(
+            "semantic_demo.cli.local_llm_server",
+        ) as local_server:
+            with self.assertRaisesRegex(RuntimeError, "preflight failed"):
+                normalize_command(args)
+        local_server.assert_not_called()
+
+
 class CheckpointTests(unittest.TestCase):
     def test_llm_normalization_resumes_after_completed_candidate(self):
         entry = parse_functions("entry.c", "void entry(void) {}\n")[0]

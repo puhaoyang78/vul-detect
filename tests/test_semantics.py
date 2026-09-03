@@ -15,6 +15,7 @@ from semantic_demo.joern import (
     JoernMethodNotFound,
     JoernTimeout,
     JoernValidator,
+    _isolated_variant_translation_unit,
 )
 from semantic_demo.semantics import (
     Candidate,
@@ -120,6 +121,13 @@ class GitRepositoryTests(unittest.TestCase):
             self.assertEqual(
                 "static inline void list_add_tail(void) {}\n",
                 repository.read_blob("include/list.h"),
+            )
+            materialized = root / "materialized"
+            repository.materialize(materialized, ("include",))
+            self.assertTrue((materialized / "real" / "list.h").is_file())
+            self.assertEqual(
+                "../real/list.h",
+                (materialized / "include" / "list.h").readlink().as_posix(),
             )
 
 
@@ -336,19 +344,20 @@ class SemanticValidationTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("not pointer-like", result.reason)
 
-    def test_parser_error_rejects_semantic_validation(self):
+    def test_local_parser_error_does_not_discard_independent_facts(self):
         function = parse_functions(
             "broken.c",
-            "void broken(char *p) { if ( p[0] = 1; }",
+            "void broken(char *p) { int = ; p[0] = 1; }",
         )[0]
         self.assertTrue(function.parse_has_error)
-        result = validate_summary(
-            Candidate("sample", function, (1,)),
-            {"kind": "WRITE", "buffer": "arg0", "length": "1"},
-            joern=StaticFactsValidator(JoernFacts()),
+        self.assertIsNone(candidate_validation_error(function))
+        accesses = function.direct_memory_accesses()
+        self.assertTrue(
+            any(
+                access.kind == "WRITE" and "p" in access.buffer
+                for access in accesses
+            )
         )
-        self.assertFalse(result.passed)
-        self.assertIn("parser error", result.reason)
 
     def test_missing_joern_method_rejects_only_summary(self):
         class Missing:
@@ -400,6 +409,25 @@ class SemanticValidationTests(unittest.TestCase):
             with self.assertRaises(JoernTimeout):
                 validator.facts(self.candidate)
         self.assertEqual(1, run.call_count)
+
+    def test_joern_call_ids_keep_same_line_calls_distinct(self):
+        facts = JoernValidator._parse(
+            "\n".join(
+                [
+                    "PARAM\t0\tdst\tchar *",
+                    "ARG\t11\t10\tmemcpy\t0\tmemcpy(a,b,n)\ta",
+                    "ARG\t11\t10\tmemcpy\t2\tmemcpy(a,b,n)\tn",
+                    "FLOW\t0\t11\t0",
+                    "ARG\t12\t10\tmemcpy\t0\tmemcpy(c,d,m)\tc",
+                    "ARG\t12\t10\tmemcpy\t2\tmemcpy(c,d,m)\tm",
+                ]
+            )
+        )
+        self.assertEqual({"11", "12"}, set(facts.calls))
+        self.assertNotEqual(
+            facts.calls["11"].arguments,
+            facts.calls["12"].arguments,
+        )
 
     def test_response_content_accepts_final_answer(self):
         result = {
@@ -728,6 +756,7 @@ class CandidateDiscoveryTests(unittest.TestCase):
             end_line,
             parameters,
             parameter_types,
+            language_hint=None,
         ):
             return self.functions[(path, name, start_line)]
 
@@ -770,6 +799,38 @@ class CandidateDiscoveryTests(unittest.TestCase):
             parameter_types=function.parameter_types,
             calls=tuple(calls),
         )
+
+    def test_same_signature_duplicates_without_preprocessor_are_not_variants(self):
+        definitions = parse_functions(
+            "defs.c",
+            """
+            int inner(char *buffer) { return buffer[0]; }
+            int inner(char *buffer) { return buffer[1]; }
+            """,
+        )
+        entry = parse_functions(
+            "wrapper.c",
+            "int outer(char *buffer) { return inner(buffer); }",
+        )[0]
+        inner_method = self.method("inner:int(char*)", definitions[0])
+        entry_method = self.method(
+            "outer:int(char*)",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="inner",
+                    method_full_name=inner_method.full_name,
+                    dispatch_type="STATIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex(
+            [entry_method, inner_method],
+            [entry, *definitions],
+        )
+        candidates = discover_candidates("sample", index, entry_method)
+        self.assertEqual(1, len(candidates))
 
     def test_same_file_c_definitions_are_explicit_variants(self):
         definitions = parse_functions(
@@ -814,6 +875,50 @@ class CandidateDiscoveryTests(unittest.TestCase):
             2,
             len({candidate.function.start_line for candidate in candidates}),
         )
+        self.assertEqual({2}, {candidate.variant_count for candidate in candidates})
+        self.assertEqual(
+            1,
+            len({candidate.variant_group for candidate in candidates}),
+        )
+
+    def test_unknown_return_type_is_not_pruned(self):
+        function = parse_functions(
+            "unknown.c",
+            "int unknown(int value) { return value; }",
+        )[0]
+        entry = parse_functions(
+            "entry.c",
+            "int entry(int value) { return unknown(value); }",
+        )[0]
+        unknown_method = RepositoryMethod(
+            full_name="unknown:ANY(int)",
+            name="unknown",
+            path="unknown.c",
+            start_line=function.start_line,
+            end_line=function.end_line,
+            return_type="ANY",
+            parameters=function.parameters,
+            parameter_types=function.parameter_types,
+            calls=(),
+        )
+        entry_method = self.method(
+            "entry:int(int)",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="unknown",
+                    method_full_name=unknown_method.full_name,
+                    dispatch_type="STATIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex(
+            [entry_method, unknown_method],
+            [entry, function],
+        )
+        candidates = discover_candidates("sample", index, entry_method)
+        self.assertEqual(["unknown"], [item.function.name for item in candidates])
 
     def test_schema_inexpressible_helper_prunes_its_subgraph(self):
         helper = parse_functions(
@@ -988,6 +1093,14 @@ class CandidateDiscoveryTests(unittest.TestCase):
 
 
 class ParsingRegressionTests(unittest.TestCase):
+    def test_header_language_uses_explicit_tu_hint(self):
+        functions = parse_functions(
+            "sample.h",
+            "class Foo { public: int value() { return 1; } };",
+            language_hint="cpp",
+        )
+        self.assertEqual("cpp", functions[0].language)
+
     def test_cpp_qualified_method_name_uses_terminal_identifier(self):
         functions = parse_functions(
             "sample.cpp",
@@ -1015,6 +1128,31 @@ class ParsingRegressionTests(unittest.TestCase):
             """,
         )
         self.assertEqual(["host"], [function.name for function in functions])
+
+    def test_isolated_variant_preserves_line_and_removes_other_branch(self):
+        functions = parse_functions(
+            "variants.c",
+            """
+            #ifdef FEATURE
+            int inner(int x) { return x; }
+            #else
+            int inner(int x) { return x + 1; }
+            #endif
+            int after(void) { return 0; }
+            """,
+        )
+        selected = functions[1]
+        isolated = _isolated_variant_translation_unit(selected)
+        reparsed = parse_functions("variants.c", isolated)
+        target = next(
+            function
+            for function in reparsed
+            if function.name == "inner"
+        )
+        self.assertEqual(selected.start_line, target.start_line)
+        self.assertIn("return x + 1", target.text)
+        self.assertNotIn("return x;", isolated)
+        self.assertIn("int after(void)", isolated)
 
     def test_preprocessor_branch_host_functions_remain_indexed(self):
         functions = parse_functions(
@@ -1458,12 +1596,10 @@ class Z3ReasonerTests(unittest.TestCase):
             summary,
             True,
             "validated",
+            variant_group="identity.c:identity:group",
+            variant_count=2,
         )
-        result = analyze(
-            entry,
-            [validation],
-            variant_counts={("identity.c", "identity"): 2},
-        )
+        result = analyze(entry, [validation])
         self.assertEqual("UNKNOWN", result.verdict)
 
     def test_validated_value_summary_enters_caller_constraints(self):

@@ -17,9 +17,10 @@ from .joern import (
 )
 from .source import (
     FunctionSource,
-    function_body_has_error,
+    function_body_recoverable,
     normalize_expression,
     parse_functions,
+    source_language,
 )
 
 
@@ -51,7 +52,7 @@ READS = {
     "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 5
+NORMALIZATION_SCHEMA_VERSION = 6
 MAX_LLM_SOURCE_CHARS = 50000
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -104,6 +105,8 @@ class Candidate:
     function: FunctionSource
     call_lines: tuple[int, ...]
     method_full_name: str = ""
+    variant_group: str | None = None
+    variant_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -115,24 +118,50 @@ class Validation:
     summary: dict[str, str]
     passed: bool
     reason: str
+    variant_group: str | None = None
+    variant_count: int = 1
 
     def as_json(self) -> dict[str, object]:
         return asdict(self)
 
 
+_CLEAR_SCALAR_TYPES = {
+    "bool", "_Bool", "char", "signedchar", "unsignedchar",
+    "short", "shortint", "signedshort", "signedshortint",
+    "unsignedshort", "unsignedshortint", "int", "signed", "signedint",
+    "unsigned", "unsignedint", "long", "longint", "signedlong",
+    "signedlongint", "unsignedlong", "unsignedlongint", "longlong",
+    "longlongint", "signedlonglong", "signedlonglongint",
+    "unsignedlonglong", "unsignedlonglongint", "float", "double",
+    "longdouble", "size_t", "ssize_t",
+}
+
+
+def _type_definitely_pointer(type_text: str) -> bool:
+    compact = "".join(type_text.split())
+    return any(token in compact for token in ("*", "&", "["))
+
+
+def _type_may_be_pointer(type_text: str) -> bool:
+    compact = "".join(type_text.split())
+    if _type_definitely_pointer(type_text):
+        return True
+    if compact in {"", "ANY", "<empty>"}:
+        return True
+    return compact not in _CLEAR_SCALAR_TYPES
+
+
 def _method_can_produce_summary(method: RepositoryMethod) -> bool:
     return (
-        method.return_type not in {"void", "<empty>", "ANY"}
-        or any(
-            "*" in type_text or "&" in type_text or "[" in type_text
-            for type_text in method.parameter_types
-        )
+        method.return_type not in {"void", "<empty>"}
+        or any(_type_may_be_pointer(type_text) for type_text in method.parameter_types)
     )
 
 
 def _sources_for_method(
     index: JoernRepositoryIndex,
     method: RepositoryMethod,
+    language_hint: str,
 ) -> list[FunctionSource]:
     base = index.repository.function_source(
         path=method.path,
@@ -141,6 +170,7 @@ def _sources_for_method(
         end_line=method.end_line,
         parameters=method.parameters,
         parameter_types=method.parameter_types,
+        language_hint=language_hint,
     )
 
     # Preserve explicit same-file C preprocessor variants only after Joern has
@@ -153,6 +183,7 @@ def _sources_for_method(
             for function in parse_functions(
                 method.path,
                 index.repository.read_blob(method.path),
+                language_hint=base.language,
             )
             if function.name == method.name
             and len(function.parameters) == len(method.parameters)
@@ -162,7 +193,15 @@ def _sources_for_method(
     if len(parsed) <= 1:
         return [base]
     signatures = {function.parameter_signatures for function in parsed}
-    if len(signatures) == 1:
+    groups = {function.preprocessor_group for function in parsed}
+    branches = {function.preprocessor_branch for function in parsed}
+    if (
+        len(signatures) == 1
+        and len(groups) == 1
+        and None not in groups
+        and None not in branches
+        and len(branches) == len(parsed)
+    ):
         return parsed
     return [base]
 
@@ -171,18 +210,23 @@ def discover_candidates(
     sample_key: str,
     index: JoernRepositoryIndex,
     entry_method: RepositoryMethod,
+    entry_language: str | None = None,
 ) -> list[Candidate]:
     """Traverse Joern-resolved repository calls; unresolved calls stay opaque."""
-    discovered: dict[tuple[str, str, int], Candidate] = {}
+    discovered: dict[tuple[str, str, int, str], Candidate] = {}
     methods = index.methods()
-    queue: list[RepositoryMethod] = [entry_method]
-    expanded: set[str] = set()
+    initial_language = source_language(entry_method.path, entry_language)
+    queue: list[tuple[RepositoryMethod, str]] = [
+        (entry_method, initial_language)
+    ]
+    expanded: set[tuple[str, str]] = set()
 
     while queue:
-        caller = queue.pop(0)
-        if caller.full_name in expanded:
+        caller, caller_language = queue.pop(0)
+        caller_key = (caller.full_name, caller_language)
+        if caller_key in expanded:
             continue
-        expanded.add(caller.full_name)
+        expanded.add(caller_key)
 
         for call in caller.calls:
             if call.name.startswith("<operator>."):
@@ -198,21 +242,53 @@ def discover_candidates(
                     continue
                 if not _method_can_produce_summary(callee):
                     continue
-                sources = _sources_for_method(index, callee)
+                callee_language = source_language(
+                    callee.path,
+                    caller_language,
+                )
+                sources = _sources_for_method(
+                    index,
+                    callee,
+                    callee_language,
+                )
 
+                variant_count = (
+                    len(sources)
+                    if len(sources) > 1
+                    and all(
+                        source.preprocessor_group is not None
+                        for source in sources
+                    )
+                    else 1
+                )
                 for source in sources:
-                    key = (source.path, source.name, source.start_line)
+                    key = (
+                        source.path,
+                        source.name,
+                        source.start_line,
+                        source.language,
+                    )
                     existing = discovered.get(key)
                     lines = set(existing.call_lines if existing else ())
                     lines.add(call.line)
+                    variant_group = (
+                        f"{source.path}:{source.name}:"
+                        f"{source.preprocessor_group[0]}-"
+                        f"{source.preprocessor_group[1]}"
+                        if variant_count > 1
+                        and source.preprocessor_group is not None
+                        else None
+                    )
                     discovered[key] = Candidate(
                         sample_key=sample_key,
                         function=source,
                         call_lines=tuple(sorted(lines)),
                         method_full_name=callee.full_name,
+                        variant_group=variant_group,
+                        variant_count=variant_count,
                     )
-                if callee.full_name in methods and callee.full_name not in expanded:
-                    queue.append(callee)
+                if callee.full_name in methods:
+                    queue.append((callee, callee_language))
 
     return sorted(
         discovered.values(),
@@ -329,6 +405,26 @@ def _normalized_return_expression(value: str) -> str:
     return compact
 
 
+def _source_call_for_joern(candidate: Candidate, joern_call):
+    candidates = [
+        call
+        for call in candidate.function.calls()
+        if not call.indirect
+        and call.line == joern_call.line
+        and call.name == joern_call.name
+    ]
+    if joern_call.code:
+        joern_code = normalize_expression(joern_call.code)
+        exact = [
+            call
+            for call in candidates
+            if normalize_expression(call.code) == joern_code
+        ]
+        if len(exact) == 1:
+            return exact[0]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _validate_with_joern(
     candidate: Candidate,
     summary: dict[str, str],
@@ -339,16 +435,11 @@ def _validate_with_joern(
 
     if kind == "ALLOC":
         returned = {_normalized_return_expression(value) for value in facts.returns}
-        source_calls = {
-            (call.line, call.name): call
-            for call in candidate.function.calls()
-            if not call.indirect
-        }
         for call in facts.call_list():
             _, size_indices = _known_call_indices(call.name, "ALLOC")
             if not size_indices:
                 continue
-            source_call = source_calls.get((call.line, call.name))
+            source_call = _source_call_for_joern(candidate, call)
             if source_call is None:
                 continue
             returns_allocation = source_call.returned or (
@@ -444,14 +535,7 @@ def _validate_by_composition(
                     facts, summary["size"], call, child_size_args
                 ):
                     continue
-                source_call = next(
-                    (
-                        source_call
-                        for source_call in candidate.function.calls()
-                        if source_call.name == call.name and source_call.line == call.line
-                    ),
-                    None,
-                )
+                source_call = _source_call_for_joern(candidate, call)
                 if (
                     source_call is not None
                     and _source_call_returns_value(source_call, facts)
@@ -470,14 +554,7 @@ def _validate_by_composition(
                     or child_expression != f"arg{child_args[0]}"
                 ):
                     continue
-                source_call = next(
-                    (
-                        source_call
-                        for source_call in candidate.function.calls()
-                        if source_call.name == call.name and source_call.line == call.line
-                    ),
-                    None,
-                )
+                source_call = _source_call_for_joern(candidate, call)
                 if (
                     source_call is None
                     or not _source_call_returns_value(source_call, facts)
@@ -496,8 +573,8 @@ def _validate_by_composition(
 
 
 def candidate_validation_error(function: FunctionSource) -> str | None:
-    if function.parse_has_error and function_body_has_error(function):
-        return "candidate function body contains parser error nodes"
+    if function.parse_has_error and not function_body_recoverable(function):
+        return "candidate function body cannot be structurally recovered"
     return None
 
 
@@ -522,12 +599,15 @@ def validate_summary(
                 "caller-supplied argN"
             )
         elif (
-            root_index >= len(function.parameter_pointer_like)
-            or not function.parameter_pointer_like[root_index]
+            root_index >= len(function.parameter_types)
+            or not _type_definitely_pointer(
+                function.parameter_types[root_index]
+            )
         ):
             error = (
                 f"{clean_summary.get('kind')} buffer root arg{root_index} "
-                "is not pointer-like in the candidate signature"
+                "is not pointer-like: pointer semantics are not proven "
+                "by the candidate signature"
             )
 
     if error:
@@ -539,6 +619,8 @@ def validate_summary(
             clean_summary,
             False,
             error,
+            variant_group=candidate.variant_group,
+            variant_count=candidate.variant_count,
         )
 
     try:
@@ -566,6 +648,8 @@ def validate_summary(
         clean_summary,
         passed,
         reason,
+        variant_group=candidate.variant_group,
+        variant_count=candidate.variant_count,
     )
 
 

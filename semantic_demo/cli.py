@@ -29,7 +29,7 @@ from .semantics import (
     load_replay,
     validate_summary,
 )
-from .source import GitRepository
+from .source import GitRepository, source_language
 
 
 FORBIDDEN_DETECTION_FIELDS = {
@@ -41,7 +41,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 11
+ANALYSIS_CHECKPOINT_VERSION = 12
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -95,6 +95,14 @@ def validate_detection_manifest(samples: list[dict[str, object]]) -> None:
         keys.add(key)
         if len(str(sample["vulnerable_commit"])) != 40:
             raise ValueError(f"{key}: vulnerable_commit must be a full Git object id")
+        if "language" in sample and sample["language"] not in {"c", "cpp"}:
+            raise ValueError(f"{key}: language must be c or cpp")
+        for field in ("defines", "include_paths"):
+            value = sample.get(field, [])
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) for item in value
+            ):
+                raise ValueError(f"{key}: {field} must be a list of strings")
 
 
 def _load_entry(
@@ -115,6 +123,10 @@ def _load_entry(
         str(sample["sample_key"]),
         tuple(str(item) for item in sample.get("scan_paths", [])),
         str(sample["entry_path"]),
+        defines=tuple(str(item) for item in sample.get("defines", [])),
+        include_paths=tuple(
+            str(item) for item in sample.get("include_paths", [])
+        ),
         joern_dir=joern_dir,
         java_home=java_home,
         cache_dir=cpg_cache_dir,
@@ -135,6 +147,10 @@ def _load_entry(
         end_line=entry_method.end_line,
         parameters=entry_method.parameters,
         parameter_types=entry_method.parameter_types,
+        language_hint=source_language(
+            entry_method.path,
+            str(sample.get("language", "")) or None,
+        ),
     )
     return repository, index, entry_method, entry
 
@@ -297,9 +313,102 @@ def _analysis_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _preflight_samples(
+    samples: list[dict[str, object]],
+    *,
+    joern_dir: str,
+    java_home: str,
+    cpg_cache_dir: str,
+):
+    prepared = []
+    failures: list[str] = []
+    for sample in samples:
+        key = str(sample["sample_key"])
+        try:
+            repository, index, entry_method, entry = _load_entry(
+                sample,
+                joern_dir=joern_dir,
+                java_home=java_home,
+                cpg_cache_dir=cpg_cache_dir,
+            )
+            candidates = discover_candidates(
+                key,
+                index,
+                entry_method,
+                entry.language,
+            )
+            skipped = [
+                candidate
+                for candidate in candidates
+                if candidate_validation_error(candidate.function) is not None
+            ]
+            methods = index.methods()
+            unresolved = (
+                sum(
+                    1
+                    for method in methods.values()
+                    for call in method.calls
+                    if call.dispatch_type == "STATIC_DISPATCH"
+                    and not index.callee_methods(call)
+                )
+                if isinstance(methods, dict)
+                else 0
+            )
+            prepared.append(
+                (
+                    sample,
+                    repository,
+                    index,
+                    entry_method,
+                    entry,
+                    candidates,
+                )
+            )
+            print(
+                f"preflight_sample_done={key} candidates={len(candidates)} "
+                f"unrecoverable_candidates={len(skipped)} "
+                f"unresolved_static_calls={unresolved} "
+                f"diagnostics={index.diagnostics_path}",
+                flush=True,
+            )
+        except Exception as error:
+            failures.append(f"{key}: {error}")
+            print(
+                f"preflight_sample_failed={key} error={error}",
+                flush=True,
+            )
+    if failures:
+        raise RuntimeError(
+            "parse preflight failed for "
+            f"{len(failures)} sample(s):\n" + "\n".join(failures)
+        )
+    return prepared
+
+
+def preflight_command(args: argparse.Namespace) -> None:
+    samples = read_jsonl(args.samples)
+    validate_detection_manifest(samples)
+    prepared = _preflight_samples(
+        samples,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
+    )
+    print(
+        f"preflight_complete=samples:{len(prepared)}",
+        flush=True,
+    )
+
+
 def normalize_command(args: argparse.Namespace) -> None:
     samples = read_jsonl(args.samples)
     validate_detection_manifest(samples)
+    prepared = _preflight_samples(
+        samples,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
+    )
     records: list[dict[str, object]] = []
     cache = {} if args.refresh else _normalization_cache(args.output)
     if args.refresh:
@@ -320,18 +429,14 @@ def normalize_command(args: argparse.Namespace) -> None:
         )
 
     with llm_context as llm_options:
-        for sample in samples:
-            repository, index, entry_method, entry = _load_entry(
-                sample,
-                joern_dir=args.joern_dir,
-                java_home=args.java_home,
-                cpg_cache_dir=args.cpg_cache_dir,
-            )
-            candidates = discover_candidates(
-                str(sample["sample_key"]),
-                index,
-                entry_method,
-            )
+        for (
+            sample,
+            repository,
+            index,
+            entry_method,
+            entry,
+            candidates,
+        ) in prepared:
             for candidate in candidates:
                 fingerprint = _candidate_fingerprint(candidate)
                 cache_key = (
@@ -462,6 +567,7 @@ def detect(
             sample_key,
             index,
             entry_method,
+            entry.language,
         )
         joern = JoernValidator(
             joern_dir,
@@ -515,34 +621,58 @@ def detect(
         # Fixed-point validation: primitive-backed summaries seed the process;
         # wrapper summaries may then be validated from summaries accepted by every
         # same-file C implementation variant of a callee.
-        accepted_by_variant: dict[
-            tuple[str, str, int], list[dict[str, str]]
+        accepted_by_member: dict[
+            tuple[str, str, str, int],
+            list[dict[str, str]],
         ] = {}
+        expected_by_group: dict[tuple[str, str, str], int] = {}
         accepted: dict[tuple[str, str], list[dict[str, str]]] = {}
-        variant_counts = Counter(
-            (candidate.function.path, candidate.function.name)
-            for candidate in candidates
-        )
         pending = list(range(len(summary_entries)))
         final: dict[int, Validation] = {}
 
         def publish_common_summaries() -> None:
             accepted.clear()
-            groups: dict[
-                tuple[str, str], list[list[dict[str, str]]]
+            complete_groups: dict[
+                tuple[str, str],
+                list[list[dict[str, str]]],
             ] = {}
-            for (path, name, source_line), summaries in accepted_by_variant.items():
-                groups.setdefault((path, name), []).append(summaries)
-            for key, variants in groups.items():
-                if len(variants) != variant_counts[key]:
+            grouped: dict[
+                tuple[str, str, str],
+                dict[int, list[dict[str, str]]],
+            ] = {}
+            for (
+                path,
+                name,
+                group_id,
+                source_line,
+            ), summaries in accepted_by_member.items():
+                grouped.setdefault(
+                    (path, name, group_id),
+                    {},
+                )[source_line] = summaries
+
+            for (path, name, group_id), by_line in grouped.items():
+                expected = expected_by_group[(path, name, group_id)]
+                if len(by_line) != expected:
                     continue
+                members = list(by_line.values())
                 common = [
                     summary
-                    for summary in variants[0]
-                    if all(summary in variant for variant in variants[1:])
+                    for summary in members[0]
+                    if all(
+                        summary in member
+                        for member in members[1:]
+                    )
                 ]
                 if common:
-                    accepted[key] = common
+                    complete_groups.setdefault(
+                        (path, name),
+                        [],
+                    ).append(common)
+
+            for key, groups in complete_groups.items():
+                if len(groups) == 1:
+                    accepted[key] = groups[0]
 
         while pending:
             progress = False
@@ -562,10 +692,21 @@ def detect(
                     ) from error
                 final[index] = validation
                 if validation.passed:
-                    bucket = accepted_by_variant.setdefault(
+                    group_id = (
+                        validation.variant_group
+                        or f"single:{validation.source_line}"
+                    )
+                    group_key = (
+                        validation.source_path,
+                        validation.function,
+                        group_id,
+                    )
+                    expected_by_group[group_key] = validation.variant_count
+                    bucket = accepted_by_member.setdefault(
                         (
                             validation.source_path,
                             validation.function,
+                            group_id,
                             validation.source_line,
                         ),
                         [],
@@ -598,7 +739,6 @@ def detect(
         proposed = analyze(
             entry,
             validations=validations,
-            variant_counts=dict(variant_counts),
         )
         detection_records.append(
             {
@@ -820,6 +960,14 @@ def evaluate(
 
 
 def run_command(args: argparse.Namespace) -> None:
+    samples = read_jsonl(args.samples)
+    validate_detection_manifest(samples)
+    _preflight_samples(
+        samples,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
+    )
     detect(
         args.samples,
         args.replay,
@@ -840,6 +988,19 @@ def run_command(args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="validate repository, Joern, entry, candidate, and local parse inputs",
+    )
+    preflight.add_argument("--samples", default="data/detection_samples.jsonl")
+    preflight.add_argument("--joern-dir", default="/home/phy/joern")
+    preflight.add_argument(
+        "--java-home",
+        default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
+    )
+    preflight.add_argument("--cpg-cache-dir", default="data/joern_cpg")
+    preflight.set_defaults(func=preflight_command)
 
     normalize = subparsers.add_parser("normalize", help="normalize candidate functions")
     normalize.add_argument("--samples", default="data/detection_samples.jsonl")
