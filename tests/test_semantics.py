@@ -661,6 +661,8 @@ class CandidateDiscoveryTests(unittest.TestCase):
             return self._methods
 
         def callee_methods(self, call):
+            if call.dispatch_type != "STATIC_DISPATCH":
+                return []
             method = self._methods.get(call.method_full_name)
             return [] if method is None else [method]
 
