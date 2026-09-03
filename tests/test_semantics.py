@@ -778,6 +778,36 @@ class ParsingRegressionTests(unittest.TestCase):
         self.assertEqual(["bar"], [function.name for function in functions])
         self.assertEqual("cpp", functions[0].language)
 
+    def test_macro_embedded_kernel_function_is_not_indexed_as_host_c(self):
+        functions = parse_functions(
+            "accelerate-private.h",
+            r"""
+            #define STRINGIFY(...) #__VA_ARGS__
+            void host(double x) { (void) x; }
+            const char *kernels =
+              STRINGIFY(
+                inline float4 ConvertHSBToRGB(const float4 pixel)
+                {
+                    return pixel;
+                }
+              );
+            """,
+        )
+        self.assertEqual(["host"], [function.name for function in functions])
+
+    def test_preprocessor_branch_host_functions_remain_indexed(self):
+        functions = parse_functions(
+            "variants.c",
+            """
+            #ifdef FEATURE
+            int inner(int x) { return x; }
+            #else
+            int inner(int x) { return x + 1; }
+            #endif
+            """,
+        )
+        self.assertEqual(["inner", "inner"], [function.name for function in functions])
+
     def test_function_pointer_parameter_is_marked_indirect(self):
         function = parse_functions(
             "sample.c",
