@@ -150,6 +150,14 @@ class JoernRepositoryIndex:
             source_root = Path(directory) / "src"
             self.repository.materialize(source_root, self.scopes)
 
+            include_dirs: list[str] = []
+            for scope in self.scopes:
+                path = source_root / scope
+                include = path if path.is_dir() else path.parent
+                value = str(include.resolve())
+                if value not in include_dirs:
+                    include_dirs.append(value)
+
             command = [
                 str(self._c2cpg()),
                 str(source_root),
@@ -157,6 +165,8 @@ class JoernRepositoryIndex:
                 str(self.cpg_path.resolve()),
                 "--with-include-auto-discovery",
             ]
+            if include_dirs:
+                command.extend(["--include", ",".join(include_dirs)])
             result = subprocess.run(
                 command,
                 stdout=subprocess.PIPE,
