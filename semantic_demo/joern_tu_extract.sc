@@ -25,7 +25,7 @@ import io.joern.dataflowengineoss.language._
         clean(method.filename) + "\t" + start + "\t" + end
       )
 
-      val params = method.parameter.filter(_.index > 0).l
+      val params = method.parameter.filter(p => p.index > 0 && !p.isVariadic).l
       params.foreach { p =>
         lines += (
           "PARAM\t" + key + "\t" + (p.index - 1) + "\t" +
