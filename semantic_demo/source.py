@@ -5,7 +5,7 @@ import re
 import subprocess
 import tarfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from tree_sitter import Language, Node, Parser
@@ -189,40 +189,46 @@ class GitRepository:
         return result.returncode == 0
 
     def resolve_paths(self, paths: Iterable[str]) -> tuple[str, ...]:
+        requested = [str(path) for path in paths if str(path)]
+        if not requested:
+            raise ValueError("at least one repository path is required")
+
+        tree_paths: list[str] | None = None
         resolved: list[str] = []
-        for raw in paths:
-            path = str(raw)
-            if not path:
-                continue
+        for path in requested:
             if self.has_path(path):
                 normalized = self._normalize_repository_path(path)
                 if normalized not in resolved:
                     resolved.append(normalized)
                 continue
-            result = self._git(
-                "ls-tree",
-                "-r",
-                "--name-only",
-                self.revision,
-                "--",
-                path,
-                check=False,
-            )
+
+            if tree_paths is None:
+                result = self._git(
+                    "ls-tree",
+                    "-r",
+                    "--name-only",
+                    self.revision,
+                )
+                tree_paths = [
+                    self._normalize_repository_path(line)
+                    for line in result.stdout.splitlines()
+                    if line
+                ]
+
+            pattern = PurePosixPath(path)
             matches = [
-                self._normalize_repository_path(line)
-                for line in result.stdout.splitlines()
-                if line
+                candidate
+                for candidate in tree_paths
+                if PurePosixPath(candidate).match(pattern.as_posix())
             ]
-            if result.returncode != 0 or not matches:
+            if not matches:
                 raise FileNotFoundError(
-                    f"pathspec matched no repository paths at "
+                    f"path pattern matched no repository paths at "
                     f"{self.revision}: {path}"
                 )
             for match in matches:
                 if match not in resolved:
                     resolved.append(match)
-        if not resolved:
-            raise ValueError("at least one repository path is required")
         return tuple(resolved)
 
     def _tree_entry(self, path: str) -> tuple[str, str, str, str]:
