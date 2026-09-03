@@ -1,6 +1,8 @@
 import json
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from semantic_demo.analyzer import Operation, analyze
@@ -25,7 +27,7 @@ from semantic_demo.semantics import (
     _validate_by_composition,
     validate_summary,
 )
-from semantic_demo.source import parse_functions
+from semantic_demo.source import GitRepository, parse_functions
 from semantic_demo.z3_reasoner import reason_memory_safety
 
 
@@ -56,6 +58,68 @@ def copy_facts(function, call_name="memcpy"):
             (2, call.line, call.name, 2),
         },
     )
+
+
+class GitRepositoryTests(unittest.TestCase):
+    def test_read_blob_resolves_repository_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--bare", str(root / "repo.git")],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            work = root / "work"
+            subprocess.run(
+                ["git", "clone", str(root / "repo.git"), str(work)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "config", "user.email", "test@example.com"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "config", "user.name", "Test"],
+                check=True,
+            )
+            (work / "real").mkdir()
+            (work / "real" / "list.h").write_text(
+                "static inline void list_add_tail(void) {}\n"
+            )
+            (work / "include").mkdir()
+            (work / "include" / "list.h").symlink_to("../real/list.h")
+            subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", str(work), "commit", "-m", "fixture"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", str(work), "rev-parse", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", str(work), "push", "origin", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            repository = GitRepository(str(root / "repo.git"), revision)
+            self.assertEqual(
+                "static inline void list_add_tail(void) {}\n",
+                repository.read_blob("include/list.h"),
+            )
 
 
 class SemanticValidationTests(unittest.TestCase):
