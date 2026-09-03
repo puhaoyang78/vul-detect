@@ -95,6 +95,14 @@ def validate_detection_manifest(samples: list[dict[str, object]]) -> None:
         keys.add(key)
         if len(str(sample["vulnerable_commit"])) != 40:
             raise ValueError(f"{key}: vulnerable_commit must be a full Git object id")
+        if "language" in sample and sample["language"] not in {"c", "cpp"}:
+            raise ValueError(f"{key}: language must be c or cpp")
+        for field in ("defines", "include_paths"):
+            value = sample.get(field, [])
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) for item in value
+            ):
+                raise ValueError(f"{key}: {field} must be a list of strings")
 
 
 def _load_entry(
@@ -115,6 +123,10 @@ def _load_entry(
         str(sample["sample_key"]),
         tuple(str(item) for item in sample.get("scan_paths", [])),
         str(sample["entry_path"]),
+        defines=tuple(str(item) for item in sample.get("defines", [])),
+        include_paths=tuple(
+            str(item) for item in sample.get("include_paths", [])
+        ),
         joern_dir=joern_dir,
         java_home=java_home,
         cache_dir=cpg_cache_dir,
