@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import inspect
 import json
 import os
 import subprocess
@@ -84,26 +85,42 @@ def _tool_identity(path_text: str) -> str:
     path = Path(path_text)
     if not path.is_file():
         return f"missing:{path}"
-    try:
-        result = subprocess.run(
-            [str(path), "--version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        output = (result.stdout or result.stderr).strip()
-        if output:
-            return output
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    stat = path.stat()
-    return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if path.name == "joern":
+        try:
+            result = subprocess.run(
+                [str(path), "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            output = (result.stdout or result.stderr).strip()
+            if result.returncode == 0 and output:
+                return f"{output}:{digest}"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return digest
 
 
 def _file_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _source_snapshot_identity(repository) -> str:
+    methods = (
+        repository.materialize,
+        repository.materialization_paths,
+        repository._symlink_target,
+        repository._normalize_repository_path,
+    )
+    try:
+        source = "\n".join(inspect.getsource(method) for method in methods)
+    except (OSError, TypeError):
+        module_path = Path(inspect.getfile(type(repository)))
+        return _file_digest(module_path)
+    return hashlib.sha256(source.encode()).hexdigest()
 
 
 class JoernRepositoryIndex:
@@ -148,6 +165,7 @@ class JoernRepositoryIndex:
                 "scopes": self.scopes,
                 "context_paths": self.context_paths,
                 "frontend": frontend_identity,
+                "source_snapshot": _source_snapshot_identity(self.repository),
                 "include_auto_discovery": True,
             },
             sort_keys=True,
