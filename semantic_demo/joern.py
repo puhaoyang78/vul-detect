@@ -29,6 +29,7 @@ class JoernCall:
     name: str
     arguments: dict[int, str]
     call_id: str = ""
+    code: str = ""
 
 
 @dataclass
@@ -733,7 +734,7 @@ class JoernValidator:
     @staticmethod
     def _parse(text: str) -> JoernFacts:
         facts = JoernFacts()
-        call_args: dict[str, tuple[int, str, dict[int, str]]] = {}
+        call_args: dict[str, tuple[int, str, str, dict[int, str]]] = {}
         for raw_line in text.splitlines():
             if not raw_line:
                 continue
@@ -751,9 +752,10 @@ class JoernValidator:
                 line = int(parts[2])
                 name = parts[3]
                 index = int(parts[4])
-                _, _, arguments = call_args.setdefault(
+                code = parts[5]
+                _, _, _, arguments = call_args.setdefault(
                     call_id,
-                    (line, name, {}),
+                    (line, name, code, {}),
                 )
                 arguments[index] = parts[6]
             elif tag == "FLOW" and len(parts) >= 4:
@@ -765,12 +767,13 @@ class JoernValidator:
             elif tag == "RETFLOW" and len(parts) >= 2:
                 facts.return_flows.add(int(parts[1]))
 
-        for call_id, (line, name, arguments) in call_args.items():
+        for call_id, (line, name, code, arguments) in call_args.items():
             facts.calls[call_id] = JoernCall(
                 line,
                 name,
                 arguments,
                 call_id=call_id,
+                code=code,
             )
         return facts
 
