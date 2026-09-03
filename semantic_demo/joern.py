@@ -271,6 +271,7 @@ class JoernValidator:
         joern_dir: str | Path = "/home/phy/joern",
         java_home: str | Path | None = None,
         timeout: int | None = None,
+        repository_index: JoernRepositoryIndex | None = None,
     ) -> None:
         self.joern_dir = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
         self.joern = self.joern_dir / "joern"
@@ -279,7 +280,9 @@ class JoernValidator:
         ).expanduser()
         self.java = self.java_home / "bin" / "java"
         self.script = Path(__file__).with_name("joern_extract.sc")
+        self.cpg_script = Path(__file__).with_name("joern_cpg_extract.sc")
         self.timeout = timeout or int(os.environ.get("JOERN_TIMEOUT", "180"))
+        self.repository_index = repository_index
         self._cache: dict[str, JoernFacts] = {}
         self._errors: dict[str, str] = {}
         self._missing_methods: dict[str, str] = {}
@@ -298,6 +301,12 @@ class JoernValidator:
             )
         if not self.script.is_file():
             raise JoernError(f"Joern extraction script not found: {self.script}")
+        if self.repository_index is not None:
+            self.repository_index.ensure_available()
+            if not self.cpg_script.is_file():
+                raise JoernError(
+                    f"Joern CPG extraction script not found: {self.cpg_script}"
+                )
 
     def _key(self, function) -> str:
         payload = (
@@ -320,6 +329,43 @@ class JoernValidator:
         if key in self._errors:
             raise JoernError(self._errors[key])
 
+        indexed_method = None
+        if (
+            self.repository_index is not None
+            and getattr(candidate, "method_full_name", "")
+        ):
+            indexed_method = self.repository_index.methods().get(
+                candidate.method_full_name
+            )
+
+        use_sample_cpg = (
+            indexed_method is not None
+            and indexed_method.path == candidate.function.path
+            and indexed_method.start_line == candidate.function.start_line
+        )
+
+        if use_sample_cpg:
+            self.repository_index._build()
+            with tempfile.TemporaryDirectory(prefix="memsem-joern-cpg-") as directory:
+                output_path = Path(directory) / "facts.tsv"
+                command = [
+                    str(self.joern),
+                    "--script",
+                    str(self.cpg_script),
+                    "--param",
+                    f"cpgFile={self.repository_index.cpg_path.resolve()}",
+                    "--param",
+                    f"outFile={output_path}",
+                    "--param",
+                    f"methodFullName={candidate.method_full_name}",
+                ]
+                result = self._run(command, candidate.function.name)
+                facts = self._load_facts(output_path, result, candidate.function.name)
+                self._cache[key] = facts
+                return facts
+
+        # Explicit same-file preprocessor variants may not be present in the
+        # active sample CPG. Validate those variant bodies independently.
         with tempfile.TemporaryDirectory(prefix="memsem-joern-") as directory:
             root = Path(directory)
             suffix = Path(candidate.function.path).suffix or ".c"
@@ -342,52 +388,56 @@ class JoernValidator:
                 "--param",
                 f"functionEndLine={candidate.function.end_line}",
             ]
-            environment = os.environ.copy()
-            environment["JAVA_HOME"] = str(self.java_home)
-            environment["PATH"] = (
-                str(self.java.parent)
-                + os.pathsep
-                + environment.get("PATH", "")
-            )
-            try:
-                result = subprocess.run(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=self.timeout,
-                    check=False,
-                    env=environment,
-                )
-            except subprocess.TimeoutExpired as error:
-                message = (
-                    f"Joern timed out after {self.timeout}s for "
-                    f"{candidate.function.name}"
-                )
-                self._timeouts[key] = message
-                raise JoernTimeout(message) from error
-            if result.returncode != 0:
-                message = (
-                    f"Joern failed for {candidate.function.name}: "
-                    f"{result.stderr.strip() or result.stdout.strip()}"
-                )
-                self._errors[key] = message
-                raise JoernError(message)
-            if not output_path.is_file():
-                message = (
-                    f"Joern produced no fact file for {candidate.function.name}: "
-                    f"{result.stdout.strip()}"
-                )
-                self._errors[key] = message
-                raise JoernError(message)
-
-            try:
-                facts = self._parse(output_path.read_text())
-            except JoernMethodNotFound as error:
-                self._missing_methods[key] = str(error)
-                raise
+            result = self._run(command, candidate.function.name)
+            facts = self._load_facts(output_path, result, candidate.function.name)
             self._cache[key] = facts
             return facts
+
+    def _run(
+        self,
+        command: list[str],
+        function_name: str,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment["JAVA_HOME"] = str(self.java_home)
+        environment["PATH"] = (
+            str(self.java.parent) + os.pathsep + environment.get("PATH", "")
+        )
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=self.timeout,
+                check=False,
+                env=environment,
+            )
+        except subprocess.TimeoutExpired as error:
+            message = (
+                f"Joern timed out after {self.timeout}s for {function_name}"
+            )
+            raise JoernTimeout(message) from error
+        return result
+
+    def _load_facts(
+        self,
+        output_path: Path,
+        result: subprocess.CompletedProcess[str],
+        function_name: str,
+    ) -> JoernFacts:
+        if result.returncode != 0:
+            message = (
+                f"Joern failed for {function_name}: "
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            )
+            raise JoernError(message)
+        if not output_path.is_file():
+            raise JoernError(
+                f"Joern produced no fact file for {function_name}: "
+                f"{result.stdout.strip()}"
+            )
+        return self._parse(output_path.read_text())
 
     @staticmethod
     def _parse(text: str) -> JoernFacts:
