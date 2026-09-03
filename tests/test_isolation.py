@@ -41,6 +41,7 @@ class IsolationTests(unittest.TestCase):
         args = build_parser().parse_args(["run"])
         self.assertEqual("/home/phy/joern", args.joern_dir)
         self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertEqual("data/joern_cpg", args.cpg_cache_dir)
         self.assertFalse(args.refresh)
         self.assertEqual("/home/PublicData/PHY-data/resource/codebert-base", args.linevul_codebert_path)
         self.assertEqual("/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin", args.linevul_checkpoint)
