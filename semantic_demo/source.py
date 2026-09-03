@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -164,7 +165,6 @@ class GitRepository:
         if not self.git_dir.is_dir():
             raise FileNotFoundError(f"bare repository not found: {self.git_dir}")
         self._blob_cache: dict[str, str] = {}
-        self._function_cache: dict[tuple[str, tuple[str, ...]], list[FunctionSource]] = {}
 
     def _git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -185,68 +185,82 @@ class GitRepository:
             self._blob_cache[path] = result.stdout
         return self._blob_cache[path]
 
-    def find_functions(self, name: str, scopes: Iterable[str] = ()) -> list[FunctionSource]:
-        scope_tuple = tuple(scopes)
-        cache_key = (name, scope_tuple)
-        if cache_key in self._function_cache:
-            return self._function_cache[cache_key]
+    def materialize(self, destination: str | Path, paths: Iterable[str]) -> Path:
+        target = Path(destination)
+        target.mkdir(parents=True, exist_ok=True)
+        selected = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
+        if not selected:
+            raise ValueError("at least one repository path is required")
+        archive = subprocess.Popen(
+            [
+                "git",
+                f"--git-dir={self.git_dir}",
+                "archive",
+                "--format=tar",
+                self.revision,
+                "--",
+                *selected,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert archive.stdout is not None
+        try:
+            with tarfile.open(fileobj=archive.stdout, mode="r|") as tar:
+                tar.extractall(target)
+        finally:
+            archive.stdout.close()
+        stderr = archive.stderr.read().decode(errors="replace") if archive.stderr else ""
+        returncode = archive.wait()
+        if returncode != 0:
+            raise RuntimeError(
+                f"git archive failed for {self.revision}: {stderr.strip()}"
+            )
+        return target
 
-        args = ["grep", "-l", "-F", name, self.revision, "--"]
-        args.extend(scope_tuple or tuple(f"*{ext}" for ext in _SOURCE_EXTENSIONS))
-        result = self._git(*args, check=False)
-        paths: list[str] = []
-        prefix = f"{self.revision}:"
-        for line in result.stdout.splitlines():
-            path = line[len(prefix) :] if line.startswith(prefix) else line
-            if path.lower().endswith(_SOURCE_EXTENSIONS):
-                paths.append(path)
-
-        matches: list[FunctionSource] = []
-        for path in sorted(set(paths)):
-            try:
-                matches.extend(
-                    function
-                    for function in parse_functions(path, self.read_blob(path))
-                    if function.name == name
-                )
-            except (subprocess.CalledProcessError, UnicodeError):
-                continue
-        self._function_cache[cache_key] = matches
-        return matches
-
-    def find_function(
-        self, name: str, preferred_path: str | None = None, scopes: Iterable[str] = ()
-    ) -> FunctionSource | None:
-        if preferred_path:
-            try:
-                preferred = [
-                    function
-                    for function in parse_functions(
-                        preferred_path, self.read_blob(preferred_path)
-                    )
-                    if function.name == name
-                ]
-                if len(preferred) == 1:
-                    return preferred[0]
-                if len(preferred) > 1:
-                    return None
-            except subprocess.CalledProcessError:
-                pass
-
-        functions = self.find_functions(name, scopes)
-        if not functions:
-            return None
-        if preferred_path:
-            same_directory = [
-                item
-                for item in functions
-                if Path(item.path).parent == Path(preferred_path).parent
-            ]
-            if len(same_directory) == 1:
-                return same_directory[0]
-            if len(same_directory) > 1:
-                return None
-        return functions[0] if len(functions) == 1 else None
+    def function_source(
+        self,
+        *,
+        path: str,
+        name: str,
+        start_line: int,
+        end_line: int,
+        parameters: tuple[str, ...],
+        parameter_types: tuple[str, ...],
+    ) -> FunctionSource:
+        translation_unit = self.read_blob(path)
+        lines = translation_unit.splitlines(keepends=True)
+        if start_line < 1 or end_line < start_line or end_line > len(lines):
+            raise ValueError(
+                f"invalid Joern source range for {path}:{name}: "
+                f"{start_line}-{end_line}"
+            )
+        text = "".join(lines[start_line - 1 : end_line])
+        language = _language_for_path(path, text)
+        pointer_like = tuple(
+            "*" in type_text or "&" in type_text or "[" in type_text
+            for type_text in parameter_types
+        )
+        signatures = tuple(
+            normalize_expression(type_text.replace(parameter, "$", 1))
+            if parameter and parameter in type_text
+            else normalize_expression(type_text)
+            for parameter, type_text in zip(parameters, parameter_types)
+        )
+        return FunctionSource(
+            path=path,
+            name=name,
+            text=text,
+            translation_unit=translation_unit,
+            language=language,
+            parameters=parameters,
+            parameter_types=parameter_types,
+            parameter_pointer_like=pointer_like,
+            parameter_signatures=signatures,
+            start_line=start_line,
+            end_line=end_line,
+            parse_has_error=False,
+        )
 
 
 def _text(node: Node, source: bytes) -> str:
