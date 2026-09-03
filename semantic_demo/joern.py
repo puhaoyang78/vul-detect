@@ -354,6 +354,14 @@ class JoernRepositoryIndex:
             source_root = root / "src"
             self.repository.materialize(source_root, self.scopes)
             temporary_index = root / "index.tsv"
+            scope_file = root / "scopes.txt"
+            scope_file.write_text(
+                "\n".join(
+                    self._normalize_repository_path(scope)
+                    for scope in self.scopes
+                )
+                + "\n"
+            )
             command = [
                 str(self.joern),
                 "--script",
@@ -364,6 +372,8 @@ class JoernRepositoryIndex:
                 f"outFile={temporary_index}",
                 "--param",
                 f"sourceRoot={source_root.resolve()}",
+                "--param",
+                f"scopeFile={scope_file.resolve()}",
             ]
             try:
                 result = subprocess.run(
