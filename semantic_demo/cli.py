@@ -416,6 +416,7 @@ def detect(
     detections_path: str,
     joern_dir: str = "/home/phy/joern",
     java_home: str = "/home/phy/jdk21",
+    cpg_cache_dir: str = "data/joern_cpg",
     resume: bool = True,
     linevul_codebert_path: str = "/home/PublicData/PHY-data/resource/codebert-base",
     linevul_checkpoint: str = "/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin",
@@ -450,6 +451,7 @@ def detect(
             sample,
             joern_dir=joern_dir,
             java_home=java_home,
+            cpg_cache_dir=cpg_cache_dir,
         )
         candidates = discover_candidates(
             sample_key,
@@ -820,6 +822,7 @@ def run_command(args: argparse.Namespace) -> None:
         args.detections,
         joern_dir=args.joern_dir,
         java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
         resume=not args.refresh,
         linevul_codebert_path=args.linevul_codebert_path,
         linevul_checkpoint=args.linevul_checkpoint,
@@ -895,6 +898,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--java-home",
         default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
     )
+    run.add_argument("--cpg-cache-dir", default="data/joern_cpg")
     run.add_argument(
         "--refresh",
         action="store_true",
