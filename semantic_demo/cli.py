@@ -609,34 +609,58 @@ def detect(
         # Fixed-point validation: primitive-backed summaries seed the process;
         # wrapper summaries may then be validated from summaries accepted by every
         # same-file C implementation variant of a callee.
-        accepted_by_variant: dict[
-            tuple[str, str, int], list[dict[str, str]]
+        accepted_by_member: dict[
+            tuple[str, str, str, int],
+            list[dict[str, str]],
         ] = {}
+        expected_by_group: dict[tuple[str, str, str], int] = {}
         accepted: dict[tuple[str, str], list[dict[str, str]]] = {}
-        variant_counts = Counter(
-            (candidate.function.path, candidate.function.name)
-            for candidate in candidates
-        )
         pending = list(range(len(summary_entries)))
         final: dict[int, Validation] = {}
 
         def publish_common_summaries() -> None:
             accepted.clear()
-            groups: dict[
-                tuple[str, str], list[list[dict[str, str]]]
+            complete_groups: dict[
+                tuple[str, str],
+                list[list[dict[str, str]]],
             ] = {}
-            for (path, name, source_line), summaries in accepted_by_variant.items():
-                groups.setdefault((path, name), []).append(summaries)
-            for key, variants in groups.items():
-                if len(variants) != variant_counts[key]:
+            grouped: dict[
+                tuple[str, str, str],
+                dict[int, list[dict[str, str]]],
+            ] = {}
+            for (
+                path,
+                name,
+                group_id,
+                source_line,
+            ), summaries in accepted_by_member.items():
+                grouped.setdefault(
+                    (path, name, group_id),
+                    {},
+                )[source_line] = summaries
+
+            for (path, name, group_id), by_line in grouped.items():
+                expected = expected_by_group[(path, name, group_id)]
+                if len(by_line) != expected:
                     continue
+                members = list(by_line.values())
                 common = [
                     summary
-                    for summary in variants[0]
-                    if all(summary in variant for variant in variants[1:])
+                    for summary in members[0]
+                    if all(
+                        summary in member
+                        for member in members[1:]
+                    )
                 ]
                 if common:
-                    accepted[key] = common
+                    complete_groups.setdefault(
+                        (path, name),
+                        [],
+                    ).append(common)
+
+            for key, groups in complete_groups.items():
+                if len(groups) == 1:
+                    accepted[key] = groups[0]
 
         while pending:
             progress = False
@@ -656,10 +680,21 @@ def detect(
                     ) from error
                 final[index] = validation
                 if validation.passed:
-                    bucket = accepted_by_variant.setdefault(
+                    group_id = (
+                        validation.variant_group
+                        or f"single:{validation.source_line}"
+                    )
+                    group_key = (
+                        validation.source_path,
+                        validation.function,
+                        group_id,
+                    )
+                    expected_by_group[group_key] = validation.variant_count
+                    bucket = accepted_by_member.setdefault(
                         (
                             validation.source_path,
                             validation.function,
+                            group_id,
                             validation.source_line,
                         ),
                         [],
@@ -692,7 +727,6 @@ def detect(
         proposed = analyze(
             entry,
             validations=validations,
-            variant_counts=dict(variant_counts),
         )
         detection_records.append(
             {
