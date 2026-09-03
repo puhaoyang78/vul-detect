@@ -103,7 +103,7 @@ class JoernRepositoryIndex:
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
                 "context_paths": self.context_paths,
-                "joern_index_schema": 6,
+                "joern_index_schema": 7,
                 "joern_api": "4.0.465",
             },
             sort_keys=True,

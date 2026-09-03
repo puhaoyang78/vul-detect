@@ -15,8 +15,11 @@ import io.shiftleft.semanticcpg.language._
 
   def sourceRelative(filename: String): Option[String] = {
     try {
-      val path = Paths.get(filename).toAbsolutePath.normalize
-      if (path.startsWith(sourcePath))
+      val rawPath = Paths.get(filename)
+      val path =
+        if (rawPath.isAbsolute) rawPath.normalize
+        else sourcePath.resolve(rawPath).normalize
+      if (path.startsWith(sourcePath) && Files.isRegularFile(path))
         Some(sourcePath.relativize(path).toString.replace('\\', '/'))
       else
         None
