@@ -137,9 +137,14 @@ _CLEAR_SCALAR_TYPES = {
 }
 
 
+def _type_definitely_pointer(type_text: str) -> bool:
+    compact = "".join(type_text.split())
+    return any(token in compact for token in ("*", "&", "["))
+
+
 def _type_may_be_pointer(type_text: str) -> bool:
     compact = "".join(type_text.split())
-    if any(token in compact for token in ("*", "&", "[")):
+    if _type_definitely_pointer(type_text):
         return True
     if compact in {"", "ANY", "<empty>"}:
         return True
@@ -595,11 +600,13 @@ def validate_summary(
             )
         elif (
             root_index >= len(function.parameter_types)
-            or not _type_may_be_pointer(function.parameter_types[root_index])
+            or not _type_definitely_pointer(
+                function.parameter_types[root_index]
+            )
         ):
             error = (
                 f"{clean_summary.get('kind')} buffer root arg{root_index} "
-                "is not pointer-like: clearly non-pointer scalar type"
+                "is not proven pointer-like in the candidate signature"
             )
 
     if error:
