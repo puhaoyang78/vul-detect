@@ -396,10 +396,15 @@ def normalize_command(args: argparse.Namespace) -> None:
                 cache[cache_key] = record
                 write_jsonl(args.output, cache.values())
                 status = "skipped" if skip_reason is not None else "done"
+                reason_text = (
+                    f" reason={skip_reason}"
+                    if skip_reason is not None
+                    else ""
+                )
                 print(
                     f"normalize_candidate_{status}={candidate.sample_key}:"
-                    f"{candidate.function.name}@{candidate.function.start_line} "
-                    f"checkpoint={args.output}",
+                    f"{candidate.function.name}@{candidate.function.start_line}"
+                    f"{reason_text} checkpoint={args.output}",
                     flush=True,
                 )
     write_jsonl(args.output, records)

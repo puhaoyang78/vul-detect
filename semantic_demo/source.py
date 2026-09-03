@@ -249,6 +249,11 @@ class GitRepository:
         selected = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
         if not selected:
             raise ValueError("at least one repository path is required")
+        missing = [path for path in selected if not self.has_path(path)]
+        if missing:
+            raise FileNotFoundError(
+                f"paths not found at {self.revision}: {', '.join(missing)}"
+            )
         archive = subprocess.Popen(
             [
                 "git",
@@ -263,9 +268,12 @@ class GitRepository:
             stderr=subprocess.PIPE,
         )
         assert archive.stdout is not None
+        read_error: tarfile.ReadError | None = None
         try:
             with tarfile.open(fileobj=archive.stdout, mode="r|") as tar:
                 tar.extractall(target)
+        except tarfile.ReadError as error:
+            read_error = error
         finally:
             archive.stdout.close()
         stderr = archive.stderr.read().decode(errors="replace") if archive.stderr else ""
@@ -274,6 +282,11 @@ class GitRepository:
             raise RuntimeError(
                 f"git archive failed for {self.revision}: {stderr.strip()}"
             )
+        if read_error is not None:
+            raise RuntimeError(
+                f"git archive produced invalid tar data for {self.revision}: "
+                f"{', '.join(selected)}"
+            ) from read_error
         return target
 
     def function_source(
@@ -492,6 +505,37 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
             )
         )
     return functions
+
+
+def function_body_has_error(function: FunctionSource) -> bool:
+    source = function.text.encode()
+    tree = _parser_for_language(function.language).parse(source)
+    definitions = [
+        node
+        for node in _walk(tree.root_node)
+        if node.type == "function_definition"
+    ]
+    if len(definitions) == 1:
+        body = definitions[0].child_by_field_name("body")
+        if body is not None:
+            return bool(body.has_error)
+
+    outer_blocks: list[Node] = []
+    for node in _walk(tree.root_node):
+        if node.type != "compound_statement":
+            continue
+        parent = node.parent
+        nested = False
+        while parent is not None:
+            if parent.type == "compound_statement":
+                nested = True
+                break
+            parent = parent.parent
+        if not nested:
+            outer_blocks.append(node)
+    if len(outer_blocks) != 1:
+        return True
+    return bool(outer_blocks[0].has_error)
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:
