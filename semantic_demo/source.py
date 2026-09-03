@@ -247,6 +247,7 @@ class GitRepository:
             else normalize_expression(type_text)
             for parameter, type_text in zip(parameters, parameter_types)
         )
+        parse_tree = _parser_for_language(language).parse(text.encode())
         return FunctionSource(
             path=path,
             name=name,
@@ -259,7 +260,7 @@ class GitRepository:
             parameter_signatures=signatures,
             start_line=start_line,
             end_line=end_line,
-            parse_has_error=False,
+            parse_has_error=bool(parse_tree.root_node.has_error),
         )
 
 
