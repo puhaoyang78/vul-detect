@@ -438,8 +438,22 @@ class JoernValidator:
                 "--param",
                 f"functionEndLine={candidate.function.end_line}",
             ]
-            result = self._run(command, candidate.function.name)
-            facts = self._load_facts(output_path, result, candidate.function.name)
+            try:
+                result = self._run(command, candidate.function.name)
+                facts = self._load_facts(
+                    output_path,
+                    result,
+                    candidate.function.name,
+                )
+            except JoernMethodNotFound as error:
+                self._missing_methods[key] = str(error)
+                raise
+            except JoernTimeout as error:
+                self._timeouts[key] = str(error)
+                raise
+            except JoernError as error:
+                self._errors[key] = str(error)
+                raise
             self._cache[key] = facts
             return facts
 
