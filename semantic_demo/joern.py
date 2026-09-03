@@ -228,6 +228,26 @@ class JoernRepositoryIndex:
 
         return tuple(roots)
 
+    def analysis_context_paths_for(self, path: str) -> tuple[str, ...]:
+        normalized = self._normalize_repository_path(path)
+        contexts: list[str] = []
+        parent = Path(normalized).parent.as_posix()
+        if parent not in {"", "."} and self.repository.has_path(parent):
+            contexts.append(parent)
+        for scope in self.scopes:
+            scope_path = self._normalize_repository_path(scope)
+            if not self.repository.has_path(scope_path):
+                continue
+            mode, object_type, _, _ = self.repository._tree_entry(scope_path)
+            if object_type != "tree":
+                continue
+            if (
+                normalized == scope_path
+                or normalized.startswith(scope_path.rstrip("/") + "/")
+            ) and scope_path not in contexts:
+                contexts.append(scope_path)
+        return tuple(contexts)
+
     def _c2cpg(self) -> Path:
         candidates = (
             self.joern_dir / "c2cpg.sh",
@@ -268,10 +288,20 @@ class JoernRepositoryIndex:
         source_root: Path,
         context_root: Path,
         source_paths: Iterable[str],
+        extra_context_paths: Iterable[str] = (),
     ) -> list[str]:
+        source_paths = tuple(source_paths)
+        context_paths = tuple(
+            dict.fromkeys(
+                [
+                    *self.context_paths,
+                    *map(str, extra_context_paths),
+                ]
+            )
+        )
         self.repository.materialize(source_root, source_paths)
-        if self.context_paths:
-            self.repository.materialize(context_root, self.context_paths)
+        if context_paths:
+            self.repository.materialize(context_root, context_paths)
 
         include_dirs: list[str] = []
 
@@ -285,7 +315,7 @@ class JoernRepositoryIndex:
         for scope in source_paths:
             path = source_root / str(scope)
             add_include(path if path.is_dir() else path.parent)
-        for context_path in self.context_paths:
+        for context_path in context_paths:
             add_include(context_root / context_path)
         return include_dirs
 
@@ -677,16 +707,13 @@ class JoernValidator:
         index = self.repository_index
         cache_dir = index.cache_dir / "tu"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        method_parent = Path(method.path).parent.as_posix()
-        source_paths = (
-            (method.path,)
-            if method_parent in {"", "."}
-            else (method_parent,)
-        )
+        source_paths = (method.path,)
+        extra_context_paths = index.analysis_context_paths_for(method.path)
         payload = json.dumps(
             {
                 "revision": index.repository.revision,
                 "source_paths": source_paths,
+                "context_paths": extra_context_paths,
                 "frontend": index.cpg_fingerprint,
                 "script": _file_digest(self.tu_script),
             },
@@ -705,6 +732,7 @@ class JoernValidator:
                     source_root,
                     context_root,
                     source_paths,
+                    extra_context_paths,
                 )
                 temporary_cpg = root / "tu.bin"
                 command = index._c2cpg_command(
