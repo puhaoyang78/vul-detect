@@ -44,6 +44,9 @@ class CheckpointTests(unittest.TestCase):
                 llama_server="/unused",
                 local_model="/unused",
                 refresh=False,
+                joern_dir="/unused",
+                java_home="/unused",
+                cpg_cache_dir=str(root / "cpg"),
             )
 
             def interrupted(candidate, **_options):
@@ -51,7 +54,10 @@ class CheckpointTests(unittest.TestCase):
                     return [{"kind": "VALUE", "expression": "arg0"}]
                 raise RuntimeError("interrupted")
 
-            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+            with patch(
+                "semantic_demo.cli._load_entry",
+                return_value=(None, Mock(), Mock(), entry),
+            ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=candidates
             ), patch("semantic_demo.cli.llm_normalize", side_effect=interrupted):
                 with self.assertRaisesRegex(RuntimeError, "normalization failed"):
@@ -62,7 +68,10 @@ class CheckpointTests(unittest.TestCase):
                 [record["function"] for record in read_jsonl(output_path)],
             )
 
-            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+            with patch(
+                "semantic_demo.cli._load_entry",
+                return_value=(None, Mock(), Mock(), entry),
+            ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=candidates
             ), patch(
                 "semantic_demo.cli.llm_normalize",
@@ -115,9 +124,15 @@ class CheckpointTests(unittest.TestCase):
                 llama_server="/unused",
                 local_model="/unused",
                 refresh=False,
+                joern_dir="/unused",
+                java_home="/unused",
+                cpg_cache_dir=str(root / "cpg"),
             )
 
-            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+            with patch(
+                "semantic_demo.cli._load_entry",
+                return_value=(None, Mock(), Mock(), entry),
+            ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[candidate]
             ), patch(
                 "semantic_demo.cli.llm_normalize",
@@ -163,9 +178,15 @@ class CheckpointTests(unittest.TestCase):
                 llama_server="/unused",
                 local_model="/unused",
                 refresh=False,
+                joern_dir="/unused",
+                java_home="/unused",
+                cpg_cache_dir=str(root / "cpg"),
             )
 
-            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+            with patch(
+                "semantic_demo.cli._load_entry",
+                return_value=(None, Mock(), Mock(), entry),
+            ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[candidate]
             ), patch(
                 "semantic_demo.cli.llm_normalize",
@@ -176,7 +197,10 @@ class CheckpointTests(unittest.TestCase):
                 normalize_command(args)
             self.assertEqual(1, normalize.call_count)
 
-            with patch("semantic_demo.cli._load_entry", return_value=(None, entry)), patch(
+            with patch(
+                "semantic_demo.cli._load_entry",
+                return_value=(None, Mock(), Mock(), entry),
+            ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[candidate]
             ), patch(
                 "semantic_demo.cli.llm_normalize",
@@ -230,7 +254,10 @@ class CheckpointTests(unittest.TestCase):
 
             with patch(
                 "semantic_demo.cli._load_entry",
-                side_effect=[(None, entries[0]), RuntimeError("interrupted")],
+                side_effect=[
+                    (None, Mock(), Mock(), entries[0]),
+                    RuntimeError("interrupted"),
+                ],
             ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[]
             ), patch(
@@ -253,7 +280,10 @@ class CheckpointTests(unittest.TestCase):
 
             with patch(
                 "semantic_demo.cli._load_entry",
-                side_effect=[(None, entries[0]), (None, entries[1])],
+                side_effect=[
+                    (None, Mock(), Mock(), entries[0]),
+                    (None, Mock(), Mock(), entries[1]),
+                ],
             ), patch(
                 "semantic_demo.cli.discover_candidates", return_value=[]
             ), patch(
