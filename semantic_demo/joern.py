@@ -114,6 +114,7 @@ class JoernRepositoryIndex:
     def _c2cpg(self) -> Path:
         candidates = (
             self.joern_dir / "c2cpg.sh",
+            self.joern_dir / "joern-cli" / "c2cpg.sh",
             self.joern_dir / "joern-cli" / "frontends" / "c2cpg" / "c2cpg.sh",
         )
         return next((path for path in candidates if path.is_file()), candidates[0])
