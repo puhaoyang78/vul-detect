@@ -31,11 +31,16 @@ def _language_for_path(path: str, language_hint: str | None = None) -> str:
     return "c"
 
 
+def source_language(path: str, inherited: str | None = None) -> str:
+    return _language_for_path(path, inherited)
+
+
 @dataclass(frozen=True)
 class Call:
     name: str
     arguments: tuple[str, ...]
     line: int
+    code: str = ""
     result: str | None = None
     returned: bool = False
     indirect: bool = False
@@ -943,6 +948,7 @@ def _calls(
                 name=name,
                 arguments=arguments,
                 line=line_offset + item.start_point.row,
+                code=_text(item, source),
                 result=result,
                 returned=returned,
                 indirect=indirect,
