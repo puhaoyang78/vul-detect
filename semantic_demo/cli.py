@@ -138,7 +138,8 @@ def _load_entry(
     if entry_method is None:
         raise ValueError(
             f"{sample['sample_key']}: Joern entry method "
-            f"{sample['entry_function']} not found in {sample['entry_path']}"
+            f"{sample['entry_function']} not found in {sample['entry_path']}; "
+            f"diagnostics={index.diagnostics_path}"
         )
     entry = repository.function_source(
         path=entry_method.path,
@@ -343,7 +344,7 @@ def _preflight_samples(
                 if candidate_validation_error(candidate.function) is not None
             ]
             methods = index.methods()
-            unresolved = (
+            unresolved_scope = (
                 sum(
                     1
                     for method in methods.values()
@@ -354,6 +355,26 @@ def _preflight_samples(
                 if isinstance(methods, dict)
                 else 0
             )
+            unresolved_reachable = 0
+            reachable_methods: set[str] = set()
+            queue = [entry_method]
+            while queue:
+                method = queue.pop(0)
+                if method.full_name in reachable_methods:
+                    continue
+                reachable_methods.add(method.full_name)
+                for call in method.calls:
+                    if call.dispatch_type != "STATIC_DISPATCH":
+                        continue
+                    callees = index.callee_methods(call)
+                    if not callees:
+                        unresolved_reachable += 1
+                        continue
+                    queue.extend(
+                        callee
+                        for callee in callees
+                        if callee.full_name not in reachable_methods
+                    )
             prepared.append(
                 (
                     sample,
@@ -367,7 +388,8 @@ def _preflight_samples(
             print(
                 f"preflight_sample_done={key} candidates={len(candidates)} "
                 f"unrecoverable_candidates={len(skipped)} "
-                f"unresolved_static_calls={unresolved} "
+                f"unresolved_static_calls={unresolved_reachable} "
+                f"unresolved_static_calls_scope={unresolved_scope} "
                 f"diagnostics={index.diagnostics_path}",
                 flush=True,
             )
