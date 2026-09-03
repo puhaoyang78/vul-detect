@@ -38,24 +38,24 @@ import io.joern.dataflowengineoss.language._
       )
     } else {
       val method = methods.head
-      val params = method.parameter.l
+      val params = method.parameter.filter(_.index > 0).l
 
       params.foreach { p =>
         lines += ("PARAM\t" + (p.index - 1) + "\t" + clean(p.name) + "\t" + clean(p.typeFullName))
       }
 
       method.call.l.foreach { call =>
-        call.argument.l.foreach { arg =>
+        val callId = call.id.toString
+        call.argument.filter(_.argumentIndex > 0).l.foreach { arg =>
           val argIndex = arg.argumentIndex - 1
           lines += (
-            "ARG\t" + call.lineNumber.getOrElse(-1) + "\t" + clean(call.name) + "\t" +
-            argIndex + "\t" + clean(call.code) + "\t" + clean(arg.code)
+            "ARG\t" + callId + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
+            clean(call.name) + "\t" + argIndex + "\t" + clean(call.code) + "\t" + clean(arg.code)
           )
           params.foreach { p =>
             if (arg.reachableBy(p).l.nonEmpty) {
               lines += (
-                "FLOW\t" + (p.index - 1) + "\t" + call.lineNumber.getOrElse(-1) + "\t" +
-                clean(call.name) + "\t" + argIndex
+                "FLOW\t" + (p.index - 1) + "\t" + callId + "\t" + argIndex
               )
             }
           }
