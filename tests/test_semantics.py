@@ -15,6 +15,7 @@ from semantic_demo.joern import (
     JoernMethodNotFound,
     JoernTimeout,
     JoernValidator,
+    _isolated_variant_translation_unit,
 )
 from semantic_demo.semantics import (
     Candidate,
@@ -1127,6 +1128,31 @@ class ParsingRegressionTests(unittest.TestCase):
             """,
         )
         self.assertEqual(["host"], [function.name for function in functions])
+
+    def test_isolated_variant_preserves_line_and_removes_other_branch(self):
+        functions = parse_functions(
+            "variants.c",
+            """
+            #ifdef FEATURE
+            int inner(int x) { return x; }
+            #else
+            int inner(int x) { return x + 1; }
+            #endif
+            int after(void) { return 0; }
+            """,
+        )
+        selected = functions[1]
+        isolated = _isolated_variant_translation_unit(selected)
+        reparsed = parse_functions("variants.c", isolated)
+        target = next(
+            function
+            for function in reparsed
+            if function.name == "inner"
+        )
+        self.assertEqual(selected.start_line, target.start_line)
+        self.assertIn("return x + 1", target.text)
+        self.assertNotIn("return x;", isolated)
+        self.assertIn("int after(void)", isolated)
 
     def test_preprocessor_branch_host_functions_remain_indexed(self):
         functions = parse_functions(
