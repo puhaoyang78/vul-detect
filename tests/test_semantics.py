@@ -16,6 +16,7 @@ from semantic_demo.joern import (
     JoernTimeout,
     JoernValidator,
     _isolated_variant_translation_unit,
+    _temporary_cache_file,
 )
 from semantic_demo.semantics import (
     Candidate,
@@ -129,6 +130,20 @@ class GitRepositoryTests(unittest.TestCase):
                 "../real/list.h",
                 (materialized / "include" / "list.h").readlink().as_posix(),
             )
+
+
+class JoernCacheTests(unittest.TestCase):
+    def test_temporary_cache_file_uses_target_filesystem(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "cache" / "sample.bin"
+            temporary = _temporary_cache_file(target, ".bin")
+            try:
+                self.assertEqual(target.parent.resolve(), temporary.parent.resolve())
+                temporary.write_text("complete")
+                temporary.replace(target)
+                self.assertEqual("complete", target.read_text())
+            finally:
+                temporary.unlink(missing_ok=True)
 
 
 class GitPathResolutionTests(unittest.TestCase):
