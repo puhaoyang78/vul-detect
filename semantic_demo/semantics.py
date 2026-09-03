@@ -92,6 +92,7 @@ class Candidate:
     sample_key: str
     function: FunctionSource
     call_lines: tuple[int, ...]
+    method_full_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -108,80 +109,96 @@ class Validation:
         return asdict(self)
 
 
-def _variant_definitions(
-    sample_key: str,
-    name: str,
-    definitions: list[FunctionSource],
-) -> list[FunctionSource]:
-    if len(definitions) <= 1:
-        return definitions
-    paths = {item.path for item in definitions}
-    languages = {item.language for item in definitions}
-    signatures = {item.parameter_signatures for item in definitions}
-    if len(paths) == 1 and languages == {"c"} and len(signatures) == 1:
-        return definitions
-    raise RuntimeError(f"{sample_key}: ambiguous repository binding for {name}")
-
-
 def _can_produce_summary(function: FunctionSource) -> bool:
     return function.has_value_return() or any(function.parameter_pointer_like)
 
 
+def _sources_for_method(
+    index: JoernRepositoryIndex,
+    method: RepositoryMethod,
+) -> list[FunctionSource]:
+    base = index.repository.function_source(
+        path=method.path,
+        name=method.name,
+        start_line=method.start_line,
+        end_line=method.end_line,
+        parameters=method.parameters,
+        parameter_types=method.parameter_types,
+    )
+
+    # Preserve explicit same-file C preprocessor variants only after Joern has
+    # already resolved the repository binding to this file/interface.
+    if base.language != "c":
+        return [base]
+    try:
+        parsed = [
+            function
+            for function in parse_functions(
+                method.path,
+                index.repository.read_blob(method.path),
+            )
+            if function.name == method.name
+            and len(function.parameters) == len(method.parameters)
+        ]
+    except (ValueError, UnicodeError):
+        return [base]
+    if len(parsed) <= 1:
+        return [base]
+    signatures = {function.parameter_signatures for function in parsed}
+    if len(signatures) == 1:
+        return parsed
+    return [base]
+
+
 def discover_candidates(
     sample_key: str,
-    repository: GitRepository,
-    entry: FunctionSource,
-    scopes: Iterable[str],
+    index: JoernRepositoryIndex,
+    entry_method: RepositoryMethod,
 ) -> list[Candidate]:
-    """Traverse the repository-resolved project call graph without name heuristics."""
-    scopes = tuple(scopes)
+    """Traverse Joern-resolved repository calls; unresolved calls stay opaque."""
     discovered: dict[tuple[str, str, int], Candidate] = {}
-    queue: list[FunctionSource] = [entry]
-    expanded: set[tuple[str, str, int]] = set()
+    methods = index.methods()
+    queue: list[RepositoryMethod] = [entry_method]
+    expanded: set[str] = set()
 
     while queue:
         caller = queue.pop(0)
-        caller_key = (caller.path, caller.name, caller.start_line)
-        if caller_key in expanded:
+        if caller.full_name in expanded:
             continue
-        expanded.add(caller_key)
+        expanded.add(caller.full_name)
 
-        for call in caller.calls():
-            if call.indirect:
+        for call in caller.calls:
+            if call.name.startswith("<operator>."):
                 continue
-            if call.name in STANDARD_CALLS or call.name == caller.name:
+            if call.name in STANDARD_CALLS:
                 continue
-            callee = repository.find_function(
-                call.name, preferred_path=caller.path, scopes=scopes
-            )
-            if callee is not None:
-                definitions = [callee]
-            else:
-                definitions = repository.find_functions(call.name, scopes)
-                if not definitions:
-                    continue
-                definitions = _variant_definitions(
-                    sample_key, call.name, definitions
-                )
+            callees = index.callee_methods(call)
+            if not callees:
+                continue
 
-            for definition in definitions:
-                if not _can_produce_summary(definition):
+            for callee in callees:
+                if callee.full_name == caller.full_name:
                     continue
-                key = (
-                    definition.path,
-                    definition.name,
-                    definition.start_line,
-                )
-                existing = discovered.get(key)
-                lines = set(existing.call_lines if existing else ())
-                lines.add(call.line)
-                discovered[key] = Candidate(
-                    sample_key=sample_key,
-                    function=definition,
-                    call_lines=tuple(sorted(lines)),
-                )
-                if key not in expanded:
-                    queue.append(definition)
+                sources = _sources_for_method(index, callee)
+                publish = [
+                    source for source in sources if _can_produce_summary(source)
+                ]
+                if not publish:
+                    continue
+
+                for source in publish:
+                    key = (source.path, source.name, source.start_line)
+                    existing = discovered.get(key)
+                    lines = set(existing.call_lines if existing else ())
+                    lines.add(call.line)
+                    discovered[key] = Candidate(
+                        sample_key=sample_key,
+                        function=source,
+                        call_lines=tuple(sorted(lines)),
+                        method_full_name=callee.full_name,
+                    )
+                if callee.full_name in methods and callee.full_name not in expanded:
+                    queue.append(callee)
 
     return sorted(
         discovered.values(),
