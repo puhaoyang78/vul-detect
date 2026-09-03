@@ -296,6 +296,21 @@ class GitRepository:
                 )
             return ()
         target = self._symlink_target(path)
+        try:
+            target_mode, target_type, _, _ = self._tree_entry(target)
+        except FileNotFoundError:
+            parts = PurePosixPath(target).parts
+            for length in range(len(parts) - 1, 0, -1):
+                ancestor = PurePosixPath(*parts[:length]).as_posix()
+                try:
+                    ancestor_mode, ancestor_type, _, _ = self._tree_entry(ancestor)
+                except FileNotFoundError:
+                    continue
+                if ancestor_mode == "160000" or ancestor_type == "commit":
+                    return ()
+            raise
+        if target_mode == "160000" or target_type == "commit":
+            return ()
         return (
             target,
             *self._symlink_materialization_targets(
