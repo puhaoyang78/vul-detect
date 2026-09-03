@@ -199,6 +199,12 @@ class JoernRepositoryIndex:
         )
         return next((path for path in candidates if path.is_file()), candidates[0])
 
+    @property
+    def diagnostics_path(self) -> Path:
+        return self.cache_dir / (
+            f"{self.sample_key}-{self.cpg_fingerprint}.c2cpg.log"
+        )
+
     def ensure_available(self) -> None:
         if not self.joern.is_file():
             raise JoernError(f"Joern launcher not found at {self.joern}")
@@ -258,6 +264,7 @@ class JoernRepositoryIndex:
             "--output",
             str(output_path),
             "--with-include-auto-discovery",
+            "--log-problems",
         ]
         for include_dir in include_dirs:
             command.extend(["--include", str(include_dir)])
@@ -300,6 +307,15 @@ class JoernRepositoryIndex:
                         f"{self.sample_key}: c2cpg timed out after "
                         f"{self.timeout}s"
                     ) from error
+                diagnostics_path = (
+                    self.cache_dir
+                    / f"{self.sample_key}-{self.cpg_fingerprint}.c2cpg.log"
+                )
+                diagnostics_path.write_text(
+                    (result.stdout or "")
+                    + ("\n" if result.stdout and result.stderr else "")
+                    + (result.stderr or "")
+                )
                 if result.returncode != 0 or not temporary_cpg.is_file():
                     raise JoernError(
                         f"{self.sample_key}: c2cpg failed: "
@@ -544,10 +560,16 @@ class JoernValidator:
                 root = Path(directory)
                 source_root = root / "src"
                 context_root = root / "context"
+                method_parent = Path(method.path).parent.as_posix()
+                source_paths = (
+                    (method.path,)
+                    if method_parent in {"", "."}
+                    else (method_parent,)
+                )
                 include_dirs = index._materialize_context(
                     source_root,
                     context_root,
-                    (method.path,),
+                    source_paths,
                 )
                 temporary_cpg = root / "tu.bin"
                 command = index._c2cpg_command(
