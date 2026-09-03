@@ -38,7 +38,7 @@ import io.joern.dataflowengineoss.language._
       )
     } else {
       val method = methods.head
-      val params = method.parameter.filter(_.index > 0).l
+      val params = method.parameter.filter(p => p.index > 0 && !p.isVariadic).l
 
       params.foreach { p =>
         lines += ("PARAM\t" + (p.index - 1) + "\t" + clean(p.name) + "\t" + clean(p.typeFullName))
