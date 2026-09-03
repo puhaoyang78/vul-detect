@@ -1,3 +1,4 @@
 /workspace/
 __pycache__/
 *.py[cod]
+/data/joern_cpg/

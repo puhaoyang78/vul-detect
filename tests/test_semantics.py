@@ -6,6 +6,8 @@ from unittest.mock import Mock, patch
 from semantic_demo.analyzer import Operation, analyze
 from semantic_demo.joern import (
     JoernCall,
+    RepositoryCall,
+    RepositoryMethod,
     JoernError,
     JoernFacts,
     JoernMethodNotFound,
@@ -624,14 +626,63 @@ class CompositionalValidationTests(unittest.TestCase):
 
 class CandidateDiscoveryTests(unittest.TestCase):
     class StaticRepository:
-        def __init__(self, definitions):
-            self.definitions = definitions
+        def __init__(self, functions):
+            self.functions = {
+                (function.path, function.name, function.start_line): function
+                for function in functions
+            }
 
-        def find_function(self, *_args, **_kwargs):
-            return None
+        def function_source(
+            self,
+            *,
+            path,
+            name,
+            start_line,
+            end_line,
+            parameters,
+            parameter_types,
+        ):
+            return self.functions[(path, name, start_line)]
 
-        def find_functions(self, *_args, **_kwargs):
-            return self.definitions
+        def read_blob(self, path):
+            matches = [
+                function.translation_unit
+                for function in self.functions.values()
+                if function.path == path
+            ]
+            return matches[0]
+
+    class StaticIndex:
+        def __init__(self, methods, functions):
+            self.repository = CandidateDiscoveryTests.StaticRepository(functions)
+            self._methods = {method.full_name: method for method in methods}
+
+        def methods(self):
+            return self._methods
+
+        def callee_methods(self, call):
+            if call.dispatch_type != "STATIC_DISPATCH":
+                return []
+            method = self._methods.get(call.method_full_name)
+            return [] if method is None else [method]
+
+    @staticmethod
+    def method(full_name, function, calls=()):
+        return RepositoryMethod(
+            full_name=full_name,
+            name=function.name,
+            path=function.path,
+            start_line=function.start_line,
+            end_line=function.end_line,
+            return_type=(
+                "void"
+                if function.text.lstrip().startswith("void ")
+                else "int"
+            ),
+            parameters=function.parameters,
+            parameter_types=function.parameter_types,
+            calls=tuple(calls),
+        )
 
     def test_same_file_c_definitions_are_explicit_variants(self):
         definitions = parse_functions(
@@ -648,11 +699,28 @@ class CandidateDiscoveryTests(unittest.TestCase):
             "wrapper.c",
             "int outer(char *buffer) { return inner(buffer); }",
         )[0]
+        inner_method = self.method("inner:int(char*)", definitions[0])
+        entry_method = self.method(
+            "outer:int(char*)",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="inner",
+                    method_full_name=inner_method.full_name,
+                    dispatch_type="STATIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex(
+            [entry_method, inner_method],
+            [entry, *definitions],
+        )
+
         candidates = discover_candidates(
             "sample",
-            self.StaticRepository(definitions),
-            entry,
-            (),
+            index,
+            entry_method,
         )
         self.assertEqual(2, len(candidates))
         self.assertEqual(
@@ -679,19 +747,40 @@ class CandidateDiscoveryTests(unittest.TestCase):
             "void entry(void) { helper(1); }",
         )[0]
 
-        class MappingRepository:
-            def find_function(self, name, **_kwargs):
-                return {"helper": helper, "deep": deep}.get(name)
-
-            def find_functions(self, name, _scopes):
-                function = self.find_function(name)
-                return [] if function is None else [function]
+        deep_method = self.method("deep:int(int)", deep)
+        helper_method = self.method(
+            "helper:void(int)",
+            helper,
+            (
+                RepositoryCall(
+                    line=helper.start_line + 2,
+                    name="deep",
+                    method_full_name=deep_method.full_name,
+                    dispatch_type="STATIC_DISPATCH",
+                ),
+            ),
+        )
+        entry_method = self.method(
+            "entry:void()",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="helper",
+                    method_full_name=helper_method.full_name,
+                    dispatch_type="STATIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex(
+            [entry_method, helper_method, deep_method],
+            [entry, helper, deep],
+        )
 
         candidates = discover_candidates(
             "sample",
-            MappingRepository(),
-            entry,
-            (),
+            index,
+            entry_method,
         )
         self.assertEqual([], candidates)
 
@@ -713,57 +802,102 @@ class CandidateDiscoveryTests(unittest.TestCase):
             "int entry(int value) { return f0(value); }",
         )[0]
 
-        class MappingRepository:
-            def find_function(self, name, **_kwargs):
-                return functions.get(name)
-
-            def find_functions(self, name, _scopes):
-                function = functions.get(name)
-                return [] if function is None else [function]
-
-        candidates = discover_candidates(
-            "sample",
-            MappingRepository(),
+        methods = []
+        for index in range(count):
+            calls = ()
+            if index + 1 < count:
+                calls = (
+                    RepositoryCall(
+                        line=functions[f"f{index}"].start_line,
+                        name=f"f{index + 1}",
+                        method_full_name=f"f{index + 1}:int(int)",
+                        dispatch_type="STATIC_DISPATCH",
+                    ),
+                )
+            methods.append(
+                self.method(
+                    f"f{index}:int(int)",
+                    functions[f"f{index}"],
+                    calls,
+                )
+            )
+        entry_method = self.method(
+            "entry:int(int)",
             entry,
-            (),
-        )
-        self.assertEqual(count, len(candidates))
-
-    def test_rejects_cross_file_or_different_signature_ambiguity(self):
-        entry = parse_functions(
-            "wrapper.c",
-            "int outer(char *buffer) { return inner(buffer); }",
-        )[0]
-        cases = (
             (
-                "cross-file",
-                [
-                    parse_functions("a.c", "int inner(char *buffer) { return buffer[0]; }")[0],
-                    parse_functions("b.c", "int inner(char *buffer) { return buffer[1]; }")[0],
-                ],
-            ),
-            (
-                "different-signature",
-                parse_functions(
-                    "same.c",
-                    """
-                    int inner(int value) { return value; }
-                    int inner(char *buffer) { return buffer[0]; }
-                    """,
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="f0",
+                    method_full_name="f0:int(int)",
+                    dispatch_type="STATIC_DISPATCH",
                 ),
             ),
         )
-        for label, definitions in cases:
-            with self.subTest(label=label):
-                with self.assertRaisesRegex(
-                    RuntimeError, "ambiguous repository binding for inner"
-                ):
-                    discover_candidates(
-                        "sample",
-                        self.StaticRepository(definitions),
-                        entry,
-                        (),
-                    )
+        index = self.StaticIndex(
+            [entry_method, *methods],
+            [entry, *functions.values()],
+        )
+
+        candidates = discover_candidates(
+            "sample",
+            index,
+            entry_method,
+        )
+        self.assertEqual(count, len(candidates))
+
+    def test_dynamic_joern_call_remains_opaque(self):
+        callee = parse_functions(
+            "callee.c",
+            "int callee(int value) { return value; }",
+        )[0]
+        entry = parse_functions(
+            "entry.c",
+            "int entry(int value) { return callee(value); }",
+        )[0]
+        callee_method = self.method("callee:int(int)", callee)
+        entry_method = self.method(
+            "entry:int(int)",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="callee",
+                    method_full_name=callee_method.full_name,
+                    dispatch_type="DYNAMIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex(
+            [entry_method, callee_method],
+            [entry, callee],
+        )
+        self.assertEqual(
+            [],
+            discover_candidates("sample", index, entry_method),
+        )
+
+    def test_unresolved_joern_call_remains_opaque(self):
+        entry = parse_functions(
+            "entry.c",
+            "int entry(int value) { return missing(value); }",
+        )[0]
+        entry_method = self.method(
+            "entry:int(int)",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="missing",
+                    method_full_name="<unknown>.missing",
+                    dispatch_type="STATIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex([entry_method], [entry])
+        self.assertEqual(
+            [],
+            discover_candidates("sample", index, entry_method),
+        )
 
 
 class ParsingRegressionTests(unittest.TestCase):

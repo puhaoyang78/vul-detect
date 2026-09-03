@@ -18,7 +18,7 @@ from typing import Iterable, Iterator
 
 from .analyzer import analyze
 from .linevul_baseline import LineVulBaseline
-from .joern import JoernError, JoernValidator
+from .joern import JoernError, JoernRepositoryIndex, JoernValidator
 from .semantics import (
     NORMALIZATION_SCHEMA_VERSION,
     NORMALIZATION_RESPONSE_SCHEMA,
@@ -41,7 +41,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 9
+ANALYSIS_CHECKPOINT_VERSION = 10
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -97,22 +97,46 @@ def validate_detection_manifest(samples: list[dict[str, object]]) -> None:
             raise ValueError(f"{key}: vulnerable_commit must be a full Git object id")
 
 
-def _load_entry(sample: dict[str, object]):
+def _load_entry(
+    sample: dict[str, object],
+    *,
+    joern_dir: str = "/home/phy/joern",
+    java_home: str = "/home/phy/jdk21",
+    cpg_cache_dir: str = "data/joern_cpg",
+):
     repository = GitRepository(
         str(sample["repository_git_dir"]), str(sample["vulnerable_commit"])
     )
     if not repository.has_revision():
         raise ValueError(f"{sample['sample_key']}: vulnerable revision is unavailable")
-    entry = repository.find_function(
-        str(sample["entry_function"]),
-        preferred_path=str(sample["entry_path"]),
-        scopes=tuple(str(item) for item in sample.get("scan_paths", [])),
+
+    index = JoernRepositoryIndex(
+        repository,
+        str(sample["sample_key"]),
+        tuple(str(item) for item in sample.get("scan_paths", [])),
+        str(sample["entry_path"]),
+        joern_dir=joern_dir,
+        java_home=java_home,
+        cache_dir=cpg_cache_dir,
     )
-    if entry is None:
+    entry_method = index.find_entry(
+        str(sample["entry_function"]),
+        str(sample["entry_path"]),
+    )
+    if entry_method is None:
         raise ValueError(
-            f"{sample['sample_key']}: entry function {sample['entry_function']} not found"
+            f"{sample['sample_key']}: Joern entry method "
+            f"{sample['entry_function']} not found in {sample['entry_path']}"
         )
-    return repository, entry
+    entry = repository.function_source(
+        path=entry_method.path,
+        name=entry_method.name,
+        start_line=entry_method.start_line,
+        end_line=entry_method.end_line,
+        parameters=entry_method.parameters,
+        parameter_types=entry_method.parameter_types,
+    )
+    return repository, index, entry_method, entry
 
 
 @contextlib.contextmanager
@@ -297,12 +321,16 @@ def normalize_command(args: argparse.Namespace) -> None:
 
     with llm_context as llm_options:
         for sample in samples:
-            repository, entry = _load_entry(sample)
+            repository, index, entry_method, entry = _load_entry(
+                sample,
+                joern_dir=args.joern_dir,
+                java_home=args.java_home,
+                cpg_cache_dir=args.cpg_cache_dir,
+            )
             candidates = discover_candidates(
                 str(sample["sample_key"]),
-                repository,
-                entry,
-                tuple(str(item) for item in sample.get("scan_paths", [])),
+                index,
+                entry_method,
             )
             for candidate in candidates:
                 fingerprint = _candidate_fingerprint(candidate)
@@ -388,6 +416,7 @@ def detect(
     detections_path: str,
     joern_dir: str = "/home/phy/joern",
     java_home: str = "/home/phy/jdk21",
+    cpg_cache_dir: str = "data/joern_cpg",
     resume: bool = True,
     linevul_codebert_path: str = "/home/PublicData/PHY-data/resource/codebert-base",
     linevul_checkpoint: str = "/home/PublicData/PHY-data/resource/linevul/12heads_linevul_model.bin",
@@ -403,8 +432,6 @@ def detect(
         threshold=linevul_threshold,
         device=linevul_device,
     )
-    joern = JoernValidator(joern_dir, java_home=java_home)
-    joern.ensure_available()
     semantic_records: list[dict[str, object]] = []
     detection_records: list[dict[str, object]] = []
     detection_cache = (
@@ -420,13 +447,23 @@ def detect(
     print(f"validation_start samples={len(samples)} backend={backend}", flush=True)
     for sample_index, sample in enumerate(samples, 1):
         sample_key = str(sample["sample_key"])
-        repository, entry = _load_entry(sample)
+        repository, index, entry_method, entry = _load_entry(
+            sample,
+            joern_dir=joern_dir,
+            java_home=java_home,
+            cpg_cache_dir=cpg_cache_dir,
+        )
         candidates = discover_candidates(
             sample_key,
-            repository,
-            entry,
-            tuple(str(item) for item in sample.get("scan_paths", [])),
+            index,
+            entry_method,
         )
+        joern = JoernValidator(
+            joern_dir,
+            java_home=java_home,
+            repository_index=index,
+        )
+        joern.ensure_available()
         summary_entries: list[tuple[object, dict[str, str]]] = []
         for candidate in candidates:
             key = (
@@ -785,6 +822,7 @@ def run_command(args: argparse.Namespace) -> None:
         args.detections,
         joern_dir=args.joern_dir,
         java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
         resume=not args.refresh,
         linevul_codebert_path=args.linevul_codebert_path,
         linevul_checkpoint=args.linevul_checkpoint,
@@ -817,6 +855,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Qwen3.6-35B-A3B-MXFP4_MOE.gguf"
         ),
     )
+    normalize.add_argument("--joern-dir", default="/home/phy/joern")
+    normalize.add_argument(
+        "--java-home",
+        default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
+    )
+    normalize.add_argument("--cpg-cache-dir", default="data/joern_cpg")
     normalize.add_argument("--output", default="data/normalizer_outputs.jsonl")
     normalize.add_argument(
         "--refresh",
@@ -854,6 +898,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--java-home",
         default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
     )
+    run.add_argument("--cpg-cache-dir", default="data/joern_cpg")
     run.add_argument(
         "--refresh",
         action="store_true",

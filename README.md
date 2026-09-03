@@ -5,7 +5,7 @@
 Baseline 使用官方 LineVul 函数级模型。Proposed 不使用漏洞启发式规则；正式主流程固定为：
 
     target function + repository revision
-        -> repository-resolved call graph
+        -> Joern sample-level CPG / resolved call graph
         -> static semantic endpoints / standard effects
         -> localized LLM normalization for unresolved custom endpoints
         -> Joern data-flow validation
@@ -35,13 +35,13 @@ LineVul 只读取目标函数源码：
 
 ### 1. Repository call-graph discovery
 
-- Tree-sitter 从目标函数开始提取项目调用。
-- 标准 API 是明确 leaf，不依赖函数名相似度判断。
-- 自定义调用通过 repository revision 中的真实函数定义解析。
-- 同一 C 文件、同参数签名的条件编译实现作为显式 variants；跨文件、C++ 或不同签名歧义仍不猜测。
-- 不再使用固定 hop、函数名 hints、read/copy/alloc family rule。
+- Joern 4.0.465/c2cpg 对每个 sample 的固定 repository revision 构建一份 CPG。
+- 只物化 sample 的 scan_paths 与 entry_path；项目内部 include 路径显式传给 c2cpg，系统 include 使用 auto-discovery。
+- entry、METHOD、CALL 与 call -> callee binding 均来自 Joern CPG，不再使用 git grep + Tree-sitter 仓库函数索引。
+- 标准 API 是明确 leaf；Joern 无法解析到当前 CPG 内部 METHOD 的调用保持 opaque，不做函数名猜测。
+- 同一已绑定 C 文件中，若 Tree-sitter 明确识别出同签名条件编译 variants，仍保留 variants 并在传播时取共同 summary。
 - 仅展开可能产生当前 ALLOC/READ/WRITE/VALUE caller-visible summary 的函数；无值返回且无 pointer-like 形参的 callee 及其后继不进入候选。
-- 调用图按真实函数身份去重，不设置固定 hop 或固定函数数截断。
+- 调用图按 Joern method full name 去重，不设置固定 hop 或固定函数数截断。
 
 ### 2. Semantic normalization
 
@@ -61,16 +61,18 @@ GUARD 仍不进入跨过程 schema。Normalization 输出带 schema version；�
 ### 3. Joern validation
 
 - Joern 是正式流程必需组件，没有 lightweight fallback。
+- 每个 sample 只构建一次 CPG，并只运行一次 ossdataflow；METHOD/PARAM/CALL/FLOW/RETURN facts 与 repository index 一起缓存。
+- 普通 candidate 直接复用 sample-level CPG facts，不再逐函数重新 import translation unit。
+- 显式条件编译 variant 若不对应当前 CPG active branch，则独立使用原 fragment Joern 路径验证该 variant，本质上服务于未知 build configuration 的保守交集语义。
 - 验证基于明确标准 API 的参数角色或已经验证的 callee summary composition。
 - 不再根据 custom API 名称中是否包含 read、recv、send、copy、alloc、parse 等词猜角色。
 - GUARD/VALUE 不再通过 substring 匹配。
 - VALUE 接受精确 return expression；wrapper VALUE 仅在已验证 callee summary 可组合时传播。
-- Joern 使用候选函数所在的完整 translation unit，而不是只把函数体写成孤立 candidate.c。
-- 同名 C variants 使用源码范围定位 Joern method；无法按候选源码范围唯一解析时拒绝该验证结果。
 
 ### 4. Source parsing and access recovery
 
-Tree-sitter 根据文件语言选择 C 或 C++ parser：
+Tree-sitter 不再负责 repository function discovery，仅分析已经由 Joern 定位出的函数片段，以及同文件显式 preprocessor variants。
+根据文件语言选择 C 或 C++ parser：
 
     C:   .c / C-style .h
     C++: .cc / .cpp / .cxx / .hh / .hpp / .hxx
@@ -182,6 +184,8 @@ sprintf/vsprintf 不再使用“出现即漏洞”的规则，无法可靠得到
 
     python -m semantic_demo.cli normalize --refresh
 
+首次运行会在 data/joern_cpg/ 生成按 sample/revision 指纹缓存的 CPG 与索引；该目录不进入 Git。
+
 默认使用本地 Qwen。外部 OpenAI-compatible API：
 
     python -m semantic_demo.cli normalize --llm-backend api --refresh
@@ -215,8 +219,9 @@ UNKNOWN 不再自动折算成 benign。
 ## Files
 
 - semantic_demo/source.py
-  - C/C++ Tree-sitter parsing
-  - repository function resolution
+  - Git revision/blob/materialization
+  - Joern-delimited function source slicing
+  - local C/C++ Tree-sitter parsing
   - calls / direct accesses
   - local arrays
   - structural path facts
@@ -226,8 +231,11 @@ UNKNOWN 不再自动折算成 benign。
   - schema validation
   - Joern-backed semantic validation
   - unique callee composition
-- semantic_demo/joern.py / joern_extract.sc
-  - full-translation-unit CPG/data-flow facts
+- semantic_demo/joern.py / joern_index.sc / joern_extract.sc
+  - sample-level Joern 4.0.465 CPG construction
+  - repository METHOD/CALL index and resolved call graph
+  - one-pass ossdataflow facts
+  - explicit variant fragment validation
 - semantic_demo/analyzer.py
   - standard + validated custom effects
   - no vulnerability heuristics
