@@ -41,7 +41,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 10
+ANALYSIS_CHECKPOINT_VERSION = 11
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
