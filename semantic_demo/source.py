@@ -356,19 +356,39 @@ def _parameters(
     )
 
 
-def _is_host_function_definition(node: Node) -> bool:
+def _function_like_macro_names(root: Node, source: bytes) -> set[str]:
+    names: set[str] = set()
+    for node in _walk(root):
+        if node.type != "preproc_function_def":
+            continue
+        name = node.child_by_field_name("name")
+        if name is not None:
+            names.add(_text(name, source))
+    return names
+
+
+def _is_host_function_definition(
+    node: Node,
+    source: bytes,
+    function_like_macros: set[str],
+) -> bool:
     current = node.parent
-    forbidden = {
-        "argument_list",
-        "call_expression",
+    string_contexts = {
         "preproc_arg",
         "string_literal",
         "concatenated_string",
         "raw_string_literal",
     }
     while current is not None:
-        if current.type in forbidden:
+        if current.type in string_contexts:
             return False
+        if current.type == "argument_list":
+            call = current.parent
+            if call is not None and call.type == "call_expression":
+                function = call.child_by_field_name("function")
+                macro_name = _callee_name(function, source)
+                if macro_name in function_like_macros:
+                    return False
         if current.type == "translation_unit":
             return True
         current = current.parent
@@ -379,11 +399,12 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
     source = source_text.encode()
     language = _language_for_path(path, source_text)
     tree = _parser_for_language(language).parse(source)
+    function_like_macros = _function_like_macro_names(tree.root_node, source)
     functions: list[FunctionSource] = []
     for node in _walk(tree.root_node):
         if node.type != "function_definition":
             continue
-        if not _is_host_function_definition(node):
+        if not _is_host_function_definition(node, source, function_like_macros):
             continue
         name = _function_name(node, source)
         if not name:
