@@ -86,6 +86,7 @@ class JoernRepositoryIndex:
         self.sample_key = sample_key
         self.scopes = tuple(dict.fromkeys([*map(str, scopes), str(entry_path)]))
         self.entry_path = str(entry_path)
+        self.context_paths = self._repository_context_paths()
         self.joern_dir = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
         self.joern = self.joern_dir / "joern"
         self.java_home = Path(
@@ -101,7 +102,8 @@ class JoernRepositoryIndex:
             {
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
-                "joern_index_schema": 5,
+                "context_paths": self.context_paths,
+                "joern_index_schema": 6,
                 "joern_api": "4.0.465",
             },
             sort_keys=True,
@@ -109,6 +111,28 @@ class JoernRepositoryIndex:
         self.fingerprint = hashlib.sha256(fingerprint_payload).hexdigest()[:16]
         self.cpg_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.bin"
         self.index_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.tsv"
+
+    def _repository_context_paths(self) -> tuple[str, ...]:
+        roots: list[str] = []
+
+        def add(path: str) -> None:
+            if path and path not in roots and self.repository.has_path(path):
+                roots.append(path)
+
+        # A repository-level include/ directory is the conventional header root
+        # for C/C++ projects and is parse context, not an analysis scope.
+        add("include")
+
+        # Preserve nested include roots already implied by the configured scopes,
+        # e.g. src/include/foo -> src/include.
+        for scope in self.scopes:
+            parts = Path(scope).parts
+            for index, part in enumerate(parts):
+                if part == "include":
+                    add(Path(*parts[: index + 1]).as_posix())
+                    break
+
+        return tuple(roots)
 
     def _c2cpg(self) -> Path:
         candidates = (
@@ -148,16 +172,27 @@ class JoernRepositoryIndex:
         self.index_path.unlink(missing_ok=True)
 
         with tempfile.TemporaryDirectory(prefix=f"vul-cpg-{self.sample_key}-") as directory:
-            source_root = Path(directory) / "src"
+            root = Path(directory)
+            source_root = root / "src"
+            context_root = root / "context"
             self.repository.materialize(source_root, self.scopes)
+            if self.context_paths:
+                self.repository.materialize(context_root, self.context_paths)
 
             include_dirs: list[str] = []
-            for scope in self.scopes:
-                path = source_root / scope
-                include = path if path.is_dir() else path.parent
-                value = str(include.resolve())
+
+            def add_include(path: Path) -> None:
+                if not path.exists():
+                    return
+                value = str(path.resolve())
                 if value not in include_dirs:
                     include_dirs.append(value)
+
+            for scope in self.scopes:
+                path = source_root / scope
+                add_include(path if path.is_dir() else path.parent)
+            for context_path in self.context_paths:
+                add_include(context_root / context_path)
 
             command = [
                 str(self._c2cpg()),
