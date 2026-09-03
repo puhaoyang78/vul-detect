@@ -170,10 +170,10 @@ class GitRepositoryTests(unittest.TestCase):
             )
 
             repository = GitRepository(str(root / "repo.git"), submodule_revision)
-            self.assertEqual(
-                ("include",),
-                repository.materialization_paths(("include",)),
-            )
+            materialization_paths = repository.materialization_paths(("include",))
+            self.assertIn("include", materialization_paths)
+            self.assertIn("real/list.h", materialization_paths)
+            self.assertNotIn("deps/external/include", materialization_paths)
             submodule_materialized = root / "submodule-materialized"
             repository.materialize(submodule_materialized, ("include",))
             external = submodule_materialized / "include" / "external"
