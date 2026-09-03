@@ -131,6 +131,73 @@ class GitRepositoryTests(unittest.TestCase):
             )
 
 
+class GitPathResolutionTests(unittest.TestCase):
+    def test_scan_globs_resolve_against_fixed_revision_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--bare", str(root / "repo.git")],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            work = root / "work"
+            subprocess.run(
+                ["git", "clone", str(root / "repo.git"), str(work)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "config", "user.email", "test@example.com"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "config", "user.name", "Test"],
+                check=True,
+            )
+            (work / "a.c").write_text("int a(void) { return 0; }\n")
+            (work / "b.h").write_text("#pragma once\n")
+            (work / "sub").mkdir()
+            (work / "sub" / "c.c").write_text("int c(void) { return 0; }\n")
+            (work / "sub" / "note.txt").write_text("note\n")
+            subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", str(work), "commit", "-m", "fixture"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", str(work), "rev-parse", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", str(work), "push", "origin", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            repository = GitRepository(str(root / "repo.git"), revision)
+            resolved = repository.resolve_paths(("*.c", "*.h"))
+            self.assertEqual(
+                ("a.c", "sub/c.c", "b.h"),
+                resolved,
+            )
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "matched no repository paths",
+            ):
+                repository.resolve_paths(("*.missing",))
+
+
 class CandidateParseBoundaryTests(unittest.TestCase):
     def test_signature_annotation_error_does_not_skip_clean_body(self):
         function = FunctionSource(
