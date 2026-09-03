@@ -126,19 +126,19 @@ class Validation:
 
 
 _CLEAR_SCALAR_TYPES = {
-    "bool", "_Bool", "char", "signed char", "unsigned char",
-    "short", "short int", "signed short", "signed short int",
-    "unsigned short", "unsigned short int", "int", "signed", "signed int",
-    "unsigned", "unsigned int", "long", "long int", "signed long",
-    "signed long int", "unsigned long", "unsigned long int", "long long",
-    "long long int", "signed long long", "signed long long int",
-    "unsigned long long", "unsigned long long int", "float", "double",
-    "long double", "size_t", "ssize_t",
+    "bool", "_Bool", "char", "signedchar", "unsignedchar",
+    "short", "shortint", "signedshort", "signedshortint",
+    "unsignedshort", "unsignedshortint", "int", "signed", "signedint",
+    "unsigned", "unsignedint", "long", "longint", "signedlong",
+    "signedlongint", "unsignedlong", "unsignedlongint", "longlong",
+    "longlongint", "signedlonglong", "signedlonglongint",
+    "unsignedlonglong", "unsignedlonglongint", "float", "double",
+    "longdouble", "size_t", "ssize_t",
 }
 
 
 def _type_may_be_pointer(type_text: str) -> bool:
-    compact = " ".join(type_text.replace("\t", " ").split())
+    compact = "".join(type_text.split())
     if any(token in compact for token in ("*", "&", "[")):
         return True
     if compact in {"", "ANY", "<empty>"}:
