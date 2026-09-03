@@ -120,13 +120,31 @@ class Validation:
         return asdict(self)
 
 
+_CLEAR_SCALAR_TYPES = {
+    "bool", "_Bool", "char", "signed char", "unsigned char",
+    "short", "short int", "signed short", "signed short int",
+    "unsigned short", "unsigned short int", "int", "signed", "signed int",
+    "unsigned", "unsigned int", "long", "long int", "signed long",
+    "signed long int", "unsigned long", "unsigned long int", "long long",
+    "long long int", "signed long long", "signed long long int",
+    "unsigned long long", "unsigned long long int", "float", "double",
+    "long double", "size_t", "ssize_t",
+}
+
+
+def _type_may_be_pointer(type_text: str) -> bool:
+    compact = " ".join(type_text.replace("\t", " ").split())
+    if any(token in compact for token in ("*", "&", "[")):
+        return True
+    if compact in {"", "ANY", "<empty>"}:
+        return True
+    return compact not in _CLEAR_SCALAR_TYPES
+
+
 def _method_can_produce_summary(method: RepositoryMethod) -> bool:
     return (
         method.return_type not in {"void", "<empty>"}
-        or any(
-            "*" in type_text or "&" in type_text or "[" in type_text
-            for type_text in method.parameter_types
-        )
+        or any(_type_may_be_pointer(type_text) for type_text in method.parameter_types)
     )
 
 
@@ -531,12 +549,12 @@ def validate_summary(
                 "caller-supplied argN"
             )
         elif (
-            root_index >= len(function.parameter_pointer_like)
-            or not function.parameter_pointer_like[root_index]
+            root_index >= len(function.parameter_types)
+            or not _type_may_be_pointer(function.parameter_types[root_index])
         ):
             error = (
                 f"{clean_summary.get('kind')} buffer root arg{root_index} "
-                "is not pointer-like in the candidate signature"
+                "has a clearly non-pointer scalar type"
             )
 
     if error:
