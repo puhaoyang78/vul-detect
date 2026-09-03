@@ -538,16 +538,17 @@ def _parameters(
             None,
         ) if parameter_decl is not None else None
         if identifier_node is None:
-            signature = normalize_expression(_text(child, source))
+            signature_text = _text(child, source)
         else:
             signature_text = (
                 source[child.start_byte : identifier_node.start_byte]
                 + b"$"
                 + source[identifier_node.end_byte : child.end_byte]
             ).decode(errors="replace")
-            signature = normalize_expression(signature_text)
+        signature = normalize_expression(signature_text)
         signatures.append(signature)
-        types.append(signature.replace("$", ""))
+        type_text = signature_text.replace("$", "")
+        types.append(" ".join(type_text.split()))
     return (
         tuple(names),
         tuple(types),
