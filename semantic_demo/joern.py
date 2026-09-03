@@ -168,15 +168,21 @@ class JoernRepositoryIndex:
             ]
             if include_dirs:
                 command.extend(["--include", ",".join(include_dirs)])
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=self.timeout,
-                check=False,
-                env=self._environment(),
-            )
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=self.timeout,
+                    check=False,
+                    env=self._environment(),
+                )
+            except subprocess.TimeoutExpired as error:
+                self.cpg_path.unlink(missing_ok=True)
+                raise JoernError(
+                    f"{self.sample_key}: c2cpg timed out after {self.timeout}s"
+                ) from error
             if result.returncode != 0 or not self.cpg_path.is_file():
                 self.cpg_path.unlink(missing_ok=True)
                 raise JoernError(
@@ -195,15 +201,22 @@ class JoernRepositoryIndex:
                 "--param",
                 f"sourceRoot={source_root.resolve()}",
             ]
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=self.timeout,
-                check=False,
-                env=self._environment(),
-            )
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=self.timeout,
+                    check=False,
+                    env=self._environment(),
+                )
+            except subprocess.TimeoutExpired as error:
+                self.index_path.unlink(missing_ok=True)
+                raise JoernError(
+                    f"{self.sample_key}: Joern index export timed out after "
+                    f"{self.timeout}s"
+                ) from error
             if result.returncode != 0 or not self.index_path.is_file():
                 self.index_path.unlink(missing_ok=True)
                 raise JoernError(
