@@ -576,7 +576,7 @@ def validate_summary(
         ):
             error = (
                 f"{clean_summary.get('kind')} buffer root arg{root_index} "
-                "has a clearly non-pointer scalar type"
+                "is not pointer-like: clearly non-pointer scalar type"
             )
 
     if error:
