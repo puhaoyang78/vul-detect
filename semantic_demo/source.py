@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import posixpath
 import re
 import subprocess
@@ -249,6 +250,11 @@ class GitRepository:
         selected = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
         if not selected:
             raise ValueError("at least one repository path is required")
+        missing = [path for path in selected if not self.has_path(path)]
+        if missing:
+            raise FileNotFoundError(
+                f"paths not found at {self.revision}: {', '.join(missing)}"
+            )
         archive = subprocess.Popen(
             [
                 "git",
@@ -262,18 +268,19 @@ class GitRepository:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        assert archive.stdout is not None
-        try:
-            with tarfile.open(fileobj=archive.stdout, mode="r|") as tar:
-                tar.extractall(target)
-        finally:
-            archive.stdout.close()
-        stderr = archive.stderr.read().decode(errors="replace") if archive.stderr else ""
-        returncode = archive.wait()
-        if returncode != 0:
+        stdout, stderr = archive.communicate()
+        if archive.returncode != 0:
             raise RuntimeError(
-                f"git archive failed for {self.revision}: {stderr.strip()}"
+                f"git archive failed for {self.revision}: "
+                f"{stderr.decode(errors='replace').strip()}"
             )
+        if not stdout:
+            raise RuntimeError(
+                f"git archive produced no data for {self.revision}: "
+                f"{', '.join(selected)}"
+            )
+        with tarfile.open(fileobj=io.BytesIO(stdout), mode="r:") as tar:
+            tar.extractall(target)
         return target
 
     def function_source(
@@ -492,6 +499,20 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
             )
         )
     return functions
+
+
+def function_body_has_error(function: FunctionSource) -> bool:
+    source = function.text.encode()
+    tree = _parser_for_language(function.language).parse(source)
+    definitions = [
+        node
+        for node in _walk(tree.root_node)
+        if node.type == "function_definition"
+    ]
+    if len(definitions) != 1:
+        return True
+    body = definitions[0].child_by_field_name("body")
+    return body is None or bool(body.has_error)
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:
