@@ -96,13 +96,12 @@ class JoernRepositoryIndex:
         self.cache_dir = Path(cache_dir)
         self.timeout = timeout
         self._methods: dict[str, RepositoryMethod] | None = None
-        self._facts: dict[str, JoernFacts] | None = None
 
         fingerprint_payload = json.dumps(
             {
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
-                "joern_index_schema": 4,
+                "joern_index_schema": 5,
                 "joern_api": "4.0.465",
             },
             sort_keys=True,
@@ -218,11 +217,6 @@ class JoernRepositoryIndex:
         self._build()
 
         raw_methods: dict[str, dict[str, object]] = {}
-        facts: dict[str, JoernFacts] = {}
-        fact_call_args: dict[
-            str, dict[tuple[int, str], dict[int, str]]
-        ] = {}
-
         for raw_line in self.index_path.read_text().splitlines():
             if not raw_line:
                 continue
@@ -230,7 +224,6 @@ class JoernRepositoryIndex:
             tag = parts[0]
             if tag == "ERROR":
                 raise JoernError(parts[1] if len(parts) > 1 else "Joern index error")
-
             if tag == "METHOD" and len(parts) >= 7:
                 full_name = parts[1]
                 raw_methods[full_name] = {
@@ -242,18 +235,12 @@ class JoernRepositoryIndex:
                     "parameters": {},
                     "calls": [],
                 }
-                facts[full_name] = JoernFacts()
-                fact_call_args[full_name] = {}
             elif tag == "PARAM" and len(parts) >= 5:
-                full_name = parts[1]
-                method = raw_methods.get(full_name)
+                method = raw_methods.get(parts[1])
                 if method is not None:
-                    index = int(parts[2])
-                    method["parameters"][index] = (parts[3], parts[4])
-                    facts[full_name].parameters[index] = (parts[3], parts[4])
+                    method["parameters"][int(parts[2])] = (parts[3], parts[4])
             elif tag == "CALL" and len(parts) >= 6:
-                full_name = parts[1]
-                method = raw_methods.get(full_name)
+                method = raw_methods.get(parts[1])
                 if method is not None:
                     method["calls"].append(
                         RepositoryCall(
@@ -263,32 +250,6 @@ class JoernRepositoryIndex:
                             dispatch_type=parts[5],
                         )
                     )
-            elif tag == "ARGFACT" and len(parts) >= 7:
-                full_name = parts[1]
-                if full_name in facts:
-                    key = (int(parts[2]), parts[3])
-                    fact_call_args[full_name].setdefault(key, {})[
-                        int(parts[4])
-                    ] = parts[6]
-            elif tag == "FLOWFACT" and len(parts) >= 6:
-                full_name = parts[1]
-                if full_name in facts:
-                    facts[full_name].flows.add(
-                        (
-                            int(parts[2]),
-                            int(parts[3]),
-                            parts[4],
-                            int(parts[5]),
-                        )
-                    )
-            elif tag == "RETFACT" and len(parts) >= 3:
-                full_name = parts[1]
-                if full_name in facts:
-                    facts[full_name].returns.append(parts[2])
-            elif tag == "RETFLOWFACT" and len(parts) >= 3:
-                full_name = parts[1]
-                if full_name in facts:
-                    facts[full_name].return_flows.add(int(parts[2]))
 
         methods: dict[str, RepositoryMethod] = {}
         for full_name, raw in raw_methods.items():
@@ -305,24 +266,9 @@ class JoernRepositoryIndex:
                 parameter_types=tuple(item[1] for item in ordered),
                 calls=tuple(raw["calls"]),
             )
-            for (line, name), arguments in fact_call_args[full_name].items():
-                facts[full_name].calls[(line, name)] = JoernCall(
-                    line=line,
-                    name=name,
-                    arguments=arguments,
-                )
 
         self._methods = methods
-        self._facts = facts
         return methods
-
-    def facts_for(self, method_full_name: str) -> JoernFacts:
-        self.methods()
-        assert self._facts is not None
-        facts = self._facts.get(method_full_name)
-        if facts is None:
-            raise JoernMethodNotFound(f"method_not_found:{method_full_name}")
-        return facts
 
     def find_entry(self, name: str, path: str) -> RepositoryMethod | None:
         matches = [
@@ -399,26 +345,6 @@ class JoernValidator:
             raise JoernTimeout(self._timeouts[key])
         if key in self._errors:
             raise JoernError(self._errors[key])
-
-        indexed_method = None
-        if (
-            self.repository_index is not None
-            and getattr(candidate, "method_full_name", "")
-        ):
-            indexed_method = self.repository_index.methods().get(
-                candidate.method_full_name
-            )
-
-        use_sample_cpg = (
-            indexed_method is not None
-            and indexed_method.path == candidate.function.path
-            and indexed_method.start_line == candidate.function.start_line
-        )
-
-        if use_sample_cpg:
-            facts = self.repository_index.facts_for(candidate.method_full_name)
-            self._cache[key] = facts
-            return facts
 
         # Explicit same-file preprocessor variants may not be present in the
         # active sample CPG. Validate those variant bodies independently.
