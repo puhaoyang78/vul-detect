@@ -179,6 +179,15 @@ class GitRepository:
         result = self._git("cat-file", "-e", f"{self.revision}^{{commit}}", check=False)
         return result.returncode == 0
 
+    def has_path(self, path: str) -> bool:
+        result = self._git(
+            "cat-file",
+            "-e",
+            f"{self.revision}:{path}",
+            check=False,
+        )
+        return result.returncode == 0
+
     def read_blob(self, path: str) -> str:
         if path not in self._blob_cache:
             result = self._git("show", f"{self.revision}:{path}")
