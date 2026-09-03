@@ -112,7 +112,10 @@ def _source_snapshot_identity(repository) -> str:
     methods = (
         repository.materialize,
         repository.materialization_paths,
+        repository._symlink_materialization_targets,
         repository._symlink_target,
+        repository._tree_entry,
+        repository._recursive_tree_entries,
         repository._normalize_repository_path,
     )
     try:
