@@ -28,6 +28,20 @@ class IsolationTests(unittest.TestCase):
             source = repository.read_blob(str(sample["entry_path"]))
             self.assertIn(str(sample["entry_function"]), source)
 
+    def test_all_scan_paths_are_locally_available(self):
+        samples = read_jsonl("data/detection_samples.jsonl")
+        for sample in samples:
+            repository = GitRepository(
+                str(sample["repository_git_dir"]),
+                str(sample["vulnerable_commit"]),
+            )
+            missing = [
+                str(path)
+                for path in sample.get("scan_paths", [])
+                if not repository.has_path(str(path))
+            ]
+            self.assertEqual([], missing, msg=str(sample["sample_key"]))
+
     def test_llm_normalization_defaults_to_local_qwen(self):
         args = build_parser().parse_args(["normalize"])
         self.assertEqual("local", args.llm_backend)
