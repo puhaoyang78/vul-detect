@@ -2,11 +2,11 @@ import unittest
 
 from semantic_demo.cli import (
     FORBIDDEN_DETECTION_FIELDS,
-    _load_entry,
     build_parser,
     read_jsonl,
     validate_detection_manifest,
 )
+from semantic_demo.source import GitRepository
 
 
 class IsolationTests(unittest.TestCase):
@@ -16,18 +16,26 @@ class IsolationTests(unittest.TestCase):
         for sample in samples:
             self.assertFalse(FORBIDDEN_DETECTION_FIELDS & set(sample))
 
-    def test_all_entries_are_locally_available(self):
+    def test_all_entry_sources_are_locally_available(self):
         samples = read_jsonl("data/detection_samples.jsonl")
         self.assertEqual(60, len(samples))
         for sample in samples:
-            _, entry = _load_entry(sample)
-            self.assertEqual(sample["entry_function"], entry.name)
+            repository = GitRepository(
+                str(sample["repository_git_dir"]),
+                str(sample["vulnerable_commit"]),
+            )
+            self.assertTrue(repository.has_revision())
+            source = repository.read_blob(str(sample["entry_path"]))
+            self.assertIn(str(sample["entry_function"]), source)
 
     def test_llm_normalization_defaults_to_local_qwen(self):
         args = build_parser().parse_args(["normalize"])
         self.assertEqual("local", args.llm_backend)
         self.assertTrue(args.llama_server.endswith("/llama-server"))
         self.assertTrue(args.local_model.endswith(".gguf"))
+        self.assertEqual("/home/phy/joern", args.joern_dir)
+        self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertEqual("data/joern_cpg", args.cpg_cache_dir)
 
     def test_run_defaults_to_local_joern_and_jdk(self):
         args = build_parser().parse_args(["run"])
