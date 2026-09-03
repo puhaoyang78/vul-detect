@@ -685,37 +685,6 @@ def function_body_recoverable(function: FunctionSource) -> bool:
     return len(outer_blocks) == 1
 
 
-def function_body_has_error(function: FunctionSource) -> bool:
-    source = function.text.encode()
-    tree = _parser_for_language(function.language).parse(source)
-    definitions = [
-        node
-        for node in _walk(tree.root_node)
-        if node.type == "function_definition"
-    ]
-    if len(definitions) == 1:
-        body = definitions[0].child_by_field_name("body")
-        if body is not None:
-            return bool(body.has_error)
-
-    outer_blocks: list[Node] = []
-    for node in _walk(tree.root_node):
-        if node.type != "compound_statement":
-            continue
-        parent = node.parent
-        nested = False
-        while parent is not None:
-            if parent.type == "compound_statement":
-                nested = True
-                break
-            parent = parent.parent
-        if not nested:
-            outer_blocks.append(node)
-    if len(outer_blocks) != 1:
-        return True
-    return bool(outer_blocks[0].has_error)
-
-
 def _integer_domain_from_type(type_text: str) -> str | None:
     if re.search(r"\b(?:unsigned|size_t|uint\d+_t)\b", type_text):
         return "unsigned"
