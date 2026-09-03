@@ -136,6 +136,8 @@ class JoernRepositoryIndex:
         scopes: Iterable[str],
         entry_path: str,
         *,
+        defines: Iterable[str] = (),
+        include_paths: Iterable[str] = (),
         joern_dir: str | Path = "/home/phy/joern",
         java_home: str | Path | None = None,
         cache_dir: str | Path = "data/joern_cpg",
@@ -145,6 +147,10 @@ class JoernRepositoryIndex:
         self.sample_key = sample_key
         self.scopes = tuple(dict.fromkeys([*map(str, scopes), str(entry_path)]))
         self.entry_path = str(entry_path)
+        self.defines = tuple(dict.fromkeys(map(str, defines)))
+        self.explicit_include_paths = tuple(
+            dict.fromkeys(map(str, include_paths))
+        )
         self.context_paths = self._repository_context_paths()
         self.joern_dir = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
         self.joern = self.joern_dir / "joern"
@@ -167,6 +173,7 @@ class JoernRepositoryIndex:
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
                 "context_paths": self.context_paths,
+                "defines": self.defines,
                 "frontend": frontend_identity,
                 "source_snapshot": _source_snapshot_identity(self.repository),
                 "include_auto_discovery": True,
@@ -201,6 +208,14 @@ class JoernRepositoryIndex:
         # A repository-level include/ directory is the conventional header root
         # for C/C++ projects and is parse context, not an analysis scope.
         add("include")
+
+        for path in self.explicit_include_paths:
+            if not self.repository.has_path(path):
+                raise FileNotFoundError(
+                    f"configured include path not found at "
+                    f"{self.repository.revision}: {path}"
+                )
+            add(path)
 
         # Preserve nested include roots already implied by the configured scopes,
         # e.g. src/include/foo -> src/include.
@@ -290,6 +305,8 @@ class JoernRepositoryIndex:
         ]
         for include_dir in include_dirs:
             command.extend(["--include", str(include_dir)])
+        for define in self.defines:
+            command.extend(["--define", define])
         return command
 
     def _build(self) -> None:
