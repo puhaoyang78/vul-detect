@@ -123,12 +123,15 @@ def _variant_definitions(
     raise RuntimeError(f"{sample_key}: ambiguous repository binding for {name}")
 
 
+def _can_produce_summary(function: FunctionSource) -> bool:
+    return function.has_value_return() or any(function.parameter_pointer_like)
+
+
 def discover_candidates(
     sample_key: str,
     repository: GitRepository,
     entry: FunctionSource,
     scopes: Iterable[str],
-    max_functions: int = 128,
 ) -> list[Candidate]:
     """Traverse the repository-resolved project call graph without name heuristics."""
     scopes = tuple(scopes)
@@ -162,6 +165,8 @@ def discover_candidates(
                 )
 
             for definition in definitions:
+                if not _can_produce_summary(definition):
+                    continue
                 key = (
                     definition.path,
                     definition.name,
@@ -175,11 +180,6 @@ def discover_candidates(
                     function=definition,
                     call_lines=tuple(sorted(lines)),
                 )
-                if len(discovered) > max_functions:
-                    raise RuntimeError(
-                        f"{sample_key}: candidate frontier exceeds explicit budget "
-                        f"({max_functions}); analysis aborted rather than truncated"
-                    )
                 if key not in expanded:
                     queue.append(definition)
 
