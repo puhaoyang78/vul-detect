@@ -672,6 +672,11 @@ class CandidateDiscoveryTests(unittest.TestCase):
             path=function.path,
             start_line=function.start_line,
             end_line=function.end_line,
+            return_type=(
+                "void"
+                if function.text.lstrip().startswith("void ")
+                else "int"
+            ),
             parameters=function.parameters,
             parameter_types=function.parameter_types,
             calls=tuple(calls),
@@ -837,6 +842,37 @@ class CandidateDiscoveryTests(unittest.TestCase):
             entry_method,
         )
         self.assertEqual(count, len(candidates))
+
+    def test_dynamic_joern_call_remains_opaque(self):
+        callee = parse_functions(
+            "callee.c",
+            "int callee(int value) { return value; }",
+        )[0]
+        entry = parse_functions(
+            "entry.c",
+            "int entry(int value) { return callee(value); }",
+        )[0]
+        callee_method = self.method("callee:int(int)", callee)
+        entry_method = self.method(
+            "entry:int(int)",
+            entry,
+            (
+                RepositoryCall(
+                    line=entry.start_line,
+                    name="callee",
+                    method_full_name=callee_method.full_name,
+                    dispatch_type="DYNAMIC_DISPATCH",
+                ),
+            ),
+        )
+        index = self.StaticIndex(
+            [entry_method, callee_method],
+            [entry, callee],
+        )
+        self.assertEqual(
+            [],
+            discover_candidates("sample", index, entry_method),
+        )
 
     def test_unresolved_joern_call_remains_opaque(self):
         entry = parse_functions(
