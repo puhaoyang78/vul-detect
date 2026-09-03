@@ -132,6 +132,99 @@ class GitRepositoryTests(unittest.TestCase):
             )
 
 
+    def test_materialize_keeps_symlink_into_submodule_opaque(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--bare", str(root / "repo.git")],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            work = root / "work"
+            subprocess.run(
+                ["git", "clone", str(root / "repo.git"), str(work)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "config", "user.email", "test@example.com"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "config", "user.name", "Test"],
+                check=True,
+            )
+            (work / "seed").write_text("seed\\n")
+            subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", str(work), "commit", "-m", "seed"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            submodule_commit = subprocess.run(
+                ["git", "-C", str(work), "rev-parse", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+
+            (work / "include").mkdir()
+            (work / "include" / "external").symlink_to("../deps/external/include")
+            subprocess.run(
+                ["git", "-C", str(work), "add", "include/external"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(work),
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    f"160000,{submodule_commit},deps/external",
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "commit", "-m", "submodule symlink"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", str(work), "rev-parse", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", str(work), "push", "origin", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            repository = GitRepository(str(root / "repo.git"), revision)
+            self.assertEqual(
+                ("include",),
+                repository.materialization_paths(("include",)),
+            )
+            materialized = root / "materialized"
+            repository.materialize(materialized, ("include",))
+            link = materialized / "include" / "external"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual("../deps/external/include", link.readlink().as_posix())
+
+
 class JoernCacheTests(unittest.TestCase):
     def test_temporary_cache_file_uses_target_filesystem(self):
         with tempfile.TemporaryDirectory() as directory:
