@@ -110,6 +110,7 @@ def _file_digest(path: Path) -> str:
 
 def _source_snapshot_identity(repository) -> str:
     methods = (
+        repository.resolve_paths,
         repository.materialize,
         repository.materialization_paths,
         repository._symlink_materialization_targets,
