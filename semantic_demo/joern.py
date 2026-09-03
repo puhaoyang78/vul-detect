@@ -547,6 +547,23 @@ class JoernRepositoryIndex:
         return [method] if method is not None else []
 
 
+def _isolated_variant_translation_unit(function) -> str:
+    group = function.preprocessor_group
+    if group is None:
+        return function.text
+    source = function.translation_unit.encode()
+    group_start, group_end = group
+    prefix = source[:group_start]
+    suffix = source[group_end:]
+    group_start_line = prefix.count(b"\n") + 1
+    line_padding = max(0, function.start_line - group_start_line)
+    replacement = (
+        b"\n" * line_padding
+        + function.text.encode()
+    )
+    return (prefix + replacement + suffix).decode(errors="replace")
+
+
 class JoernValidator:
     """Extract per-function CPG/data-flow facts with a local Joern installation."""
 
@@ -829,7 +846,9 @@ class JoernValidator:
             suffix = Path(candidate.function.path).suffix or ".c"
             source_path = root / f"candidate{suffix}"
             output_path = root / "facts.tsv"
-            source_path.write_text(candidate.function.translation_unit)
+            source_path.write_text(
+                _isolated_variant_translation_unit(candidate.function)
+            )
 
             command = [
                 str(self.joern),
