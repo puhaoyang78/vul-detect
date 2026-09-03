@@ -778,6 +778,24 @@ class ParsingRegressionTests(unittest.TestCase):
         self.assertEqual(["bar"], [function.name for function in functions])
         self.assertEqual("cpp", functions[0].language)
 
+    def test_error_recovered_host_function_remains_indexed(self):
+        functions = parse_functions(
+            "option.c",
+            """
+            int broken[
+                static void
+            option_value2string(int *opp, int flags)
+            {
+                (void) opp;
+                (void) flags;
+            }
+            """,
+        )
+        self.assertIn(
+            "option_value2string",
+            [function.name for function in functions],
+        )
+
     def test_macro_embedded_kernel_function_is_not_indexed_as_host_c(self):
         functions = parse_functions(
             "accelerate-private.h",
