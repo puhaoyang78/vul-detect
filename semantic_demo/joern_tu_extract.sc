@@ -7,20 +7,38 @@ import io.joern.dataflowengineoss.language._
 @main def exec(
   cpgFile: String,
   outFile: String,
-  methodFullName: String
+  functionName: String,
+  functionPath: String,
+  functionStartLine: Int,
+  functionEndLine: Int
 ) = {
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
+  def normalizedPath(value: String): String =
+    value.replace('\\', '/').stripPrefix("./")
 
   val lines = ArrayBuffer[String]()
   try {
     importCpg(cpgFile)
     run.ossdataflow
-    val methods = cpg.method.fullNameExact(methodFullName).l
+    val expectedPath = normalizedPath(functionPath)
+    val methods = cpg.method.nameExact(functionName).l.filter { method =>
+      val pathMatches = normalizedPath(method.filename) == expectedPath
+      val lineMatches = method.lineNumber.exists { line =>
+        line >= functionStartLine && line <= functionEndLine
+      }
+      pathMatches && lineMatches
+    }
     if (methods.isEmpty) {
-      lines += ("ERROR\tmethod_not_found:" + clean(methodFullName))
+      lines += (
+        "ERROR\tmethod_not_found:" + clean(functionPath) + ":" +
+        clean(functionName) + "@" + functionStartLine + "-" + functionEndLine
+      )
     } else if (methods.size != 1) {
-      lines += ("ERROR\tambiguous_method:" + clean(methodFullName))
+      lines += (
+        "ERROR\tambiguous_method:" + clean(functionPath) + ":" +
+        clean(functionName) + "@" + functionStartLine + "-" + functionEndLine
+      )
     } else {
       val method = methods.head
       val params = method.parameter.filter(_.index > 0).l
@@ -40,8 +58,7 @@ import io.joern.dataflowengineoss.language._
           params.foreach { p =>
             if (arg.reachableBy(p).l.nonEmpty) {
               lines += (
-                "FLOW\t" + (p.index - 1) + "\t" + callId + "\t" +
-                argIndex
+                "FLOW\t" + (p.index - 1) + "\t" + callId + "\t" + argIndex
               )
             }
           }
