@@ -359,7 +359,6 @@ def _parameters(
 def _is_host_function_definition(node: Node) -> bool:
     current = node.parent
     forbidden = {
-        "ERROR",
         "argument_list",
         "call_expression",
         "preproc_arg",
