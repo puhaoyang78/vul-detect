@@ -201,8 +201,8 @@ class JoernRepositoryIndex:
                 str(self.cpg_path.resolve()),
                 "--with-include-auto-discovery",
             ]
-            if include_dirs:
-                command.extend(["--include", ",".join(include_dirs)])
+            for include_dir in include_dirs:
+                command.extend(["--include", include_dir])
             try:
                 result = subprocess.run(
                     command,
@@ -318,13 +318,38 @@ class JoernRepositoryIndex:
         self._methods = methods
         return methods
 
+    @staticmethod
+    def _normalize_repository_path(path: str) -> str:
+        return Path(path).as_posix().lstrip("./")
+
     def find_entry(self, name: str, path: str) -> RepositoryMethod | None:
-        matches = [
+        expected_path = self._normalize_repository_path(path)
+        named = [
             method
             for method in self.methods().values()
-            if method.name == name and method.path == path
+            if method.name == name
         ]
-        return matches[0] if len(matches) == 1 else None
+        matches = [
+            method
+            for method in named
+            if self._normalize_repository_path(method.path) == expected_path
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if not named:
+            return None
+        actual = ", ".join(
+            sorted(
+                {
+                    self._normalize_repository_path(method.path)
+                    for method in named
+                }
+            )
+        )
+        raise JoernError(
+            f"{self.sample_key}: Joern found {name} but repository path "
+            f"did not resolve uniquely to {expected_path}; indexed paths: {actual}"
+        )
 
     def callee_methods(self, call: RepositoryCall) -> list[RepositoryMethod]:
         if call.dispatch_type != "STATIC_DISPATCH":
