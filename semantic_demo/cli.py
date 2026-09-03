@@ -297,9 +297,92 @@ def _analysis_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _preflight_samples(
+    samples: list[dict[str, object]],
+    *,
+    joern_dir: str,
+    java_home: str,
+    cpg_cache_dir: str,
+):
+    prepared = []
+    failures: list[str] = []
+    for sample in samples:
+        key = str(sample["sample_key"])
+        try:
+            repository, index, entry_method, entry = _load_entry(
+                sample,
+                joern_dir=joern_dir,
+                java_home=java_home,
+                cpg_cache_dir=cpg_cache_dir,
+            )
+            candidates = discover_candidates(key, index, entry_method)
+            skipped = [
+                candidate
+                for candidate in candidates
+                if candidate_validation_error(candidate.function) is not None
+            ]
+            methods = index.methods()
+            unresolved = sum(
+                1
+                for method in methods.values()
+                for call in method.calls
+                if call.dispatch_type == "STATIC_DISPATCH"
+                and not index.callee_methods(call)
+            )
+            prepared.append(
+                (
+                    sample,
+                    repository,
+                    index,
+                    entry_method,
+                    entry,
+                    candidates,
+                )
+            )
+            print(
+                f"preflight_sample_done={key} candidates={len(candidates)} "
+                f"unrecoverable_candidates={len(skipped)} "
+                f"unresolved_static_calls={unresolved}",
+                flush=True,
+            )
+        except Exception as error:
+            failures.append(f"{key}: {error}")
+            print(
+                f"preflight_sample_failed={key} error={error}",
+                flush=True,
+            )
+    if failures:
+        raise RuntimeError(
+            "parse preflight failed for "
+            f"{len(failures)} sample(s):\n" + "\n".join(failures)
+        )
+    return prepared
+
+
+def preflight_command(args: argparse.Namespace) -> None:
+    samples = read_jsonl(args.samples)
+    validate_detection_manifest(samples)
+    prepared = _preflight_samples(
+        samples,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
+    )
+    print(
+        f"preflight_complete=samples:{len(prepared)}",
+        flush=True,
+    )
+
+
 def normalize_command(args: argparse.Namespace) -> None:
     samples = read_jsonl(args.samples)
     validate_detection_manifest(samples)
+    prepared = _preflight_samples(
+        samples,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        cpg_cache_dir=args.cpg_cache_dir,
+    )
     records: list[dict[str, object]] = []
     cache = {} if args.refresh else _normalization_cache(args.output)
     if args.refresh:
@@ -320,18 +403,14 @@ def normalize_command(args: argparse.Namespace) -> None:
         )
 
     with llm_context as llm_options:
-        for sample in samples:
-            repository, index, entry_method, entry = _load_entry(
-                sample,
-                joern_dir=args.joern_dir,
-                java_home=args.java_home,
-                cpg_cache_dir=args.cpg_cache_dir,
-            )
-            candidates = discover_candidates(
-                str(sample["sample_key"]),
-                index,
-                entry_method,
-            )
+        for (
+            sample,
+            repository,
+            index,
+            entry_method,
+            entry,
+            candidates,
+        ) in prepared:
             for candidate in candidates:
                 fingerprint = _candidate_fingerprint(candidate)
                 cache_key = (
@@ -840,6 +919,19 @@ def run_command(args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="validate repository, Joern, entry, candidate, and local parse inputs",
+    )
+    preflight.add_argument("--samples", default="data/detection_samples.jsonl")
+    preflight.add_argument("--joern-dir", default="/home/phy/joern")
+    preflight.add_argument(
+        "--java-home",
+        default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
+    )
+    preflight.add_argument("--cpg-cache-dir", default="data/joern_cpg")
+    preflight.set_defaults(func=preflight_command)
 
     normalize = subparsers.add_parser("normalize", help="normalize candidate functions")
     normalize.add_argument("--samples", default="data/detection_samples.jsonl")
