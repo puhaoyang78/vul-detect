@@ -36,12 +36,13 @@ LineVul 只读取目标函数源码：
 ### 1. Repository call-graph discovery
 
 - Joern 4.0.465/c2cpg 对每个 sample 的固定 repository revision 构建一份 CPG。
-- analysis source 只物化 sample 的 scan_paths 与 entry_path；repository-level include/ 作为独立 parse context 物化并通过重复 --include 参数传给 c2cpg，系统 include 使用 auto-discovery。
-- parse-context headers 只参与 CDT 预处理/类型解析，不进入 METHOD/CALL analysis index，不扩大 candidate scope。
+- analysis source 只物化 sample 的 scan_paths 与 entry_path；Git symlink target 递归闭包会一并物化，cycle/dangling target 在 source layer 直接报错，submodule 不会被伪装成本地源码。
+- repository-level include/ 以及 manifest 显式 include_paths 作为独立 parse context，通过重复 --include 参数交给 c2cpg；显式 defines 通过 --define 原样传递，系统 include 使用 auto-discovery。
+- parse-context/symlink target 只参与 CDT 解析；Joern index 另外按 scan_paths + entry_path 过滤 METHOD，因此不会扩大 candidate scope。
 - entry、METHOD、CALL 与 call -> callee binding 均来自 Joern CPG，不再使用 git grep + Tree-sitter 仓库函数索引。
 - 标准 API 是明确 leaf；Joern 无法解析到当前 CPG 内部 METHOD 的调用保持 opaque，不做函数名猜测。
-- 同一已绑定 C 文件中，若 Tree-sitter 明确识别出同签名条件编译 variants，仍保留 variants 并在传播时取共同 summary。
-- 仅展开可能产生当前 ALLOC/READ/WRITE/VALUE caller-visible summary 的函数；无值返回且无 pointer-like 形参的 callee 及其后继不进入候选。
+- 同一已绑定 C 文件中，只有 Tree-sitter 明确识别为同一 #if/#ifdef/#elif/#else 条件组、不同分支且同签名的 definitions 才作为 variants；普通重复定义/overload 不按 variant 合并。
+- 仅在 Joern 明确给出 void 返回且所有参数都是明确标量时裁剪无法产生当前 summary 的 callee；ANY、typedef 或其他 opaque type 不会被当成“无语义”静默裁掉。
 - 调用图按 Joern method full name 去重，不设置固定 hop 或固定函数数截断。
 
 ### 2. Semantic normalization
@@ -64,7 +65,9 @@ GUARD 仍不进入跨过程 schema。Normalization 输出带 schema version；�
 - Joern 是正式流程必需组件，没有 lightweight fallback。
 - 每个 sample 只构建一次 CPG，用于 METHOD/PARAM/CALL 与静态 call binding；repository index 阶段不运行 ossdataflow。
 - normalize 只依赖轻量 repository index，不执行全图数据流分析。
-- run 阶段按 candidate 执行 Joern data-flow validation；显式条件编译 variants 继续分别验证并采用保守交集语义。
+- run 阶段按 translation-unit 目录构建 contextual CPG；每个 TU 只运行一次 ossdataflow 并缓存全部 METHOD facts，同一 TU 内 candidates 复用。
+- PARAM 只映射显式非 variadic 参数，C++ 隐式 this(index=0) 与 variadic pseudo-parameter 不进入 argN；CALL/FLOW 使用 Joern node id，不再以 (line,name) 作为主键。
+- 显式条件编译 variants 若不在当前 active CPG branch 中，才使用独立 fragment Joern 验证，并只传播所有分支共有的 summary。
 - 验证基于明确标准 API 的参数角色或已经验证的 callee summary composition。
 - 不再根据 custom API 名称中是否包含 read、recv、send、copy、alloc、parse 等词猜角色。
 - GUARD/VALUE 不再通过 substring 匹配。
@@ -72,13 +75,16 @@ GUARD 仍不进入跨过程 schema。Normalization 输出带 schema version；�
 
 ### 4. Source parsing and access recovery
 
-Tree-sitter 不再负责 repository function discovery，仅分析已经由 Joern 定位出的函数片段，以及同文件显式 preprocessor variants。
-根据文件语言选择 C 或 C++ parser：
+Tree-sitter 不再负责 repository function discovery，仅分析已经由 Joern 定位出的局部函数片段，以及同文件显式 preprocessor variants。
+根据 translation unit 语言选择 parser：
 
-    C:   .c / C-style .h
+    C:   .c
     C++: .cc / .cpp / .cxx / .hh / .hpp / .hxx
+    .h:  继承调用者 translation unit 的 C/C++ 模式，不再比较 parser error 数量猜语言。
 
-.h 文件会比较 C/C++ 解析错误数量后选择更合适的 parser。
+Tree-sitter ERROR 采用 fact-local 边界：签名 annotation/macro 的 ERROR 不淘汰整个函数；
+只有位于 ERROR/missing subtree 内的 call/access/condition/definition fact 被丢弃。若函数体本身连
+compound_statement 都无法结构恢复，candidate 才进入 static-skip。
 
 直接 memory access 当前包括：
 
@@ -132,7 +138,7 @@ Z3 采用 per-access Verification Condition：
 
 以下情况直接 UNKNOWN：
 
-- parser error；
+- 当前访问所依赖的 AST fact 落在 parser ERROR/missing subtree；
 - unknown object capacity / valid extent；
 - unresolved compile-time macro or sizeof；
 - unsupported expression；
@@ -181,11 +187,22 @@ sprintf/vsprintf 不再使用“出现即漏洞”的规则，无法可靠得到
 
     python -m unittest discover -s tests -v
 
+只检查 repository/Joern/source parsing，不启动 LLM：
+
+    python -m semantic_demo.cli preflight
+
+normalize 与 run 都会在正式工作前自动执行同一批 preflight；任一 sample 的 revision、scope、
+CPG、entry、source range 或 candidate discovery 失败时，会先遍历完整批次、汇总所有失败，
+然后终止，不会运行到中途才逐个暴露 Sxx 错误。
+
 由于 semantic schema 已更新，第一次必须重新生成 normalization：
 
     python -m semantic_demo.cli normalize --refresh
 
-首次运行会在 data/joern_cpg/ 生成按 sample/revision 指纹缓存的 CPG 与索引；该目录不进入 Git。
+首次运行会在 data/joern_cpg/ 生成 CPG、repository index、c2cpg diagnostics 与 TU facts cache；
+fingerprint 自动包含真实 Joern/c2cpg identity、source materialization 实现、scopes/context/defines
+和 Scala script hash。CPG 与 index 分开指纹，index script 改动不会无谓重建 CPG；成功结果通过
+临时文件原子写入。该目录不进入 Git。
 
 默认使用本地 Qwen。外部 OpenAI-compatible API：
 
@@ -232,12 +249,13 @@ UNKNOWN 不再自动折算成 benign。
   - schema validation
   - Joern-backed semantic validation
   - unique callee composition
-- semantic_demo/joern.py / joern_index.sc / joern_extract.sc
+- semantic_demo/joern.py / joern_index.sc / joern_tu_extract.sc / joern_extract.sc
   - sample-level Joern 4.0.465 CPG construction
   - repository METHOD/CALL index and resolved call graph
   - lightweight repository METHOD/PARAM/CALL index
-  - candidate-level ossdataflow validation
-  - explicit variant validation
+  - contextual TU-level one-pass ossdataflow cache
+  - stable CALL node identity
+  - explicit preprocessor-variant fragment validation
 - semantic_demo/analyzer.py
   - standard + validated custom effects
   - no vulnerability heuristics
@@ -246,4 +264,5 @@ UNKNOWN 不再自动折算成 benign。
 - semantic_demo/linevul_baseline.py
   - independent LineVul function-level baseline
 - semantic_demo/cli.py
+  - batch parse preflight
   - normalization, validation, detection, checkpointing and isolated evaluation
