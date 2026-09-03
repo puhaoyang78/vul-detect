@@ -514,15 +514,19 @@ def function_body_has_error(function: FunctionSource) -> bool:
         if body is not None:
             return bool(body.has_error)
 
-    outer_blocks = [
-        node
-        for node in _walk(tree.root_node)
-        if node.type == "compound_statement"
-        and not any(
-            ancestor.type == "compound_statement"
-            for ancestor in _ancestors(node)
-        )
-    ]
+    outer_blocks: list[Node] = []
+    for node in _walk(tree.root_node):
+        if node.type != "compound_statement":
+            continue
+        parent = node.parent
+        nested = False
+        while parent is not None:
+            if parent.type == "compound_statement":
+                nested = True
+                break
+            parent = parent.parent
+        if not nested:
+            outer_blocks.append(node)
     if len(outer_blocks) != 1:
         return True
     return bool(outer_blocks[0].has_error)
