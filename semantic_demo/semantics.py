@@ -20,6 +20,7 @@ from .source import (
     function_body_recoverable,
     normalize_expression,
     parse_functions,
+    source_language,
 )
 
 
@@ -151,6 +152,7 @@ def _method_can_produce_summary(method: RepositoryMethod) -> bool:
 def _sources_for_method(
     index: JoernRepositoryIndex,
     method: RepositoryMethod,
+    language_hint: str,
 ) -> list[FunctionSource]:
     base = index.repository.function_source(
         path=method.path,
@@ -159,6 +161,7 @@ def _sources_for_method(
         end_line=method.end_line,
         parameters=method.parameters,
         parameter_types=method.parameter_types,
+        language_hint=language_hint,
     )
 
     # Preserve explicit same-file C preprocessor variants only after Joern has
@@ -198,18 +201,23 @@ def discover_candidates(
     sample_key: str,
     index: JoernRepositoryIndex,
     entry_method: RepositoryMethod,
+    entry_language: str | None = None,
 ) -> list[Candidate]:
     """Traverse Joern-resolved repository calls; unresolved calls stay opaque."""
-    discovered: dict[tuple[str, str, int], Candidate] = {}
+    discovered: dict[tuple[str, str, int, str], Candidate] = {}
     methods = index.methods()
-    queue: list[RepositoryMethod] = [entry_method]
-    expanded: set[str] = set()
+    initial_language = source_language(entry_method.path, entry_language)
+    queue: list[tuple[RepositoryMethod, str]] = [
+        (entry_method, initial_language)
+    ]
+    expanded: set[tuple[str, str]] = set()
 
     while queue:
-        caller = queue.pop(0)
-        if caller.full_name in expanded:
+        caller, caller_language = queue.pop(0)
+        caller_key = (caller.full_name, caller_language)
+        if caller_key in expanded:
             continue
-        expanded.add(caller.full_name)
+        expanded.add(caller_key)
 
         for call in caller.calls:
             if call.name.startswith("<operator>."):
@@ -225,10 +233,23 @@ def discover_candidates(
                     continue
                 if not _method_can_produce_summary(callee):
                     continue
-                sources = _sources_for_method(index, callee)
+                callee_language = source_language(
+                    callee.path,
+                    caller_language,
+                )
+                sources = _sources_for_method(
+                    index,
+                    callee,
+                    callee_language,
+                )
 
                 for source in sources:
-                    key = (source.path, source.name, source.start_line)
+                    key = (
+                        source.path,
+                        source.name,
+                        source.start_line,
+                        source.language,
+                    )
                     existing = discovered.get(key)
                     lines = set(existing.call_lines if existing else ())
                     lines.add(call.line)
@@ -238,8 +259,8 @@ def discover_candidates(
                         call_lines=tuple(sorted(lines)),
                         method_full_name=callee.full_name,
                     )
-                if callee.full_name in methods and callee.full_name not in expanded:
-                    queue.append(callee)
+                if callee.full_name in methods:
+                    queue.append((callee, callee_language))
 
     return sorted(
         discovered.values(),
@@ -356,6 +377,26 @@ def _normalized_return_expression(value: str) -> str:
     return compact
 
 
+def _source_call_for_joern(candidate: Candidate, joern_call):
+    candidates = [
+        call
+        for call in candidate.function.calls()
+        if not call.indirect
+        and call.line == joern_call.line
+        and call.name == joern_call.name
+    ]
+    if joern_call.code:
+        joern_code = normalize_expression(joern_call.code)
+        exact = [
+            call
+            for call in candidates
+            if normalize_expression(call.code) == joern_code
+        ]
+        if len(exact) == 1:
+            return exact[0]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _validate_with_joern(
     candidate: Candidate,
     summary: dict[str, str],
@@ -366,16 +407,11 @@ def _validate_with_joern(
 
     if kind == "ALLOC":
         returned = {_normalized_return_expression(value) for value in facts.returns}
-        source_calls = {
-            (call.line, call.name): call
-            for call in candidate.function.calls()
-            if not call.indirect
-        }
         for call in facts.call_list():
             _, size_indices = _known_call_indices(call.name, "ALLOC")
             if not size_indices:
                 continue
-            source_call = source_calls.get((call.line, call.name))
+            source_call = _source_call_for_joern(candidate, call)
             if source_call is None:
                 continue
             returns_allocation = source_call.returned or (
@@ -471,14 +507,7 @@ def _validate_by_composition(
                     facts, summary["size"], call, child_size_args
                 ):
                     continue
-                source_call = next(
-                    (
-                        source_call
-                        for source_call in candidate.function.calls()
-                        if source_call.name == call.name and source_call.line == call.line
-                    ),
-                    None,
-                )
+                source_call = _source_call_for_joern(candidate, call)
                 if (
                     source_call is not None
                     and _source_call_returns_value(source_call, facts)
@@ -497,14 +526,7 @@ def _validate_by_composition(
                     or child_expression != f"arg{child_args[0]}"
                 ):
                     continue
-                source_call = next(
-                    (
-                        source_call
-                        for source_call in candidate.function.calls()
-                        if source_call.name == call.name and source_call.line == call.line
-                    ),
-                    None,
-                )
+                source_call = _source_call_for_joern(candidate, call)
                 if (
                     source_call is None
                     or not _source_call_returns_value(source_call, facts)
