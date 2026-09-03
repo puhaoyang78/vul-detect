@@ -509,10 +509,23 @@ def function_body_has_error(function: FunctionSource) -> bool:
         for node in _walk(tree.root_node)
         if node.type == "function_definition"
     ]
-    if len(definitions) != 1:
+    if len(definitions) == 1:
+        body = definitions[0].child_by_field_name("body")
+        if body is not None:
+            return bool(body.has_error)
+
+    outer_blocks = [
+        node
+        for node in _walk(tree.root_node)
+        if node.type == "compound_statement"
+        and not any(
+            ancestor.type == "compound_statement"
+            for ancestor in _ancestors(node)
+        )
+    ]
+    if len(outer_blocks) != 1:
         return True
-    body = definitions[0].child_by_field_name("body")
-    return body is None or bool(body.has_error)
+    return bool(outer_blocks[0].has_error)
 
 
 def _integer_domain_from_type(type_text: str) -> str | None:
