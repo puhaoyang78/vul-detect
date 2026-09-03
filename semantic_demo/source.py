@@ -522,7 +522,6 @@ def _parameters(
         if not name:
             continue
         names.append(name)
-        types.append(_text(child, source))
         pointer_like.append(
             parameter_decl is not None
             and any(
@@ -539,14 +538,16 @@ def _parameters(
             None,
         ) if parameter_decl is not None else None
         if identifier_node is None:
-            signatures.append(normalize_expression(_text(child, source)))
+            signature = normalize_expression(_text(child, source))
         else:
-            signature = (
+            signature_text = (
                 source[child.start_byte : identifier_node.start_byte]
                 + b"$"
                 + source[identifier_node.end_byte : child.end_byte]
             ).decode(errors="replace")
-            signatures.append(normalize_expression(signature))
+            signature = normalize_expression(signature_text)
+        signatures.append(signature)
+        types.append(signature.replace("$", ""))
     return (
         tuple(names),
         tuple(types),
