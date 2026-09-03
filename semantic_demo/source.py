@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import posixpath
 import re
 import subprocess
 import tarfile
@@ -188,11 +189,59 @@ class GitRepository:
         )
         return result.returncode == 0
 
+    @staticmethod
+    def _normalize_repository_path(path: str) -> str:
+        normalized = posixpath.normpath(path)
+        if (
+            posixpath.isabs(normalized)
+            or normalized == ".."
+            or normalized.startswith("../")
+        ):
+            raise ValueError(f"repository path escapes root: {path}")
+        return normalized
+
+    def _tree_mode(self, path: str) -> str:
+        result = self._git("ls-tree", self.revision, "--", path)
+        line = result.stdout.rstrip("\n")
+        if not line:
+            raise FileNotFoundError(
+                f"path not found at {self.revision}: {path}"
+            )
+        metadata, listed_path = line.split("\t", 1)
+        mode, object_type, _ = metadata.split()
+        if listed_path != path or object_type != "blob":
+            raise ValueError(
+                f"expected repository blob at {path}, got {listed_path}"
+            )
+        return mode
+
+    def _read_blob(self, path: str, resolving: frozenset[str]) -> str:
+        if path in self._blob_cache:
+            return self._blob_cache[path]
+        if path in resolving:
+            chain = " -> ".join([*sorted(resolving), path])
+            raise ValueError(f"repository symlink cycle: {chain}")
+
+        mode = self._tree_mode(path)
+        result = self._git("show", f"{self.revision}:{path}")
+        if mode == "120000":
+            target = result.stdout.strip()
+            resolved = self._normalize_repository_path(
+                posixpath.join(posixpath.dirname(path), target)
+            )
+            content = self._read_blob(
+                resolved,
+                resolving | frozenset({path}),
+            )
+        else:
+            content = result.stdout
+
+        self._blob_cache[path] = content
+        return content
+
     def read_blob(self, path: str) -> str:
-        if path not in self._blob_cache:
-            result = self._git("show", f"{self.revision}:{path}")
-            self._blob_cache[path] = result.stdout
-        return self._blob_cache[path]
+        normalized = self._normalize_repository_path(path)
+        return self._read_blob(normalized, frozenset())
 
     def materialize(self, destination: str | Path, paths: Iterable[str]) -> Path:
         target = Path(destination)
