@@ -61,9 +61,9 @@ GUARD 仍不进入跨过程 schema。Normalization 输出带 schema version；�
 ### 3. Joern validation
 
 - Joern 是正式流程必需组件，没有 lightweight fallback。
-- 每个 sample 只构建一次 CPG，并只运行一次 ossdataflow；METHOD/PARAM/CALL/FLOW/RETURN facts 与 repository index 一起缓存。
-- 普通 candidate 直接复用 sample-level CPG facts，不再逐函数重新 import translation unit。
-- 显式条件编译 variant 若不对应当前 CPG active branch，则独立使用原 fragment Joern 路径验证该 variant，本质上服务于未知 build configuration 的保守交集语义。
+- 每个 sample 只构建一次 CPG，用于 METHOD/PARAM/CALL 与静态 call binding；repository index 阶段不运行 ossdataflow。
+- normalize 只依赖轻量 repository index，不执行全图数据流分析。
+- run 阶段按 candidate 执行 Joern data-flow validation；显式条件编译 variants 继续分别验证并采用保守交集语义。
 - 验证基于明确标准 API 的参数角色或已经验证的 callee summary composition。
 - 不再根据 custom API 名称中是否包含 read、recv、send、copy、alloc、parse 等词猜角色。
 - GUARD/VALUE 不再通过 substring 匹配。
@@ -234,8 +234,9 @@ UNKNOWN 不再自动折算成 benign。
 - semantic_demo/joern.py / joern_index.sc / joern_extract.sc
   - sample-level Joern 4.0.465 CPG construction
   - repository METHOD/CALL index and resolved call graph
-  - one-pass ossdataflow facts
-  - explicit variant fragment validation
+  - lightweight repository METHOD/PARAM/CALL index
+  - candidate-level ossdataflow validation
+  - explicit variant validation
 - semantic_demo/analyzer.py
   - standard + validated custom effects
   - no vulnerability heuristics
