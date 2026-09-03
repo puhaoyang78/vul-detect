@@ -35,12 +35,12 @@ class IsolationTests(unittest.TestCase):
                 str(sample["repository_git_dir"]),
                 str(sample["vulnerable_commit"]),
             )
-            missing = [
-                str(path)
-                for path in sample.get("scan_paths", [])
-                if not repository.has_path(str(path))
-            ]
-            self.assertEqual([], missing, msg=str(sample["sample_key"]))
+            try:
+                repository.resolve_paths(
+                    str(path) for path in sample.get("scan_paths", [])
+                )
+            except (FileNotFoundError, ValueError) as error:
+                self.fail(f"{sample['sample_key']}: {error}")
 
     def test_preflight_defaults_to_local_joern_and_jdk(self):
         args = build_parser().parse_args(["preflight"])

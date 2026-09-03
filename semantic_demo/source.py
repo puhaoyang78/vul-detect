@@ -5,7 +5,7 @@ import re
 import subprocess
 import tarfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from tree_sitter import Language, Node, Parser
@@ -188,6 +188,49 @@ class GitRepository:
         )
         return result.returncode == 0
 
+    def resolve_paths(self, paths: Iterable[str]) -> tuple[str, ...]:
+        requested = [str(path) for path in paths if str(path)]
+        if not requested:
+            raise ValueError("at least one repository path is required")
+
+        tree_paths: list[str] | None = None
+        resolved: list[str] = []
+        for path in requested:
+            if self.has_path(path):
+                normalized = self._normalize_repository_path(path)
+                if normalized not in resolved:
+                    resolved.append(normalized)
+                continue
+
+            if tree_paths is None:
+                result = self._git(
+                    "ls-tree",
+                    "-r",
+                    "--name-only",
+                    self.revision,
+                )
+                tree_paths = [
+                    self._normalize_repository_path(line)
+                    for line in result.stdout.splitlines()
+                    if line
+                ]
+
+            pattern = PurePosixPath(path)
+            matches = [
+                candidate
+                for candidate in tree_paths
+                if PurePosixPath(candidate).match(pattern.as_posix())
+            ]
+            if not matches:
+                raise FileNotFoundError(
+                    f"path pattern matched no repository paths at "
+                    f"{self.revision}: {path}"
+                )
+            for match in matches:
+                if match not in resolved:
+                    resolved.append(match)
+        return tuple(resolved)
+
     def _tree_entry(self, path: str) -> tuple[str, str, str, str]:
         normalized = self._normalize_repository_path(path)
         result = self._git("ls-tree", self.revision, "--", normalized)
@@ -355,14 +398,7 @@ class GitRepository:
     def materialize(self, destination: str | Path, paths: Iterable[str]) -> Path:
         target = Path(destination)
         target.mkdir(parents=True, exist_ok=True)
-        requested = tuple(dict.fromkeys(str(path) for path in paths if str(path)))
-        if not requested:
-            raise ValueError("at least one repository path is required")
-        missing = [path for path in requested if not self.has_path(path)]
-        if missing:
-            raise FileNotFoundError(
-                f"paths not found at {self.revision}: {', '.join(missing)}"
-            )
+        requested = self.resolve_paths(paths)
         selected = self.materialization_paths(requested)
         archive = subprocess.Popen(
             [

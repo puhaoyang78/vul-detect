@@ -110,6 +110,7 @@ def _file_digest(path: Path) -> str:
 
 def _source_snapshot_identity(repository) -> str:
     methods = (
+        repository.resolve_paths,
         repository.materialize,
         repository.materialization_paths,
         repository._symlink_materialization_targets,
@@ -145,8 +146,11 @@ class JoernRepositoryIndex:
     ) -> None:
         self.repository = repository
         self.sample_key = sample_key
-        self.scopes = tuple(dict.fromkeys([*map(str, scopes), str(entry_path)]))
         self.entry_path = str(entry_path)
+        requested_scopes = tuple(
+            dict.fromkeys([*map(str, scopes), self.entry_path])
+        )
+        self.scopes = self.repository.resolve_paths(requested_scopes)
         self.defines = tuple(dict.fromkeys(map(str, defines)))
         self.explicit_include_paths = tuple(
             dict.fromkeys(map(str, include_paths))
