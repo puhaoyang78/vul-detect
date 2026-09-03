@@ -538,18 +538,107 @@ class JoernValidator:
             return method
         return None
 
+    @staticmethod
+    def _normalize_method_path(path: str) -> str:
+        return Path(path).as_posix().lstrip("./")
+
+    def _parse_tu_facts(
+        self,
+        text: str,
+    ) -> dict[tuple[str, str, int, int], JoernFacts]:
+        identities: dict[str, tuple[str, str, int, int]] = {}
+        facts_by_key: dict[str, JoernFacts] = {}
+        call_args: dict[
+            tuple[str, str],
+            tuple[int, str, str, dict[int, str]],
+        ] = {}
+
+        for raw_line in text.splitlines():
+            if not raw_line:
+                continue
+            parts = raw_line.split("\t")
+            tag = parts[0]
+            if tag == "ERROR":
+                raise JoernError(
+                    parts[1] if len(parts) > 1 else "unknown Joern TU error"
+                )
+            if tag == "METHOD" and len(parts) >= 6:
+                key = parts[1]
+                identities[key] = (
+                    parts[2],
+                    self._normalize_method_path(parts[3]),
+                    int(parts[4]),
+                    int(parts[5]),
+                )
+                facts_by_key[key] = JoernFacts()
+            elif tag == "PARAM" and len(parts) >= 5:
+                facts = facts_by_key.get(parts[1])
+                if facts is not None:
+                    facts.parameters[int(parts[2])] = (parts[3], parts[4])
+            elif tag == "ARG" and len(parts) >= 8:
+                method_key = parts[1]
+                if method_key not in facts_by_key:
+                    continue
+                call_id = parts[2]
+                line = int(parts[3])
+                name = parts[4]
+                index = int(parts[5])
+                code = parts[6]
+                _, _, _, arguments = call_args.setdefault(
+                    (method_key, call_id),
+                    (line, name, code, {}),
+                )
+                arguments[index] = parts[7]
+            elif tag == "FLOW" and len(parts) >= 5:
+                facts = facts_by_key.get(parts[1])
+                if facts is not None:
+                    facts.flows.add(
+                        (int(parts[2]), parts[3], int(parts[4]))
+                    )
+            elif tag == "RET" and len(parts) >= 3:
+                facts = facts_by_key.get(parts[1])
+                if facts is not None:
+                    facts.returns.append(parts[2])
+            elif tag == "RETFLOW" and len(parts) >= 3:
+                facts = facts_by_key.get(parts[1])
+                if facts is not None:
+                    facts.return_flows.add(int(parts[2]))
+
+        for (method_key, call_id), (
+            line,
+            name,
+            code,
+            arguments,
+        ) in call_args.items():
+            facts_by_key[method_key].calls[call_id] = JoernCall(
+                line,
+                name,
+                arguments,
+                call_id=call_id,
+                code=code,
+            )
+
+        return {
+            identities[key]: facts
+            for key, facts in facts_by_key.items()
+            if key in identities
+        }
+
     def _contextual_facts(self, candidate, method) -> JoernFacts:
         assert self.repository_index is not None
         index = self.repository_index
         cache_dir = index.cache_dir / "tu"
         cache_dir.mkdir(parents=True, exist_ok=True)
+        method_parent = Path(method.path).parent.as_posix()
+        source_paths = (
+            (method.path,)
+            if method_parent in {"", "."}
+            else (method_parent,)
+        )
         payload = json.dumps(
             {
                 "revision": index.repository.revision,
-                "path": method.path,
-                "method_path": method.path,
-                "method_name": method.name,
-                "method_range": [method.start_line, method.end_line],
+                "source_paths": source_paths,
                 "frontend": index.cpg_fingerprint,
                 "script": _file_digest(self.tu_script),
             },
@@ -557,18 +646,13 @@ class JoernValidator:
         ).encode()
         fingerprint = hashlib.sha256(payload).hexdigest()[:20]
         cpg_path = cache_dir / f"{fingerprint}.bin"
+        facts_path = cache_dir / f"{fingerprint}.facts.tsv"
 
         if not cpg_path.is_file():
             with tempfile.TemporaryDirectory(prefix="vul-tu-cpg-") as directory:
                 root = Path(directory)
                 source_root = root / "src"
                 context_root = root / "context"
-                method_parent = Path(method.path).parent.as_posix()
-                source_paths = (
-                    (method.path,)
-                    if method_parent in {"", "."}
-                    else (method_parent,)
-                )
                 include_dirs = index._materialize_context(
                     source_root,
                     context_root,
@@ -588,31 +672,51 @@ class JoernValidator:
                     )
                 os.replace(temporary_cpg, cpg_path)
 
-        with tempfile.TemporaryDirectory(prefix="vul-tu-facts-") as directory:
-            output_path = Path(directory) / "facts.tsv"
-            command = [
-                str(self.joern),
-                "--script",
-                str(self.tu_script),
-                "--param",
-                f"cpgFile={cpg_path.resolve()}",
-                "--param",
-                f"outFile={output_path}",
-                "--param",
-                f"functionName={method.name}",
-                "--param",
-                f"functionPath={method.path}",
-                "--param",
-                f"functionStartLine={method.start_line}",
-                "--param",
-                f"functionEndLine={method.end_line}",
-            ]
-            result = self._run(command, candidate.function.name)
-            return self._load_facts(
-                output_path,
-                result,
-                candidate.function.name,
+        if not facts_path.is_file():
+            with tempfile.TemporaryDirectory(
+                prefix="vul-tu-facts-"
+            ) as directory:
+                temporary_facts = Path(directory) / "facts.tsv"
+                command = [
+                    str(self.joern),
+                    "--script",
+                    str(self.tu_script),
+                    "--param",
+                    f"cpgFile={cpg_path.resolve()}",
+                    "--param",
+                    f"outFile={temporary_facts}",
+                ]
+                result = self._run(command, candidate.function.name)
+                if result.returncode != 0 or not temporary_facts.is_file():
+                    raise JoernError(
+                        f"Joern TU dataflow failed for "
+                        f"{candidate.function.name}: "
+                        f"{result.stderr.strip() or result.stdout.strip()}"
+                    )
+                os.replace(temporary_facts, facts_path)
+
+        facts_map = self._parse_tu_facts(facts_path.read_text())
+        target_name = method.name
+        target_path = self._normalize_method_path(method.path)
+        matches = [
+            facts
+            for (name, path, start_line, end_line), facts in facts_map.items()
+            if name == target_name
+            and path == target_path
+            and start_line == method.start_line
+            and end_line == method.end_line
+        ]
+        if not matches:
+            raise JoernMethodNotFound(
+                f"method_not_found:{method.path}:{method.name}@"
+                f"{method.start_line}-{method.end_line}"
             )
+        if len(matches) != 1:
+            raise JoernError(
+                f"ambiguous_method:{method.path}:{method.name}@"
+                f"{method.start_line}-{method.end_line}"
+            )
+        return matches[0]
 
     def facts(self, candidate) -> JoernFacts:
         self.ensure_available()
