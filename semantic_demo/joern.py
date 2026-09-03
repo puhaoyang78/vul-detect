@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -27,13 +28,14 @@ class JoernCall:
     line: int
     name: str
     arguments: dict[int, str]
+    call_id: str = ""
 
 
 @dataclass
 class JoernFacts:
     parameters: dict[int, tuple[str, str]] = field(default_factory=dict)
-    calls: dict[tuple[int, str], JoernCall] = field(default_factory=dict)
-    flows: set[tuple[int, int, str, int]] = field(default_factory=set)
+    calls: dict[object, JoernCall] = field(default_factory=dict)
+    flows: set[tuple[object, ...]] = field(default_factory=set)
     returns: list[str] = field(default_factory=list)
     return_flows: set[int] = field(default_factory=set)
 
@@ -43,7 +45,15 @@ class JoernFacts:
     def parameter_reaches(
         self, parameter_index: int, call: JoernCall, argument_index: int
     ) -> bool:
-        return (parameter_index, call.line, call.name, argument_index) in self.flows
+        return (
+            bool(call.call_id)
+            and (parameter_index, call.call_id, argument_index) in self.flows
+        ) or (
+            parameter_index,
+            call.line,
+            call.name,
+            argument_index,
+        ) in self.flows
 
 
 @dataclass(frozen=True)
@@ -52,6 +62,7 @@ class RepositoryCall:
     name: str
     method_full_name: str
     dispatch_type: str
+    call_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -65,6 +76,33 @@ class RepositoryMethod:
     parameters: tuple[str, ...]
     parameter_types: tuple[str, ...]
     calls: tuple[RepositoryCall, ...]
+
+
+@functools.cache
+def _tool_identity(path_text: str) -> str:
+    path = Path(path_text)
+    if not path.is_file():
+        return f"missing:{path}"
+    try:
+        result = subprocess.run(
+            [str(path), "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        output = (result.stdout or result.stderr).strip()
+        if output:
+            return output
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    stat = path.stat()
+    return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
+def _file_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class JoernRepositoryIndex:
@@ -98,19 +136,38 @@ class JoernRepositoryIndex:
         self.timeout = timeout
         self._methods: dict[str, RepositoryMethod] | None = None
 
-        fingerprint_payload = json.dumps(
+        c2cpg = self._c2cpg()
+        frontend_identity = {
+            "joern": _tool_identity(str(self.joern)),
+            "c2cpg": _tool_identity(str(c2cpg)),
+        }
+        cpg_payload = json.dumps(
             {
                 "revision": self.repository.revision,
                 "scopes": self.scopes,
                 "context_paths": self.context_paths,
-                "joern_index_schema": 7,
-                "joern_api": "4.0.465",
+                "frontend": frontend_identity,
+                "include_auto_discovery": True,
             },
             sort_keys=True,
         ).encode()
-        self.fingerprint = hashlib.sha256(fingerprint_payload).hexdigest()[:16]
-        self.cpg_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.bin"
-        self.index_path = self.cache_dir / f"{sample_key}-{self.fingerprint}.tsv"
+        self.cpg_fingerprint = hashlib.sha256(cpg_payload).hexdigest()[:16]
+        index_payload = json.dumps(
+            {
+                "cpg_fingerprint": self.cpg_fingerprint,
+                "index_script": _file_digest(self.script),
+                "index_schema": 8,
+            },
+            sort_keys=True,
+        ).encode()
+        self.index_fingerprint = hashlib.sha256(index_payload).hexdigest()[:16]
+        self.fingerprint = self.index_fingerprint
+        self.cpg_path = (
+            self.cache_dir / f"{sample_key}-{self.cpg_fingerprint}.bin"
+        )
+        self.index_path = (
+            self.cache_dir / f"{sample_key}-{self.index_fingerprint}.tsv"
+        )
 
     def _repository_context_paths(self) -> tuple[str, ...]:
         roots: list[str] = []
@@ -163,68 +220,105 @@ class JoernRepositoryIndex:
         )
         return environment
 
+    def _materialize_context(
+        self,
+        source_root: Path,
+        context_root: Path,
+        source_paths: Iterable[str],
+    ) -> list[str]:
+        self.repository.materialize(source_root, source_paths)
+        if self.context_paths:
+            self.repository.materialize(context_root, self.context_paths)
+
+        include_dirs: list[str] = []
+
+        def add_include(path: Path) -> None:
+            if not path.exists():
+                return
+            value = str(path.resolve())
+            if value not in include_dirs:
+                include_dirs.append(value)
+
+        for scope in source_paths:
+            path = source_root / str(scope)
+            add_include(path if path.is_dir() else path.parent)
+        for context_path in self.context_paths:
+            add_include(context_root / context_path)
+        return include_dirs
+
+    def _c2cpg_command(
+        self,
+        input_root: Path,
+        output_path: Path,
+        include_dirs: Iterable[str],
+    ) -> list[str]:
+        command = [
+            str(self._c2cpg()),
+            str(input_root),
+            "--output",
+            str(output_path),
+            "--with-include-auto-discovery",
+        ]
+        for include_dir in include_dirs:
+            command.extend(["--include", str(include_dir)])
+        return command
+
     def _build(self) -> None:
         self.ensure_available()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        if self.cpg_path.is_file() and self.index_path.is_file():
-            return
-        self.cpg_path.unlink(missing_ok=True)
-        self.index_path.unlink(missing_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix=f"vul-cpg-{self.sample_key}-") as directory:
+        if not self.cpg_path.is_file():
+            with tempfile.TemporaryDirectory(
+                prefix=f"vul-cpg-{self.sample_key}-"
+            ) as directory:
+                root = Path(directory)
+                source_root = root / "src"
+                context_root = root / "context"
+                include_dirs = self._materialize_context(
+                    source_root,
+                    context_root,
+                    self.scopes,
+                )
+                temporary_cpg = root / "cpg.bin"
+                command = self._c2cpg_command(
+                    source_root,
+                    temporary_cpg,
+                    include_dirs,
+                )
+                try:
+                    result = subprocess.run(
+                        command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=self.timeout,
+                        check=False,
+                        env=self._environment(),
+                    )
+                except subprocess.TimeoutExpired as error:
+                    raise JoernError(
+                        f"{self.sample_key}: c2cpg timed out after "
+                        f"{self.timeout}s"
+                    ) from error
+                if result.returncode != 0 or not temporary_cpg.is_file():
+                    raise JoernError(
+                        f"{self.sample_key}: c2cpg failed: "
+                        f"{result.stderr.strip() or result.stdout.strip()}"
+                    )
+                os.replace(temporary_cpg, self.cpg_path)
+
+        if self.index_path.is_file():
+            return
+
+        # Index export needs the same source-root layout to normalize Joern
+        # filenames, but reuses the already-built CPG.
+        with tempfile.TemporaryDirectory(
+            prefix=f"vul-index-{self.sample_key}-"
+        ) as directory:
             root = Path(directory)
             source_root = root / "src"
-            context_root = root / "context"
             self.repository.materialize(source_root, self.scopes)
-            if self.context_paths:
-                self.repository.materialize(context_root, self.context_paths)
-
-            include_dirs: list[str] = []
-
-            def add_include(path: Path) -> None:
-                if not path.exists():
-                    return
-                value = str(path.resolve())
-                if value not in include_dirs:
-                    include_dirs.append(value)
-
-            for scope in self.scopes:
-                path = source_root / scope
-                add_include(path if path.is_dir() else path.parent)
-            for context_path in self.context_paths:
-                add_include(context_root / context_path)
-
-            command = [
-                str(self._c2cpg()),
-                str(source_root),
-                "--output",
-                str(self.cpg_path.resolve()),
-                "--with-include-auto-discovery",
-            ]
-            for include_dir in include_dirs:
-                command.extend(["--include", include_dir])
-            try:
-                result = subprocess.run(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=self.timeout,
-                    check=False,
-                    env=self._environment(),
-                )
-            except subprocess.TimeoutExpired as error:
-                self.cpg_path.unlink(missing_ok=True)
-                raise JoernError(
-                    f"{self.sample_key}: c2cpg timed out after {self.timeout}s"
-                ) from error
-            if result.returncode != 0 or not self.cpg_path.is_file():
-                self.cpg_path.unlink(missing_ok=True)
-                raise JoernError(
-                    f"{self.sample_key}: c2cpg failed: "
-                    f"{result.stderr.strip() or result.stdout.strip()}"
-                )
-
+            temporary_index = root / "index.tsv"
             command = [
                 str(self.joern),
                 "--script",
@@ -232,7 +326,7 @@ class JoernRepositoryIndex:
                 "--param",
                 f"cpgFile={self.cpg_path.resolve()}",
                 "--param",
-                f"outFile={self.index_path.resolve()}",
+                f"outFile={temporary_index}",
                 "--param",
                 f"sourceRoot={source_root.resolve()}",
             ]
@@ -247,17 +341,16 @@ class JoernRepositoryIndex:
                     env=self._environment(),
                 )
             except subprocess.TimeoutExpired as error:
-                self.index_path.unlink(missing_ok=True)
                 raise JoernError(
                     f"{self.sample_key}: Joern index export timed out after "
                     f"{self.timeout}s"
                 ) from error
-            if result.returncode != 0 or not self.index_path.is_file():
-                self.index_path.unlink(missing_ok=True)
+            if result.returncode != 0 or not temporary_index.is_file():
                 raise JoernError(
                     f"{self.sample_key}: Joern index export failed: "
                     f"{result.stderr.strip() or result.stdout.strip()}"
                 )
+            os.replace(temporary_index, self.index_path)
 
     def methods(self) -> dict[str, RepositoryMethod]:
         if self._methods is not None:
@@ -287,15 +380,16 @@ class JoernRepositoryIndex:
                 method = raw_methods.get(parts[1])
                 if method is not None:
                     method["parameters"][int(parts[2])] = (parts[3], parts[4])
-            elif tag == "CALL" and len(parts) >= 6:
+            elif tag == "CALL" and len(parts) >= 7:
                 method = raw_methods.get(parts[1])
                 if method is not None:
                     method["calls"].append(
                         RepositoryCall(
-                            line=int(parts[2]),
-                            name=parts[3],
-                            method_full_name=parts[4],
-                            dispatch_type=parts[5],
+                            line=int(parts[3]),
+                            name=parts[4],
+                            method_full_name=parts[5],
+                            dispatch_type=parts[6],
+                            call_id=parts[2],
                         )
                     )
 
@@ -375,6 +469,7 @@ class JoernValidator:
         ).expanduser()
         self.java = self.java_home / "bin" / "java"
         self.script = Path(__file__).with_name("joern_extract.sc")
+        self.tu_script = Path(__file__).with_name("joern_tu_extract.sc")
         self.timeout = timeout or int(os.environ.get("JOERN_TIMEOUT", "180"))
         self.repository_index = repository_index
         self._cache: dict[str, JoernFacts] = {}
@@ -395,6 +490,10 @@ class JoernValidator:
             )
         if not self.script.is_file():
             raise JoernError(f"Joern extraction script not found: {self.script}")
+        if not self.tu_script.is_file():
+            raise JoernError(
+                f"Joern TU extraction script not found: {self.tu_script}"
+            )
         if self.repository_index is not None:
             self.repository_index.ensure_available()
 
@@ -407,6 +506,83 @@ class JoernValidator:
         ).encode()
         return hashlib.sha256(payload).hexdigest()
 
+    def _is_indexed_method(self, candidate):
+        if self.repository_index is None or not candidate.method_full_name:
+            return None
+        method = self.repository_index.methods().get(candidate.method_full_name)
+        if method is None:
+            return None
+        function = candidate.function
+        if (
+            method.path == function.path
+            and method.start_line == function.start_line
+            and method.end_line == function.end_line
+        ):
+            return method
+        return None
+
+    def _contextual_facts(self, candidate, method) -> JoernFacts:
+        assert self.repository_index is not None
+        index = self.repository_index
+        cache_dir = index.cache_dir / "tu"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(
+            {
+                "revision": index.repository.revision,
+                "path": method.path,
+                "method": method.full_name,
+                "frontend": index.cpg_fingerprint,
+                "script": _file_digest(self.tu_script),
+            },
+            sort_keys=True,
+        ).encode()
+        fingerprint = hashlib.sha256(payload).hexdigest()[:20]
+        cpg_path = cache_dir / f"{fingerprint}.bin"
+
+        if not cpg_path.is_file():
+            with tempfile.TemporaryDirectory(prefix="vul-tu-cpg-") as directory:
+                root = Path(directory)
+                source_root = root / "src"
+                context_root = root / "context"
+                include_dirs = index._materialize_context(
+                    source_root,
+                    context_root,
+                    (method.path,),
+                )
+                temporary_cpg = root / "tu.bin"
+                command = index._c2cpg_command(
+                    source_root,
+                    temporary_cpg,
+                    include_dirs,
+                )
+                result = self._run(command, candidate.function.name)
+                if result.returncode != 0 or not temporary_cpg.is_file():
+                    raise JoernError(
+                        f"Joern TU c2cpg failed for {candidate.function.name}: "
+                        f"{result.stderr.strip() or result.stdout.strip()}"
+                    )
+                os.replace(temporary_cpg, cpg_path)
+
+        with tempfile.TemporaryDirectory(prefix="vul-tu-facts-") as directory:
+            output_path = Path(directory) / "facts.tsv"
+            command = [
+                str(self.joern),
+                "--script",
+                str(self.tu_script),
+                "--param",
+                f"cpgFile={cpg_path.resolve()}",
+                "--param",
+                f"outFile={output_path}",
+                "--param",
+                f"methodFullName={method.full_name}",
+            ]
+            result = self._run(command, candidate.function.name)
+            return self._load_facts(
+                output_path,
+                result,
+                candidate.function.name,
+            )
+
     def facts(self, candidate) -> JoernFacts:
         self.ensure_available()
         key = self._key(candidate.function)
@@ -418,6 +594,22 @@ class JoernValidator:
             raise JoernTimeout(self._timeouts[key])
         if key in self._errors:
             raise JoernError(self._errors[key])
+
+        indexed_method = self._is_indexed_method(candidate)
+        if indexed_method is not None:
+            try:
+                facts = self._contextual_facts(candidate, indexed_method)
+            except JoernMethodNotFound as error:
+                self._missing_methods[key] = str(error)
+                raise
+            except JoernTimeout as error:
+                self._timeouts[key] = str(error)
+                raise
+            except JoernError as error:
+                self._errors[key] = str(error)
+                raise
+            self._cache[key] = facts
+            return facts
 
         # Explicit same-file preprocessor variants may not be present in the
         # active sample CPG. Validate those variant bodies independently.
@@ -511,7 +703,7 @@ class JoernValidator:
     @staticmethod
     def _parse(text: str) -> JoernFacts:
         facts = JoernFacts()
-        call_args: dict[tuple[int, str], dict[int, str]] = {}
+        call_args: dict[str, tuple[int, str, dict[int, str]]] = {}
         for raw_line in text.splitlines():
             if not raw_line:
                 continue
@@ -524,20 +716,31 @@ class JoernValidator:
                 raise JoernError(message)
             if tag == "PARAM" and len(parts) >= 4:
                 facts.parameters[int(parts[1])] = (parts[2], parts[3])
-            elif tag == "ARG" and len(parts) >= 6:
-                line = int(parts[1])
-                name = parts[2]
-                index = int(parts[3])
-                call_args.setdefault((line, name), {})[index] = parts[5]
-            elif tag == "FLOW" and len(parts) >= 5:
+            elif tag == "ARG" and len(parts) >= 7:
+                call_id = parts[1]
+                line = int(parts[2])
+                name = parts[3]
+                index = int(parts[4])
+                _, _, arguments = call_args.setdefault(
+                    call_id,
+                    (line, name, {}),
+                )
+                arguments[index] = parts[6]
+            elif tag == "FLOW" and len(parts) >= 4:
                 facts.flows.add(
-                    (int(parts[1]), int(parts[2]), parts[3], int(parts[4]))
+                    (int(parts[1]), parts[2], int(parts[3]))
                 )
             elif tag == "RET" and len(parts) >= 2:
                 facts.returns.append(parts[1])
             elif tag == "RETFLOW" and len(parts) >= 2:
                 facts.return_flows.add(int(parts[1]))
 
-        for (line, name), arguments in call_args.items():
-            facts.calls[(line, name)] = JoernCall(line, name, arguments)
+        for call_id, (line, name, arguments) in call_args.items():
+            facts.calls[call_id] = JoernCall(
+                line,
+                name,
+                arguments,
+                call_id=call_id,
+            )
         return facts
+
