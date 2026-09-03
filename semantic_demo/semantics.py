@@ -52,7 +52,7 @@ READS = {
     "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 5
+NORMALIZATION_SCHEMA_VERSION = 6
 MAX_LLM_SOURCE_CHARS = 50000
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
