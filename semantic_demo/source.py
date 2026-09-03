@@ -356,6 +356,26 @@ def _parameters(
     )
 
 
+def _is_host_function_definition(node: Node) -> bool:
+    current = node.parent
+    forbidden = {
+        "ERROR",
+        "argument_list",
+        "call_expression",
+        "preproc_arg",
+        "string_literal",
+        "concatenated_string",
+        "raw_string_literal",
+    }
+    while current is not None:
+        if current.type in forbidden:
+            return False
+        if current.type == "translation_unit":
+            return True
+        current = current.parent
+    return False
+
+
 def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
     source = source_text.encode()
     language = _language_for_path(path, source_text)
@@ -363,6 +383,8 @@ def parse_functions(path: str, source_text: str) -> list[FunctionSource]:
     functions: list[FunctionSource] = []
     for node in _walk(tree.root_node):
         if node.type != "function_definition":
+            continue
+        if not _is_host_function_definition(node):
             continue
         name = _function_name(node, source)
         if not name:
