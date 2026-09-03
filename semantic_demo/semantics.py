@@ -606,7 +606,8 @@ def validate_summary(
         ):
             error = (
                 f"{clean_summary.get('kind')} buffer root arg{root_index} "
-                "is not proven pointer-like in the candidate signature"
+                "is not pointer-like: pointer semantics are not proven "
+                "by the candidate signature"
             )
 
     if error:
