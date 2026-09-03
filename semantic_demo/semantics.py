@@ -17,7 +17,7 @@ from .joern import (
 )
 from .source import (
     FunctionSource,
-    function_body_has_error,
+    function_body_recoverable,
     normalize_expression,
     parse_functions,
 )
@@ -122,7 +122,7 @@ class Validation:
 
 def _method_can_produce_summary(method: RepositoryMethod) -> bool:
     return (
-        method.return_type not in {"void", "<empty>", "ANY"}
+        method.return_type not in {"void", "<empty>"}
         or any(
             "*" in type_text or "&" in type_text or "[" in type_text
             for type_text in method.parameter_types
@@ -153,6 +153,7 @@ def _sources_for_method(
             for function in parse_functions(
                 method.path,
                 index.repository.read_blob(method.path),
+                language_hint=base.language,
             )
             if function.name == method.name
             and len(function.parameters) == len(method.parameters)
@@ -162,7 +163,15 @@ def _sources_for_method(
     if len(parsed) <= 1:
         return [base]
     signatures = {function.parameter_signatures for function in parsed}
-    if len(signatures) == 1:
+    groups = {function.preprocessor_group for function in parsed}
+    branches = {function.preprocessor_branch for function in parsed}
+    if (
+        len(signatures) == 1
+        and len(groups) == 1
+        and None not in groups
+        and None not in branches
+        and len(branches) == len(parsed)
+    ):
         return parsed
     return [base]
 
@@ -496,8 +505,8 @@ def _validate_by_composition(
 
 
 def candidate_validation_error(function: FunctionSource) -> str | None:
-    if function.parse_has_error and function_body_has_error(function):
-        return "candidate function body contains parser error nodes"
+    if function.parse_has_error and not function_body_recoverable(function):
+        return "candidate function body cannot be structurally recovered"
     return None
 
 
