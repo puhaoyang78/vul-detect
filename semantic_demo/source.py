@@ -652,6 +652,8 @@ def _node_reliable(node: Node | None) -> bool:
     while current is not None:
         if current.type == "ERROR" or current.is_missing:
             return False
+        if current.type == "compound_statement":
+            return True
         current = current.parent
     return True
 
