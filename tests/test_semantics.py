@@ -660,6 +660,75 @@ class CandidateDiscoveryTests(unittest.TestCase):
             len({candidate.function.start_line for candidate in candidates}),
         )
 
+    def test_schema_inexpressible_helper_prunes_its_subgraph(self):
+        helper = parse_functions(
+            "helper.c",
+            """
+            void helper(int value)
+            {
+                deep(value);
+            }
+            """,
+        )[0]
+        deep = parse_functions(
+            "deep.c",
+            "int deep(int value) { return value; }",
+        )[0]
+        entry = parse_functions(
+            "entry.c",
+            "void entry(void) { helper(1); }",
+        )[0]
+
+        class MappingRepository:
+            def find_function(self, name, **_kwargs):
+                return {"helper": helper, "deep": deep}.get(name)
+
+            def find_functions(self, name, _scopes):
+                function = self.find_function(name)
+                return [] if function is None else [function]
+
+        candidates = discover_candidates(
+            "sample",
+            MappingRepository(),
+            entry,
+            (),
+        )
+        self.assertEqual([], candidates)
+
+    def test_candidate_discovery_has_no_fixed_128_function_cap(self):
+        count = 129
+        functions = {}
+        for index in range(count):
+            next_call = (
+                f"return f{index + 1}(value);"
+                if index + 1 < count
+                else "return value;"
+            )
+            functions[f"f{index}"] = parse_functions(
+                f"f{index}.c",
+                f"int f{index}(int value) {{ {next_call} }}",
+            )[0]
+        entry = parse_functions(
+            "entry.c",
+            "int entry(int value) { return f0(value); }",
+        )[0]
+
+        class MappingRepository:
+            def find_function(self, name, **_kwargs):
+                return functions.get(name)
+
+            def find_functions(self, name, _scopes):
+                function = functions.get(name)
+                return [] if function is None else [function]
+
+        candidates = discover_candidates(
+            "sample",
+            MappingRepository(),
+            entry,
+            (),
+        )
+        self.assertEqual(count, len(candidates))
+
     def test_rejects_cross_file_or_different_signature_ambiguity(self):
         entry = parse_functions(
             "wrapper.c",
