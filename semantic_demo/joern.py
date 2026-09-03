@@ -546,7 +546,9 @@ class JoernValidator:
             {
                 "revision": index.repository.revision,
                 "path": method.path,
-                "method": method.full_name,
+                "method_path": method.path,
+                "method_name": method.name,
+                "method_range": [method.start_line, method.end_line],
                 "frontend": index.cpg_fingerprint,
                 "script": _file_digest(self.tu_script),
             },
@@ -596,7 +598,13 @@ class JoernValidator:
                 "--param",
                 f"outFile={output_path}",
                 "--param",
-                f"methodFullName={method.full_name}",
+                f"functionName={method.name}",
+                "--param",
+                f"functionPath={method.path}",
+                "--param",
+                f"functionStartLine={method.start_line}",
+                "--param",
+                f"functionEndLine={method.end_line}",
             ]
             result = self._run(command, candidate.function.name)
             return self._load_facts(
