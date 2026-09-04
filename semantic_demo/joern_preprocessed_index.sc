@@ -1,6 +1,5 @@
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.jdk.CollectionConverters._
 import io.shiftleft.semanticcpg.language._
@@ -10,8 +9,7 @@ import io.shiftleft.semanticcpg.language._
   outFile: String,
   sourceRoot: String,
   scopeFile: String,
-  entryPath: String,
-  preprocessedFile: String
+  entryPath: String
 ) = {
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
@@ -24,42 +22,18 @@ import io.shiftleft.semanticcpg.language._
     if (dot >= 0) normalizedEntry.substring(0, dot) + ".i"
     else normalizedEntry + ".i"
   }
-
-  def matchesOriginal(filename: String): Boolean = {
-    val normalized = filename.replace('\\', '/')
-    normalized == normalizedEntry || normalized.endsWith("/" + normalizedEntry)
-  }
-
-  def matchesEntry(filename: String): Boolean = {
-    val normalized = filename.replace('\\', '/')
-    matchesOriginal(normalized) || normalized == preprocessedEntry || normalized.endsWith("/" + preprocessedEntry)
-  }
-
-  val lineMap = mutable.Map[Int, Int]()
-  val marker = """^\s*#\s+(\d+)\s+\"([^\"]+)\".*$""".r
-  var currentFile = ""
-  var currentLine = 1
-  Files.readAllLines(Paths.get(preprocessedFile)).asScala.zipWithIndex.foreach { case (line, index) =>
-    line match {
-      case marker(number, filename) =>
-        currentFile = filename.replace('\\', '/')
-        currentLine = number.toInt
-      case _ =>
-        val physicalLine = index + 1
-        if (matchesOriginal(currentFile)) {
-          lineMap(physicalLine) = currentLine
-        }
-        currentLine += 1
-    }
-  }
-
-  def mapLine(filename: String, line: Int): Int =
-    if (line > 0 && matchesEntry(filename)) lineMap.getOrElse(line, line) else line
+  val entrySource = Files.readAllLines(sourcePath.resolve(normalizedEntry)).asScala.toVector
 
   def inAnalysisScope(relativePath: String): Boolean =
     scopes.exists { scope =>
       relativePath == scope || relativePath.startsWith(scope.stripSuffix("/") + "/")
     }
+
+  def matchesEntry(filename: String): Boolean = {
+    val normalized = filename.replace('\\', '/')
+    normalized == normalizedEntry || normalized.endsWith("/" + normalizedEntry) ||
+    normalized == preprocessedEntry || normalized.endsWith("/" + preprocessedEntry)
+  }
 
   def sourceRelative(filename: String): Option[String] = {
     try {
@@ -84,6 +58,75 @@ import io.shiftleft.semanticcpg.language._
     }
   }
 
+  def identifierAt(line: String, name: String): Boolean = {
+    val pattern = (".*(^|[^A-Za-z0-9_])" + java.util.regex.Pattern.quote(name) + "\\s*\\(.*").r
+    pattern.pattern.matcher(line).matches()
+  }
+
+  def originalRange(name: String): Option[(Int, Int)] = {
+    val candidates = ArrayBuffer[(Int, Int)]()
+    var index = 0
+    while (index < entrySource.length) {
+      if (identifierAt(entrySource(index), name)) {
+        val start = index
+        var scan = index
+        var sawOpen = false
+        var depth = 0
+        var inBlockComment = false
+        var inString = false
+        var inChar = false
+        var escaped = false
+        var rejected = false
+        var done = false
+        while (scan < entrySource.length && !done && !rejected) {
+          val line = entrySource(scan)
+          var column = 0
+          var inLineComment = false
+          while (column < line.length && !done && !rejected && !inLineComment) {
+            val ch = line.charAt(column)
+            val next = if (column + 1 < line.length) line.charAt(column + 1) else '\u0000'
+            if (inBlockComment) {
+              if (ch == '*' && next == '/') {
+                inBlockComment = false
+                column += 1
+              }
+            } else if (inString) {
+              if (escaped) escaped = false
+              else if (ch == '\\') escaped = true
+              else if (ch == '"') inString = false
+            } else if (inChar) {
+              if (escaped) escaped = false
+              else if (ch == '\\') escaped = true
+              else if (ch == '\'') inChar = false
+            } else if (ch == '/' && next == '*') {
+              inBlockComment = true
+              column += 1
+            } else if (ch == '/' && next == '/') {
+              inLineComment = true
+            } else if (ch == '"') {
+              inString = true
+            } else if (ch == '\'') {
+              inChar = true
+            } else if (!sawOpen && ch == ';') {
+              rejected = true
+            } else if (ch == '{') {
+              sawOpen = true
+              depth += 1
+            } else if (ch == '}' && sawOpen) {
+              depth -= 1
+              if (depth == 0) done = true
+            }
+            column += 1
+          }
+          if (!done && !rejected) scan += 1
+        }
+        if (done && sawOpen) candidates += ((start + 1, scan + 1))
+      }
+      index += 1
+    }
+    if (candidates.size == 1) Some(candidates.head) else None
+  }
+
   val lines = ArrayBuffer[String]()
   try {
     importCpg(cpgFile)
@@ -91,8 +134,9 @@ import io.shiftleft.semanticcpg.language._
       sourceRelative(method.filename).foreach { relativePath =>
         val rawStart = method.lineNumber.getOrElse(-1)
         val rawEnd = method.lineNumberEnd.getOrElse(rawStart)
-        val start = mapLine(method.filename, rawStart)
-        val end = mapLine(method.filename, rawEnd)
+        val (start, end) =
+          if (matchesEntry(method.filename)) originalRange(method.name).getOrElse((rawStart, rawEnd))
+          else (rawStart, rawEnd)
         val returnType = method.methodReturn.typeFullName
         lines += (
           "METHOD\t" + clean(method.fullName) + "\t" + clean(method.name) + "\t" +
@@ -106,10 +150,9 @@ import io.shiftleft.semanticcpg.language._
           )
         }
         method.call.l.foreach { call =>
-          val callLine = mapLine(method.filename, call.lineNumber.getOrElse(-1))
           lines += (
             "CALL\t" + clean(method.fullName) + "\t" + call.id + "\t" +
-            callLine + "\t" + clean(call.name) + "\t" +
+            call.lineNumber.getOrElse(-1) + "\t" + clean(call.name) + "\t" +
             clean(call.methodFullName) + "\t" + clean(call.dispatchType)
           )
         }
