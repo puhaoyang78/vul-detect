@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import os
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -170,6 +171,7 @@ class JoernRepositoryIndex:
             dict.fromkeys(map(str, include_paths))
         )
         self.context_paths = self._repository_context_paths()
+        self.generated_empty_headers = self._repository_generated_empty_headers()
         self.joern_dir = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
         self.joern = self.joern_dir / "joern"
         self.java_home = Path(
@@ -186,16 +188,19 @@ class JoernRepositoryIndex:
             "joern": _tool_identity(str(self.joern)),
             "c2cpg": _tool_identity(str(c2cpg)),
         }
+        cpg_descriptor: dict[str, object] = {
+            "revision": self.repository.revision,
+            "scopes": self.scopes,
+            "context_paths": self.context_paths,
+            "defines": self.defines,
+            "frontend": frontend_identity,
+            "source_snapshot": _source_snapshot_identity(self.repository),
+            "include_auto_discovery": True,
+        }
+        if self.generated_empty_headers:
+            cpg_descriptor["generated_empty_headers"] = self.generated_empty_headers
         cpg_payload = json.dumps(
-            {
-                "revision": self.repository.revision,
-                "scopes": self.scopes,
-                "context_paths": self.context_paths,
-                "defines": self.defines,
-                "frontend": frontend_identity,
-                "source_snapshot": _source_snapshot_identity(self.repository),
-                "include_auto_discovery": True,
-            },
+            cpg_descriptor,
             sort_keys=True,
         ).encode()
         self.cpg_fingerprint = hashlib.sha256(cpg_payload).hexdigest()[:16]
@@ -245,6 +250,35 @@ class JoernRepositoryIndex:
                     break
 
         return tuple(roots)
+
+    def _repository_generated_empty_headers(self) -> tuple[str, ...]:
+        headers: list[str] = []
+        touch_rule = re.compile(
+            r"^\.\./include/([^\s:]+):\s*\n"
+            r"\t(?:@)?touch\s+\.\./include/\1\s*$",
+            re.MULTILINE,
+        )
+        for include_path in self.context_paths:
+            include_root = Path(include_path)
+            if include_root.name != "include":
+                continue
+            module_root = include_root.parent.as_posix()
+            makefile_path = (
+                f"{module_root}/build/Makefile"
+                if module_root not in {"", "."}
+                else "build/Makefile"
+            )
+            if not self.repository.has_path(makefile_path):
+                continue
+            makefile = self.repository.read_blob(makefile_path)
+            for match in touch_rule.finditer(makefile):
+                generated = (include_root / match.group(1)).as_posix()
+                if (
+                    not self.repository.has_path(generated)
+                    and generated not in headers
+                ):
+                    headers.append(generated)
+        return tuple(headers)
 
     def analysis_context_paths_for(self, path: str) -> tuple[str, ...]:
         normalized = self._normalize_repository_path(path)
@@ -320,6 +354,10 @@ class JoernRepositoryIndex:
         self.repository.materialize(source_root, source_paths)
         if context_paths:
             self.repository.materialize(context_root, context_paths)
+        for generated_header in self.generated_empty_headers:
+            target = context_root / generated_header
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch(exist_ok=True)
 
         include_dirs: list[str] = []
 
@@ -1010,4 +1048,3 @@ class JoernValidator:
                 code=code,
             )
         return facts
-
