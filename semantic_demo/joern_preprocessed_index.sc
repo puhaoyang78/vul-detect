@@ -37,22 +37,16 @@ import io.shiftleft.semanticcpg.language._
 
   def sourceRelative(filename: String): Option[String] = {
     try {
-      if (matchesEntry(filename)) {
-        val original = sourcePath.resolve(normalizedEntry).normalize
-        if (Files.isRegularFile(original) && inAnalysisScope(normalizedEntry)) Some(normalizedEntry)
-        else None
-      } else {
-        val rawPath = Paths.get(filename)
-        val path =
-          if (rawPath.isAbsolute) rawPath.normalize
-          else sourcePath.resolve(rawPath).normalize
-        if (path.startsWith(sourcePath) && Files.isRegularFile(path)) {
-          val relative = sourcePath.relativize(path).toString.replace('\\', '/')
-          if (inAnalysisScope(relative)) Some(relative) else None
-        }
-        else
-          None
+      val rawPath = Paths.get(filename)
+      val path =
+        if (rawPath.isAbsolute) rawPath.normalize
+        else sourcePath.resolve(rawPath).normalize
+      if (path.startsWith(sourcePath) && Files.isRegularFile(path)) {
+        val relative = sourcePath.relativize(path).toString.replace('\\', '/')
+        if (inAnalysisScope(relative)) Some(relative) else None
       }
+      else
+        None
     } catch {
       case _: Throwable => None
     }
@@ -131,16 +125,21 @@ import io.shiftleft.semanticcpg.language._
   try {
     importCpg(cpgFile)
     cpg.method.internal.l.foreach { method =>
-      sourceRelative(method.filename).foreach { relativePath =>
+      val entryRange =
+        if (matchesEntry(method.filename)) originalRange(method.name)
+        else None
+      val relativePath =
+        if (matchesEntry(method.filename)) entryRange.map(_ => normalizedEntry)
+        else sourceRelative(method.filename)
+
+      relativePath.foreach { path =>
         val rawStart = method.lineNumber.getOrElse(-1)
         val rawEnd = method.lineNumberEnd.getOrElse(rawStart)
-        val (start, end) =
-          if (matchesEntry(method.filename)) originalRange(method.name).getOrElse((rawStart, rawEnd))
-          else (rawStart, rawEnd)
+        val (start, end) = entryRange.getOrElse((rawStart, rawEnd))
         val returnType = method.methodReturn.typeFullName
         lines += (
           "METHOD\t" + clean(method.fullName) + "\t" + clean(method.name) + "\t" +
-          clean(relativePath) + "\t" + start + "\t" + end + "\t" +
+          clean(path) + "\t" + start + "\t" + end + "\t" +
           clean(returnType)
         )
         method.parameter.filter(p => p.index > 0 && !p.isVariadic).l.foreach { parameter =>
