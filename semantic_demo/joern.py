@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -183,11 +184,24 @@ class JoernRepositoryIndex:
         self.timeout = timeout
         self._methods: dict[str, RepositoryMethod] | None = None
 
+        # Explicit defines mean the sample already carries recovered compiler
+        # context. For C entry translation units, let GCC perform preprocessing
+        # before CDT so macro-heavy code is parsed with the real preprocessor.
+        self.preprocess_entry = bool(self.defines) and Path(self.entry_path).suffix.lower() == ".c"
+        compiler_name = os.environ.get("CC", "gcc")
+        self.preprocessor = shutil.which(compiler_name) if self.preprocess_entry else None
+
         c2cpg = self._c2cpg()
         frontend_identity = {
             "joern": _tool_identity(str(self.joern)),
             "c2cpg": _tool_identity(str(c2cpg)),
         }
+        if self.preprocess_entry:
+            frontend_identity["preprocessor"] = (
+                _tool_identity(self.preprocessor)
+                if self.preprocessor is not None
+                else f"missing:{compiler_name}"
+            )
         cpg_descriptor: dict[str, object] = {
             "revision": self.repository.revision,
             "scopes": self.scopes,
@@ -199,6 +213,8 @@ class JoernRepositoryIndex:
         }
         if self.generated_empty_headers:
             cpg_descriptor["generated_empty_headers"] = self.generated_empty_headers
+        if self.preprocess_entry:
+            cpg_descriptor["preprocess_entry"] = self.entry_path
         cpg_payload = json.dumps(
             cpg_descriptor,
             sort_keys=True,
@@ -228,8 +244,6 @@ class JoernRepositoryIndex:
             if path and path not in roots and self.repository.has_path(path):
                 roots.append(path)
 
-        # A repository-level include/ directory is the conventional header root
-        # for C/C++ projects and is parse context, not an analysis scope.
         add("include")
 
         for path in self.explicit_include_paths:
@@ -240,8 +254,6 @@ class JoernRepositoryIndex:
                 )
             add(path)
 
-        # Preserve nested include roots already implied by the configured scopes,
-        # e.g. src/include/foo -> src/include.
         for scope in self.scopes:
             parts = Path(scope).parts
             for index, part in enumerate(parts):
@@ -326,6 +338,10 @@ class JoernRepositoryIndex:
             raise JoernError(f"Java executable not found at {self.java}")
         if not self.script.is_file():
             raise JoernError(f"Joern repository index script not found: {self.script}")
+        if self.preprocess_entry and self.preprocessor is None:
+            raise JoernError(
+                f"C preprocessor not found for {self.sample_key}; set CC to a GCC-compatible compiler"
+            )
 
     def _environment(self) -> dict[str, str]:
         environment = os.environ.copy()
@@ -375,6 +391,43 @@ class JoernRepositoryIndex:
             add_include(context_root / context_path)
         return include_dirs
 
+    def _preprocess_entry_source(
+        self,
+        source_root: Path,
+        include_dirs: Iterable[str],
+    ) -> None:
+        if not self.preprocess_entry:
+            return
+        assert self.preprocessor is not None
+        source_path = source_root / self.entry_path
+        if not source_path.is_file():
+            raise JoernError(
+                f"{self.sample_key}: entry source missing before preprocessing: {self.entry_path}"
+            )
+        output_path = source_path.with_suffix(".i")
+        command = [str(self.preprocessor), "-E"]
+        command.extend(f"-D{define}" for define in self.defines)
+        command.extend(f"-I{include_dir}" for include_dir in include_dirs)
+        command.extend([str(source_path), "-o", str(output_path)])
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=self.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise JoernError(
+                f"{self.sample_key}: entry preprocessing timed out after {self.timeout}s"
+            ) from error
+        if result.returncode != 0 or not output_path.is_file():
+            raise JoernError(
+                f"{self.sample_key}: entry preprocessing failed: "
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            )
+
     def _c2cpg_command(
         self,
         input_root: Path,
@@ -389,6 +442,8 @@ class JoernRepositoryIndex:
             "--with-include-auto-discovery",
             "--log-problems",
         ]
+        if self.preprocess_entry:
+            command.append("--with-preprocessed-files")
         for include_dir in include_dirs:
             command.extend(["--include", str(include_dir)])
         for define in self.defines:
@@ -411,6 +466,7 @@ class JoernRepositoryIndex:
                     context_root,
                     self.scopes,
                 )
+                self._preprocess_entry_source(source_root, include_dirs)
                 temporary_cpg = _temporary_cache_file(
                     self.cpg_path,
                     ".bin",
@@ -455,8 +511,6 @@ class JoernRepositoryIndex:
         if self.index_path.is_file():
             return
 
-        # Index export needs the same source-root layout to normalize Joern
-        # filenames, but reuses the already-built CPG.
         with tempfile.TemporaryDirectory(
             prefix=f"vul-index-{self.sample_key}-"
         ) as directory:
@@ -912,8 +966,6 @@ class JoernValidator:
             self._cache[key] = facts
             return facts
 
-        # Explicit same-file preprocessor variants may not be present in the
-        # active sample CPG. Validate those variant bodies independently.
         with tempfile.TemporaryDirectory(prefix="memsem-joern-") as directory:
             root = Path(directory)
             suffix = Path(candidate.function.path).suffix or ".c"
