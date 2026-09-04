@@ -54,6 +54,7 @@ READS = {
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
 NORMALIZATION_SCHEMA_VERSION = 6
 MAX_LLM_SOURCE_CHARS = 50000
+LLM_ENDPOINT_CONTEXT_LINES = 40
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -772,10 +773,13 @@ def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]
 
 def _normalization_endpoints(
     function: FunctionSource,
-) -> list[tuple[str, str]]:
-    endpoints: list[tuple[str, str]] = []
-    if function.has_value_return():
-        endpoints.append(("return", "function return statements"))
+) -> list[tuple[str, str, int | None]]:
+    endpoints: list[tuple[str, str, int | None]] = []
+    # A return summary describes the function as a whole. For functions that do
+    # not fit the explicit LLM budget, a local slice cannot establish a global
+    # return property, so conservatively abstain from that endpoint.
+    if function.has_value_return() and len(function.text) <= MAX_LLM_SOURCE_CHARS:
+        endpoints.append(("return", "function return statements", None))
     for call in function.calls():
         if call.indirect:
             continue
@@ -788,9 +792,52 @@ def _normalization_endpoints(
             (
                 "call",
                 f"direct call {call.name}({', '.join(call.arguments)}) at line {call.line}",
+                call.line,
             )
         )
     return endpoints
+
+
+def _normalization_source(function: FunctionSource, endpoint_line: int | None) -> str:
+    if len(function.text) <= MAX_LLM_SOURCE_CHARS:
+        return function.text
+    if endpoint_line is None:
+        raise ValueError(
+            f"{function.name}: oversized function requires a localized call endpoint"
+        )
+
+    lines = function.text.splitlines()
+    relative_line = endpoint_line - function.start_line
+    if relative_line < 0 or relative_line >= len(lines):
+        raise ValueError(
+            f"{function.name}: endpoint line {endpoint_line} is outside function range "
+            f"{function.start_line}-{function.end_line}"
+        )
+
+    window_start = max(0, relative_line - LLM_ENDPOINT_CONTEXT_LINES)
+    window_end = min(len(lines), relative_line + LLM_ENDPOINT_CONTEXT_LINES + 1)
+    signature_end = next(
+        (index + 1 for index, line in enumerate(lines[:20]) if "{" in line),
+        min(20, len(lines)),
+    )
+
+    sections: list[str] = []
+    if window_start > signature_end:
+        sections.append("\n".join(lines[:signature_end]))
+        sections.append(
+            f"/* omitted; source lines {function.start_line + window_start}-"
+            f"{function.start_line + window_end - 1} around endpoint */\n"
+            + "\n".join(lines[window_start:window_end])
+        )
+    else:
+        sections.append("\n".join(lines[window_start:window_end]))
+    source = "\n\n".join(sections)
+    if len(source) > MAX_LLM_SOURCE_CHARS:
+        raise ValueError(
+            f"{function.name}: localized endpoint source exceeds explicit LLM budget "
+            f"({len(source)} > {MAX_LLM_SOURCE_CHARS} chars)"
+        )
+    return source
 
 
 def llm_normalize(
@@ -808,11 +855,6 @@ def llm_normalize(
     model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY is not set")
-    if len(candidate.function.text) > MAX_LLM_SOURCE_CHARS:
-        raise ValueError(
-            f"{candidate.function.name}: function source exceeds explicit LLM budget "
-            f"({len(candidate.function.text)} > {MAX_LLM_SOURCE_CHARS} chars)"
-        )
 
     summaries = _direct_standard_summaries(candidate.function)
     indirect_calls = [
@@ -822,7 +864,7 @@ def llm_normalize(
     ]
     opaque_text = ", ".join(indirect_calls) if indirect_calls else "none"
 
-    for endpoint_kind, endpoint_text in _normalization_endpoints(candidate.function):
+    for endpoint_kind, endpoint_text, endpoint_line in _normalization_endpoints(candidate.function):
         if endpoint_kind == "return":
             allowed = "ALLOC or VALUE"
             instruction = (
@@ -836,6 +878,12 @@ def llm_normalize(
                 "named call. Do not report effects from any other call site."
             )
 
+        source_context = _normalization_source(candidate.function, endpoint_line)
+        source_label = (
+            "Source"
+            if len(candidate.function.text) <= MAX_LLM_SOURCE_CHARS
+            else "Localized source context"
+        )
         prompt = f"""Normalize one statically localized semantic endpoint in this C/C++ function.
 Endpoint: {endpoint_text}
 Allowed summary kinds: {allowed}
@@ -856,8 +904,8 @@ invalidate unrelated direct evidence. Emit {{"summaries":[]}} when this endpoint
 Function: {candidate.function.name}
 Parameters: {json.dumps(list(candidate.function.parameters))}
 Opaque indirect calls: {opaque_text}
-Source:
-{candidate.function.text}
+{source_label}:
+{source_context}
 """
         response_format: dict[str, object] = {"type": "json_object"}
         if response_schema is not None:
@@ -911,6 +959,7 @@ Source:
                 summaries.append(clean)
 
     return summaries
+
 
 def _response_content(result: dict[str, object]) -> str:
     try:
