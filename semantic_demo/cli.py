@@ -42,6 +42,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "ground_truth",
 }
 ANALYSIS_CHECKPOINT_VERSION = 12
+PREFLIGHT_CHECKPOINT_VERSION = 1
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -105,7 +106,7 @@ def validate_detection_manifest(samples: list[dict[str, object]]) -> None:
                 raise ValueError(f"{key}: {field} must be a list of strings")
 
 
-def _load_entry(
+def _load_repository_index(
     sample: dict[str, object],
     *,
     joern_dir: str = "/home/phy/joern",
@@ -131,6 +132,10 @@ def _load_entry(
         java_home=java_home,
         cache_dir=cpg_cache_dir,
     )
+    return repository, index
+
+
+def _entry_from_index(sample: dict[str, object], repository, index):
     entry_method = index.find_entry(
         str(sample["entry_function"]),
         str(sample["entry_path"]),
@@ -153,6 +158,23 @@ def _load_entry(
             str(sample.get("language", "")) or None,
         ),
     )
+    return entry_method, entry
+
+
+def _load_entry(
+    sample: dict[str, object],
+    *,
+    joern_dir: str = "/home/phy/joern",
+    java_home: str = "/home/phy/jdk21",
+    cpg_cache_dir: str = "data/joern_cpg",
+):
+    repository, index = _load_repository_index(
+        sample,
+        joern_dir=joern_dir,
+        java_home=java_home,
+        cpg_cache_dir=cpg_cache_dir,
+    )
+    entry_method, entry = _entry_from_index(sample, repository, index)
     return repository, index, entry_method, entry
 
 
@@ -314,24 +336,68 @@ def _analysis_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _preflight_fingerprint(sample: dict[str, object], index) -> str:
+    payload = {
+        "checkpoint_version": PREFLIGHT_CHECKPOINT_VERSION,
+        "sample": sample,
+        "index_fingerprint": index.fingerprint,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+
+
 def _preflight_samples(
     samples: list[dict[str, object]],
     *,
     joern_dir: str,
     java_home: str,
     cpg_cache_dir: str,
+    resume: bool = False,
 ):
     prepared = []
     failures: list[str] = []
+    checkpoint_path = Path(cpg_cache_dir) / "preflight.jsonl"
+    checkpoint_cache = (
+        {
+            str(record["sample_key"]): record
+            for record in read_jsonl(checkpoint_path)
+            if record.get("checkpoint_version") == PREFLIGHT_CHECKPOINT_VERSION
+        }
+        if checkpoint_path.is_file()
+        else {}
+    )
+
     for sample in samples:
         key = str(sample["sample_key"])
         try:
-            repository, index, entry_method, entry = _load_entry(
+            repository, index = _load_repository_index(
                 sample,
                 joern_dir=joern_dir,
                 java_home=java_home,
                 cpg_cache_dir=cpg_cache_dir,
             )
+            fingerprint = _preflight_fingerprint(sample, index)
+            cached = checkpoint_cache.get(key)
+            if (
+                resume
+                and cached is not None
+                and cached.get("fingerprint") == fingerprint
+                and index.cpg_path.is_file()
+                and index.index_path.is_file()
+            ):
+                print(
+                    f"preflight_sample_cached={key} "
+                    f"candidates={cached.get('candidates', 0)} "
+                    f"unrecoverable_candidates={cached.get('unrecoverable_candidates', 0)} "
+                    f"unresolved_static_calls={cached.get('unresolved_static_calls', 0)} "
+                    f"unresolved_static_calls_scope={cached.get('unresolved_static_calls_scope', 0)} "
+                    f"diagnostics={index.diagnostics_path}",
+                    flush=True,
+                )
+                continue
+
+            entry_method, entry = _entry_from_index(sample, repository, index)
             candidates = discover_candidates(
                 key,
                 index,
@@ -385,6 +451,16 @@ def _preflight_samples(
                     candidates,
                 )
             )
+            checkpoint_cache[key] = {
+                "checkpoint_version": PREFLIGHT_CHECKPOINT_VERSION,
+                "sample_key": key,
+                "fingerprint": fingerprint,
+                "candidates": len(candidates),
+                "unrecoverable_candidates": len(skipped),
+                "unresolved_static_calls": unresolved_reachable,
+                "unresolved_static_calls_scope": unresolved_scope,
+            }
+            write_jsonl(checkpoint_path, checkpoint_cache.values())
             print(
                 f"preflight_sample_done={key} candidates={len(candidates)} "
                 f"unrecoverable_candidates={len(skipped)} "
@@ -410,14 +486,15 @@ def _preflight_samples(
 def preflight_command(args: argparse.Namespace) -> None:
     samples = read_jsonl(args.samples)
     validate_detection_manifest(samples)
-    prepared = _preflight_samples(
+    _preflight_samples(
         samples,
         joern_dir=args.joern_dir,
         java_home=args.java_home,
         cpg_cache_dir=args.cpg_cache_dir,
+        resume=not args.refresh,
     )
     print(
-        f"preflight_complete=samples:{len(prepared)}",
+        f"preflight_complete=samples:{len(samples)}",
         flush=True,
     )
 
@@ -1022,6 +1099,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("JAVA_HOME", "/home/phy/jdk21"),
     )
     preflight.add_argument("--cpg-cache-dir", default="data/joern_cpg")
+    preflight.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore completed preflight checkpoints and revalidate all samples",
+    )
     preflight.set_defaults(func=preflight_command)
 
     normalize = subparsers.add_parser("normalize", help="normalize candidate functions")
