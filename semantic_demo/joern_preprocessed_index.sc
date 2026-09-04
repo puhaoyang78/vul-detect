@@ -1,5 +1,6 @@
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.jdk.CollectionConverters._
 import io.shiftleft.semanticcpg.language._
@@ -9,7 +10,8 @@ import io.shiftleft.semanticcpg.language._
   outFile: String,
   sourceRoot: String,
   scopeFile: String,
-  entryPath: String
+  entryPath: String,
+  preprocessedFile: String
 ) = {
   def clean(value: String): String =
     value.replace("\\", "\\\\").replace("\t", " ").replace("\r", " ").replace("\n", " ")
@@ -23,16 +25,41 @@ import io.shiftleft.semanticcpg.language._
     else normalizedEntry + ".i"
   }
 
+  def matchesOriginal(filename: String): Boolean = {
+    val normalized = filename.replace('\\', '/')
+    normalized == normalizedEntry || normalized.endsWith("/" + normalizedEntry)
+  }
+
+  def matchesEntry(filename: String): Boolean = {
+    val normalized = filename.replace('\\', '/')
+    matchesOriginal(normalized) || normalized == preprocessedEntry || normalized.endsWith("/" + preprocessedEntry)
+  }
+
+  val lineMap = mutable.Map[Int, Int]()
+  val marker = """^\s*#\s+(\d+)\s+\"([^\"]+)\".*$""".r
+  var currentFile = ""
+  var currentLine = 1
+  Files.readAllLines(Paths.get(preprocessedFile)).asScala.zipWithIndex.foreach { case (line, index) =>
+    line match {
+      case marker(number, filename) =>
+        currentFile = filename.replace('\\', '/')
+        currentLine = number.toInt
+      case _ =>
+        val physicalLine = index + 1
+        if (matchesOriginal(currentFile)) {
+          lineMap(physicalLine) = currentLine
+        }
+        currentLine += 1
+    }
+  }
+
+  def mapLine(filename: String, line: Int): Int =
+    if (line > 0 && matchesEntry(filename)) lineMap.getOrElse(line, line) else line
+
   def inAnalysisScope(relativePath: String): Boolean =
     scopes.exists { scope =>
       relativePath == scope || relativePath.startsWith(scope.stripSuffix("/") + "/")
     }
-
-  def matchesEntry(filename: String): Boolean = {
-    val normalized = filename.replace('\\', '/')
-    normalized == normalizedEntry || normalized.endsWith("/" + normalizedEntry) ||
-    normalized == preprocessedEntry || normalized.endsWith("/" + preprocessedEntry)
-  }
 
   def sourceRelative(filename: String): Option[String] = {
     try {
@@ -62,8 +89,10 @@ import io.shiftleft.semanticcpg.language._
     importCpg(cpgFile)
     cpg.method.internal.l.foreach { method =>
       sourceRelative(method.filename).foreach { relativePath =>
-        val start = method.lineNumber.getOrElse(-1)
-        val end = method.lineNumberEnd.getOrElse(start)
+        val rawStart = method.lineNumber.getOrElse(-1)
+        val rawEnd = method.lineNumberEnd.getOrElse(rawStart)
+        val start = mapLine(method.filename, rawStart)
+        val end = mapLine(method.filename, rawEnd)
         val returnType = method.methodReturn.typeFullName
         lines += (
           "METHOD\t" + clean(method.fullName) + "\t" + clean(method.name) + "\t" +
@@ -77,9 +106,10 @@ import io.shiftleft.semanticcpg.language._
           )
         }
         method.call.l.foreach { call =>
+          val callLine = mapLine(method.filename, call.lineNumber.getOrElse(-1))
           lines += (
             "CALL\t" + clean(method.fullName) + "\t" + call.id + "\t" +
-            call.lineNumber.getOrElse(-1) + "\t" + clean(call.name) + "\t" +
+            callLine + "\t" + clean(call.name) + "\t" +
             clean(call.methodFullName) + "\t" + clean(call.dispatchType)
           )
         }
