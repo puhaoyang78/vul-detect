@@ -9,7 +9,6 @@ import tempfile
 import urllib.error
 from pathlib import Path
 
-from . import cli
 from .candidate_graph import (
     CANDIDATE_MANIFEST_VERSION,
     DISCOVERY_POLICY_VERSION,
@@ -21,14 +20,24 @@ from .candidate_graph import (
     write_candidate_manifest,
 )
 from .normalization_v2 import NORMALIZATION_IMPLEMENTATION_VERSION, llm_normalize
+from .runtime import (
+    detect,
+    entry_from_index,
+    evaluate,
+    load_repository_index,
+    local_llm_server,
+    read_jsonl,
+    validate_detection_manifest,
+    write_jsonl,
+)
 from .semantics import NORMALIZATION_SCHEMA_VERSION, candidate_validation_error
 
 
-WORKFLOW_PREFLIGHT_VERSION = 2
+WORKFLOW_PREFLIGHT_VERSION = 3
 
 
 def _read(path: str | Path) -> list[dict[str, object]]:
-    return cli.read_jsonl(path)
+    return read_jsonl(path)
 
 
 def _write(path: str | Path, records) -> None:
@@ -41,7 +50,7 @@ def _write(path: str | Path, records) -> None:
             int(record.get("source_line", 0) or 0),
         ),
     )
-    cli.write_jsonl(path, ordered)
+    write_jsonl(path, ordered)
 
 
 def _upsert_by_sample(
@@ -102,7 +111,7 @@ def _checkpoint_cache(cache_dir: str | Path) -> dict[str, dict[str, object]]:
 
 
 def _load_index(sample: dict[str, object], args):
-    return cli._load_repository_index(
+    return load_repository_index(
         sample,
         joern_dir=args.joern_dir,
         java_home=args.java_home,
@@ -126,7 +135,7 @@ def _valid_completed_preflight(sample, index, cached) -> bool:
 
 def preflight(args: argparse.Namespace) -> None:
     samples = _read(args.samples)
-    cli.validate_detection_manifest(samples)
+    validate_detection_manifest(samples)
     checkpoint_path = _preflight_checkpoint_path(args.cpg_cache_dir)
     checkpoints = _checkpoint_cache(args.cpg_cache_dir)
     failures: list[str] = []
@@ -149,7 +158,7 @@ def preflight(args: argparse.Namespace) -> None:
 
             method_count = len(index.methods())
             print(f"preflight_index_ready={key} methods={method_count}", flush=True)
-            entry_method, entry = cli._entry_from_index(sample, repository, index)
+            entry_method, entry = entry_from_index(sample, repository, index)
             print(
                 f"preflight_entry_ready={key} entry={entry.name}@{entry.start_line}",
                 flush=True,
@@ -251,7 +260,7 @@ def _load_sample_manifest(sample, args):
 
 def normalize(args: argparse.Namespace) -> None:
     samples = _read(args.samples)
-    cli.validate_detection_manifest(samples)
+    validate_detection_manifest(samples)
     selected_keys = {str(sample["sample_key"]) for sample in samples}
     old_records = _read(args.output) if Path(args.output).is_file() else []
     preserved = [
@@ -321,7 +330,7 @@ def normalize(args: argparse.Namespace) -> None:
 
     if llm_pending_total:
         llm_context = (
-            cli.local_llm_server(args.llama_server, args.local_model)
+            local_llm_server(args.llama_server, args.local_model)
             if args.llm_backend == "local"
             else contextlib.nullcontext({
                 "max_tokens": 512,
@@ -396,12 +405,6 @@ def normalize(args: argparse.Namespace) -> None:
     )
 
 
-def _manifest_candidates_for_detect(sample_key, index, _entry_method, _entry_language=None):
-    _header, records = read_candidate_manifest(index)
-    parse_cache = {}
-    return [load_manifest_candidate(index, record, parse_cache) for record in records]
-
-
 def _selected_replay(samples, args) -> list[dict[str, object]]:
     records = _read(args.replay) if Path(args.replay).is_file() else []
     by_key = {_normalization_key(record): record for record in records}
@@ -436,7 +439,7 @@ def _selected_replay(samples, args) -> list[dict[str, object]]:
 
 def run(args: argparse.Namespace) -> None:
     samples = _read(args.samples)
-    cli.validate_detection_manifest(samples)
+    validate_detection_manifest(samples)
     selected_keys = {str(sample["sample_key"]) for sample in samples}
     replay_records = _selected_replay(samples, args)
     old_detections = _read(args.detections) if Path(args.detections).is_file() else []
@@ -460,11 +463,9 @@ def run(args: argparse.Namespace) -> None:
             _write(detections_path, old_selected_detections)
             _write(semantics_path, old_selected_semantics)
 
-        original_discover = cli.discover_candidates
-        cli.discover_candidates = _manifest_candidates_for_detect
         error: BaseException | None = None
         try:
-            cli.detect(
+            detect(
                 args.samples,
                 str(replay_path),
                 str(semantics_path),
@@ -481,7 +482,6 @@ def run(args: argparse.Namespace) -> None:
         except BaseException as caught:
             error = caught
         finally:
-            cli.discover_candidates = original_discover
             new_detections = _read(detections_path) if detections_path.is_file() else []
             new_semantics = _read(semantics_path) if semantics_path.is_file() else []
             completed_keys = {
@@ -506,7 +506,7 @@ def run(args: argparse.Namespace) -> None:
     oracle_keys = {str(record["sample_key"]) for record in _read(args.oracle)}
     detection_keys = {str(record["sample_key"]) for record in _read(args.detections)}
     if detection_keys == oracle_keys:
-        cli.evaluate(args.detections, args.oracle, args.table, args.summary)
+        evaluate(args.detections, args.oracle, args.table, args.summary)
     else:
         print(
             f"run_complete=selected:{len(samples)} evaluation=skipped "
