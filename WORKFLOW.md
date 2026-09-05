@@ -1,66 +1,62 @@
 # Staged analysis workflow
 
-Use the staged workflow for experiments:
+Public commands:
 
 ```bash
-python -m semantic_demo.workflow preflight
-python -m semantic_demo.workflow normalize
-python -m semantic_demo.workflow run
+python -m semantic_demo.cli preflight
+python -m semantic_demo.cli normalize
+python -m semantic_demo.cli run
 ```
 
-## Stage contracts
+`semantic_demo.legacy_cli` is an internal execution engine only.
 
-### 1. `preflight`
+## Stage contract
 
-`preflight` is the only stage that discovers candidate helper functions.
+### Preflight
 
-For each sample it:
+Preflight is the only stage that may discover candidates. It resolves the fixed repository revision, builds/reuses Joern CPG/index, resolves the exact entry, performs memory-relevance candidate slicing, writes a versioned candidate manifest, and checkpoints each completed sample.
 
-1. verifies the requested Git revision and source paths;
-2. builds or reuses the Joern CPG and repository index;
-3. resolves the exact entry function;
-4. discovers summary-relevant helper functions;
-5. checks whether candidate source bodies are recoverable;
-6. writes a versioned candidate manifest under `data/joern_cpg/`;
-7. checkpoints the completed sample immediately.
+Candidate manifests include selection depth, caller, and selection reason. Deeper traversal follows only calls connected to memory-relevant values/returns/pointer flows; opaque typedefs are retained conservatively.
 
-A completed sample is skipped on the next invocation when the sample, Joern index, discovery policy, and candidate manifest are unchanged.
+`--refresh` refreshes selected samples only. Other checkpoints survive.
 
-Candidate discovery does **not** recursively traverse the entire reachable call graph. Every summary-capable direct static callee of the entry is retained. Deeper traversal follows only calls that can contribute caller-visible `ALLOC`, `READ`, `WRITE`, or `VALUE` semantics: the child return flows to the caller return, or a child argument depends on a caller parameter.
+### Normalize
 
-The old whole-scope unresolved-static-call count is intentionally not part of this workflow. Only unresolved calls encountered on summary-relevant traversal are reported.
+Normalize requires a valid preflight manifest and never performs discovery.
 
-### 2. `normalize`
+It combines a shared standard-API semantic registry with localized LLM normalization. Large custom functions use a statically generated relevance slice consisting of endpoint context, reaching assignments, related control conditions, and the function signature.
 
-`normalize` requires a valid candidate manifest from `preflight`.
+Every candidate is checkpointed immediately. Cache reuse checks source fingerprint, schema, normalization implementation, backend, and model. A subset refresh preserves all unselected samples and removes stale records that no longer belong to the current selected manifests.
 
-It never performs candidate discovery. It:
+### Run
 
-1. loads candidate manifests;
-2. checks candidate source fingerprints;
-3. reuses candidate-level normalization records when schema, source, backend, and model match;
-4. starts the LLM only when at least one candidate is pending;
-5. checkpoints every generated candidate immediately;
-6. preserves records belonging to samples outside the selected `--samples` file.
+Run requires complete normalization coverage for every selected manifest candidate. It creates selected temporary replay/result files, validates summaries with Joern, composes wrappers, runs target analysis and Z3, then upserts completed sample results back into global outputs.
 
-A subset run therefore cannot erase normalization records for other samples.
+A later failure cannot erase older results for samples that were not completed in the current run.
 
-### 3. `run`
+Run does not require the normalization model/backend to be repeated by the user; that metadata is read from the normalization records themselves.
 
-`run` requires both a valid candidate manifest and complete normalization coverage for every selected candidate.
+## Semantic boundaries
 
-It never performs candidate discovery. It validates the normalized summaries with Joern, composes accepted wrapper summaries, runs the baseline and proposed analyzer, and checkpoints completed detection samples.
+The cross-procedure schema is limited to:
 
-A subset run preserves detection and semantic-validation records belonging to samples outside the selected `--samples` file. Evaluation is performed only when detections cover the complete oracle sample set.
-
-## Refresh behavior
-
-Use `--refresh` only when intentionally invalidating a stage.
-
-```bash
-python -m semantic_demo.workflow preflight --refresh
-python -m semantic_demo.workflow normalize --refresh
-python -m semantic_demo.workflow run --refresh
+```text
+ALLOC(return, size)
+READ(buffer, length)
+WRITE(buffer, length)
+VALUE(return, expression)
 ```
 
-Changing the candidate-discovery policy invalidates candidate manifests through its policy version. Changing source/index inputs invalidates preflight through the index/sample fingerprint. Changing the normalization model invalidates only affected normalization records.
+Standard API semantics are centralized in `semantic_demo/standard_semantics.py` and shared by discovery, normalization, validation, and target analysis.
+
+Unresolved custom/indirect calls are dependency-local barriers: they only force an access to UNKNOWN when they share values relevant to that access. Parser errors are similarly no longer an unconditional whole-function abort.
+
+Symbolic arithmetic remains conservative. Fixed-width arithmetic is accepted only when path/range constraints prove that mathematical integer evaluation matches C arithmetic without overflow.
+
+## Cache invalidation
+
+- candidate manifests: manifest/discovery policy version + Joern index fingerprint;
+- normalization: schema + implementation version + source fingerprint + model/backend;
+- detection: automatic hash of analyzer/Z3/validation/Joern-v2/standard-semantics implementation.
+
+Changing core analysis code therefore invalidates the appropriate stage without requiring a manual version bump everywhere.
