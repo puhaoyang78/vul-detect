@@ -1,0 +1,409 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from .joern import JoernRepositoryIndex, RepositoryMethod
+from .semantics import Candidate, STANDARD_CALLS, candidate_validation_error
+from .source import FunctionSource, normalize_expression, parse_functions, source_language
+
+
+CANDIDATE_MANIFEST_VERSION = 1
+DISCOVERY_POLICY_VERSION = 1
+
+
+@dataclass(frozen=True)
+class CandidateDiscovery:
+    candidates: tuple[Candidate, ...]
+    direct_candidates: int
+    recursive_candidates: int
+    expanded_methods: int
+    unresolved_relevant_calls: int
+
+
+def candidate_source_fingerprint(candidate: Candidate) -> str:
+    function = candidate.function
+    payload = (
+        function.path
+        + "\0"
+        + function.name
+        + "\0"
+        + function.text
+        + "\0"
+        + hashlib.sha256(function.translation_unit.encode()).hexdigest()
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def candidate_manifest_path(index: JoernRepositoryIndex) -> Path:
+    return index.cache_dir / (
+        f"{index.sample_key}-{index.index_fingerprint}.candidates.jsonl"
+    )
+
+
+def _sources_for_method_cached(
+    index: JoernRepositoryIndex,
+    method: RepositoryMethod,
+    language_hint: str,
+    parse_cache: dict[tuple[str, str], list[FunctionSource]],
+) -> list[FunctionSource]:
+    base = index.repository.function_source(
+        path=method.path,
+        name=method.name,
+        start_line=method.start_line,
+        end_line=method.end_line,
+        parameters=method.parameters,
+        parameter_types=method.parameter_types,
+        language_hint=language_hint,
+    )
+    if base.language != "c":
+        return [base]
+
+    cache_key = (method.path, base.language)
+    if cache_key not in parse_cache:
+        try:
+            parse_cache[cache_key] = parse_functions(
+                method.path,
+                index.repository.read_blob(method.path),
+                language_hint=base.language,
+            )
+        except (ValueError, UnicodeError):
+            return [base]
+
+    parsed = [
+        function
+        for function in parse_cache[cache_key]
+        if function.name == method.name
+        and len(function.parameters) == len(method.parameters)
+    ]
+    if len(parsed) <= 1:
+        return [base]
+    signatures = {function.parameter_signatures for function in parsed}
+    groups = {function.preprocessor_group for function in parsed}
+    branches = {function.preprocessor_branch for function in parsed}
+    if (
+        len(signatures) == 1
+        and len(groups) == 1
+        and None not in groups
+        and None not in branches
+        and len(branches) == len(parsed)
+    ):
+        return parsed
+    return [base]
+
+
+def _method_can_produce_summary(method: RepositoryMethod) -> bool:
+    return (
+        method.return_type not in {"void", "<empty>"}
+        or any(token in "".join(type_text.split()) for type_text in method.parameter_types for token in ("*", "&", "["))
+        or any(type_text in {"", "ANY", "<empty>"} for type_text in method.parameter_types)
+    )
+
+
+def _source_call(function: FunctionSource, line: int, name: str):
+    matches = [
+        call
+        for call in function.calls()
+        if not call.indirect and call.line == line and call.name == name
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _expression_depends_on_parameters(
+    function: FunctionSource,
+    expression: str,
+    line: int,
+) -> bool:
+    parameter_names = set(function.parameters)
+    if not parameter_names:
+        return False
+    relations = {
+        normalize_expression(left): normalize_expression(right)
+        for left, right in function.value_relations_before(line)
+    }
+    pending = [normalize_expression(expression)]
+    seen: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        identifiers = set(re.findall(r"\b[A-Za-z_]\w*\b", current))
+        if identifiers & parameter_names:
+            return True
+        for identifier in identifiers:
+            replacement = relations.get(identifier)
+            if replacement and replacement not in seen:
+                pending.append(replacement)
+    return False
+
+
+def _result_flows_to_return(function: FunctionSource, result: str | None) -> bool:
+    if not result:
+        return False
+    name = normalize_expression(result)
+    if not re.fullmatch(r"[A-Za-z_]\w*", name):
+        return False
+    return re.search(rf"\breturn\s+[^;]*\b{re.escape(name)}\b", function.text) is not None
+
+
+def _call_can_contribute_to_summary(function: FunctionSource, source_call) -> bool:
+    if source_call is None:
+        return False
+    if source_call.returned or _result_flows_to_return(function, source_call.result):
+        return True
+    return any(
+        _expression_depends_on_parameters(function, argument, source_call.line)
+        for argument in source_call.arguments
+    )
+
+
+def _add_candidate(
+    discovered: dict[tuple[str, str, int, str], Candidate],
+    *,
+    sample_key: str,
+    sources: list[FunctionSource],
+    callee: RepositoryMethod,
+    call_line: int,
+) -> None:
+    variant_count = (
+        len(sources)
+        if len(sources) > 1
+        and all(source.preprocessor_group is not None for source in sources)
+        else 1
+    )
+    for source in sources:
+        key = (source.path, source.name, source.start_line, source.language)
+        existing = discovered.get(key)
+        lines = set(existing.call_lines if existing else ())
+        lines.add(call_line)
+        variant_group = (
+            f"{source.path}:{source.name}:"
+            f"{source.preprocessor_group[0]}-{source.preprocessor_group[1]}"
+            if variant_count > 1 and source.preprocessor_group is not None
+            else None
+        )
+        discovered[key] = Candidate(
+            sample_key=sample_key,
+            function=source,
+            call_lines=tuple(sorted(lines)),
+            method_full_name=callee.full_name,
+            variant_group=variant_group,
+            variant_count=variant_count,
+        )
+
+
+def discover_relevant_candidates(
+    sample_key: str,
+    index: JoernRepositoryIndex,
+    entry_method: RepositoryMethod,
+    entry: FunctionSource,
+) -> CandidateDiscovery:
+    """Discover only helpers that can contribute caller-visible summary semantics.
+
+    Every summary-capable direct static callee of the entry is retained. Recursive
+    expansion is narrower: a child is followed only when its call result flows to
+    the caller return or one of its arguments depends on a caller parameter. Those
+    are the same relationships that READ/WRITE/ALLOC/VALUE composition can use.
+    """
+    methods = index.methods()
+    parse_cache: dict[tuple[str, str], list[FunctionSource]] = {}
+    discovered: dict[tuple[str, str, int, str], Candidate] = {}
+    queue: list[tuple[RepositoryMethod, FunctionSource, str]] = []
+    expanded: set[str] = set()
+    direct_method_names: set[str] = set()
+    unresolved_relevant = 0
+
+    entry_language = source_language(entry_method.path, entry.language)
+    for call in entry_method.calls:
+        if call.name.startswith("<operator>.") or call.name in STANDARD_CALLS:
+            continue
+        callees = index.callee_methods(call)
+        if not callees:
+            if call.dispatch_type == "STATIC_DISPATCH":
+                unresolved_relevant += 1
+            continue
+        for callee in callees:
+            if callee.full_name == entry_method.full_name or not _method_can_produce_summary(callee):
+                continue
+            callee_language = source_language(callee.path, entry_language)
+            sources = _sources_for_method_cached(
+                index, callee, callee_language, parse_cache
+            )
+            _add_candidate(
+                discovered,
+                sample_key=sample_key,
+                sources=sources,
+                callee=callee,
+                call_line=call.line,
+            )
+            direct_method_names.add(callee.full_name)
+            for source in sources:
+                queue.append((callee, source, callee_language))
+
+    while queue:
+        caller, caller_source, caller_language = queue.pop(0)
+        expansion_key = f"{caller.full_name}\0{caller_source.start_line}"
+        if expansion_key in expanded:
+            continue
+        expanded.add(expansion_key)
+
+        for call in caller.calls:
+            if call.name.startswith("<operator>.") or call.name in STANDARD_CALLS:
+                continue
+            source_call = _source_call(caller_source, call.line, call.name)
+            if not _call_can_contribute_to_summary(caller_source, source_call):
+                continue
+            callees = index.callee_methods(call)
+            if not callees:
+                if call.dispatch_type == "STATIC_DISPATCH":
+                    unresolved_relevant += 1
+                continue
+            for callee in callees:
+                if callee.full_name == caller.full_name or not _method_can_produce_summary(callee):
+                    continue
+                callee_language = source_language(callee.path, caller_language)
+                sources = _sources_for_method_cached(
+                    index, callee, callee_language, parse_cache
+                )
+                _add_candidate(
+                    discovered,
+                    sample_key=sample_key,
+                    sources=sources,
+                    callee=callee,
+                    call_line=call.line,
+                )
+                for source in sources:
+                    queue.append((callee, source, callee_language))
+
+    candidates = tuple(
+        sorted(
+            discovered.values(),
+            key=lambda item: (
+                item.function.path,
+                item.function.name,
+                item.function.start_line,
+            ),
+        )
+    )
+    direct_candidates = sum(
+        candidate.method_full_name in direct_method_names for candidate in candidates
+    )
+    return CandidateDiscovery(
+        candidates=candidates,
+        direct_candidates=direct_candidates,
+        recursive_candidates=len(candidates) - direct_candidates,
+        expanded_methods=len(expanded),
+        unresolved_relevant_calls=unresolved_relevant,
+    )
+
+
+def write_candidate_manifest(
+    index: JoernRepositoryIndex,
+    discovery: CandidateDiscovery,
+) -> Path:
+    target = candidate_manifest_path(index)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    header = {
+        "record_type": "manifest",
+        "manifest_version": CANDIDATE_MANIFEST_VERSION,
+        "discovery_policy_version": DISCOVERY_POLICY_VERSION,
+        "sample_key": index.sample_key,
+        "index_fingerprint": index.fingerprint,
+        "direct_candidates": discovery.direct_candidates,
+        "recursive_candidates": discovery.recursive_candidates,
+        "expanded_methods": discovery.expanded_methods,
+        "unresolved_relevant_calls": discovery.unresolved_relevant_calls,
+        "candidate_count": len(discovery.candidates),
+    }
+    records: list[dict[str, object]] = [header]
+    for candidate in discovery.candidates:
+        function = candidate.function
+        records.append(
+            {
+                "record_type": "candidate",
+                "sample_key": candidate.sample_key,
+                "source_path": function.path,
+                "function": function.name,
+                "source_line": function.start_line,
+                "end_line": function.end_line,
+                "language": function.language,
+                "method_full_name": candidate.method_full_name,
+                "call_lines": list(candidate.call_lines),
+                "variant_group": candidate.variant_group,
+                "variant_count": candidate.variant_count,
+                "source_fingerprint": candidate_source_fingerprint(candidate),
+                "skip_reason": candidate_validation_error(function),
+            }
+        )
+
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    with temporary.open("w") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+    temporary.replace(target)
+    return target
+
+
+def read_candidate_manifest(index: JoernRepositoryIndex) -> tuple[dict[str, object], list[dict[str, object]]]:
+    path = candidate_manifest_path(index)
+    if not path.is_file():
+        raise RuntimeError(
+            f"{index.sample_key}: candidate manifest is missing; run preflight first"
+        )
+    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    if not records or records[0].get("record_type") != "manifest":
+        raise RuntimeError(f"{index.sample_key}: invalid candidate manifest: {path}")
+    header = records[0]
+    if (
+        header.get("manifest_version") != CANDIDATE_MANIFEST_VERSION
+        or header.get("discovery_policy_version") != DISCOVERY_POLICY_VERSION
+        or header.get("index_fingerprint") != index.fingerprint
+    ):
+        raise RuntimeError(
+            f"{index.sample_key}: candidate manifest is stale; rerun preflight --refresh"
+        )
+    candidates = [record for record in records[1:] if record.get("record_type") == "candidate"]
+    if len(candidates) != int(header.get("candidate_count", -1)):
+        raise RuntimeError(f"{index.sample_key}: incomplete candidate manifest: {path}")
+    return header, candidates
+
+
+def load_manifest_candidate(
+    index: JoernRepositoryIndex,
+    record: dict[str, object],
+    parse_cache: dict[tuple[str, str], list[FunctionSource]] | None = None,
+) -> Candidate:
+    parse_cache = parse_cache if parse_cache is not None else {}
+    method_full_name = str(record["method_full_name"])
+    method = index.methods().get(method_full_name)
+    if method is None:
+        raise RuntimeError(
+            f"{index.sample_key}: candidate method disappeared from Joern index: {method_full_name}"
+        )
+    language = str(record.get("language") or source_language(method.path))
+    sources = _sources_for_method_cached(index, method, language, parse_cache)
+    source_line = int(record["source_line"])
+    matches = [source for source in sources if source.start_line == source_line]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"{index.sample_key}: candidate source no longer resolves uniquely: "
+            f"{record['source_path']}:{record['function']}@{source_line}; rerun preflight --refresh"
+        )
+    candidate = Candidate(
+        sample_key=index.sample_key,
+        function=matches[0],
+        call_lines=tuple(int(line) for line in record.get("call_lines", [])),
+        method_full_name=method_full_name,
+        variant_group=(str(record["variant_group"]) if record.get("variant_group") is not None else None),
+        variant_count=int(record.get("variant_count", 1)),
+    )
+    if candidate_source_fingerprint(candidate) != str(record.get("source_fingerprint", "")):
+        raise RuntimeError(
+            f"{index.sample_key}: candidate source changed after preflight; rerun preflight --refresh"
+        )
+    return candidate
