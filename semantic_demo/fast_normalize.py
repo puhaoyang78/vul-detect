@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import sys
+from pathlib import Path
 
 from . import cli
 from . import semantics
@@ -108,6 +109,21 @@ def _fast_preflight_samples(
     return prepared
 
 
+def _restore_unselected_records(
+    output_path: str,
+    selected_keys: set[str],
+    previous_records: list[dict[str, object]],
+) -> None:
+    target = Path(output_path)
+    current_records = cli.read_jsonl(target) if target.is_file() else []
+    preserved = [
+        record
+        for record in previous_records
+        if str(record.get("sample_key", "")) not in selected_keys
+    ]
+    cli.write_jsonl(target, [*preserved, *current_records])
+
+
 def main() -> None:
     _install_parse_cache()
     # discover_candidates was imported into cli, but its globals still live in
@@ -116,7 +132,26 @@ def main() -> None:
     cli._preflight_samples = _fast_preflight_samples
     parser = cli.build_parser()
     args = parser.parse_args(["normalize", *sys.argv[1:]])
-    cli.normalize_command(args)
+
+    selected_samples = cli.read_jsonl(args.samples)
+    selected_keys = {str(sample["sample_key"]) for sample in selected_samples}
+    output = Path(args.output)
+    previous_records = cli.read_jsonl(output) if output.is_file() else []
+
+    error: BaseException | None = None
+    try:
+        cli.normalize_command(args)
+    except BaseException as caught:
+        error = caught
+    finally:
+        _restore_unselected_records(
+            args.output,
+            selected_keys,
+            previous_records,
+        )
+
+    if error is not None:
+        raise error
 
 
 if __name__ == "__main__":
