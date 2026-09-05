@@ -4,7 +4,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from .semantics import Validation
+from .semantics import ALLOCATORS, Validation
 from .source import FunctionSource
 from .standard_semantics import summaries_for_call
 from .z3_reasoner import reason_memory_safety
@@ -43,25 +43,34 @@ def _substitute(expression: str, arguments: tuple[str, ...]) -> str:
     return result
 
 
+def _direct_allocation_operation(call) -> Operation | None:
+    if call.name not in ALLOCATORS or not call.arguments:
+        return None
+    if call.name == "calloc" and len(call.arguments) >= 2:
+        extent = f"({call.arguments[0]}) * ({call.arguments[1]})"
+    elif call.name == "realloc" and len(call.arguments) >= 2:
+        extent = call.arguments[1]
+    else:
+        extent = call.arguments[0]
+    target = call.result or ("return" if call.returned else "")
+    if not target:
+        return None
+    return Operation("ALLOC", call.name, target, extent, call.line, False)
+
+
 def _standard_operations(entry: FunctionSource) -> list[Operation]:
     operations: list[Operation] = []
     for call in entry.calls():
         if call.indirect:
             continue
+        allocation = _direct_allocation_operation(call)
+        if allocation is not None:
+            operations.append(allocation)
         for summary in summaries_for_call(entry, call):
             kind = summary["kind"]
             if kind == "ALLOC":
-                operations.append(
-                    Operation(
-                        "ALLOC",
-                        call.name,
-                        call.result or "return",
-                        summary["size"],
-                        call.line,
-                        False,
-                    )
-                )
-            elif kind in {"READ", "WRITE"}:
+                continue
+            if kind in {"READ", "WRITE"}:
                 operations.append(
                     Operation(
                         kind,
@@ -112,7 +121,7 @@ def _custom_operations(
 
     groups_by_name: dict[str, list[list[dict[str, str]]]] = {}
     for key, by_line in passed.items():
-        path, name, group_id = key
+        _path, name, _group_id = key
         if len(by_line) != expected_counts[key]:
             continue
         members = list(by_line.values())
