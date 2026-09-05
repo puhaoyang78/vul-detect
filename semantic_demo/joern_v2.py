@@ -15,6 +15,10 @@ from .joern import (
 )
 
 
+def _implementation_digest() -> str:
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
 class JoernValidatorV2(JoernValidator):
     """TU validator consistent with repository-level preprocessing decisions."""
 
@@ -36,6 +40,7 @@ class JoernValidatorV2(JoernValidator):
                 "frontend": index.cpg_fingerprint,
                 "script": _file_digest(self.tu_script),
                 "preprocess_this_tu": preprocess_this_tu,
+                "validator_implementation": _implementation_digest(),
             },
             sort_keys=True,
         ).encode()
@@ -98,8 +103,6 @@ class JoernValidatorV2(JoernValidator):
             return exact[0]
 
         if preprocess_this_tu:
-            # Preprocessed CPG coordinates refer to the .i file. Recover identity
-            # conservatively from unique name + explicit parameter count.
             compatible = [
                 facts
                 for (name, _path, _start, _end), facts in facts_map.items()
