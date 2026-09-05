@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+import re
+
+from z3 import Not, Solver, sat, unsat
+
+from . import z3_reasoner as legacy
+from .source import normalize_expression
+
+
+_FIXED_WIDTH_TYPES = {
+    "uint32_t": (0, 2**32 - 1),
+    "int32_t": (-(2**31), 2**31 - 1),
+    "uint64_t": (0, 2**64 - 1),
+    "int64_t": (-(2**63), 2**63 - 1),
+}
+
+
+def _ids(expression: str) -> set[str]:
+    return set(re.findall(r"\b[A-Za-z_]\w*\b", normalize_expression(expression)))
+
+
+def _parameter_ranges(entry, identifiers: set[str]):
+    mapping = dict(zip(entry.parameters, entry.parameter_types))
+    ranges = {}
+    type_names = set()
+    for name in identifiers:
+        type_text = " ".join(mapping.get(name, "").replace("const", "").split())
+        matched = next((token for token in _FIXED_WIDTH_TYPES if token in type_text), None)
+        if matched is None:
+            return None
+        ranges[name] = _FIXED_WIDTH_TYPES[matched]
+        type_names.add(matched)
+    if len(type_names) != 1:
+        return None
+    result_range = _FIXED_WIDTH_TYPES[next(iter(type_names))]
+    return ranges, result_range
+
+
+def _arithmetic_provably_bounded(entry, line: int, expression: str) -> bool:
+    text = normalize_expression(expression)
+    if not re.search(r"[+*\-]", text):
+        return True
+    identifiers = _ids(text)
+    if not identifiers:
+        return True
+    range_info = _parameter_ranges(entry, identifiers)
+    if range_info is None:
+        return False
+    ranges, (minimum, maximum) = range_info
+    encoder = legacy.ExpressionEncoder()
+    solver = Solver()
+    for name, (lower, upper) in ranges.items():
+        symbol = encoder.encode(name)
+        solver.add(symbol >= lower, symbol <= upper)
+    added_path = False
+    for condition in entry.continuation_constraints_before(line):
+        if legacy._has_unresolved_compile_time_symbol(condition):
+            continue
+        try:
+            solver.add(encoder.comparison(condition))
+            added_path = True
+        except Exception:
+            continue
+    # Without a guard/range refinement, symbolic +/* can still wrap at the type edge.
+    if not added_path:
+        return False
+    try:
+        value = encoder.encode(text)
+    except Exception:
+        return False
+    overflow = Solver()
+    overflow.add(*solver.assertions())
+    overflow.add((value < minimum) | (value > maximum))
+    return overflow.check() == unsat
+
+
+def _indirect_call_affects_access(entry, access) -> str | None:
+    relevant = _ids(access.buffer) | _ids(access.extent)
+    if not relevant:
+        return None
+    for call in entry.calls():
+        if not call.indirect or call.line >= access.line:
+            continue
+        if any(_ids(argument) & relevant for argument in call.arguments):
+            return f"unresolved indirect call {call.name}@{call.line} shares access-dependent values"
+    return None
+
+
+def _check_access(entry, operation, capacities, signed, unsigned, operations):
+    line = int(getattr(operation, "line", 0))
+    original = legacy._has_unmodeled_c_arithmetic
+    legacy._has_unmodeled_c_arithmetic = lambda expression: not _arithmetic_provably_bounded(
+        entry, line, expression
+    )
+    try:
+        access = legacy._check_access(
+            entry,
+            operation,
+            capacities,
+            signed,
+            unsigned,
+            operations,
+        )
+    finally:
+        legacy._has_unmodeled_c_arithmetic = original
+
+    dependency_error = _indirect_call_affects_access(entry, access)
+    if dependency_error is not None:
+        return legacy.AccessCheck(
+            access.access_kind,
+            access.buffer,
+            access.extent,
+            access.line,
+            "UNKNOWN",
+            dependency_error,
+            access.conditions,
+            access.path_constraints,
+            {},
+        )
+    return access
+
+
+def reason_memory_safety(entry, operations):
+    operations = list(operations)
+    capacities = legacy._collect_capacity_relations(entry, operations)
+    signed, unsigned = entry.integer_domains()
+
+    accesses = tuple(
+        _check_access(entry, operation, capacities, signed, unsigned, operations)
+        for operation in operations
+        if getattr(operation, "kind", "") in {"READ", "WRITE"}
+        and getattr(operation, "buffer", "") not in {"", "NULL", "0", "nullptr"}
+    )
+
+    violations = [item for item in accesses if item.status == "POTENTIAL_VIOLATION"]
+    if violations:
+        first = violations[0]
+        return legacy.ConstraintResult(
+            "POTENTIAL_VIOLATION",
+            (
+                f"{len(violations)} memory access(es) have feasible counterexamples; "
+                f"first at line {first.line}: {first.reason}"
+            ),
+            accesses,
+        )
+
+    unknowns = [item for item in accesses if item.status == "UNKNOWN"]
+    if unknowns:
+        return legacy.ConstraintResult(
+            "UNKNOWN",
+            (
+                f"{len(unknowns)} memory access(es) remain unresolved; "
+                f"first at line {unknowns[0].line}: {unknowns[0].reason}"
+            ),
+            accesses,
+        )
+
+    if accesses:
+        parser_note = (
+            "; unrelated parser error nodes were ignored outside modeled access facts"
+            if entry.parse_has_error
+            else ""
+        )
+        return legacy.ConstraintResult(
+            "UNKNOWN",
+            (
+                "all currently modeled memory accesses satisfy their generated bounds "
+                "conditions, but complete function-level memory-access coverage is not established"
+                + parser_note
+            ),
+            accesses,
+        )
+
+    return legacy.ConstraintResult(
+        "UNKNOWN",
+        "no supported memory access was available for bounds analysis",
+        tuple(),
+    )
