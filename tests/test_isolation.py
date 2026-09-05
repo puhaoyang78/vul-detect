@@ -1,12 +1,13 @@
 import unittest
+from pathlib import Path
 
-from semantic_demo.cli import (
+from semantic_demo.runtime import (
     FORBIDDEN_DETECTION_FIELDS,
-    build_parser,
     read_jsonl,
     validate_detection_manifest,
 )
 from semantic_demo.source import GitRepository
+from semantic_demo.workflow import build_parser
 
 
 class IsolationTests(unittest.TestCase):
@@ -19,6 +20,8 @@ class IsolationTests(unittest.TestCase):
     def test_all_entry_sources_are_locally_available(self):
         samples = read_jsonl("data/detection_samples.jsonl")
         self.assertEqual(60, len(samples))
+        if not all(Path(str(sample["repository_git_dir"])).is_dir() for sample in samples):
+            self.skipTest("repository corpus is only available in the experiment environment")
         for sample in samples:
             repository = GitRepository(
                 str(sample["repository_git_dir"]),
@@ -30,6 +33,8 @@ class IsolationTests(unittest.TestCase):
 
     def test_all_scan_paths_are_locally_available(self):
         samples = read_jsonl("data/detection_samples.jsonl")
+        if not all(Path(str(sample["repository_git_dir"])).is_dir() for sample in samples):
+            self.skipTest("repository corpus is only available in the experiment environment")
         for sample in samples:
             repository = GitRepository(
                 str(sample["repository_git_dir"]),
