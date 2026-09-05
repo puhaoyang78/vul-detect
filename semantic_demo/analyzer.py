@@ -6,7 +6,7 @@ from typing import Iterable
 
 from .semantics import ALLOCATORS, Validation
 from .source import FunctionSource
-from .standard_semantics import effects_for_call
+from .standard_semantics import STANDARD_LEAF_CALLS, effects_for_call
 from .z3_reasoner_v2 import reason_memory_safety
 
 
@@ -94,16 +94,12 @@ def _direct_ast_operations(entry: FunctionSource) -> list[Operation]:
     ]
 
 
-def _custom_operations(
-    entry: FunctionSource,
-    validations: Iterable[Validation],
-) -> list[Operation]:
+def _accepted_summary_groups(validations: Iterable[Validation]):
     passed: dict[
         tuple[str, str, str],
         dict[int, list[dict[str, str]]],
     ] = {}
     expected_counts: dict[tuple[str, str, str], int] = {}
-
     for validation in validations:
         if not validation.passed:
             continue
@@ -128,13 +124,18 @@ def _custom_operations(
         ]
         if common:
             groups_by_name.setdefault(name, []).append(common)
-
-    unique_by_name = {
+    return {
         name: groups[0]
         for name, groups in groups_by_name.items()
         if len(groups) == 1
     }
 
+
+def _custom_operations(
+    entry: FunctionSource,
+    validations: Iterable[Validation],
+) -> list[Operation]:
+    unique_by_name = _accepted_summary_groups(validations)
     operations: list[Operation] = []
     for call in entry.calls():
         for summary in unique_by_name.get(call.name, []):
@@ -175,13 +176,39 @@ def _custom_operations(
     return operations
 
 
+def _opaque_operations(
+    entry: FunctionSource,
+    validations: Iterable[Validation],
+) -> list[Operation]:
+    accepted_names = set(_accepted_summary_groups(validations))
+    opaque: list[Operation] = []
+    for call in entry.calls():
+        if call.name in STANDARD_LEAF_CALLS:
+            continue
+        if not call.indirect and call.name in accepted_names:
+            continue
+        opaque.append(
+            Operation(
+                "OPAQUE",
+                call.name,
+                " | ".join(call.arguments),
+                "",
+                call.line,
+                True,
+            )
+        )
+    return opaque
+
+
 def analyze(
     entry: FunctionSource,
     validations: Iterable[Validation] = (),
 ) -> Verdict:
+    validations = tuple(validations)
     operations = _standard_operations(entry)
     operations.extend(_direct_ast_operations(entry))
     operations.extend(_custom_operations(entry, validations))
+    operations.extend(_opaque_operations(entry, validations))
 
     constraint_result = reason_memory_safety(entry, operations)
     constraint_json = constraint_result.as_json()
