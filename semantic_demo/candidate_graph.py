@@ -127,7 +127,6 @@ def _type_may_be_pointer(type_text: str) -> bool:
         return True
     if compact in {"", "ANY", "<empty>"}:
         return True
-    # Preserve typedef/opaque types. Only known scalar spellings are safe to prune.
     return compact not in _CLEAR_SCALAR_TYPES
 
 
@@ -152,7 +151,6 @@ def _function_facts(function: FunctionSource, cache: dict[int, dict[str, object]
             for left, right in relations
         }
         seeds = list(standard_seed_expressions(function))
-        # Return expressions matter because VALUE/ALLOC summaries expose them to callers.
         for match in re.finditer(r"\breturn\s+([^;]+);", function.text):
             line = function.start_line + function.text[: match.start()].count("\n")
             seeds.append((line, match.group(1)))
@@ -191,8 +189,6 @@ def _source_call(function: FunctionSource, line: int, name: str, cache):
         call for call in calls
         if not call.indirect and call.name == name and call.line == line
     ]
-    # Preprocessed Joern CALL line numbers can differ from original C source.
-    # Fall back only when name resolution is unique inside this function.
     if len(matches) == 1:
         return matches[0]
     named = [call for call in calls if not call.indirect and call.name == name]
@@ -215,7 +211,10 @@ def _call_relevance(
     cache: dict[int, dict[str, object]],
 ) -> str | None:
     if source_call is None:
-        return None
+        # A Joern-resolved edge is more trustworthy than guessed source coordinates.
+        # This case occurs for preprocessed CPGs whose CALL line numbers refer to .i
+        # coordinates. Keep the callee conservatively instead of silently losing it.
+        return "Joern-resolved callee retained because source call coordinates are ambiguous"
     if source_call.returned or _result_flows_to_return(function, source_call.result):
         return "callee result contributes to caller return"
 
@@ -307,7 +306,6 @@ def discover_relevant_candidates(
             continue
         callees = index.callee_methods(call)
         if not callees:
-            # Count only calls whose source arguments intersect the entry memory slice.
             source_call = _source_call(entry, call.line, call.name, fact_cache)
             if source_call and any(
                 _identifiers(arg) & _dependency_closure(entry, fact_cache)
