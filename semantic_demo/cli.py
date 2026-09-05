@@ -43,8 +43,26 @@ def _analysis_fingerprint(*args, **kwargs):
 _legacy._analysis_fingerprint = _analysis_fingerprint
 
 
+_RUNTIME_NAMES = (
+    "read_jsonl",
+    "write_jsonl",
+    "_preflight_samples",
+    "_load_entry",
+    "_load_repository_index",
+    "_entry_from_index",
+    "discover_candidates",
+    "llm_normalize",
+    "load_replay",
+    "validate_summary",
+    "local_llm_server",
+    "LineVulBaseline",
+    "JoernValidator",
+    "analyze",
+)
+
+
 def _sync_runtime_hooks() -> None:
-    for name in ("discover_candidates", "validate_summary", "JoernValidator", "analyze"):
+    for name in _RUNTIME_NAMES:
         if name in globals():
             setattr(_legacy, name, globals()[name])
 
@@ -52,6 +70,21 @@ def _sync_runtime_hooks() -> None:
 def detect(*args, **kwargs):
     _sync_runtime_hooks()
     return _legacy.detect(*args, **kwargs)
+
+
+def normalize_command(*args, **kwargs):
+    _sync_runtime_hooks()
+    return _legacy.normalize_command(*args, **kwargs)
+
+
+def preflight_command(*args, **kwargs):
+    _sync_runtime_hooks()
+    return _legacy.preflight_command(*args, **kwargs)
+
+
+def run_command(*args, **kwargs):
+    _sync_runtime_hooks()
+    return _legacy.run_command(*args, **kwargs)
 
 
 def build_parser():
