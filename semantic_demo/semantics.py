@@ -1,27 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import urllib.request
 from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Iterable
 
-from .joern import (
-    JoernMethodNotFound,
-    JoernRepositoryIndex,
-    JoernTimeout,
-    JoernValidator,
-    RepositoryMethod,
-)
-from .source import (
-    FunctionSource,
-    function_body_recoverable,
-    normalize_expression,
-    parse_functions,
-    source_language,
-)
+from .joern import JoernMethodNotFound, JoernTimeout, JoernValidator
+from .source import FunctionSource, function_body_recoverable, normalize_expression
 
 
 ALLOCATORS = {
@@ -53,8 +37,6 @@ READS = {
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
 NORMALIZATION_SCHEMA_VERSION = 6
-MAX_LLM_SOURCE_CHARS = 50000
-LLM_ENDPOINT_CONTEXT_LINES = 40
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -81,23 +63,6 @@ NORMALIZATION_RESPONSE_SCHEMA = {
     "required": ["summaries"],
     "additionalProperties": False,
 }
-
-STANDARD_CALLS = (
-    set(ALLOCATORS)
-    | set(WRITES)
-    | set(READS)
-    | UNBOUNDED_WRITES
-    | {
-        "free",
-        "strlen",
-        "sizeof",
-        "strcmp",
-        "strchr",
-        "snprintf",
-        "vsnprintf",
-    }
-)
-
 
 
 @dataclass(frozen=True)
@@ -126,179 +91,9 @@ class Validation:
         return asdict(self)
 
 
-_CLEAR_SCALAR_TYPES = {
-    "bool", "_Bool", "char", "signedchar", "unsignedchar",
-    "short", "shortint", "signedshort", "signedshortint",
-    "unsignedshort", "unsignedshortint", "int", "signed", "signedint",
-    "unsigned", "unsignedint", "long", "longint", "signedlong",
-    "signedlongint", "unsignedlong", "unsignedlongint", "longlong",
-    "longlongint", "signedlonglong", "signedlonglongint",
-    "unsignedlonglong", "unsignedlonglongint", "float", "double",
-    "longdouble", "size_t", "ssize_t",
-}
-
-
 def _type_definitely_pointer(type_text: str) -> bool:
     compact = "".join(type_text.split())
     return any(token in compact for token in ("*", "&", "["))
-
-
-def _type_may_be_pointer(type_text: str) -> bool:
-    compact = "".join(type_text.split())
-    if _type_definitely_pointer(type_text):
-        return True
-    if compact in {"", "ANY", "<empty>"}:
-        return True
-    return compact not in _CLEAR_SCALAR_TYPES
-
-
-def _method_can_produce_summary(method: RepositoryMethod) -> bool:
-    return (
-        method.return_type not in {"void", "<empty>"}
-        or any(_type_may_be_pointer(type_text) for type_text in method.parameter_types)
-    )
-
-
-def _sources_for_method(
-    index: JoernRepositoryIndex,
-    method: RepositoryMethod,
-    language_hint: str,
-) -> list[FunctionSource]:
-    base = index.repository.function_source(
-        path=method.path,
-        name=method.name,
-        start_line=method.start_line,
-        end_line=method.end_line,
-        parameters=method.parameters,
-        parameter_types=method.parameter_types,
-        language_hint=language_hint,
-    )
-
-    # Preserve explicit same-file C preprocessor variants only after Joern has
-    # already resolved the repository binding to this file/interface.
-    if base.language != "c":
-        return [base]
-    try:
-        parsed = [
-            function
-            for function in parse_functions(
-                method.path,
-                index.repository.read_blob(method.path),
-                language_hint=base.language,
-            )
-            if function.name == method.name
-            and len(function.parameters) == len(method.parameters)
-        ]
-    except (ValueError, UnicodeError):
-        return [base]
-    if len(parsed) <= 1:
-        return [base]
-    signatures = {function.parameter_signatures for function in parsed}
-    groups = {function.preprocessor_group for function in parsed}
-    branches = {function.preprocessor_branch for function in parsed}
-    if (
-        len(signatures) == 1
-        and len(groups) == 1
-        and None not in groups
-        and None not in branches
-        and len(branches) == len(parsed)
-    ):
-        return parsed
-    return [base]
-
-
-def discover_candidates(
-    sample_key: str,
-    index: JoernRepositoryIndex,
-    entry_method: RepositoryMethod,
-    entry_language: str | None = None,
-) -> list[Candidate]:
-    """Traverse Joern-resolved repository calls; unresolved calls stay opaque."""
-    discovered: dict[tuple[str, str, int, str], Candidate] = {}
-    methods = index.methods()
-    initial_language = source_language(entry_method.path, entry_language)
-    queue: list[tuple[RepositoryMethod, str]] = [
-        (entry_method, initial_language)
-    ]
-    expanded: set[tuple[str, str]] = set()
-
-    while queue:
-        caller, caller_language = queue.pop(0)
-        caller_key = (caller.full_name, caller_language)
-        if caller_key in expanded:
-            continue
-        expanded.add(caller_key)
-
-        for call in caller.calls:
-            if call.name.startswith("<operator>."):
-                continue
-            if call.name in STANDARD_CALLS:
-                continue
-            callees = index.callee_methods(call)
-            if not callees:
-                continue
-
-            for callee in callees:
-                if callee.full_name == caller.full_name:
-                    continue
-                if not _method_can_produce_summary(callee):
-                    continue
-                callee_language = source_language(
-                    callee.path,
-                    caller_language,
-                )
-                sources = _sources_for_method(
-                    index,
-                    callee,
-                    callee_language,
-                )
-
-                variant_count = (
-                    len(sources)
-                    if len(sources) > 1
-                    and all(
-                        source.preprocessor_group is not None
-                        for source in sources
-                    )
-                    else 1
-                )
-                for source in sources:
-                    key = (
-                        source.path,
-                        source.name,
-                        source.start_line,
-                        source.language,
-                    )
-                    existing = discovered.get(key)
-                    lines = set(existing.call_lines if existing else ())
-                    lines.add(call.line)
-                    variant_group = (
-                        f"{source.path}:{source.name}:"
-                        f"{source.preprocessor_group[0]}-"
-                        f"{source.preprocessor_group[1]}"
-                        if variant_count > 1
-                        and source.preprocessor_group is not None
-                        else None
-                    )
-                    discovered[key] = Candidate(
-                        sample_key=sample_key,
-                        function=source,
-                        call_lines=tuple(sorted(lines)),
-                        method_full_name=callee.full_name,
-                        variant_group=variant_group,
-                        variant_count=variant_count,
-                    )
-                if callee.full_name in methods:
-                    queue.append((callee, callee_language))
-
-    return sorted(
-        discovered.values(),
-        key=lambda item: (
-            item.function.path,
-            item.function.name,
-            item.function.start_line,
-        ),
-    )
 
 
 def _arg_indices(value: str) -> list[int]:
@@ -338,7 +133,6 @@ def _schema_error(summary: dict[str, object], parameter_count: int) -> str | Non
 def canonicalize_summary(
     function: FunctionSource, summary: dict[str, object]
 ) -> dict[str, str]:
-    """Normalize exact source-parameter identifiers to positional argN names."""
     clean = {str(key): str(value) for key, value in summary.items()}
     for key, value in list(clean.items()):
         if key == "kind":
@@ -377,12 +171,7 @@ def _known_call_indices(name: str, kind: str) -> tuple[tuple[int, ...], tuple[in
     return (), ()
 
 
-def _joern_expr_reaches(
-    facts,
-    expression: str,
-    call,
-    argument_indices: tuple[int, ...],
-) -> bool:
+def _joern_expr_reaches(facts, expression: str, call, argument_indices: tuple[int, ...]) -> bool:
     params = _arg_indices(expression)
     if params:
         return all(
@@ -391,8 +180,7 @@ def _joern_expr_reaches(
         )
     compact = normalize_expression(expression)
     return any(
-        compact
-        and compact == normalize_expression(call.arguments.get(index, ""))
+        compact and compact == normalize_expression(call.arguments.get(index, ""))
         for index in argument_indices
     )
 
@@ -458,15 +246,10 @@ def _validate_with_joern(
             buffer_indices, length_indices = _known_call_indices(call.name, kind)
             if not buffer_indices or not length_indices:
                 continue
-            if _joern_expr_reaches(
-                facts, summary["buffer"], call, buffer_indices
-            ) and _joern_expr_reaches(
+            if _joern_expr_reaches(facts, summary["buffer"], call, buffer_indices) and _joern_expr_reaches(
                 facts, summary["length"], call, length_indices
             ):
-                return (
-                    True,
-                    f"Joern verified {kind.lower()} flow to specified API {call.name}",
-                )
+                return True, f"Joern verified {kind.lower()} flow to specified API {call.name}"
         return False, f"Joern found no specified API matching the declared {kind.lower()}"
 
     if kind == "VALUE":
@@ -496,14 +279,13 @@ def _validate_by_composition(
     validator: JoernValidator,
     callee_summaries: dict[tuple[str, str], list[dict[str, str]]],
 ) -> tuple[bool, str]:
-    """Validate a wrapper summary from already validated callee summaries."""
     facts = validator.facts(candidate)
     kind = summary["kind"]
 
     for call in facts.call_list():
         matches = [
             summaries
-            for (path, name), summaries in callee_summaries.items()
+            for (_path, name), summaries in callee_summaries.items()
             if name == call.name
         ]
         if len(matches) != 1:
@@ -524,51 +306,31 @@ def _validate_by_composition(
                 ):
                     return (
                         True,
-                        f"composition verified {kind.lower()} through "
-                        f"validated callee summary {call.name}",
+                        f"composition verified {kind.lower()} through validated callee summary {call.name}",
                     )
 
             elif kind == "ALLOC":
                 child_size_args = tuple(_arg_indices(child.get("size", "")))
                 if not child_size_args:
                     continue
-                if not _joern_expr_reaches(
-                    facts, summary["size"], call, child_size_args
-                ):
+                if not _joern_expr_reaches(facts, summary["size"], call, child_size_args):
                     continue
                 source_call = _source_call_for_joern(candidate, call)
-                if (
-                    source_call is not None
-                    and _source_call_returns_value(source_call, facts)
-                ):
-                    return (
-                        True,
-                        f"composition verified allocation through "
-                        f"validated callee summary {call.name}",
-                    )
+                if source_call is not None and _source_call_returns_value(source_call, facts):
+                    return True, f"composition verified allocation through validated callee summary {call.name}"
 
             elif kind == "VALUE":
                 child_expression = child.get("expression", "")
                 child_args = _arg_indices(child_expression)
-                if (
-                    len(child_args) != 1
-                    or child_expression != f"arg{child_args[0]}"
-                ):
+                if len(child_args) != 1 or child_expression != f"arg{child_args[0]}":
                     continue
                 source_call = _source_call_for_joern(candidate, call)
-                if (
-                    source_call is None
-                    or not _source_call_returns_value(source_call, facts)
-                ):
+                if source_call is None or not _source_call_returns_value(source_call, facts):
                     continue
                 if _joern_expr_reaches(
                     facts, summary["expression"], call, (child_args[0],)
                 ):
-                    return (
-                        True,
-                        f"composition verified value through "
-                        f"validated callee summary {call.name}",
-                    )
+                    return True, f"composition verified value through validated callee summary {call.name}"
 
     return False, "no validated callee summary composes to the claimed semantic role"
 
@@ -596,19 +358,15 @@ def validate_summary(
         root_index = _buffer_root_index(buffer)
         if root_index is None:
             error = (
-                f"{clean_summary.get('kind')} buffer must be rooted at a "
-                "caller-supplied argN"
+                f"{clean_summary.get('kind')} buffer must be rooted at a caller-supplied argN"
             )
         elif (
             root_index >= len(function.parameter_types)
-            or not _type_definitely_pointer(
-                function.parameter_types[root_index]
-            )
+            or not _type_definitely_pointer(function.parameter_types[root_index])
         ):
             error = (
-                f"{clean_summary.get('kind')} buffer root arg{root_index} "
-                "is not pointer-like: pointer semantics are not proven "
-                "by the candidate signature"
+                f"{clean_summary.get('kind')} buffer root arg{root_index} is not pointer-like: "
+                "pointer semantics are not proven by the candidate signature"
             )
 
     if error:
@@ -628,10 +386,7 @@ def validate_summary(
         passed, reason = _validate_with_joern(candidate, clean_summary, joern)
         if not passed and callee_summaries:
             composed, composed_reason = _validate_by_composition(
-                candidate,
-                clean_summary,
-                joern,
-                callee_summaries,
+                candidate, clean_summary, joern, callee_summaries
             )
             if composed:
                 passed, reason = composed, composed_reason
@@ -641,6 +396,7 @@ def validate_summary(
     except JoernTimeout as validation_error:
         passed = False
         reason = f"Joern candidate validation timed out: {validation_error}"
+
     return Validation(
         candidate.sample_key,
         function.name,
@@ -652,313 +408,6 @@ def validate_summary(
         variant_group=candidate.variant_group,
         variant_count=candidate.variant_count,
     )
-
-
-
-def _simple_caller_expression(expression: str) -> bool:
-    compact = normalize_expression(expression)
-    indices = _arg_indices(compact)
-    if len(indices) == 1 and compact == f"arg{indices[0]}":
-        return True
-    try:
-        int(compact, 0)
-    except ValueError:
-        return False
-    return True
-
-
-def _expected_standard_effect_count(call) -> int:
-    count = 0
-    if call.name in WRITES:
-        buffer_index, length_index = WRITES[call.name]
-        if len(call.arguments) > max(buffer_index, length_index):
-            count += 1
-    if call.name in READS:
-        buffer_index, length_index = READS[call.name]
-        if len(call.arguments) > max(buffer_index, length_index):
-            count += 1
-            if call.name == "memcmp" and len(call.arguments) >= 3:
-                count += 1
-    if call.name in ALLOCATORS and call.returned:
-        indices = ALLOCATORS[call.name]
-        if (
-            call.name == "calloc" and len(call.arguments) >= 2
-        ) or (
-            indices and len(call.arguments) > indices[0]
-        ):
-            count += 1
-    return count
-
-
-def _standard_call_summaries(
-    function: FunctionSource,
-    call,
-) -> list[dict[str, str]]:
-    summaries: list[dict[str, str]] = []
-
-    def append_memory(kind: str, buffer: str, length: str) -> None:
-        summary = canonicalize_summary(
-            function,
-            {"kind": kind, "buffer": buffer, "length": length},
-        )
-        root = _buffer_root_index(summary["buffer"])
-        if (
-            root is None
-            or root >= len(function.parameter_pointer_like)
-            or not function.parameter_pointer_like[root]
-            or not _simple_caller_expression(summary["length"])
-        ):
-            return
-        summaries.append(summary)
-
-    if call.name in WRITES:
-        buffer_index, length_index = WRITES[call.name]
-        if len(call.arguments) > max(buffer_index, length_index):
-            length = call.arguments[length_index]
-            if call.name == "fread" and len(call.arguments) >= 3:
-                length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-            append_memory(
-                "WRITE",
-                call.arguments[buffer_index],
-                length,
-            )
-
-    if call.name in READS:
-        buffer_index, length_index = READS[call.name]
-        if len(call.arguments) > max(buffer_index, length_index):
-            length = call.arguments[length_index]
-            if call.name == "fwrite" and len(call.arguments) >= 3:
-                length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-            append_memory(
-                "READ",
-                call.arguments[buffer_index],
-                length,
-            )
-            if call.name == "memcmp" and len(call.arguments) >= 3:
-                append_memory(
-                    "READ",
-                    call.arguments[1],
-                    call.arguments[2],
-                )
-
-    if call.name in ALLOCATORS and call.returned:
-        indices = ALLOCATORS[call.name]
-        if call.name == "calloc" and len(call.arguments) >= 2:
-            size = f"({call.arguments[0]}) * ({call.arguments[1]})"
-        elif indices and len(call.arguments) > indices[0]:
-            size = call.arguments[indices[0]]
-        else:
-            size = ""
-        if size:
-            summary = canonicalize_summary(
-                function,
-                {"kind": "ALLOC", "buffer": "return", "size": size},
-            )
-            if _simple_caller_expression(summary["size"]):
-                summaries.append(summary)
-
-    return summaries
-
-
-def _direct_standard_summaries(function: FunctionSource) -> list[dict[str, str]]:
-    summaries: list[dict[str, str]] = []
-    for call in function.calls():
-        if call.indirect:
-            continue
-        for summary in _standard_call_summaries(function, call):
-            if summary not in summaries:
-                summaries.append(summary)
-    return summaries
-
-
-def _normalization_endpoints(
-    function: FunctionSource,
-) -> list[tuple[str, str, int | None]]:
-    endpoints: list[tuple[str, str, int | None]] = []
-    # A return summary describes the function as a whole. For functions that do
-    # not fit the explicit LLM budget, a local slice cannot establish a global
-    # return property, so conservatively abstain from that endpoint.
-    if function.has_value_return() and len(function.text) <= MAX_LLM_SOURCE_CHARS:
-        endpoints.append(("return", "function return statements", None))
-    for call in function.calls():
-        if call.indirect:
-            continue
-        if call.name in STANDARD_CALLS:
-            expected = _expected_standard_effect_count(call)
-            direct = len(_standard_call_summaries(function, call))
-            if expected == direct:
-                continue
-        endpoints.append(
-            (
-                "call",
-                f"direct call {call.name}({', '.join(call.arguments)}) at line {call.line}",
-                call.line,
-            )
-        )
-    return endpoints
-
-
-def _normalization_source(function: FunctionSource, endpoint_line: int | None) -> str:
-    if len(function.text) <= MAX_LLM_SOURCE_CHARS:
-        return function.text
-    if endpoint_line is None:
-        raise ValueError(
-            f"{function.name}: oversized function requires a localized call endpoint"
-        )
-
-    lines = function.text.splitlines()
-    relative_line = endpoint_line - function.start_line
-    if relative_line < 0 or relative_line >= len(lines):
-        raise ValueError(
-            f"{function.name}: endpoint line {endpoint_line} is outside function range "
-            f"{function.start_line}-{function.end_line}"
-        )
-
-    window_start = max(0, relative_line - LLM_ENDPOINT_CONTEXT_LINES)
-    window_end = min(len(lines), relative_line + LLM_ENDPOINT_CONTEXT_LINES + 1)
-    signature_end = next(
-        (index + 1 for index, line in enumerate(lines[:20]) if "{" in line),
-        min(20, len(lines)),
-    )
-
-    sections: list[str] = []
-    if window_start > signature_end:
-        sections.append("\n".join(lines[:signature_end]))
-        sections.append(
-            f"/* omitted; source lines {function.start_line + window_start}-"
-            f"{function.start_line + window_end - 1} around endpoint */\n"
-            + "\n".join(lines[window_start:window_end])
-        )
-    else:
-        sections.append("\n".join(lines[window_start:window_end]))
-    source = "\n\n".join(sections)
-    if len(source) > MAX_LLM_SOURCE_CHARS:
-        raise ValueError(
-            f"{function.name}: localized endpoint source exceeds explicit LLM budget "
-            f"({len(source)} > {MAX_LLM_SOURCE_CHARS} chars)"
-        )
-    return source
-
-
-def llm_normalize(
-    candidate: Candidate,
-    *,
-    api_key: str | None = None,
-    base_url: str | None = None,
-    model: str | None = None,
-    max_tokens: int = 512,
-    disable_proxy: bool = False,
-    response_schema: dict[str, object] | None = None,
-) -> list[dict[str, str]]:
-    api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
-    base_url = base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-    if not api_key:
-        raise RuntimeError("DEEPSEEK_API_KEY is not set")
-
-    summaries = _direct_standard_summaries(candidate.function)
-    indirect_calls = [
-        f"{call.name}@{call.line}"
-        for call in candidate.function.calls()
-        if call.indirect
-    ]
-    opaque_text = ", ".join(indirect_calls) if indirect_calls else "none"
-
-    for endpoint_kind, endpoint_text, endpoint_line in _normalization_endpoints(candidate.function):
-        if endpoint_kind == "return":
-            allowed = "ALLOC or VALUE"
-            instruction = (
-                "Report only return semantics that hold for this function's return "
-                "behavior. Do not report READ/WRITE effects here."
-            )
-        else:
-            allowed = "ALLOC, READ, WRITE, or VALUE"
-            instruction = (
-                "Report only caller-visible summaries mediated by this one direct "
-                "named call. Do not report effects from any other call site."
-            )
-
-        source_context = _normalization_source(candidate.function, endpoint_line)
-        source_label = (
-            "Source"
-            if len(candidate.function.text) <= MAX_LLM_SOURCE_CHARS
-            else "Localized source context"
-        )
-        prompt = f"""Normalize one statically localized semantic endpoint in this C/C++ function.
-Endpoint: {endpoint_text}
-Allowed summary kinds: {allowed}
-{instruction}
-
-Return exactly one JSON object with key summaries. The array may contain at most four summaries.
-Use only:
-{{"kind":"ALLOC","buffer":"return","size":"argN expression"}}
-{{"kind":"READ","buffer":"argN expression","length":"argN expression"}}
-{{"kind":"WRITE","buffer":"argN expression","length":"argN expression"}}
-{{"kind":"VALUE","target":"return","expression":"argN expression"}}
-
-Use positional argN names only. READ/WRITE buffers must be rooted at caller pointer parameters.
-Do not infer vulnerability labels, guards, caller behavior, or library contracts. Unresolved
-indirect/function-pointer calls are opaque: never infer semantics through them, but they do not
-invalidate unrelated direct evidence. Emit {{"summaries":[]}} when this endpoint exposes none.
-
-Function: {candidate.function.name}
-Parameters: {json.dumps(list(candidate.function.parameters))}
-Opaque indirect calls: {opaque_text}
-{source_label}:
-{source_context}
-"""
-        response_format: dict[str, object] = {"type": "json_object"}
-        if response_schema is not None:
-            response_format["schema"] = response_schema
-        payload = json.dumps(
-            {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "You output strict JSON only."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0,
-                "max_tokens": max_tokens,
-                "chat_template_kwargs": {"enable_thinking": False},
-                "response_format": response_format,
-            }
-        ).encode()
-        request = urllib.request.Request(
-            f"{base_url.rstrip('/')}/chat/completions",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        if disable_proxy:
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            response_context = opener.open(request, timeout=180)
-        else:
-            response_context = urllib.request.urlopen(request, timeout=180)
-        with response_context as response:
-            result = json.load(response)
-
-        parsed = _extract_json_object(_response_content(result))
-        endpoint_summaries = parsed.get("summaries")
-        if not isinstance(endpoint_summaries, list):
-            raise ValueError("LLM response summaries must be a list")
-        if len(endpoint_summaries) > 4:
-            raise ValueError("LLM response exceeds the endpoint summary bound")
-        for raw_summary in endpoint_summaries:
-            if not isinstance(raw_summary, dict):
-                raise ValueError("LLM summary must be one JSON object")
-            clean = canonicalize_summary(candidate.function, raw_summary)
-            error = _schema_error(clean, len(candidate.function.parameters))
-            if error is not None:
-                continue
-            if endpoint_kind == "return" and clean["kind"] not in {"ALLOC", "VALUE"}:
-                continue
-            if clean not in summaries:
-                summaries.append(clean)
-
-    return summaries
 
 
 def _response_content(result: dict[str, object]) -> str:
@@ -990,8 +439,7 @@ def _response_content(result: dict[str, object]) -> str:
     raise ValueError(
         "LLM returned empty content "
         f"(finish_reason={choice.get('finish_reason')!r}, "
-        f"reasoning_length={reasoning_length}, "
-        f"completion_tokens={completion_tokens!r}). "
+        f"reasoning_length={reasoning_length}, completion_tokens={completion_tokens!r}). "
         "The provider produced no final JSON answer."
     )
 
@@ -1004,31 +452,3 @@ def _extract_json_object(content: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("LLM response must be one JSON object")
     return value
-
-
-def load_replay(
-    path: str | Path,
-) -> dict[tuple[str, str, str, int], list[dict[str, str]]]:
-    replay: dict[tuple[str, str, str, int], list[dict[str, str]]] = {}
-    with Path(path).open() as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            if record.get("schema_version") != NORMALIZATION_SCHEMA_VERSION:
-                raise ValueError(
-                    f"{path}: obsolete normalization schema; rerun normalize --refresh"
-                )
-            summaries = record.get("summaries")
-            if not isinstance(summaries, list) or not all(
-                isinstance(item, dict) for item in summaries
-            ):
-                raise ValueError(f"{path}: invalid summaries field")
-            key = (
-                record["sample_key"],
-                record["source_path"],
-                record["function"],
-                int(record["source_line"]),
-            )
-            replay[key] = summaries
-    return replay
