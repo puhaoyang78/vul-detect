@@ -7,17 +7,38 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .joern import JoernRepositoryIndex, RepositoryMethod
-from .semantics import Candidate, STANDARD_CALLS, candidate_validation_error
+from .semantics import Candidate, candidate_validation_error
 from .source import FunctionSource, normalize_expression, parse_functions, source_language
+from .standard_semantics import STANDARD_LEAF_CALLS, standard_seed_expressions
 
 
-CANDIDATE_MANIFEST_VERSION = 1
-DISCOVERY_POLICY_VERSION = 1
+CANDIDATE_MANIFEST_VERSION = 2
+DISCOVERY_POLICY_VERSION = 2
+
+
+_CLEAR_SCALAR_TYPES = {
+    "bool", "_Bool", "char", "signedchar", "unsignedchar",
+    "short", "shortint", "signedshort", "signedshortint",
+    "unsignedshort", "unsignedshortint", "int", "signed", "signedint",
+    "unsigned", "unsignedint", "long", "longint", "signedlong",
+    "signedlongint", "unsignedlong", "unsignedlongint", "longlong",
+    "longlongint", "signedlonglong", "signedlonglongint",
+    "unsignedlonglong", "unsignedlonglongint", "float", "double",
+    "longdouble", "size_t", "ssize_t",
+}
+
+
+@dataclass(frozen=True)
+class CandidateSelection:
+    depth: int
+    caller: str
+    reason: str
 
 
 @dataclass(frozen=True)
 class CandidateDiscovery:
     candidates: tuple[Candidate, ...]
+    selections: dict[tuple[str, str, int, str], CandidateSelection]
     direct_candidates: int
     recursive_candidates: int
     expanded_methods: int
@@ -95,50 +116,87 @@ def _sources_for_method_cached(
     return [base]
 
 
+def _type_definitely_pointer(type_text: str) -> bool:
+    compact = "".join(type_text.split())
+    return any(token in compact for token in ("*", "&", "["))
+
+
+def _type_may_be_pointer(type_text: str) -> bool:
+    compact = "".join(type_text.split())
+    if _type_definitely_pointer(type_text):
+        return True
+    if compact in {"", "ANY", "<empty>"}:
+        return True
+    # Preserve typedef/opaque types. Only known scalar spellings are safe to prune.
+    return compact not in _CLEAR_SCALAR_TYPES
+
+
 def _method_can_produce_summary(method: RepositoryMethod) -> bool:
     return (
         method.return_type not in {"void", "<empty>"}
-        or any(token in "".join(type_text.split()) for type_text in method.parameter_types for token in ("*", "&", "["))
-        or any(type_text in {"", "ANY", "<empty>"} for type_text in method.parameter_types)
+        or any(_type_may_be_pointer(type_text) for type_text in method.parameter_types)
     )
 
 
-def _source_call(function: FunctionSource, line: int, name: str):
-    matches = [
-        call
-        for call in function.calls()
-        if not call.indirect and call.line == line and call.name == name
-    ]
-    return matches[0] if len(matches) == 1 else None
+def _identifiers(expression: str) -> set[str]:
+    return set(re.findall(r"\b[A-Za-z_]\w*\b", normalize_expression(expression)))
 
 
-def _expression_depends_on_parameters(
+def _function_facts(function: FunctionSource, cache: dict[int, dict[str, object]]):
+    key = id(function)
+    if key not in cache:
+        calls = function.calls()
+        relations = function.value_relations_before(function.end_line + 1)
+        relation_map = {
+            normalize_expression(left): normalize_expression(right)
+            for left, right in relations
+        }
+        seeds = list(standard_seed_expressions(function))
+        # Return expressions matter because VALUE/ALLOC summaries expose them to callers.
+        for match in re.finditer(r"\breturn\s+([^;]+);", function.text):
+            line = function.start_line + function.text[: match.start()].count("\n")
+            seeds.append((line, match.group(1)))
+        cache[key] = {
+            "calls": calls,
+            "relations": relation_map,
+            "seeds": seeds,
+        }
+    return cache[key]
+
+
+def _dependency_closure(
     function: FunctionSource,
-    expression: str,
-    line: int,
-) -> bool:
-    parameter_names = set(function.parameters)
-    if not parameter_names:
-        return False
-    relations = {
-        normalize_expression(left): normalize_expression(right)
-        for left, right in function.value_relations_before(line)
-    }
-    pending = [normalize_expression(expression)]
-    seen: set[str] = set()
+    cache: dict[int, dict[str, object]],
+) -> set[str]:
+    facts = _function_facts(function, cache)
+    relations = facts["relations"]
+    pending: list[str] = []
+    for _line, expression in facts["seeds"]:
+        pending.extend(_identifiers(expression))
+    relevant: set[str] = set()
     while pending:
-        current = pending.pop()
-        if current in seen:
+        name = pending.pop()
+        if name in relevant:
             continue
-        seen.add(current)
-        identifiers = set(re.findall(r"\b[A-Za-z_]\w*\b", current))
-        if identifiers & parameter_names:
-            return True
-        for identifier in identifiers:
-            replacement = relations.get(identifier)
-            if replacement and replacement not in seen:
-                pending.append(replacement)
-    return False
+        relevant.add(name)
+        replacement = relations.get(name)
+        if replacement:
+            pending.extend(_identifiers(replacement) - relevant)
+    return relevant
+
+
+def _source_call(function: FunctionSource, line: int, name: str, cache):
+    calls = _function_facts(function, cache)["calls"]
+    matches = [
+        call for call in calls
+        if not call.indirect and call.name == name and call.line == line
+    ]
+    # Preprocessed Joern CALL line numbers can differ from original C source.
+    # Fall back only when name resolution is unique inside this function.
+    if len(matches) == 1:
+        return matches[0]
+    named = [call for call in calls if not call.indirect and call.name == name]
+    return named[0] if len(named) == 1 else None
 
 
 def _result_flows_to_return(function: FunctionSource, result: str | None) -> bool:
@@ -150,24 +208,53 @@ def _result_flows_to_return(function: FunctionSource, result: str | None) -> boo
     return re.search(rf"\breturn\s+[^;]*\b{re.escape(name)}\b", function.text) is not None
 
 
-def _call_can_contribute_to_summary(function: FunctionSource, source_call) -> bool:
+def _call_relevance(
+    function: FunctionSource,
+    source_call,
+    callee: RepositoryMethod,
+    cache: dict[int, dict[str, object]],
+) -> str | None:
     if source_call is None:
-        return False
+        return None
     if source_call.returned or _result_flows_to_return(function, source_call.result):
-        return True
-    return any(
-        _expression_depends_on_parameters(function, argument, source_call.line)
-        for argument in source_call.arguments
-    )
+        return "callee result contributes to caller return"
+
+    relevant = _dependency_closure(function, cache)
+    if source_call.result and normalize_expression(source_call.result) in relevant:
+        return "callee result reaches a memory-relevant value"
+
+    for argument in source_call.arguments:
+        if _identifiers(argument) & relevant:
+            return "callee argument depends on a memory-relevant value"
+
+    pointer_positions = [
+        index for index, type_text in enumerate(callee.parameter_types)
+        if _type_may_be_pointer(type_text)
+    ]
+    for index in pointer_positions:
+        if index >= len(source_call.arguments):
+            continue
+        argument = source_call.arguments[index]
+        if _identifiers(argument) & (set(function.parameters) | relevant):
+            return "caller pointer/value flows into summary-capable callee"
+    return None
+
+
+def _candidate_key(source: FunctionSource) -> tuple[str, str, int, str]:
+    return (source.path, source.name, source.start_line, source.language)
 
 
 def _add_candidate(
     discovered: dict[tuple[str, str, int, str], Candidate],
+    selections: dict[tuple[str, str, int, str], CandidateSelection],
     *,
     sample_key: str,
     sources: list[FunctionSource],
     callee: RepositoryMethod,
     call_line: int,
+    depth: int,
+    caller: str,
+    reason: str,
 ) -> None:
     variant_count = (
         len(sources)
@@ -176,7 +263,7 @@ def _add_candidate(
         else 1
     )
     for source in sources:
-        key = (source.path, source.name, source.start_line, source.language)
+        key = _candidate_key(source)
         existing = discovered.get(key)
         lines = set(existing.call_lines if existing else ())
         lines.add(call_line)
@@ -194,6 +281,9 @@ def _add_candidate(
             variant_group=variant_group,
             variant_count=variant_count,
         )
+        current = selections.get(key)
+        if current is None or depth < current.depth:
+            selections[key] = CandidateSelection(depth, caller, reason)
 
 
 def discover_relevant_candidates(
@@ -202,109 +292,106 @@ def discover_relevant_candidates(
     entry_method: RepositoryMethod,
     entry: FunctionSource,
 ) -> CandidateDiscovery:
-    """Discover only helpers that can contribute caller-visible summary semantics.
-
-    Every summary-capable direct static callee of the entry is retained. Recursive
-    expansion is narrower: a child is followed only when its call result flows to
-    the caller return or one of its arguments depends on a caller parameter. Those
-    are the same relationships that READ/WRITE/ALLOC/VALUE composition can use.
-    """
-    methods = index.methods()
+    """Follow only call edges justified by a memory-relevance backward slice."""
     parse_cache: dict[tuple[str, str], list[FunctionSource]] = {}
+    fact_cache: dict[int, dict[str, object]] = {}
     discovered: dict[tuple[str, str, int, str], Candidate] = {}
-    queue: list[tuple[RepositoryMethod, FunctionSource, str]] = []
-    expanded: set[str] = set()
-    direct_method_names: set[str] = set()
+    selections: dict[tuple[str, str, int, str], CandidateSelection] = {}
+    queue: list[tuple[RepositoryMethod, FunctionSource, str, int]] = []
+    expanded: set[tuple[str, int]] = set()
     unresolved_relevant = 0
 
     entry_language = source_language(entry_method.path, entry.language)
     for call in entry_method.calls:
-        if call.name.startswith("<operator>.") or call.name in STANDARD_CALLS:
+        if call.name.startswith("<operator>.") or call.name in STANDARD_LEAF_CALLS:
             continue
         callees = index.callee_methods(call)
         if not callees:
-            if call.dispatch_type == "STATIC_DISPATCH":
+            # Count only calls whose source arguments intersect the entry memory slice.
+            source_call = _source_call(entry, call.line, call.name, fact_cache)
+            if source_call and any(
+                _identifiers(arg) & _dependency_closure(entry, fact_cache)
+                for arg in source_call.arguments
+            ):
                 unresolved_relevant += 1
             continue
         for callee in callees:
             if callee.full_name == entry_method.full_name or not _method_can_produce_summary(callee):
                 continue
+            source_call = _source_call(entry, call.line, call.name, fact_cache)
+            reason = _call_relevance(entry, source_call, callee, fact_cache)
+            if reason is None:
+                continue
             callee_language = source_language(callee.path, entry_language)
-            sources = _sources_for_method_cached(
-                index, callee, callee_language, parse_cache
-            )
+            sources = _sources_for_method_cached(index, callee, callee_language, parse_cache)
             _add_candidate(
                 discovered,
+                selections,
                 sample_key=sample_key,
                 sources=sources,
                 callee=callee,
                 call_line=call.line,
+                depth=1,
+                caller=entry_method.full_name,
+                reason=reason,
             )
-            direct_method_names.add(callee.full_name)
             for source in sources:
-                queue.append((callee, source, callee_language))
+                queue.append((callee, source, callee_language, 1))
 
     while queue:
-        caller, caller_source, caller_language = queue.pop(0)
-        expansion_key = f"{caller.full_name}\0{caller_source.start_line}"
+        caller, caller_source, caller_language, depth = queue.pop(0)
+        expansion_key = (caller.full_name, caller_source.start_line)
         if expansion_key in expanded:
             continue
         expanded.add(expansion_key)
 
         for call in caller.calls:
-            if call.name.startswith("<operator>.") or call.name in STANDARD_CALLS:
-                continue
-            source_call = _source_call(caller_source, call.line, call.name)
-            if not _call_can_contribute_to_summary(caller_source, source_call):
+            if call.name.startswith("<operator>.") or call.name in STANDARD_LEAF_CALLS:
                 continue
             callees = index.callee_methods(call)
+            source_call = _source_call(caller_source, call.line, call.name, fact_cache)
             if not callees:
-                if call.dispatch_type == "STATIC_DISPATCH":
+                if source_call and any(
+                    _identifiers(arg) & _dependency_closure(caller_source, fact_cache)
+                    for arg in source_call.arguments
+                ):
                     unresolved_relevant += 1
                 continue
             for callee in callees:
                 if callee.full_name == caller.full_name or not _method_can_produce_summary(callee):
                     continue
+                reason = _call_relevance(caller_source, source_call, callee, fact_cache)
+                if reason is None:
+                    continue
                 callee_language = source_language(callee.path, caller_language)
-                sources = _sources_for_method_cached(
-                    index, callee, callee_language, parse_cache
-                )
+                sources = _sources_for_method_cached(index, callee, callee_language, parse_cache)
                 _add_candidate(
                     discovered,
+                    selections,
                     sample_key=sample_key,
                     sources=sources,
                     callee=callee,
                     call_line=call.line,
+                    depth=depth + 1,
+                    caller=caller.full_name,
+                    reason=reason,
                 )
                 for source in sources:
-                    queue.append((callee, source, callee_language))
+                    queue.append((callee, source, callee_language, depth + 1))
 
-    candidates = tuple(
-        sorted(
-            discovered.values(),
-            key=lambda item: (
-                item.function.path,
-                item.function.name,
-                item.function.start_line,
-            ),
-        )
-    )
-    direct_candidates = sum(
-        candidate.method_full_name in direct_method_names for candidate in candidates
-    )
+    candidates = tuple(sorted(discovered.values(), key=lambda item: _candidate_key(item.function)))
+    direct = sum(selections[_candidate_key(candidate.function)].depth == 1 for candidate in candidates)
     return CandidateDiscovery(
         candidates=candidates,
-        direct_candidates=direct_candidates,
-        recursive_candidates=len(candidates) - direct_candidates,
+        selections=selections,
+        direct_candidates=direct,
+        recursive_candidates=len(candidates) - direct,
         expanded_methods=len(expanded),
         unresolved_relevant_calls=unresolved_relevant,
     )
 
 
-def write_candidate_manifest(
-    index: JoernRepositoryIndex,
-    discovery: CandidateDiscovery,
-) -> Path:
+def write_candidate_manifest(index: JoernRepositoryIndex, discovery: CandidateDiscovery) -> Path:
     target = candidate_manifest_path(index)
     target.parent.mkdir(parents=True, exist_ok=True)
     header = {
@@ -322,23 +409,25 @@ def write_candidate_manifest(
     records: list[dict[str, object]] = [header]
     for candidate in discovery.candidates:
         function = candidate.function
-        records.append(
-            {
-                "record_type": "candidate",
-                "sample_key": candidate.sample_key,
-                "source_path": function.path,
-                "function": function.name,
-                "source_line": function.start_line,
-                "end_line": function.end_line,
-                "language": function.language,
-                "method_full_name": candidate.method_full_name,
-                "call_lines": list(candidate.call_lines),
-                "variant_group": candidate.variant_group,
-                "variant_count": candidate.variant_count,
-                "source_fingerprint": candidate_source_fingerprint(candidate),
-                "skip_reason": candidate_validation_error(function),
-            }
-        )
+        selection = discovery.selections[_candidate_key(function)]
+        records.append({
+            "record_type": "candidate",
+            "sample_key": candidate.sample_key,
+            "source_path": function.path,
+            "function": function.name,
+            "source_line": function.start_line,
+            "end_line": function.end_line,
+            "language": function.language,
+            "method_full_name": candidate.method_full_name,
+            "call_lines": list(candidate.call_lines),
+            "variant_group": candidate.variant_group,
+            "variant_count": candidate.variant_count,
+            "source_fingerprint": candidate_source_fingerprint(candidate),
+            "skip_reason": candidate_validation_error(function),
+            "depth": selection.depth,
+            "caller": selection.caller,
+            "selection_reason": selection.reason,
+        })
 
     temporary = target.with_suffix(target.suffix + ".tmp")
     with temporary.open("w") as handle:
@@ -352,9 +441,7 @@ def write_candidate_manifest(
 def read_candidate_manifest(index: JoernRepositoryIndex) -> tuple[dict[str, object], list[dict[str, object]]]:
     path = candidate_manifest_path(index)
     if not path.is_file():
-        raise RuntimeError(
-            f"{index.sample_key}: candidate manifest is missing; run preflight first"
-        )
+        raise RuntimeError(f"{index.sample_key}: candidate manifest is missing; run preflight first")
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     if not records or records[0].get("record_type") != "manifest":
         raise RuntimeError(f"{index.sample_key}: invalid candidate manifest: {path}")
@@ -364,9 +451,7 @@ def read_candidate_manifest(index: JoernRepositoryIndex) -> tuple[dict[str, obje
         or header.get("discovery_policy_version") != DISCOVERY_POLICY_VERSION
         or header.get("index_fingerprint") != index.fingerprint
     ):
-        raise RuntimeError(
-            f"{index.sample_key}: candidate manifest is stale; rerun preflight --refresh"
-        )
+        raise RuntimeError(f"{index.sample_key}: candidate manifest is stale; rerun preflight --refresh")
     candidates = [record for record in records[1:] if record.get("record_type") == "candidate"]
     if len(candidates) != int(header.get("candidate_count", -1)):
         raise RuntimeError(f"{index.sample_key}: incomplete candidate manifest: {path}")
