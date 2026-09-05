@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from z3 import Not, Solver, sat, unsat
+from z3 import Solver, unsat
 
 from . import z3_reasoner as legacy
 from .source import normalize_expression
@@ -62,7 +62,6 @@ def _arithmetic_provably_bounded(entry, line: int, expression: str) -> bool:
             added_path = True
         except Exception:
             continue
-    # Without a guard/range refinement, symbolic +/* can still wrap at the type edge.
     if not added_path:
         return False
     try:
@@ -75,15 +74,33 @@ def _arithmetic_provably_bounded(entry, line: int, expression: str) -> bool:
     return overflow.check() == unsat
 
 
-def _indirect_call_affects_access(entry, access) -> str | None:
-    relevant = _ids(access.buffer) | _ids(access.extent)
+def _access_relevant_identifiers(operation, capacities) -> set[str]:
+    buffer = normalize_expression(getattr(operation, "buffer", ""))
+    extent = normalize_expression(getattr(operation, "extent", ""))
+    relevant = _ids(buffer) | _ids(extent)
+    capacity = legacy._capacity_for_buffer(operation, buffer, capacities)
+    if capacity is not None:
+        capacity_text, offset_text = capacity
+        relevant |= _ids(capacity_text) | _ids(offset_text)
+    return relevant
+
+
+def _opaque_dependency_error(operation, capacities, operations) -> str | None:
+    relevant = _access_relevant_identifiers(operation, capacities)
     if not relevant:
         return None
-    for call in entry.calls():
-        if not call.indirect or call.line >= access.line:
+    line = int(getattr(operation, "line", 0))
+    for opaque in operations:
+        if getattr(opaque, "kind", "") != "OPAQUE":
             continue
-        if any(_ids(argument) & relevant for argument in call.arguments):
-            return f"unresolved indirect call {call.name}@{call.line} shares access-dependent values"
+        if int(getattr(opaque, "line", 0)) >= line:
+            continue
+        arguments = getattr(opaque, "buffer", "")
+        if _ids(arguments) & relevant:
+            return (
+                f"unresolved call {getattr(opaque, 'callee', '<unknown>')}@"
+                f"{getattr(opaque, 'line', 0)} shares access-dependent values"
+            )
     return None
 
 
@@ -105,7 +122,7 @@ def _check_access(entry, operation, capacities, signed, unsigned, operations):
     finally:
         legacy._has_unmodeled_c_arithmetic = original
 
-    dependency_error = _indirect_call_affects_access(entry, access)
+    dependency_error = _opaque_dependency_error(operation, capacities, operations)
     if dependency_error is not None:
         return legacy.AccessCheck(
             access.access_kind,
