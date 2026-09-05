@@ -9,11 +9,15 @@ from pathlib import Path
 from .joern import JoernRepositoryIndex, RepositoryMethod
 from .semantics import Candidate, candidate_validation_error
 from .source import FunctionSource, normalize_expression, parse_functions, source_language
-from .standard_semantics import STANDARD_LEAF_CALLS, standard_seed_expressions
+from .standard_semantics import (
+    STANDARD_LEAF_CALLS,
+    effects_for_call,
+    standard_seed_expressions,
+)
 
 
 CANDIDATE_MANIFEST_VERSION = 2
-DISCOVERY_POLICY_VERSION = 2
+DISCOVERY_POLICY_VERSION = 3
 
 
 _CLEAR_SCALAR_TYPES = {
@@ -43,6 +47,12 @@ class CandidateDiscovery:
     recursive_candidates: int
     expanded_methods: int
     unresolved_relevant_calls: int
+
+
+@dataclass(frozen=True)
+class BoundaryNeed:
+    parameter_indices: tuple[int, ...] = ()
+    return_value: bool = False
 
 
 def candidate_source_fingerprint(candidate: Candidate) -> str:
@@ -141,35 +151,12 @@ def _identifiers(expression: str) -> set[str]:
     return set(re.findall(r"\b[A-Za-z_]\w*\b", normalize_expression(expression)))
 
 
-def _function_facts(function: FunctionSource, cache: dict[int, dict[str, object]]):
-    key = id(function)
-    if key not in cache:
-        calls = function.calls()
-        relations = function.value_relations_before(function.end_line + 1)
-        relation_map = {
-            normalize_expression(left): normalize_expression(right)
-            for left, right in relations
-        }
-        seeds = list(standard_seed_expressions(function))
-        for match in re.finditer(r"\breturn\s+([^;]+);", function.text):
-            line = function.start_line + function.text[: match.start()].count("\n")
-            seeds.append((line, match.group(1)))
-        cache[key] = {
-            "calls": calls,
-            "relations": relation_map,
-            "seeds": seeds,
-        }
-    return cache[key]
-
-
-def _dependency_closure(
-    function: FunctionSource,
-    cache: dict[int, dict[str, object]],
+def _expression_closure(
+    expressions: list[str] | tuple[str, ...],
+    relations: dict[str, str],
 ) -> set[str]:
-    facts = _function_facts(function, cache)
-    relations = facts["relations"]
     pending: list[str] = []
-    for _line, expression in facts["seeds"]:
+    for expression in expressions:
         pending.extend(_identifiers(expression))
     relevant: set[str] = set()
     while pending:
@@ -180,6 +167,106 @@ def _dependency_closure(
         replacement = relations.get(name)
         if replacement:
             pending.extend(_identifiers(replacement) - relevant)
+    return relevant
+
+
+def _function_facts(function: FunctionSource, cache: dict[int, dict[str, object]]):
+    key = id(function)
+    if key not in cache:
+        calls = function.calls()
+        relations = function.value_relations_before(function.end_line + 1)
+        relation_map = {
+            normalize_expression(left): normalize_expression(right)
+            for left, right in relations
+        }
+        seeds = list(standard_seed_expressions(function))
+        returns: list[str] = []
+        for match in re.finditer(r"\breturn\s+([^;]+);", function.text):
+            line = function.start_line + function.text[: match.start()].count("\n")
+            expression = match.group(1)
+            seeds.append((line, expression))
+            returns.append(expression)
+
+        memory_groups: list[tuple[str, ...]] = []
+        for access in function.direct_memory_accesses():
+            expressions = tuple(
+                expression
+                for expression in (access.buffer, access.extent)
+                if expression and expression != "UNBOUNDED"
+            )
+            if expressions:
+                memory_groups.append(expressions)
+        for call in calls:
+            if call.indirect:
+                continue
+            for effect in effects_for_call(call):
+                expressions = tuple(
+                    expression
+                    for expression in (effect.buffer, effect.extent)
+                    if expression and expression not in {"return", "UNBOUNDED"}
+                )
+                if expressions:
+                    memory_groups.append(expressions)
+
+        cache[key] = {
+            "calls": calls,
+            "relations": relation_map,
+            "seeds": seeds,
+            "returns": returns,
+            "memory_groups": memory_groups,
+        }
+    return cache[key]
+
+
+def _dependency_closure(
+    function: FunctionSource,
+    cache: dict[int, dict[str, object]],
+) -> set[str]:
+    facts = _function_facts(function, cache)
+    relations = facts["relations"]
+    expressions = [expression for _line, expression in facts["seeds"]]
+    return _expression_closure(expressions, relations)
+
+
+def _merge_need(left: BoundaryNeed | None, right: BoundaryNeed) -> BoundaryNeed:
+    if left is None:
+        return right
+    return BoundaryNeed(
+        parameter_indices=tuple(
+            sorted(set(left.parameter_indices) | set(right.parameter_indices))
+        ),
+        return_value=left.return_value or right.return_value,
+    )
+
+
+def _scoped_dependency_closure(
+    function: FunctionSource,
+    need: BoundaryNeed,
+    cache: dict[int, dict[str, object]],
+) -> set[str]:
+    facts = _function_facts(function, cache)
+    relations = facts["relations"]
+    boundary_names = {
+        function.parameters[index]
+        for index in need.parameter_indices
+        if 0 <= index < len(function.parameters)
+    }
+    relevant = set(boundary_names)
+
+    if need.return_value:
+        relevant.update(_expression_closure(facts["returns"], relations))
+
+    group_closures = [
+        _expression_closure(group, relations)
+        for group in facts["memory_groups"]
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for closure in group_closures:
+            if closure & relevant and not closure <= relevant:
+                relevant.update(closure)
+                changed = True
     return relevant
 
 
@@ -201,42 +288,73 @@ def _result_flows_to_return(function: FunctionSource, result: str | None) -> boo
     name = normalize_expression(result)
     if not re.fullmatch(r"[A-Za-z_]\w*", name):
         return False
-    return re.search(rf"\breturn\s+[^;]*\b{re.escape(name)}\b", function.text) is not None
+    return re.search(
+        rf"\breturn\s+[^;]*\b{re.escape(name)}\b", function.text
+    ) is not None
 
 
-def _call_relevance(
+def _call_need(
     function: FunctionSource,
     source_call,
     callee: RepositoryMethod,
-    cache: dict[int, dict[str, object]],
-) -> str | None:
+    relevant: set[str],
+    parameter_scope: set[str],
+) -> tuple[str, BoundaryNeed] | None:
     if source_call is None:
-        # A Joern-resolved edge is more trustworthy than guessed source coordinates.
-        # This case occurs for preprocessed CPGs whose CALL line numbers refer to .i
-        # coordinates. Keep the callee conservatively instead of silently losing it.
-        return "Joern-resolved callee retained because source call coordinates are ambiguous"
+        parameter_indices = tuple(
+            index
+            for index, type_text in enumerate(callee.parameter_types)
+            if _type_may_be_pointer(type_text)
+        )
+        if not parameter_indices and callee.return_type in {"void", "<empty>"}:
+            return None
+        return (
+            "Joern-resolved callee retained because source call coordinates are ambiguous",
+            BoundaryNeed(
+                parameter_indices=parameter_indices,
+                return_value=callee.return_type not in {"void", "<empty>"},
+            ),
+        )
+
+    result_name = (
+        normalize_expression(source_call.result)
+        if source_call.result
+        else ""
+    )
+    return_needed = bool(
+        source_call.returned
+        or _result_flows_to_return(function, source_call.result)
+        or (result_name and result_name in relevant)
+    )
+
+    relevant_arguments: set[int] = set()
+    pointer_fallback: set[int] = set()
+    for index, argument in enumerate(
+        source_call.arguments[: len(callee.parameter_types)]
+    ):
+        identifiers = _identifiers(argument)
+        if identifiers & relevant:
+            relevant_arguments.add(index)
+        if (
+            _type_may_be_pointer(callee.parameter_types[index])
+            and identifiers & parameter_scope
+        ):
+            pointer_fallback.add(index)
+
+    parameter_indices = tuple(sorted(relevant_arguments | pointer_fallback))
+    if not parameter_indices and not return_needed:
+        return None
+
     if source_call.returned or _result_flows_to_return(function, source_call.result):
-        return "callee result contributes to caller return"
+        reason = "callee result contributes to caller return"
+    elif result_name and result_name in relevant:
+        reason = "callee result reaches a memory-relevant value"
+    elif relevant_arguments:
+        reason = "callee argument depends on a memory-relevant value"
+    else:
+        reason = "caller pointer/value flows into summary-capable callee"
 
-    relevant = _dependency_closure(function, cache)
-    if source_call.result and normalize_expression(source_call.result) in relevant:
-        return "callee result reaches a memory-relevant value"
-
-    for argument in source_call.arguments:
-        if _identifiers(argument) & relevant:
-            return "callee argument depends on a memory-relevant value"
-
-    pointer_positions = [
-        index for index, type_text in enumerate(callee.parameter_types)
-        if _type_may_be_pointer(type_text)
-    ]
-    for index in pointer_positions:
-        if index >= len(source_call.arguments):
-            continue
-        argument = source_call.arguments[index]
-        if _identifiers(argument) & (set(function.parameters) | relevant):
-            return "caller pointer/value flows into summary-capable callee"
-    return None
+    return reason, BoundaryNeed(parameter_indices, return_needed)
 
 
 def _candidate_key(source: FunctionSource) -> tuple[str, str, int, str]:
@@ -268,7 +386,8 @@ def _add_candidate(
         lines.add(call_line)
         variant_group = (
             f"{source.path}:{source.name}:"
-            f"{source.preprocessor_group[0]}-{source.preprocessor_group[1]}"
+            f"{source.preprocessor_group[0]}-"
+            f"{source.preprocessor_group[1]}"
             if variant_count > 1 and source.preprocessor_group is not None
             else None
         )
@@ -291,37 +410,53 @@ def discover_relevant_candidates(
     entry_method: RepositoryMethod,
     entry: FunctionSource,
 ) -> CandidateDiscovery:
-    """Follow only call edges justified by a memory-relevance backward slice."""
+    """Propagate only target-derived boundary relevance through resolved calls."""
     parse_cache: dict[tuple[str, str], list[FunctionSource]] = {}
     fact_cache: dict[int, dict[str, object]] = {}
     discovered: dict[tuple[str, str, int, str], Candidate] = {}
     selections: dict[tuple[str, str, int, str], CandidateSelection] = {}
-    queue: list[tuple[RepositoryMethod, FunctionSource, str, int]] = []
-    expanded: set[tuple[str, int]] = set()
+    queue: list[
+        tuple[RepositoryMethod, FunctionSource, str, int, BoundaryNeed]
+    ] = []
+    expanded_needs: dict[tuple[str, int], BoundaryNeed] = {}
     unresolved_relevant = 0
 
     entry_language = source_language(entry_method.path, entry.language)
+    entry_relevant = _dependency_closure(entry, fact_cache)
+    entry_parameter_scope = set(entry.parameters)
+
     for call in entry_method.calls:
         if call.name.startswith("<operator>.") or call.name in STANDARD_LEAF_CALLS:
             continue
         callees = index.callee_methods(call)
+        source_call = _source_call(entry, call.line, call.name, fact_cache)
         if not callees:
-            source_call = _source_call(entry, call.line, call.name, fact_cache)
             if source_call and any(
-                _identifiers(arg) & _dependency_closure(entry, fact_cache)
+                _identifiers(arg) & entry_relevant
                 for arg in source_call.arguments
             ):
                 unresolved_relevant += 1
             continue
         for callee in callees:
-            if callee.full_name == entry_method.full_name or not _method_can_produce_summary(callee):
+            if (
+                callee.full_name == entry_method.full_name
+                or not _method_can_produce_summary(callee)
+            ):
                 continue
-            source_call = _source_call(entry, call.line, call.name, fact_cache)
-            reason = _call_relevance(entry, source_call, callee, fact_cache)
-            if reason is None:
+            decision = _call_need(
+                entry,
+                source_call,
+                callee,
+                entry_relevant,
+                entry_parameter_scope,
+            )
+            if decision is None:
                 continue
+            reason, need = decision
             callee_language = source_language(callee.path, entry_language)
-            sources = _sources_for_method_cached(index, callee, callee_language, parse_cache)
+            sources = _sources_for_method_cached(
+                index, callee, callee_language, parse_cache
+            )
             _add_candidate(
                 discovered,
                 selections,
@@ -334,35 +469,59 @@ def discover_relevant_candidates(
                 reason=reason,
             )
             for source in sources:
-                queue.append((callee, source, callee_language, 1))
+                queue.append((callee, source, callee_language, 1, need))
 
     while queue:
-        caller, caller_source, caller_language, depth = queue.pop(0)
+        caller, caller_source, caller_language, depth, incoming_need = queue.pop(0)
         expansion_key = (caller.full_name, caller_source.start_line)
-        if expansion_key in expanded:
+        merged_need = _merge_need(expanded_needs.get(expansion_key), incoming_need)
+        if expanded_needs.get(expansion_key) == merged_need:
             continue
-        expanded.add(expansion_key)
+        expanded_needs[expansion_key] = merged_need
+
+        caller_relevant = _scoped_dependency_closure(
+            caller_source, merged_need, fact_cache
+        )
+        parameter_scope = {
+            caller_source.parameters[index]
+            for index in merged_need.parameter_indices
+            if 0 <= index < len(caller_source.parameters)
+        }
 
         for call in caller.calls:
             if call.name.startswith("<operator>.") or call.name in STANDARD_LEAF_CALLS:
                 continue
             callees = index.callee_methods(call)
-            source_call = _source_call(caller_source, call.line, call.name, fact_cache)
+            source_call = _source_call(
+                caller_source, call.line, call.name, fact_cache
+            )
             if not callees:
                 if source_call and any(
-                    _identifiers(arg) & _dependency_closure(caller_source, fact_cache)
+                    _identifiers(arg) & caller_relevant
                     for arg in source_call.arguments
                 ):
                     unresolved_relevant += 1
                 continue
             for callee in callees:
-                if callee.full_name == caller.full_name or not _method_can_produce_summary(callee):
+                if (
+                    callee.full_name == caller.full_name
+                    or not _method_can_produce_summary(callee)
+                ):
                     continue
-                reason = _call_relevance(caller_source, source_call, callee, fact_cache)
-                if reason is None:
+                decision = _call_need(
+                    caller_source,
+                    source_call,
+                    callee,
+                    caller_relevant,
+                    parameter_scope,
+                )
+                if decision is None:
                     continue
+                reason, need = decision
                 callee_language = source_language(callee.path, caller_language)
-                sources = _sources_for_method_cached(index, callee, callee_language, parse_cache)
+                sources = _sources_for_method_cached(
+                    index, callee, callee_language, parse_cache
+                )
                 _add_candidate(
                     discovered,
                     selections,
@@ -375,16 +534,23 @@ def discover_relevant_candidates(
                     reason=reason,
                 )
                 for source in sources:
-                    queue.append((callee, source, callee_language, depth + 1))
+                    queue.append(
+                        (callee, source, callee_language, depth + 1, need)
+                    )
 
-    candidates = tuple(sorted(discovered.values(), key=lambda item: _candidate_key(item.function)))
-    direct = sum(selections[_candidate_key(candidate.function)].depth == 1 for candidate in candidates)
+    candidates = tuple(
+        sorted(discovered.values(), key=lambda item: _candidate_key(item.function))
+    )
+    direct = sum(
+        selections[_candidate_key(candidate.function)].depth == 1
+        for candidate in candidates
+    )
     return CandidateDiscovery(
         candidates=candidates,
         selections=selections,
         direct_candidates=direct,
         recursive_candidates=len(candidates) - direct,
-        expanded_methods=len(expanded),
+        expanded_methods=len(expanded_needs),
         unresolved_relevant_calls=unresolved_relevant,
     )
 
@@ -436,23 +602,41 @@ def write_candidate_manifest(index: JoernRepositoryIndex, discovery: CandidateDi
     return target
 
 
-def read_candidate_manifest(index: JoernRepositoryIndex) -> tuple[dict[str, object], list[dict[str, object]]]:
+def read_candidate_manifest(
+    index: JoernRepositoryIndex,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
     path = candidate_manifest_path(index)
     if not path.is_file():
-        raise RuntimeError(f"{index.sample_key}: candidate manifest is missing; run preflight first")
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        raise RuntimeError(
+            f"{index.sample_key}: candidate manifest is missing; run preflight first"
+        )
+    records = [
+        json.loads(line)
+        for line in path.read_text().splitlines()
+        if line.strip()
+    ]
     if not records or records[0].get("record_type") != "manifest":
-        raise RuntimeError(f"{index.sample_key}: invalid candidate manifest: {path}")
+        raise RuntimeError(
+            f"{index.sample_key}: invalid candidate manifest: {path}"
+        )
     header = records[0]
     if (
         header.get("manifest_version") != CANDIDATE_MANIFEST_VERSION
         or header.get("discovery_policy_version") != DISCOVERY_POLICY_VERSION
         or header.get("index_fingerprint") != index.fingerprint
     ):
-        raise RuntimeError(f"{index.sample_key}: candidate manifest is stale; rerun preflight --refresh")
-    candidates = [record for record in records[1:] if record.get("record_type") == "candidate"]
+        raise RuntimeError(
+            f"{index.sample_key}: candidate manifest is stale; rerun preflight --refresh"
+        )
+    candidates = [
+        record
+        for record in records[1:]
+        if record.get("record_type") == "candidate"
+    ]
     if len(candidates) != int(header.get("candidate_count", -1)):
-        raise RuntimeError(f"{index.sample_key}: incomplete candidate manifest: {path}")
+        raise RuntimeError(
+            f"{index.sample_key}: incomplete candidate manifest: {path}"
+        )
     return header, candidates
 
 
@@ -466,7 +650,8 @@ def load_manifest_candidate(
     method = index.methods().get(method_full_name)
     if method is None:
         raise RuntimeError(
-            f"{index.sample_key}: candidate method disappeared from Joern index: {method_full_name}"
+            f"{index.sample_key}: candidate method disappeared from Joern index: "
+            f"{method_full_name}"
         )
     language = str(record.get("language") or source_language(method.path))
     sources = _sources_for_method_cached(index, method, language, parse_cache)
@@ -475,18 +660,26 @@ def load_manifest_candidate(
     if len(matches) != 1:
         raise RuntimeError(
             f"{index.sample_key}: candidate source no longer resolves uniquely: "
-            f"{record['source_path']}:{record['function']}@{source_line}; rerun preflight --refresh"
+            f"{record['source_path']}:{record['function']}@{source_line}; "
+            "rerun preflight --refresh"
         )
     candidate = Candidate(
         sample_key=index.sample_key,
         function=matches[0],
         call_lines=tuple(int(line) for line in record.get("call_lines", [])),
         method_full_name=method_full_name,
-        variant_group=(str(record["variant_group"]) if record.get("variant_group") is not None else None),
+        variant_group=(
+            str(record["variant_group"])
+            if record.get("variant_group") is not None
+            else None
+        ),
         variant_count=int(record.get("variant_count", 1)),
     )
-    if candidate_source_fingerprint(candidate) != str(record.get("source_fingerprint", "")):
+    if candidate_source_fingerprint(candidate) != str(
+        record.get("source_fingerprint", "")
+    ):
         raise RuntimeError(
-            f"{index.sample_key}: candidate source changed after preflight; rerun preflight --refresh"
+            f"{index.sample_key}: candidate source changed after preflight; "
+            "rerun preflight --refresh"
         )
     return candidate
