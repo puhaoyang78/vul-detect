@@ -138,17 +138,18 @@ class SemanticValidationTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("timed out", result.reason)
 
-    def test_infrastructure_error_remains_fatal_in_core_validator(self):
+    def test_candidate_local_joern_error_rejects_summary(self):
         class Broken:
             def facts(self, _candidate):
-                raise JoernError("launcher failed")
+                raise JoernError("TU parse failed")
 
-        with self.assertRaisesRegex(JoernError, "launcher failed"):
-            validate_summary(
-                self.candidate,
-                {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
-                joern=Broken(),
-            )
+        result = validate_summary(
+            self.candidate,
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            joern=Broken(),
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("candidate-local", result.reason)
 
     def test_exact_value_return_is_verified(self):
         function = parse_functions(
