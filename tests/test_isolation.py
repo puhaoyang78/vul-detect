@@ -1,3 +1,4 @@
+import os
 import unittest
 from pathlib import Path
 
@@ -47,10 +48,13 @@ class IsolationTests(unittest.TestCase):
             except (FileNotFoundError, ValueError) as error:
                 self.fail(f"{sample['sample_key']}: {error}")
 
+    def _expected_java_home(self):
+        return os.environ.get("JAVA_HOME", "/home/phy/jdk21")
+
     def test_preflight_defaults_to_local_joern_and_jdk(self):
         args = build_parser().parse_args(["preflight"])
         self.assertEqual("/home/phy/joern", args.joern_dir)
-        self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertEqual(self._expected_java_home(), args.java_home)
         self.assertEqual("data/joern_cpg", args.cpg_cache_dir)
 
     def test_llm_normalization_defaults_to_local_qwen(self):
@@ -59,13 +63,13 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue(args.llama_server.endswith("/llama-server"))
         self.assertTrue(args.local_model.endswith(".gguf"))
         self.assertEqual("/home/phy/joern", args.joern_dir)
-        self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertEqual(self._expected_java_home(), args.java_home)
         self.assertEqual("data/joern_cpg", args.cpg_cache_dir)
 
     def test_run_defaults_to_local_joern_and_jdk(self):
         args = build_parser().parse_args(["run"])
         self.assertEqual("/home/phy/joern", args.joern_dir)
-        self.assertEqual("/home/phy/jdk21", args.java_home)
+        self.assertEqual(self._expected_java_home(), args.java_home)
         self.assertEqual("data/joern_cpg", args.cpg_cache_dir)
         self.assertFalse(args.refresh)
         self.assertEqual("/home/PublicData/PHY-data/resource/codebert-base", args.linevul_codebert_path)
