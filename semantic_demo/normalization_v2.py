@@ -7,7 +7,7 @@ import re
 import urllib.request
 from pathlib import Path
 
-from . import semantics as legacy
+from . import semantics
 from .source import FunctionSource, normalize_expression
 from .standard_semantics import STANDARD_LEAF_CALLS, summaries_for_function
 
@@ -157,7 +157,7 @@ def _request_json(
         context = urllib.request.urlopen(request, timeout=180)
     with context as response:
         result = json.load(response)
-    return legacy._extract_json_object(legacy._response_content(result))
+    return semantics._extract_json_object(semantics._response_content(result))
 
 
 def llm_normalize(
@@ -182,11 +182,7 @@ def llm_normalize(
             source_context = (
                 candidate.function.text
                 if len(candidate.function.text) <= MAX_FULL_SOURCE_CHARS
-                else _slice_source(
-                    candidate.function,
-                    candidate.function.end_line,
-                    expressions,
-                )
+                else _slice_source(candidate.function, candidate.function.end_line, expressions)
             )
             allowed = "ALLOC or VALUE"
             instruction = "Report only a caller-visible return relation."
@@ -236,8 +232,8 @@ Statically generated relevance slice:
         for raw in endpoint_summaries:
             if not isinstance(raw, dict):
                 continue
-            clean = legacy.canonicalize_summary(candidate.function, raw)
-            error = legacy._schema_error(clean, len(candidate.function.parameters))
+            clean = semantics.canonicalize_summary(candidate.function, raw)
+            error = semantics._schema_error(clean, len(candidate.function.parameters))
             if error is not None:
                 continue
             if endpoint_kind == "return" and clean.get("kind") not in {"ALLOC", "VALUE"}:
@@ -245,11 +241,3 @@ Statically generated relevance slice:
             if clean not in summaries:
                 summaries.append(clean)
     return summaries
-
-
-from . import cli as _cli  # noqa: E402
-from .joern_v2 import JoernValidatorV2  # noqa: E402
-from .validation_v2 import validate_summary as _validate_summary_v2  # noqa: E402
-
-_cli.JoernValidator = JoernValidatorV2
-_cli.validate_summary = _validate_summary_v2
