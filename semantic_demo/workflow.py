@@ -44,7 +44,14 @@ def _write(path: str | Path, records) -> None:
     cli.write_jsonl(path, ordered)
 
 
-def _upsert_by_sample(old_records, new_records, selected_keys: set[str]):
+def _upsert_by_sample(
+    old_records,
+    new_records,
+    selected_keys: set[str],
+    *,
+    replace_empty_keys: set[str] | None = None,
+):
+    replace_empty_keys = replace_empty_keys or set()
     current_by_sample: dict[str, list[dict[str, object]]] = {}
     for record in new_records:
         current_by_sample.setdefault(str(record.get("sample_key", "")), []).append(record)
@@ -59,7 +66,10 @@ def _upsert_by_sample(old_records, new_records, selected_keys: set[str]):
         if key in selected_keys:
             old_selected.setdefault(key, []).append(record)
     for key in selected_keys:
-        result.extend(current_by_sample.get(key, old_selected.get(key, [])))
+        if key in current_by_sample:
+            result.extend(current_by_sample[key])
+        elif key not in replace_empty_keys:
+            result.extend(old_selected.get(key, []))
     return result
 
 
@@ -118,7 +128,6 @@ def preflight(args: argparse.Namespace) -> None:
     samples = _read(args.samples)
     cli.validate_detection_manifest(samples)
     checkpoint_path = _preflight_checkpoint_path(args.cpg_cache_dir)
-    # Refresh only invalidates the selected samples. Other sample checkpoints survive.
     checkpoints = _checkpoint_cache(args.cpg_cache_dir)
     failures: list[str] = []
 
@@ -258,13 +267,16 @@ def normalize(args: argparse.Namespace) -> None:
     existing: dict[tuple[str, str, str, int], dict[str, object]] = {}
     sample_work = []
     pending_total = 0
+    llm_pending_total = 0
     candidate_total = 0
+    reused_total = 0
 
     for sample in samples:
         key = str(sample["sample_key"])
         index, (_header, manifest_records) = _load_sample_manifest(sample, args)
         parse_cache = {}
         pending = []
+        reused_for_sample = 0
         for manifest_record in manifest_records:
             logical_key = (
                 key,
@@ -279,15 +291,19 @@ def normalize(args: argparse.Namespace) -> None:
                 and _record_reusable(cached, manifest_record, args, expected_model)
             ):
                 existing[logical_key] = cached
+                reused_for_sample += 1
                 continue
             candidate = load_manifest_candidate(index, manifest_record, parse_cache)
             pending.append((candidate, manifest_record))
+            if manifest_record.get("skip_reason") is None:
+                llm_pending_total += 1
         candidate_total += len(manifest_records)
         pending_total += len(pending)
+        reused_total += reused_for_sample
         sample_work.append((sample, pending))
         print(
             f"normalize_sample_ready={key} candidates={len(manifest_records)} "
-            f"reused={len(manifest_records)-len(pending)} pending={len(pending)}",
+            f"reused={reused_for_sample} pending={len(pending)}",
             flush=True,
         )
 
@@ -297,22 +313,27 @@ def normalize(args: argparse.Namespace) -> None:
     if pending_total == 0:
         checkpoint()
         print(
-            f"normalize_complete=candidates:{candidate_total} reused:{candidate_total} "
-            f"generated:0 output={args.output}",
+            f"normalize_complete=candidates:{candidate_total} reused:{reused_total} "
+            f"generated:0 skipped:0 output={args.output}",
             flush=True,
         )
         return
 
-    llm_context = (
-        cli.local_llm_server(args.llama_server, args.local_model)
-        if args.llm_backend == "local"
-        else contextlib.nullcontext({
-            "max_tokens": 512,
-            "model": expected_model,
-            "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-        })
-    )
+    if llm_pending_total:
+        llm_context = (
+            cli.local_llm_server(args.llama_server, args.local_model)
+            if args.llm_backend == "local"
+            else contextlib.nullcontext({
+                "max_tokens": 512,
+                "model": expected_model,
+                "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            })
+        )
+    else:
+        llm_context = contextlib.nullcontext({"model": expected_model})
+
     generated = 0
+    skipped = 0
     with llm_context as llm_options:
         for sample, pending in sample_work:
             key = str(sample["sample_key"])
@@ -340,6 +361,7 @@ def normalize(args: argparse.Namespace) -> None:
                 else:
                     summaries = []
                     normalizer = "static-skip"
+                    skipped += 1
                 record = {
                     "schema_version": NORMALIZATION_SCHEMA_VERSION,
                     "normalization_implementation_version": NORMALIZATION_IMPLEMENTATION_VERSION,
@@ -368,8 +390,8 @@ def normalize(args: argparse.Namespace) -> None:
 
     checkpoint()
     print(
-        f"normalize_complete=candidates:{candidate_total} "
-        f"reused:{candidate_total-generated} generated:{generated} output={args.output}",
+        f"normalize_complete=candidates:{candidate_total} reused:{reused_total} "
+        f"generated:{generated} skipped:{skipped} output={args.output}",
         flush=True,
     )
 
@@ -462,13 +484,21 @@ def run(args: argparse.Namespace) -> None:
             cli.discover_candidates = original_discover
             new_detections = _read(detections_path) if detections_path.is_file() else []
             new_semantics = _read(semantics_path) if semantics_path.is_file() else []
+            completed_keys = {
+                str(record.get("sample_key", "")) for record in new_detections
+            }
             _write(
                 args.detections,
                 _upsert_by_sample(old_detections, new_detections, selected_keys),
             )
             _write(
                 args.semantics,
-                _upsert_by_sample(old_semantics, new_semantics, selected_keys),
+                _upsert_by_sample(
+                    old_semantics,
+                    new_semantics,
+                    selected_keys,
+                    replace_empty_keys=completed_keys,
+                ),
             )
         if error is not None:
             raise error
