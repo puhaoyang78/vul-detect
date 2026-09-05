@@ -20,9 +20,8 @@ from .candidate_graph import load_manifest_candidate, read_candidate_manifest
 from .joern import JoernRepositoryIndex
 from .joern_v2 import JoernValidatorV2
 from .linevul_baseline import LineVulBaseline
-from .semantics import NORMALIZATION_RESPONSE_SCHEMA, Validation
+from .semantics import NORMALIZATION_RESPONSE_SCHEMA, Validation, validate_summary
 from .source import GitRepository, source_language
-from .validation_v2 import validate_summary
 
 
 FORBIDDEN_DETECTION_FIELDS = {
@@ -34,7 +33,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 13
+ANALYSIS_CHECKPOINT_VERSION = 14
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -237,7 +236,7 @@ def _implementation_digest() -> str:
         "runtime.py",
         "candidate_graph.py",
         "normalization_v2.py",
-        "validation_v2.py",
+        "semantics.py",
         "analyzer.py",
         "z3_reasoner_v2.py",
         "joern_v2.py",
