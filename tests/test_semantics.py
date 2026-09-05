@@ -74,6 +74,13 @@ class SemanticValidationTests(unittest.TestCase):
         self.candidate = Candidate("sample", self.function, (1,))
         self.validator = StaticFactsValidator(copy_facts(self.function))
 
+    def _custom_candidate(self):
+        function = parse_functions(
+            "custom.c",
+            "void outer(char *dst, unsigned long len) { custom_copy(dst, len); }",
+        )[0]
+        return Candidate("sample", function, (1,))
+
     def test_write_buffer_and_length_are_verified(self):
         result = validate_summary(
             self.candidate,
@@ -118,8 +125,8 @@ class SemanticValidationTests(unittest.TestCase):
                 raise JoernMethodNotFound("method_not_found")
 
         result = validate_summary(
-            self.candidate,
-            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            self._custom_candidate(),
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg1"},
             joern=Missing(),
         )
         self.assertFalse(result.passed)
@@ -131,8 +138,8 @@ class SemanticValidationTests(unittest.TestCase):
                 raise JoernTimeout("timed out")
 
         result = validate_summary(
-            self.candidate,
-            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            self._custom_candidate(),
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg1"},
             joern=Timeout(),
         )
         self.assertFalse(result.passed)
@@ -144,8 +151,8 @@ class SemanticValidationTests(unittest.TestCase):
                 raise JoernError("TU parse failed")
 
         result = validate_summary(
-            self.candidate,
-            {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
+            self._custom_candidate(),
+            {"kind": "WRITE", "buffer": "arg0", "length": "arg1"},
             joern=Broken(),
         )
         self.assertFalse(result.passed)
