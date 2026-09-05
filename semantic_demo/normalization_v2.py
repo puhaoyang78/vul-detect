@@ -1,16 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import urllib.request
+from pathlib import Path
 
 from . import semantics as legacy
 from .source import FunctionSource, normalize_expression
 from .standard_semantics import STANDARD_LEAF_CALLS, summaries_for_function
 
 
-NORMALIZATION_IMPLEMENTATION_VERSION = 2
+def _implementation_digest() -> str:
+    digest = hashlib.sha256()
+    for name in ("normalization_v2.py", "standard_semantics.py"):
+        path = Path(__file__).with_name(name)
+        digest.update(name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:20]
+
+
+NORMALIZATION_IMPLEMENTATION_VERSION = _implementation_digest()
 MAX_FULL_SOURCE_CHARS = 18000
 MAX_SLICE_LINES = 140
 
@@ -236,9 +247,6 @@ Statically generated relevance slice:
     return summaries
 
 
-# The staged workflow imports this module before validation. Install the v2
-# candidate-local validator and preprocessing-aware Joern validator into the
-# legacy detect loop that is reused as an execution engine.
 from . import cli as _cli  # noqa: E402
 from .joern_v2 import JoernValidatorV2  # noqa: E402
 from .validation_v2 import validate_summary as _validate_summary_v2  # noqa: E402
