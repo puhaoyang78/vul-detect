@@ -1,24 +1,49 @@
 from __future__ import annotations
 
-"""Public command entrypoint.
+"""Public command entrypoint for the staged vulnerability workflow."""
 
-The original implementation is retained in semantic_demo.legacy_cli as an internal
-execution engine. User-facing preflight/normalize/run commands are routed through
-the staged workflow so candidate discovery, checkpoints, and subset updates have a
-single set of semantics.
-"""
+import hashlib
+from pathlib import Path
 
 from . import legacy_cli as _legacy
 
 
-# Re-export internal helpers used by workflow/tests, including private helpers.
 for _name in dir(_legacy):
     if not _name.startswith("__"):
         globals()[_name] = getattr(_legacy, _name)
 
 
+_original_analysis_fingerprint = _legacy._analysis_fingerprint
+
+
+def _analysis_implementation_digest() -> str:
+    names = (
+        "analyzer.py",
+        "z3_reasoner_v2.py",
+        "validation_v2.py",
+        "joern_v2.py",
+        "standard_semantics.py",
+    )
+    digest = hashlib.sha256()
+    root = Path(__file__).parent
+    for name in names:
+        path = root / name
+        digest.update(name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _analysis_fingerprint(*args, **kwargs):
+    base = _original_analysis_fingerprint(*args, **kwargs)
+    return hashlib.sha256(
+        (base + "\0" + _analysis_implementation_digest()).encode()
+    ).hexdigest()
+
+
+_legacy._analysis_fingerprint = _analysis_fingerprint
+
+
 def _sync_runtime_hooks() -> None:
-    """Propagate workflow monkeypatches to the retained detect implementation."""
     for name in ("discover_candidates", "validate_summary", "JoernValidator", "analyze"):
         if name in globals():
             setattr(_legacy, name, globals()[name])
