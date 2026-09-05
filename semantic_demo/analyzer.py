@@ -4,8 +4,9 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from .semantics import ALLOCATORS, READS, UNBOUNDED_WRITES, WRITES, Validation
+from .semantics import Validation
 from .source import FunctionSource
+from .standard_semantics import summaries_for_call
 from .z3_reasoner import reason_memory_safety
 
 
@@ -42,88 +43,35 @@ def _substitute(expression: str, arguments: tuple[str, ...]) -> str:
     return result
 
 
-def _c_string_literal_length(expression: str) -> int | None:
-    text = expression.strip()
-    if not (len(text) >= 2 and text[0] == '"' and text[-1] == '"'):
-        return None
-    try:
-        import ast
-        value = ast.literal_eval(text)
-    except Exception:
-        return None
-    if not isinstance(value, str):
-        return None
-    return len(value.encode()) + 1
-
-
-def _string_copy_extent(expression: str) -> str:
-    literal = _c_string_literal_length(expression)
-    if literal is not None:
-        return str(literal)
-    return f"strlen({expression}) + 1"
-
-
 def _standard_operations(entry: FunctionSource) -> list[Operation]:
     operations: list[Operation] = []
     for call in entry.calls():
-        if call.name in ALLOCATORS:
-            indices = ALLOCATORS[call.name]
-            if call.name == "calloc" and len(call.arguments) >= 2:
-                size = f"({call.arguments[0]}) * ({call.arguments[1]})"
-            elif indices and len(call.arguments) > indices[0]:
-                size = call.arguments[indices[0]]
-            else:
-                size = ""
-            if size:
-                operations.append(Operation("ALLOC", call.name, call.result or "return", size, call.line, False))
-
-        if call.name in WRITES:
-            buffer_index, length_index = WRITES[call.name]
-            if len(call.arguments) > max(buffer_index, length_index):
-                length = call.arguments[length_index]
-                if call.name == "fread" and len(call.arguments) >= 3:
-                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                operations.append(Operation("WRITE", call.name, call.arguments[buffer_index], length, call.line, False))
-
-        if call.name in READS:
-            buffer_index, length_index = READS[call.name]
-            if len(call.arguments) > max(buffer_index, length_index):
-                length = call.arguments[length_index]
-                if call.name == "fwrite" and len(call.arguments) >= 3:
-                    length = f"({call.arguments[1]}) * ({call.arguments[2]})"
-                operations.append(Operation("READ", call.name, call.arguments[buffer_index], length, call.line, False))
-                if call.name == "memcmp" and len(call.arguments) >= 3:
-                    operations.append(
-                        Operation("READ", call.name, call.arguments[1], call.arguments[2], call.line, False)
+        if call.indirect:
+            continue
+        for summary in summaries_for_call(entry, call):
+            kind = summary["kind"]
+            if kind == "ALLOC":
+                operations.append(
+                    Operation(
+                        "ALLOC",
+                        call.name,
+                        call.result or "return",
+                        summary["size"],
+                        call.line,
+                        False,
                     )
-
-        if call.name == "strcpy" and len(call.arguments) >= 2:
-            extent = _string_copy_extent(call.arguments[1])
-            operations.append(
-                Operation("WRITE", call.name, call.arguments[0], extent, call.line, False)
-            )
-            operations.append(
-                Operation("READ", call.name, call.arguments[1], extent, call.line, False)
-            )
-        elif call.name == "strcat" and len(call.arguments) >= 2:
-            extent = _string_copy_extent(call.arguments[1])
-            operations.append(
-                Operation(
-                    "WRITE",
-                    call.name,
-                    f"{call.arguments[0]} + strlen({call.arguments[0]})",
-                    extent,
-                    call.line,
-                    False,
                 )
-            )
-            operations.append(
-                Operation("READ", call.name, call.arguments[1], extent, call.line, False)
-            )
-        elif call.name in {"sprintf", "vsprintf"} and call.arguments:
-            operations.append(
-                Operation("WRITE", call.name, call.arguments[0], "UNBOUNDED", call.line, False)
-            )
+            elif kind in {"READ", "WRITE"}:
+                operations.append(
+                    Operation(
+                        kind,
+                        call.name,
+                        summary["buffer"],
+                        summary["length"],
+                        call.line,
+                        False,
+                    )
+                )
     return operations
 
 
@@ -154,10 +102,7 @@ def _custom_operations(
     for validation in validations:
         if not validation.passed:
             continue
-        group_id = (
-            validation.variant_group
-            or f"single:{validation.source_line}"
-        )
+        group_id = validation.variant_group or f"single:{validation.source_line}"
         key = (validation.source_path, validation.function, group_id)
         expected_counts[key] = validation.variant_count
         by_line = passed.setdefault(key, {})
@@ -166,8 +111,9 @@ def _custom_operations(
             bucket.append(validation.summary)
 
     groups_by_name: dict[str, list[list[dict[str, str]]]] = {}
-    for (path, name, group_id), by_line in passed.items():
-        if len(by_line) != expected_counts[(path, name, group_id)]:
+    for key, by_line in passed.items():
+        path, name, group_id = key
+        if len(by_line) != expected_counts[key]:
             continue
         members = list(by_line.values())
         common = [
