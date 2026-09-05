@@ -4,7 +4,6 @@ import json
 import os
 import re
 import urllib.request
-from dataclasses import replace
 
 from . import semantics as legacy
 from .source import FunctionSource, normalize_expression
@@ -79,7 +78,6 @@ def _slice_source(function: FunctionSource, endpoint_line: int, expressions: tup
 
     ordered = sorted(selected)
     if len(ordered) > MAX_SLICE_LINES:
-        # Keep signature, the latest dependency lines, and endpoint neighborhood.
         head = ordered[: signature_end + 1]
         tail = ordered[-(MAX_SLICE_LINES - len(head)) :]
         ordered = sorted(set(head + tail))
@@ -170,10 +168,14 @@ def llm_normalize(
     summaries = summaries_for_function(candidate.function)
     for endpoint_kind, endpoint_text, endpoint_line, expressions in _endpoints(candidate.function):
         if endpoint_kind == "return":
-            source_context = candidate.function.text if len(candidate.function.text) <= MAX_FULL_SOURCE_CHARS else _slice_source(
-                candidate.function,
-                candidate.function.end_line,
-                expressions,
+            source_context = (
+                candidate.function.text
+                if len(candidate.function.text) <= MAX_FULL_SOURCE_CHARS
+                else _slice_source(
+                    candidate.function,
+                    candidate.function.end_line,
+                    expressions,
+                )
             )
             allowed = "ALLOC or VALUE"
             instruction = "Report only a caller-visible return relation."
@@ -232,3 +234,14 @@ Statically generated relevance slice:
             if clean not in summaries:
                 summaries.append(clean)
     return summaries
+
+
+# The staged workflow imports this module before validation. Install the v2
+# candidate-local validator and preprocessing-aware Joern validator into the
+# legacy detect loop that is reused as an execution engine.
+from . import cli as _cli  # noqa: E402
+from .joern_v2 import JoernValidatorV2  # noqa: E402
+from .validation_v2 import validate_summary as _validate_summary_v2  # noqa: E402
+
+_cli.JoernValidator = JoernValidatorV2
+_cli.validate_summary = _validate_summary_v2
