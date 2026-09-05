@@ -4,7 +4,7 @@ import re
 
 from z3 import Solver, unsat
 
-from . import z3_reasoner as legacy
+from . import z3_reasoner as core
 from .source import normalize_expression
 
 
@@ -48,14 +48,14 @@ def _arithmetic_provably_bounded(entry, line: int, expression: str) -> bool:
     if range_info is None:
         return False
     ranges, (minimum, maximum) = range_info
-    encoder = legacy.ExpressionEncoder()
+    encoder = core.ExpressionEncoder()
     solver = Solver()
     for name, (lower, upper) in ranges.items():
         symbol = encoder.encode(name)
         solver.add(symbol >= lower, symbol <= upper)
     added_path = False
     for condition in entry.continuation_constraints_before(line):
-        if legacy._has_unresolved_compile_time_symbol(condition):
+        if core._has_unresolved_compile_time_symbol(condition):
             continue
         try:
             solver.add(encoder.comparison(condition))
@@ -78,7 +78,7 @@ def _access_relevant_identifiers(operation, capacities) -> set[str]:
     buffer = normalize_expression(getattr(operation, "buffer", ""))
     extent = normalize_expression(getattr(operation, "extent", ""))
     relevant = _ids(buffer) | _ids(extent)
-    capacity = legacy._capacity_for_buffer(operation, buffer, capacities)
+    capacity = core._capacity_for_buffer(operation, buffer, capacities)
     if capacity is not None:
         capacity_text, offset_text = capacity
         relevant |= _ids(capacity_text) | _ids(offset_text)
@@ -106,12 +106,12 @@ def _opaque_dependency_error(operation, capacities, operations) -> str | None:
 
 def _check_access(entry, operation, capacities, signed, unsigned, operations):
     line = int(getattr(operation, "line", 0))
-    original = legacy._has_unmodeled_c_arithmetic
-    legacy._has_unmodeled_c_arithmetic = lambda expression: not _arithmetic_provably_bounded(
+    original = core._has_unmodeled_c_arithmetic
+    core._has_unmodeled_c_arithmetic = lambda expression: not _arithmetic_provably_bounded(
         entry, line, expression
     )
     try:
-        access = legacy._check_access(
+        access = core._check_access(
             entry,
             operation,
             capacities,
@@ -120,11 +120,11 @@ def _check_access(entry, operation, capacities, signed, unsigned, operations):
             operations,
         )
     finally:
-        legacy._has_unmodeled_c_arithmetic = original
+        core._has_unmodeled_c_arithmetic = original
 
     dependency_error = _opaque_dependency_error(operation, capacities, operations)
     if dependency_error is not None:
-        return legacy.AccessCheck(
+        return core.AccessCheck(
             access.access_kind,
             access.buffer,
             access.extent,
@@ -140,7 +140,7 @@ def _check_access(entry, operation, capacities, signed, unsigned, operations):
 
 def reason_memory_safety(entry, operations):
     operations = list(operations)
-    capacities = legacy._collect_capacity_relations(entry, operations)
+    capacities = core._collect_capacity_relations(entry, operations)
     signed, unsigned = entry.integer_domains()
 
     accesses = tuple(
@@ -153,7 +153,7 @@ def reason_memory_safety(entry, operations):
     violations = [item for item in accesses if item.status == "POTENTIAL_VIOLATION"]
     if violations:
         first = violations[0]
-        return legacy.ConstraintResult(
+        return core.ConstraintResult(
             "POTENTIAL_VIOLATION",
             (
                 f"{len(violations)} memory access(es) have feasible counterexamples; "
@@ -164,7 +164,7 @@ def reason_memory_safety(entry, operations):
 
     unknowns = [item for item in accesses if item.status == "UNKNOWN"]
     if unknowns:
-        return legacy.ConstraintResult(
+        return core.ConstraintResult(
             "UNKNOWN",
             (
                 f"{len(unknowns)} memory access(es) remain unresolved; "
@@ -179,7 +179,7 @@ def reason_memory_safety(entry, operations):
             if entry.parse_has_error
             else ""
         )
-        return legacy.ConstraintResult(
+        return core.ConstraintResult(
             "UNKNOWN",
             (
                 "all currently modeled memory accesses satisfy their generated bounds "
@@ -189,7 +189,7 @@ def reason_memory_safety(entry, operations):
             accesses,
         )
 
-    return legacy.ConstraintResult(
+    return core.ConstraintResult(
         "UNKNOWN",
         "no supported memory access was available for bounds analysis",
         tuple(),
