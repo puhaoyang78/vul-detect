@@ -7,7 +7,7 @@ from typing import Iterable
 from .semantics import ALLOCATORS, Validation
 from .source import FunctionSource
 from .standard_semantics import STANDARD_LEAF_CALLS, effects_for_call
-from .solver import reason_memory_safety
+from .z3_reasoner_v2 import reason_memory_safety
 
 
 @dataclass(frozen=True)
