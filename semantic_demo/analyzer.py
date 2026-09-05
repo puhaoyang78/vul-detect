@@ -6,7 +6,7 @@ from typing import Iterable
 
 from .semantics import ALLOCATORS, Validation
 from .source import FunctionSource
-from .standard_semantics import summaries_for_call
+from .standard_semantics import effects_for_call
 from .z3_reasoner_v2 import reason_memory_safety
 
 
@@ -66,21 +66,17 @@ def _standard_operations(entry: FunctionSource) -> list[Operation]:
         allocation = _direct_allocation_operation(call)
         if allocation is not None:
             operations.append(allocation)
-        for summary in summaries_for_call(entry, call):
-            kind = summary["kind"]
-            if kind == "ALLOC":
-                continue
-            if kind in {"READ", "WRITE"}:
-                operations.append(
-                    Operation(
-                        kind,
-                        call.name,
-                        summary["buffer"],
-                        summary["length"],
-                        call.line,
-                        False,
-                    )
+        for effect in effects_for_call(call):
+            operations.append(
+                Operation(
+                    effect.kind,
+                    call.name,
+                    effect.buffer,
+                    effect.extent,
+                    call.line,
+                    False,
                 )
+            )
     return operations
 
 
