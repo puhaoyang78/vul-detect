@@ -26,6 +26,7 @@ READS = {
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
 NORMALIZATION_SCHEMA_VERSION = 8
+_EXPRESSION_SCHEMA = {"type": "string", "minLength": 1, "maxLength": 160}
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -33,16 +34,48 @@ NORMALIZATION_RESPONSE_SCHEMA = {
             "type": "array",
             "maxItems": 4,
             "items": {
-                "type": "object",
-                "properties": {
-                    "kind": {"type": "string", "enum": ["ALLOC", "READ", "WRITE", "VALUE"]},
-                    "buffer": {"type": "string"},
-                    "size": {"type": "string"},
-                    "length": {"type": "string"},
-                    "target": {"type": "string"},
-                    "expression": {"type": "string"},
-                },
-                "additionalProperties": False,
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "ALLOC"},
+                            "buffer": _EXPRESSION_SCHEMA,
+                            "size": _EXPRESSION_SCHEMA,
+                        },
+                        "required": ["kind", "buffer", "size"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "READ"},
+                            "buffer": _EXPRESSION_SCHEMA,
+                            "length": _EXPRESSION_SCHEMA,
+                        },
+                        "required": ["kind", "buffer", "length"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "WRITE"},
+                            "buffer": _EXPRESSION_SCHEMA,
+                            "length": _EXPRESSION_SCHEMA,
+                        },
+                        "required": ["kind", "buffer", "length"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "VALUE"},
+                            "target": {"const": "return"},
+                            "expression": _EXPRESSION_SCHEMA,
+                        },
+                        "required": ["kind", "target", "expression"],
+                        "additionalProperties": False,
+                    },
+                ]
             },
         },
     },
@@ -135,6 +168,8 @@ def _schema_error(summary: dict[str, object], parameter_count: int) -> str | Non
     for key, value in summary.items():
         if not isinstance(value, str):
             return "all summary values must be strings"
+        if key != "kind" and len(value) > 160:
+            return "summary expression is too long"
         if key != "kind" and _placeholder_value(value):
             return "summary contains a prompt placeholder instead of a source expression"
         if any(index >= parameter_count for index in _arg_indices(value)):
