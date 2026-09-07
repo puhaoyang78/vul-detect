@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass
 from typing import Iterable
 
 from .semantics import Validation
-from .source import FunctionSource
+from .source import FunctionSource, normalize_expression
 from .standard_semantics import STANDARD_LEAF_CALLS, effects_for_call
 from .solver import reason_memory_safety
 
@@ -40,6 +40,27 @@ def _substitute(expression: str, arguments: tuple[str, ...]) -> str:
     result = expression
     for index in reversed(range(len(arguments))):
         result = re.sub(rf"\barg{index}\b", f"({arguments[index]})", result)
+    return normalize_expression(result)
+
+
+def _substitute_buffer(expression: str, arguments: tuple[str, ...]) -> str:
+    result = expression
+    for index in reversed(range(len(arguments))):
+        argument = normalize_expression(arguments[index])
+        if re.fullmatch(
+            r"[A-Za-z_]\w*(?:(?:->|\.)[A-Za-z_]\w*|\[[^\]]+\])*",
+            argument,
+        ):
+            replacement = argument
+        else:
+            replacement = f"({argument})"
+        result = re.sub(rf"\barg{index}\b", replacement, result)
+    result = normalize_expression(result)
+    result = re.sub(
+        r"\(([A-Za-z_]\w*(?:(?:->|\.)[A-Za-z_]\w*)*)\)(?=->|\.)",
+        r"\1",
+        result,
+    )
     return result
 
 
@@ -109,9 +130,9 @@ def _custom_operations(
                 if summary["buffer"] == "return":
                     if not call.result:
                         continue
-                    target = call.result
+                    target = normalize_expression(call.result)
                 else:
-                    target = _substitute(summary["buffer"], call.arguments)
+                    target = _substitute_buffer(summary["buffer"], call.arguments)
                 operations.append(
                     Operation(
                         "ALLOC",
@@ -127,7 +148,7 @@ def _custom_operations(
                     Operation(
                         kind,
                         call.name,
-                        _substitute(summary["buffer"], call.arguments),
+                        _substitute_buffer(summary["buffer"], call.arguments),
                         _substitute(summary["length"], call.arguments),
                         call.line,
                         True,
@@ -138,7 +159,7 @@ def _custom_operations(
                     Operation(
                         "VALUE",
                         call.name,
-                        call.result,
+                        normalize_expression(call.result),
                         _substitute(summary["expression"], call.arguments),
                         call.line,
                         True,
@@ -160,8 +181,8 @@ def _direct_operations(entry: FunctionSource) -> list[Operation]:
                     Operation(
                         "ALLOC",
                         call.name,
-                        effect.buffer,
-                        effect.extent,
+                        normalize_expression(effect.buffer),
+                        normalize_expression(effect.extent),
                         call.line,
                         False,
                     )
@@ -171,8 +192,8 @@ def _direct_operations(entry: FunctionSource) -> list[Operation]:
                 Operation(
                     effect.kind,
                     call.name,
-                    effect.buffer,
-                    effect.extent,
+                    normalize_expression(effect.buffer),
+                    normalize_expression(effect.extent),
                     call.line,
                     False,
                 )
@@ -182,8 +203,8 @@ def _direct_operations(entry: FunctionSource) -> list[Operation]:
             Operation(
                 access.kind,
                 access.origin,
-                access.buffer,
-                access.extent,
+                normalize_expression(access.buffer),
+                normalize_expression(access.extent),
                 access.line,
                 False,
             )
