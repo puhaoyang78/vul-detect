@@ -13,7 +13,7 @@ from .symbol_resolution import ResolvedTarget, SymbolResolver
 
 
 CANDIDATE_MANIFEST_VERSION = 5
-DISCOVERY_POLICY_VERSION = 4
+DISCOVERY_POLICY_VERSION = 5
 
 
 _CLEAR_SCALAR_TYPES = {
@@ -141,6 +141,23 @@ def _memory_seed_groups(function: FunctionSource) -> list[tuple[int, tuple[str, 
             if expressions:
                 groups.append((call.line, expressions))
     return groups
+
+
+def _source_can_produce_summary(function: FunctionSource) -> bool:
+    if function.has_value_return() or any(function.parameter_pointer_like):
+        return True
+    parameters = set(function.parameters)
+    return any(
+        _identifiers(expression) & parameters
+        for _line, expressions in _memory_seed_groups(function)
+        for expression in expressions
+    )
+
+
+def _target_can_produce_summary(target: ResolvedTarget) -> bool:
+    if target.resolution == "source-macro" and target.source is not None:
+        return _source_can_produce_summary(target.source)
+    return _method_can_produce_summary(target.method)
 
 
 def _dependency_closure(function: FunctionSource) -> set[str]:
@@ -355,7 +372,7 @@ def discover_relevant_candidates(
             continue
         for target in targets:
             callee = target.method
-            if callee.full_name == entry_method.full_name or not _method_can_produce_summary(callee):
+            if callee.full_name == entry_method.full_name or not _target_can_produce_summary(target):
                 continue
             decision = _call_need(
                 entry,
@@ -424,7 +441,7 @@ def discover_relevant_candidates(
 
             for target in targets:
                 callee = target.method
-                if callee.full_name == caller.full_name or not _method_can_produce_summary(callee):
+                if callee.full_name == caller.full_name or not _target_can_produce_summary(target):
                     continue
                 decision = _call_need(
                     caller_source,

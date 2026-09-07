@@ -8,7 +8,6 @@ import urllib.error
 from pathlib import Path
 
 from .candidate_graph import (
-    DISCOVERY_POLICY_VERSION,
     candidate_manifest_path,
     discover_relevant_candidates,
     load_manifest_candidate,
@@ -151,6 +150,15 @@ def _normalization_key(record: dict[str, object]):
     )
 
 
+def _manifest_key(sample_key: str, record: dict[str, object]):
+    return (
+        sample_key,
+        str(record["source_path"]),
+        str(record["function"]),
+        int(record["source_line"]),
+    )
+
+
 def _expected_model(args) -> str:
     if args.llm_backend == "local":
         return Path(args.local_model).stem
@@ -159,7 +167,6 @@ def _expected_model(args) -> str:
 
 def _candidate_state(manifest_record) -> dict[str, object]:
     return {
-        "candidate_policy_version": DISCOVERY_POLICY_VERSION,
         "call_lines": list(manifest_record.get("call_lines", [])),
         "required_parameters": list(manifest_record.get("required_parameters", [])),
         "require_return": bool(manifest_record.get("require_return", False)),
@@ -167,12 +174,19 @@ def _candidate_state(manifest_record) -> dict[str, object]:
     }
 
 
-def _record_matches_candidate(record, manifest_record, revision: str) -> bool:
+def _record_state_mismatch(record, manifest_record, revision: str) -> str | None:
     if record.get("schema_version") != NORMALIZATION_SCHEMA_VERSION:
-        return False
+        return "schema_version"
     if record.get("revision") != revision:
-        return False
-    return all(record.get(key) == value for key, value in _candidate_state(manifest_record).items())
+        return "revision"
+    for key, value in _candidate_state(manifest_record).items():
+        if record.get(key) != value:
+            return key
+    return None
+
+
+def _record_matches_candidate(record, manifest_record, revision: str) -> bool:
+    return _record_state_mismatch(record, manifest_record, revision) is None
 
 
 def _record_reusable(record, manifest_record, revision, args, expected_model) -> bool:
@@ -191,8 +205,9 @@ def _record_reusable(record, manifest_record, revision, args, expected_model) ->
 def _record_usable_for_run(record, manifest_record, revision: str) -> bool:
     if not _record_matches_candidate(record, manifest_record, revision):
         return False
-    if manifest_record.get("skip_reason") is not None:
-        return record.get("normalizer") == "static-skip"
+    skip_reason = manifest_record.get("skip_reason")
+    if skip_reason is not None:
+        return record.get("normalizer") == "static-skip" and record.get("skip_reason") == skip_reason
     return record.get("normalizer") == "demand-driven"
 
 
@@ -231,16 +246,10 @@ def normalize(args: argparse.Namespace) -> None:
         key = str(sample["sample_key"])
         revision = str(sample["vulnerable_commit"])
         index, (_header, manifest_records) = _load_sample_manifest(sample, args)
-        parse_cache = {}
         pending = []
         reused_for_sample = 0
         for manifest_record in manifest_records:
-            logical_key = (
-                key,
-                str(manifest_record["source_path"]),
-                str(manifest_record["function"]),
-                int(manifest_record["source_line"]),
-            )
+            logical_key = _manifest_key(key, manifest_record)
             cached = old_selected.get(logical_key)
             if (
                 not args.refresh
@@ -250,7 +259,7 @@ def normalize(args: argparse.Namespace) -> None:
                 existing[logical_key] = cached
                 reused_for_sample += 1
                 continue
-            candidate = load_manifest_candidate(index, manifest_record, parse_cache)
+            candidate = load_manifest_candidate(index, manifest_record)
             pending.append((candidate, manifest_record))
             if manifest_record.get("skip_reason") is None:
                 llm_pending_total += 1
@@ -300,12 +309,7 @@ def normalize(args: argparse.Namespace) -> None:
                 print(f"normalize_sample_cached={key}", flush=True)
                 continue
             for position, (candidate, manifest_record) in enumerate(pending, 1):
-                logical_key = (
-                    key,
-                    candidate.function.path,
-                    candidate.function.name,
-                    candidate.function.start_line,
-                )
+                logical_key = _manifest_key(key, manifest_record)
                 skip_reason = manifest_record.get("skip_reason")
                 if skip_reason is None:
                     try:
@@ -361,30 +365,38 @@ def _selected_replay(samples, args) -> list[dict[str, object]]:
     by_key = {_normalization_key(record): record for record in records}
     selected: list[dict[str, object]] = []
     missing: list[str] = []
+    stale: list[str] = []
     for sample in samples:
         key = str(sample["sample_key"])
         revision = str(sample["vulnerable_commit"])
         _index, (_header, manifest_records) = _load_sample_manifest(sample, args)
         for manifest_record in manifest_records:
-            logical_key = (
-                key,
-                str(manifest_record["source_path"]),
-                str(manifest_record["function"]),
-                int(manifest_record["source_line"]),
-            )
+            logical_key = _manifest_key(key, manifest_record)
+            label = f"{key}:{manifest_record['function']}@{manifest_record['source_line']}"
             record = by_key.get(logical_key)
-            if record is None or not _record_usable_for_run(record, manifest_record, revision):
-                missing.append(
-                    f"{key}:{manifest_record['function']}@{manifest_record['source_line']}"
-                )
-            else:
-                selected.append(record)
-    if missing:
-        preview = ", ".join(missing[:10])
-        suffix = " ..." if len(missing) > 10 else ""
+            if record is None:
+                missing.append(label)
+                continue
+            mismatch = _record_state_mismatch(record, manifest_record, revision)
+            if mismatch is not None:
+                stale.append(f"{label}({mismatch})")
+                continue
+            if not _record_usable_for_run(record, manifest_record, revision):
+                stale.append(f"{label}(normalizer)")
+                continue
+            selected.append(record)
+    if missing or stale:
+        details: list[str] = []
+        if missing:
+            preview = ", ".join(missing[:10])
+            suffix = " ..." if len(missing) > 10 else ""
+            details.append(f"missing {len(missing)}: {preview}{suffix}")
+        if stale:
+            preview = ", ".join(stale[:10])
+            suffix = " ..." if len(stale) > 10 else ""
+            details.append(f"stale {len(stale)}: {preview}{suffix}")
         raise RuntimeError(
-            f"normalization incomplete for {len(missing)} candidate(s): {preview}{suffix}; "
-            "run normalize first"
+            "normalization unavailable; " + "; ".join(details) + "; run normalize first"
         )
     return selected
 
