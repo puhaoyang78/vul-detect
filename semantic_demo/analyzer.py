@@ -164,7 +164,10 @@ def _direct_operations(entry: FunctionSource) -> list[Operation]:
     return operations
 
 
-def analyze(entry: FunctionSource, validations: Iterable[Validation]) -> Verdict:
+def analyze(
+    entry: FunctionSource,
+    validations: Iterable[Validation] = (),
+) -> Verdict:
     operations = tuple(
         sorted(
             [*_direct_operations(entry), *_custom_operations(entry, validations)],
