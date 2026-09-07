@@ -2,24 +2,20 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
-import json
 import os
 import tempfile
 import urllib.error
 from pathlib import Path
 
 from .candidate_graph import (
-    CANDIDATE_MANIFEST_VERSION,
     DISCOVERY_POLICY_VERSION,
     candidate_manifest_path,
-    candidate_source_fingerprint,
     discover_relevant_candidates,
     load_manifest_candidate,
     read_candidate_manifest,
     write_candidate_manifest,
 )
-from .normalization import NORMALIZATION_IMPLEMENTATION_VERSION, llm_normalize
+from .normalization import llm_normalize
 from .runtime import (
     detect,
     entry_from_index,
@@ -31,9 +27,6 @@ from .runtime import (
     write_jsonl,
 )
 from .semantics import NORMALIZATION_SCHEMA_VERSION, candidate_validation_error
-
-
-WORKFLOW_PREFLIGHT_VERSION = 3
 
 
 def _read(path: str | Path) -> list[dict[str, object]]:
@@ -66,7 +59,8 @@ def _upsert_by_sample(
         current_by_sample.setdefault(str(record.get("sample_key", "")), []).append(record)
 
     result = [
-        record for record in old_records
+        record
+        for record in old_records
         if str(record.get("sample_key", "")) not in selected_keys
     ]
     old_selected: dict[str, list[dict[str, object]]] = {}
@@ -82,34 +76,6 @@ def _upsert_by_sample(
     return result
 
 
-def _preflight_checkpoint_path(cache_dir: str | Path) -> Path:
-    return Path(cache_dir) / "workflow_preflight.jsonl"
-
-
-def _preflight_fingerprint(sample: dict[str, object], index) -> str:
-    payload = {
-        "version": WORKFLOW_PREFLIGHT_VERSION,
-        "candidate_manifest_version": CANDIDATE_MANIFEST_VERSION,
-        "discovery_policy_version": DISCOVERY_POLICY_VERSION,
-        "sample": sample,
-        "index_fingerprint": index.fingerprint,
-    }
-    return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
-    ).hexdigest()
-
-
-def _checkpoint_cache(cache_dir: str | Path) -> dict[str, dict[str, object]]:
-    path = _preflight_checkpoint_path(cache_dir)
-    if not path.is_file():
-        return {}
-    return {
-        str(record.get("sample_key", "")): record
-        for record in _read(path)
-        if record.get("version") == WORKFLOW_PREFLIGHT_VERSION
-    }
-
-
 def _load_index(sample: dict[str, object], args):
     return load_repository_index(
         sample,
@@ -119,25 +85,19 @@ def _load_index(sample: dict[str, object], args):
     )
 
 
-def _valid_completed_preflight(sample, index, cached) -> bool:
-    if cached is None or cached.get("fingerprint") != _preflight_fingerprint(sample, index):
-        return False
-    if not index.cpg_path.is_file() or not index.index_path.is_file():
-        return False
+def _preflight_ready(index) -> bool:
     if not candidate_manifest_path(index).is_file():
         return False
     try:
-        header, candidates = read_candidate_manifest(index)
+        header, records = read_candidate_manifest(index)
     except RuntimeError:
         return False
-    return len(candidates) == int(header.get("candidate_count", -1))
+    return len(records) == int(header.get("candidate_count", -1))
 
 
 def preflight(args: argparse.Namespace) -> None:
     samples = _read(args.samples)
     validate_detection_manifest(samples)
-    checkpoint_path = _preflight_checkpoint_path(args.cpg_cache_dir)
-    checkpoints = _checkpoint_cache(args.cpg_cache_dir)
     failures: list[str] = []
 
     for position, sample in enumerate(samples, 1):
@@ -145,8 +105,7 @@ def preflight(args: argparse.Namespace) -> None:
         print(f"preflight_start={position}/{len(samples)} sample={key}", flush=True)
         try:
             repository, index = _load_index(sample, args)
-            cached = checkpoints.get(key)
-            if not args.refresh and _valid_completed_preflight(sample, index, cached):
+            if not args.refresh and _preflight_ready(index):
                 header, _records = read_candidate_manifest(index)
                 print(
                     f"preflight_cached={key} candidates={header['candidate_count']} "
@@ -159,35 +118,17 @@ def preflight(args: argparse.Namespace) -> None:
             method_count = len(index.methods())
             print(f"preflight_index_ready={key} methods={method_count}", flush=True)
             entry_method, entry = entry_from_index(sample, repository, index)
-            print(
-                f"preflight_entry_ready={key} entry={entry.name}@{entry.start_line}",
-                flush=True,
-            )
             discovery = discover_relevant_candidates(key, index, entry_method, entry)
             manifest = write_candidate_manifest(index, discovery)
             unrecoverable = sum(
                 candidate_validation_error(candidate.function) is not None
                 for candidate in discovery.candidates
             )
-            checkpoints[key] = {
-                "version": WORKFLOW_PREFLIGHT_VERSION,
-                "sample_key": key,
-                "fingerprint": _preflight_fingerprint(sample, index),
-                "candidate_count": len(discovery.candidates),
-                "direct_candidates": discovery.direct_candidates,
-                "recursive_candidates": discovery.recursive_candidates,
-                "expanded_methods": discovery.expanded_methods,
-                "unrecoverable_candidates": unrecoverable,
-                "unresolved_relevant_calls": discovery.unresolved_relevant_calls,
-                "manifest": str(manifest),
-            }
-            _write(checkpoint_path, checkpoints.values())
             print(
                 f"preflight_done={key} candidates={len(discovery.candidates)} "
                 f"direct={discovery.direct_candidates} recursive={discovery.recursive_candidates} "
                 f"expanded={discovery.expanded_methods} unrecoverable={unrecoverable} "
-                f"unresolved_relevant={discovery.unresolved_relevant_calls} "
-                f"manifest={manifest}",
+                f"unresolved_relevant={discovery.unresolved_relevant_calls} manifest={manifest}",
                 flush=True,
             )
         except Exception as error:
@@ -216,42 +157,48 @@ def _expected_model(args) -> str:
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
 
-def _record_matches_source(record, manifest_record) -> bool:
-    return (
-        record.get("schema_version") == NORMALIZATION_SCHEMA_VERSION
-        and record.get("normalization_implementation_version")
-        == NORMALIZATION_IMPLEMENTATION_VERSION
-        and record.get("source_fingerprint") == manifest_record.get("source_fingerprint")
-    )
+def _candidate_state(manifest_record) -> dict[str, object]:
+    return {
+        "candidate_policy_version": DISCOVERY_POLICY_VERSION,
+        "call_lines": list(manifest_record.get("call_lines", [])),
+        "required_parameters": list(manifest_record.get("required_parameters", [])),
+        "require_return": bool(manifest_record.get("require_return", False)),
+        "resolution": str(manifest_record.get("resolution", "joern-exact")),
+    }
 
 
-def _record_reusable(record, manifest_record, args, expected_model) -> bool:
-    if not _record_matches_source(record, manifest_record):
+def _record_matches_candidate(record, manifest_record, revision: str) -> bool:
+    if record.get("schema_version") != NORMALIZATION_SCHEMA_VERSION:
         return False
-    if manifest_record.get("skip_reason") is not None:
-        return (
-            record.get("normalizer") == "static-skip"
-            and record.get("skip_reason") == manifest_record.get("skip_reason")
-        )
+    if record.get("revision") != revision:
+        return False
+    return all(record.get(key) == value for key, value in _candidate_state(manifest_record).items())
+
+
+def _record_reusable(record, manifest_record, revision, args, expected_model) -> bool:
+    if not _record_matches_candidate(record, manifest_record, revision):
+        return False
+    skip_reason = manifest_record.get("skip_reason")
+    if skip_reason is not None:
+        return record.get("normalizer") == "static-skip" and record.get("skip_reason") == skip_reason
     return (
-        record.get("normalizer") == "relevance-sliced-hybrid"
+        record.get("normalizer") == "demand-driven"
         and record.get("llm_backend") == args.llm_backend
         and record.get("llm_model") == expected_model
     )
 
 
-def _record_usable_for_run(record, manifest_record) -> bool:
-    if not _record_matches_source(record, manifest_record):
+def _record_usable_for_run(record, manifest_record, revision: str) -> bool:
+    if not _record_matches_candidate(record, manifest_record, revision):
         return False
     if manifest_record.get("skip_reason") is not None:
         return record.get("normalizer") == "static-skip"
-    return record.get("normalizer") == "relevance-sliced-hybrid"
+    return record.get("normalizer") == "demand-driven"
 
 
 def _load_sample_manifest(sample, args):
     _repository, index = _load_index(sample, args)
-    checkpoint = _checkpoint_cache(args.cpg_cache_dir).get(str(sample["sample_key"]))
-    if not _valid_completed_preflight(sample, index, checkpoint):
+    if not _preflight_ready(index):
         raise RuntimeError(
             f"{sample['sample_key']}: preflight manifest missing or stale; run preflight first"
         )
@@ -264,7 +211,8 @@ def normalize(args: argparse.Namespace) -> None:
     selected_keys = {str(sample["sample_key"]) for sample in samples}
     old_records = _read(args.output) if Path(args.output).is_file() else []
     preserved = [
-        record for record in old_records
+        record
+        for record in old_records
         if str(record.get("sample_key", "")) not in selected_keys
     ]
     old_selected = {
@@ -275,13 +223,13 @@ def normalize(args: argparse.Namespace) -> None:
     expected_model = _expected_model(args)
     existing: dict[tuple[str, str, str, int], dict[str, object]] = {}
     sample_work = []
-    pending_total = 0
     llm_pending_total = 0
     candidate_total = 0
     reused_total = 0
 
     for sample in samples:
         key = str(sample["sample_key"])
+        revision = str(sample["vulnerable_commit"])
         index, (_header, manifest_records) = _load_sample_manifest(sample, args)
         parse_cache = {}
         pending = []
@@ -297,7 +245,7 @@ def normalize(args: argparse.Namespace) -> None:
             if (
                 not args.refresh
                 and cached is not None
-                and _record_reusable(cached, manifest_record, args, expected_model)
+                and _record_reusable(cached, manifest_record, revision, args, expected_model)
             ):
                 existing[logical_key] = cached
                 reused_for_sample += 1
@@ -307,7 +255,6 @@ def normalize(args: argparse.Namespace) -> None:
             if manifest_record.get("skip_reason") is None:
                 llm_pending_total += 1
         candidate_total += len(manifest_records)
-        pending_total += len(pending)
         reused_total += reused_for_sample
         sample_work.append((sample, pending))
         print(
@@ -319,7 +266,7 @@ def normalize(args: argparse.Namespace) -> None:
     def checkpoint() -> None:
         _write(args.output, [*preserved, *existing.values()])
 
-    if pending_total == 0:
+    if not any(pending for _sample, pending in sample_work):
         checkpoint()
         print(
             f"normalize_complete=candidates:{candidate_total} reused:{reused_total} "
@@ -332,11 +279,13 @@ def normalize(args: argparse.Namespace) -> None:
         llm_context = (
             local_llm_server(args.llama_server, args.local_model)
             if args.llm_backend == "local"
-            else contextlib.nullcontext({
-                "max_tokens": 512,
-                "model": expected_model,
-                "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-            })
+            else contextlib.nullcontext(
+                {
+                    "max_tokens": 512,
+                    "model": expected_model,
+                    "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                }
+            )
         )
     else:
         llm_context = contextlib.nullcontext({"model": expected_model})
@@ -346,6 +295,7 @@ def normalize(args: argparse.Namespace) -> None:
     with llm_context as llm_options:
         for sample, pending in sample_work:
             key = str(sample["sample_key"])
+            revision = str(sample["vulnerable_commit"])
             if not pending:
                 print(f"normalize_sample_cached={key}", flush=True)
                 continue
@@ -365,21 +315,22 @@ def normalize(args: argparse.Namespace) -> None:
                         raise RuntimeError(
                             f"{key}:{candidate.function.name}: normalization failed"
                         ) from error
-                    normalizer = "relevance-sliced-hybrid"
+                    normalizer = "demand-driven"
                     generated += 1
                 else:
                     summaries = []
                     normalizer = "static-skip"
                     skipped += 1
+
                 record = {
                     "schema_version": NORMALIZATION_SCHEMA_VERSION,
-                    "normalization_implementation_version": NORMALIZATION_IMPLEMENTATION_VERSION,
                     "sample_key": key,
+                    "revision": revision,
                     "source_path": candidate.function.path,
                     "function": candidate.function.name,
                     "source_line": candidate.function.start_line,
                     "parameters": list(candidate.function.parameters),
-                    "source_fingerprint": candidate_source_fingerprint(candidate),
+                    **_candidate_state(manifest_record),
                     "normalizer": normalizer,
                     "summaries": summaries,
                 }
@@ -412,6 +363,7 @@ def _selected_replay(samples, args) -> list[dict[str, object]]:
     missing: list[str] = []
     for sample in samples:
         key = str(sample["sample_key"])
+        revision = str(sample["vulnerable_commit"])
         _index, (_header, manifest_records) = _load_sample_manifest(sample, args)
         for manifest_record in manifest_records:
             logical_key = (
@@ -421,7 +373,7 @@ def _selected_replay(samples, args) -> list[dict[str, object]]:
                 int(manifest_record["source_line"]),
             )
             record = by_key.get(logical_key)
-            if record is None or not _record_usable_for_run(record, manifest_record):
+            if record is None or not _record_usable_for_run(record, manifest_record, revision):
                 missing.append(
                     f"{key}:{manifest_record['function']}@{manifest_record['source_line']}"
                 )
@@ -445,11 +397,13 @@ def run(args: argparse.Namespace) -> None:
     old_detections = _read(args.detections) if Path(args.detections).is_file() else []
     old_semantics = _read(args.semantics) if Path(args.semantics).is_file() else []
     old_selected_detections = [
-        record for record in old_detections
+        record
+        for record in old_detections
         if str(record.get("sample_key", "")) in selected_keys
     ]
     old_selected_semantics = [
-        record for record in old_semantics
+        record
+        for record in old_semantics
         if str(record.get("sample_key", "")) in selected_keys
     ]
 
