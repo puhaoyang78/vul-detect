@@ -25,7 +25,7 @@ READS = {
     "fwrite": (0, 1), "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 8
+NORMALIZATION_SCHEMA_VERSION = 9
 _EXPRESSION_SCHEMA = {"type": "string", "minLength": 1, "maxLength": 160}
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -168,8 +168,6 @@ def _schema_error(summary: dict[str, object], parameter_count: int) -> str | Non
     for key, value in summary.items():
         if not isinstance(value, str):
             return "all summary values must be strings"
-        if key != "kind" and len(value) > 160:
-            return "summary expression is too long"
         if key != "kind" and _placeholder_value(value):
             return "summary contains a prompt placeholder instead of a source expression"
         if any(index >= parameter_count for index in _arg_indices(value)):
