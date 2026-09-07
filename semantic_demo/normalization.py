@@ -167,6 +167,16 @@ def _endpoints(candidate):
     yield from _call_endpoints(candidate) or ()
 
 
+def _truncated(result: dict[str, object]) -> bool:
+    choices = result.get("choices")
+    return bool(
+        isinstance(choices, list)
+        and choices
+        and isinstance(choices[0], dict)
+        and choices[0].get("finish_reason") == "length"
+    )
+
+
 def _request_json(
     *,
     prompt: str,
@@ -180,36 +190,42 @@ def _request_json(
     response_format: dict[str, object] = {"type": "json_object"}
     if response_schema is not None:
         response_format["schema"] = response_schema
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "You output strict JSON only."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-            "max_tokens": max_tokens,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": response_format,
-        }
-    ).encode()
-    request = urllib.request.Request(
-        f"{base_url.rstrip('/')}/chat/completions",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
     opener = (
         urllib.request.build_opener(urllib.request.ProxyHandler({}))
         if disable_proxy
         else urllib.request.build_opener()
     )
-    with opener.open(request, timeout=180) as response:
-        result = json.load(response)
-    return semantics._extract_json_object(semantics._response_content(result))
+
+    for attempt, token_budget in enumerate((max_tokens, max(1024, max_tokens * 2))):
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "Output one compact JSON object only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0,
+                "max_tokens": token_budget,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "response_format": response_format,
+            }
+        ).encode()
+        request = urllib.request.Request(
+            f"{base_url.rstrip('/')}/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with opener.open(request, timeout=180) as response:
+            result = json.load(response)
+        if attempt == 0 and _truncated(result):
+            continue
+        return semantics._extract_json_object(semantics._response_content(result))
+
+    raise RuntimeError("unreachable normalization request state")
 
 
 def _demand_text(candidate) -> str:
@@ -275,11 +291,12 @@ Endpoint: {endpoint_text}
 Caller demand: {_demand_text(candidate)}
 {instruction}
 
-Return exactly one JSON object with key summaries and at most four summaries.
+Return exactly one compact JSON object with key summaries and at most four summaries.
 Use positional arg0, arg1, ... names. Every expression must come from the shown source.
 Valid forms for this endpoint:
 {examples}
 
+Do not explain the answer or repeat source code.
 Do not infer vulnerability labels, guards, caller behavior, or effects not visible here.
 Never emit placeholders such as "argN expression" or "unknown".
 Emit {{"summaries":[]}} when the source is insufficient.
