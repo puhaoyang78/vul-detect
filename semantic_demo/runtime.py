@@ -18,10 +18,10 @@ from typing import Iterable, Iterator
 from .analyzer import analyze
 from .candidate_graph import load_manifest_candidate, read_candidate_manifest
 from .joern import JoernRepositoryIndex
-from .joern_v2 import JoernValidatorV2
 from .linevul_baseline import LineVulBaseline
 from .semantics import NORMALIZATION_RESPONSE_SCHEMA, Validation, validate_summary
 from .source import GitRepository, source_language
+from .summary_validator import SummaryValidator
 
 
 FORBIDDEN_DETECTION_FIELDS = {
@@ -33,7 +33,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 14
+ANALYSIS_CHECKPOINT_VERSION = 15
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -235,11 +235,11 @@ def _implementation_digest() -> str:
     names = (
         "runtime.py",
         "candidate_graph.py",
-        "normalization_v2.py",
+        "normalization.py",
         "semantics.py",
         "analyzer.py",
-        "z3_reasoner_v2.py",
-        "joern_v2.py",
+        "solver.py",
+        "summary_validator.py",
         "standard_semantics.py",
     )
     digest = hashlib.sha256()
@@ -256,7 +256,7 @@ def _analysis_fingerprint(
     candidates,
     replay: dict[tuple[str, str, str, int], list[dict[str, str]]],
     backend: str,
-    joern_timeout: int | None,
+    validator_timeout: int | None,
     baseline_signature: str,
 ) -> str:
     candidate_inputs = []
@@ -282,7 +282,7 @@ def _analysis_fingerprint(
         "entry_source": hashlib.sha256(entry.text.encode()).hexdigest(),
         "candidates": candidate_inputs,
         "backend": backend,
-        "joern_timeout": joern_timeout,
+        "validator_timeout": validator_timeout,
         "baseline_signature": baseline_signature,
     }
     return hashlib.sha256(
@@ -343,7 +343,7 @@ def detect(
         else {}
     )
 
-    backend = "joern"
+    backend = SummaryValidator.backend
     print(f"validation_start samples={len(samples)} backend={backend}", flush=True)
     for sample_index, sample in enumerate(samples, 1):
         sample_key = str(sample["sample_key"])
@@ -354,12 +354,8 @@ def detect(
             cpg_cache_dir=cpg_cache_dir,
         )
         candidates = _manifest_candidates(index)
-        joern = JoernValidatorV2(
-            joern_dir,
-            java_home=java_home,
-            repository_index=index,
-        )
-        joern.ensure_available()
+        validator = SummaryValidator(index)
+        validator.ensure_available()
         summary_entries: list[tuple[object, dict[str, str]]] = []
         for candidate in candidates:
             key = (
@@ -377,7 +373,7 @@ def detect(
             candidates,
             replay,
             backend,
-            joern.timeout,
+            validator.timeout,
             baseline_model.signature,
         )
         print(
@@ -432,7 +428,7 @@ def detect(
                 validation = validate_summary(
                     candidate,
                     summary,
-                    joern=joern,
+                    joern=validator,
                     callee_summaries=accepted,
                 )
                 final[item_index] = validation
@@ -468,7 +464,7 @@ def detect(
             final[item_index] = validate_summary(
                 candidate,
                 summary,
-                joern=joern,
+                joern=validator,
                 callee_summaries=accepted,
             )
 
