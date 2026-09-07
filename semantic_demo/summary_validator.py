@@ -24,10 +24,7 @@ def _relation_map(function: FunctionSource, line: int) -> dict[str, str]:
     return relations
 
 
-def _dependency_closure(
-    expression: str,
-    relations: dict[str, str],
-) -> set[str]:
+def _dependency_closure(expression: str, relations: dict[str, str]) -> set[str]:
     pending = list(_identifiers(expression))
     seen: set[str] = set()
     while pending:
@@ -42,7 +39,6 @@ def _dependency_closure(
 
 
 def _resolve_simple_value(expression: str, relations: dict[str, str]) -> str:
-    """Resolve only pure identifier-to-identifier assignment chains."""
     current = normalize_expression(expression)
     seen: set[str] = set()
     while re.fullmatch(r"[A-Za-z_]\w*", current) and current not in seen:
@@ -74,17 +70,16 @@ class _Identity:
 
 
 class SummaryValidator:
-    """Validate LLM summaries using Joern identity plus local source dataflow.
+    """Validate caller-observable summaries with layered identity and local flow.
 
-    Joern remains responsible for repository/revision binding, exact method
-    identity, and resolved static-call discovery during preflight. Summary
-    validation itself is intentionally intraprocedural: parameter-to-argument
-    and parameter-to-return dependencies are reconstructed from the same
-    Tree-sitter reaching definitions used by candidate slicing. This avoids
-    invoking Joern OSS dataflow for every real-world translation unit.
+    Repository identity is taken from the candidate resolver used at preflight.
+    Joern-backed candidates are checked against the repository index. Source
+    function/macro candidates are bound by the manifest source fingerprint and
+    therefore do not require a second Joern identity. Dataflow is deliberately
+    intraprocedural and conservative.
     """
 
-    backend = "joern-index+local-flow"
+    backend = "layered-index+local-flow"
     timeout = None
 
     def __init__(self, repository_index) -> None:
@@ -92,8 +87,6 @@ class SummaryValidator:
         self._cache: dict[str, JoernFacts] = {}
 
     def ensure_available(self) -> None:
-        # A valid preflight/index is the static-analysis prerequisite. This
-        # performs only availability checks; it does not launch OSS dataflow.
         self.repository_index.ensure_available()
 
     @staticmethod
@@ -104,28 +97,34 @@ class SummaryValidator:
         )
 
     def _identity(self, candidate) -> _Identity:
+        function = candidate.function
+        if candidate.resolution.startswith("source-"):
+            return _Identity(
+                function.path,
+                function.name,
+                function.start_line,
+                function.end_line,
+            )
+
         if not candidate.method_full_name:
             raise JoernMethodNotFound(
-                "candidate has no Joern method identity: "
-                f"{candidate.function.path}:{candidate.function.name}"
+                "indexed candidate has no method identity: "
+                f"{function.path}:{function.name}"
             )
         method = self.repository_index.methods().get(candidate.method_full_name)
         if method is None:
             raise JoernMethodNotFound(
                 f"method_not_found:{candidate.method_full_name}"
             )
-        function = candidate.function
         same_path = (
             self.repository_index._normalize_repository_path(method.path)
             == self.repository_index._normalize_repository_path(function.path)
         )
         if not same_path or method.name != function.name:
             raise JoernError(
-                f"candidate/Joern identity mismatch: "
+                f"candidate/index identity mismatch: "
                 f"{function.path}:{function.name} != {method.path}:{method.name}"
             )
-        # Preprocessed entry methods can have recovered original source ranges;
-        # the manifest fingerprint already binds the exact recovered source.
         if (
             not self.repository_index.preprocess_entry
             or method.path != self.repository_index.entry_path
@@ -135,7 +134,7 @@ class SummaryValidator:
                 or method.end_line != function.end_line
             ):
                 raise JoernError(
-                    f"candidate/Joern range mismatch: "
+                    f"candidate/index range mismatch: "
                     f"{function.path}:{function.name}@"
                     f"{function.start_line}-{function.end_line} != "
                     f"{method.start_line}-{method.end_line}"
@@ -157,14 +156,17 @@ class SummaryValidator:
         self._identity(candidate)
         facts = JoernFacts(
             parameters={
-                index: (name, function.parameter_types[index])
+                index: (
+                    name,
+                    function.parameter_types[index]
+                    if index < len(function.parameter_types)
+                    else "ANY",
+                )
                 for index, name in enumerate(function.parameters)
             }
         )
 
-        direct_calls = [
-            call for call in function.calls() if not call.indirect
-        ]
+        direct_calls = [call for call in function.calls() if not call.indirect]
         occurrence: dict[tuple[int, str], int] = {}
         for call in direct_calls:
             occurrence_key = (call.line, call.name)
@@ -175,21 +177,19 @@ class SummaryValidator:
                 index: normalize_expression(argument)
                 for index, argument in enumerate(call.arguments)
             }
-            joern_call = JoernCall(
+            fact_call = JoernCall(
                 line=call.line,
                 name=call.name,
                 arguments=arguments,
                 call_id=call_id,
                 code=call.code,
             )
-            facts.calls[call_id] = joern_call
+            facts.calls[call_id] = fact_call
 
             relations = _relation_map(function, call.line)
             for argument_index, argument in arguments.items():
                 dependencies = _dependency_closure(argument, relations)
-                for parameter_index, parameter in enumerate(
-                    function.parameters
-                ):
+                for parameter_index, parameter in enumerate(function.parameters):
                     if parameter in dependencies:
                         facts.flows.add(
                             (parameter_index, call_id, argument_index)
