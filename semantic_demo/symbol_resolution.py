@@ -140,7 +140,6 @@ def _macro_blocks(text: str, name: str):
         while physical[-1].rstrip().endswith("\\") and index + 1 < len(lines):
             index += 1
             physical.append(lines[index])
-        joined = "\n".join(physical)
         first = pattern.match(physical[0])
         if first is None:
             index += 1
@@ -152,15 +151,12 @@ def _macro_blocks(text: str, name: str):
         ):
             index += 1
             continue
-        body_parts = [first.group(2)]
-        for continuation in physical[1:]:
-            body_parts.append(continuation)
         body = " ".join(
             part.rstrip().removesuffix("\\").strip()
-            for part in body_parts
+            for part in [first.group(2), *physical[1:]]
         ).strip()
         if body:
-            yield start + 1, index + 1, tuple(params), body, joined
+            yield start + 1, index + 1, tuple(params), body
         index += 1
 
 
@@ -214,24 +210,12 @@ def _macro_source(
 
 
 class SymbolResolver:
-    """Resolve custom calls without making Joern a single point of failure.
-
-    Resolution order is deliberately conservative:
-      1. exact Joern static target;
-      2. unique indexed method with matching name/arity and lexical proximity;
-      3. unique source function with matching name/arity;
-      4. function-like macro definitions.
-
-    Ambiguous fallbacks are left unresolved instead of guessed.
-    """
+    """Resolve custom calls with exact information first and source fallback second."""
 
     def __init__(self, index) -> None:
         self.index = index
         self._source_files: dict[str, tuple[str, ...]] = {}
         self._parsed_files: dict[tuple[str, str], list[FunctionSource]] = {}
-        self._resolution_cache: dict[
-            tuple[str, int, str, str, str, int], tuple[ResolvedTarget, ...]
-        ] = {}
 
     def _parsed(self, path: str, language: str) -> list[FunctionSource]:
         key = (path, language)
@@ -283,6 +267,16 @@ class SymbolResolver:
             return parsed
         return [base]
 
+    def sources_for_target(
+        self,
+        target: ResolvedTarget,
+        inherited_language: str,
+    ) -> list[FunctionSource]:
+        if target.source is not None:
+            return [target.source]
+        language = source_language(target.method.path, inherited_language)
+        return self.sources_for_method(target.method, language)
+
     def _files_for(self, name: str) -> tuple[str, ...]:
         if name not in self._source_files:
             self._source_files[name] = _git_grep_files(self.index, name)
@@ -298,17 +292,14 @@ class SymbolResolver:
         matches: list[FunctionSource] = []
         for path in self._files_for(name):
             file_language = source_language(path, language)
-            for function in self._parsed(path, file_language):
-                if function.name == name and len(function.parameters) == arity:
-                    matches.append(function)
-        ranked = _rank_sources(matches, caller_path)
-        return [
-            ResolvedTarget(
-                _source_method(source, "source-function"),
-                source,
-                "source-function",
+            matches.extend(
+                function
+                for function in self._parsed(path, file_language)
+                if function.name == name and len(function.parameters) == arity
             )
-            for source in ranked
+        return [
+            ResolvedTarget(_source_method(source, "source-function"), source, "source-function")
+            for source in _rank_sources(matches, caller_path)
         ]
 
     def _macros(
@@ -325,7 +316,7 @@ class SymbolResolver:
             except (ValueError, UnicodeError, FileNotFoundError):
                 continue
             file_language = source_language(path, language)
-            for start, end, params, body, _raw in _macro_blocks(text, name):
+            for start, end, params, body in _macro_blocks(text, name):
                 if len(params) != arity:
                     continue
                 source = _macro_source(
@@ -334,16 +325,10 @@ class SymbolResolver:
                 if source is not None:
                     matches.append(source)
         ranked = _rank_sources(matches, caller_path)
-        if not ranked and matches:
-            paths = {_normalize_path(source.path) for source in matches}
-            if len(paths) == 1:
-                ranked = matches
+        if not ranked and len({_normalize_path(source.path) for source in matches}) == 1:
+            ranked = matches
         return [
-            ResolvedTarget(
-                _source_method(source, "source-macro"),
-                source,
-                "source-macro",
-            )
+            ResolvedTarget(_source_method(source, "source-macro"), source, "source-macro")
             for source in ranked
         ]
 
@@ -358,65 +343,28 @@ class SymbolResolver:
             repository_call.name if repository_call is not None else ""
         )
         arity = len(source_call.arguments) if source_call is not None else -1
-        exact_identity = (
-            repository_call.method_full_name if repository_call is not None else ""
-        )
-        call_line = int(
-            source_call.line if source_call is not None else (
-                repository_call.line if repository_call is not None else 0
-            )
-        )
-        cache_key = (
-            name,
-            arity,
-            caller_source.path,
-            inherited_language,
-            exact_identity,
-            call_line,
-        )
-        if cache_key in self._resolution_cache:
-            return self._resolution_cache[cache_key]
 
         if repository_call is not None:
             exact = self.index.callee_methods(repository_call)
             if exact:
-                result = tuple(
-                    ResolvedTarget(method, None, "joern-exact")
-                    for method in exact
-                )
-                self._resolution_cache[cache_key] = result
-                return result
+                return tuple(ResolvedTarget(method, None, "joern-exact") for method in exact)
 
         indexed = [
             method
             for method in self.index.methods().values()
-            if method.name == name
-            and (arity < 0 or len(method.parameters) == arity)
+            if method.name == name and (arity < 0 or len(method.parameters) == arity)
         ]
-        ranked_methods = _rank_methods(indexed, caller_source.path)
-        if ranked_methods:
-            result = tuple(
-                ResolvedTarget(method, None, "joern-name-arity")
-                for method in ranked_methods
+        ranked = _rank_methods(indexed, caller_source.path)
+        if ranked:
+            return tuple(
+                ResolvedTarget(method, None, "joern-name-arity") for method in ranked
             )
-            self._resolution_cache[cache_key] = result
-            return result
 
-        if arity >= 0:
-            functions = self._source_functions(
-                name, arity, caller_source.path, inherited_language
-            )
-            if functions:
-                result = tuple(functions)
-                self._resolution_cache[cache_key] = result
-                return result
-            macros = self._macros(
-                name, arity, caller_source.path, inherited_language
-            )
-            if macros:
-                result = tuple(macros)
-                self._resolution_cache[cache_key] = result
-                return result
-
-        self._resolution_cache[cache_key] = ()
-        return ()
+        if arity < 0:
+            return ()
+        source_matches = self._source_functions(
+            name, arity, caller_source.path, inherited_language
+        )
+        if source_matches:
+            return tuple(source_matches)
+        return tuple(self._macros(name, arity, caller_source.path, inherited_language))
