@@ -116,14 +116,7 @@ def _git_grep_files(index, symbol: str) -> tuple[str, ...]:
         path = raw[len(prefix) :] if raw.startswith(prefix) else raw
         path = _normalize_path(path)
         if Path(path).suffix.lower() not in {
-            ".c",
-            ".h",
-            ".cc",
-            ".cpp",
-            ".cxx",
-            ".hh",
-            ".hpp",
-            ".hxx",
+            ".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx",
         }:
             continue
         if path not in files:
@@ -237,7 +230,7 @@ class SymbolResolver:
         self._source_files: dict[str, tuple[str, ...]] = {}
         self._parsed_files: dict[tuple[str, str], list[FunctionSource]] = {}
         self._resolution_cache: dict[
-            tuple[str, int, str, str], tuple[ResolvedTarget, ...]
+            tuple[str, int, str, str, str, int], tuple[ResolvedTarget, ...]
         ] = {}
 
     def _parsed(self, path: str, language: str) -> list[FunctionSource]:
@@ -336,22 +329,12 @@ class SymbolResolver:
                 if len(params) != arity:
                     continue
                 source = _macro_source(
-                    path,
-                    text,
-                    name,
-                    start,
-                    end,
-                    params,
-                    body,
-                    file_language,
+                    path, text, name, start, end, params, body, file_language
                 )
                 if source is not None:
                     matches.append(source)
         ranked = _rank_sources(matches, caller_path)
         if not ranked and matches:
-            # Multiple conditional macro definitions are legitimate. Keep all
-            # definitions only when they come from the same header; later
-            # variant intersection prevents one branch from being trusted alone.
             paths = {_normalize_path(source.path) for source in matches}
             if len(paths) == 1:
                 ranked = matches
@@ -375,7 +358,22 @@ class SymbolResolver:
             repository_call.name if repository_call is not None else ""
         )
         arity = len(source_call.arguments) if source_call is not None else -1
-        cache_key = (name, arity, caller_source.path, inherited_language)
+        exact_identity = (
+            repository_call.method_full_name if repository_call is not None else ""
+        )
+        call_line = int(
+            source_call.line if source_call is not None else (
+                repository_call.line if repository_call is not None else 0
+            )
+        )
+        cache_key = (
+            name,
+            arity,
+            caller_source.path,
+            inherited_language,
+            exact_identity,
+            call_line,
+        )
         if cache_key in self._resolution_cache:
             return self._resolution_cache[cache_key]
 
@@ -406,20 +404,14 @@ class SymbolResolver:
 
         if arity >= 0:
             functions = self._source_functions(
-                name,
-                arity,
-                caller_source.path,
-                inherited_language,
+                name, arity, caller_source.path, inherited_language
             )
             if functions:
                 result = tuple(functions)
                 self._resolution_cache[cache_key] = result
                 return result
             macros = self._macros(
-                name,
-                arity,
-                caller_source.path,
-                inherited_language,
+                name, arity, caller_source.path, inherited_language
             )
             if macros:
                 result = tuple(macros)
@@ -428,13 +420,3 @@ class SymbolResolver:
 
         self._resolution_cache[cache_key] = ()
         return ()
-
-    def sources_for_target(
-        self,
-        target: ResolvedTarget,
-        inherited_language: str,
-    ) -> list[FunctionSource]:
-        if target.source is not None:
-            return [target.source]
-        language = source_language(target.method.path, inherited_language)
-        return self.sources_for_method(target.method, language)
