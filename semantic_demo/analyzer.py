@@ -106,17 +106,22 @@ def _custom_operations(
         for summary in summaries:
             kind = summary.get("kind")
             if kind == "ALLOC":
-                if call.result:
-                    operations.append(
-                        Operation(
-                            "ALLOC",
-                            call.name,
-                            call.result,
-                            _substitute(summary["size"], call.arguments),
-                            call.line,
-                            True,
-                        )
+                if summary["buffer"] == "return":
+                    if not call.result:
+                        continue
+                    target = call.result
+                else:
+                    target = _substitute(summary["buffer"], call.arguments)
+                operations.append(
+                    Operation(
+                        "ALLOC",
+                        call.name,
+                        target,
+                        _substitute(summary["size"], call.arguments),
+                        call.line,
+                        True,
                     )
+                )
             elif kind in {"READ", "WRITE"}:
                 operations.append(
                     Operation(
