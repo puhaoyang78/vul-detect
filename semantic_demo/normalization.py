@@ -13,11 +13,21 @@ from .standard_semantics import STANDARD_LEAF_CALLS, summaries_for_function
 
 
 def _implementation_digest() -> str:
+    source = Path(__file__).read_text()
+    start_marker = "def _implementation_digest() -> str:"
+    end_marker = "\n\nNORMALIZATION_IMPLEMENTATION_VERSION"
+    start = source.index(start_marker)
+    end = source.index(end_marker, start)
+    canonical_source = (
+        source[:start]
+        + "<normalization-fingerprint-bootstrap>"
+        + source[end:]
+    )
     digest = hashlib.sha256()
-    for name in ("normalization.py", "standard_semantics.py"):
-        path = Path(__file__).with_name(name)
-        digest.update(name.encode())
-        digest.update(path.read_bytes())
+    digest.update(canonical_source.encode())
+    digest.update(
+        Path(__file__).with_name("standard_semantics.py").read_bytes()
+    )
     return digest.hexdigest()[:20]
 
 
