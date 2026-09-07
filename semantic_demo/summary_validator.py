@@ -57,13 +57,12 @@ def _resolve_simple_value(expression: str, relations: dict[str, str]) -> str:
     return current
 
 
-def _return_expressions(function: FunctionSource) -> list[str]:
-    # FunctionSource has already been structurally parsed. The expression-only
-    # extraction here deliberately stays local and does not infer across calls.
-    return [
-        normalize_expression(match.group(1))
-        for match in _RETURN.finditer(function.text)
-    ]
+def _returns(function: FunctionSource) -> list[tuple[int, str]]:
+    results: list[tuple[int, str]] = []
+    for match in _RETURN.finditer(function.text):
+        line = function.start_line + function.text[: match.start()].count("\n")
+        results.append((line, normalize_expression(match.group(1))))
+    return results
 
 
 @dataclass(frozen=True)
@@ -196,14 +195,13 @@ class SummaryValidator:
                             (parameter_index, call_id, argument_index)
                         )
 
-        returns = _return_expressions(function)
-        full_relations = _relation_map(function, function.end_line + 1)
-        for expression in returns:
+        for return_line, expression in _returns(function):
+            relations = _relation_map(function, return_line)
             facts.returns.append(expression)
-            resolved = _resolve_simple_value(expression, full_relations)
+            resolved = _resolve_simple_value(expression, relations)
             if resolved != expression:
                 facts.returns.append(resolved)
-            dependencies = _dependency_closure(expression, full_relations)
+            dependencies = _dependency_closure(expression, relations)
             for parameter_index, parameter in enumerate(function.parameters):
                 if parameter in dependencies:
                     facts.return_flows.add(parameter_index)
