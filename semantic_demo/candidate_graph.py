@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ from .standard_semantics import STANDARD_LEAF_CALLS, effects_for_call
 from .symbol_resolution import ResolvedTarget, SymbolResolver
 
 
-CANDIDATE_MANIFEST_VERSION = 3
+CANDIDATE_MANIFEST_VERSION = 4
 DISCOVERY_POLICY_VERSION = 4
 
 
@@ -51,20 +50,6 @@ class CandidateDiscovery:
 class BoundaryNeed:
     parameter_indices: tuple[int, ...] = ()
     return_value: bool = False
-
-
-def candidate_source_fingerprint(candidate: Candidate) -> str:
-    function = candidate.function
-    payload = (
-        function.path
-        + "\0"
-        + function.name
-        + "\0"
-        + function.text
-        + "\0"
-        + hashlib.sha256(function.translation_unit.encode()).hexdigest()
-    ).encode()
-    return hashlib.sha256(payload).hexdigest()
 
 
 def candidate_manifest_path(index: JoernRepositoryIndex) -> Path:
@@ -159,12 +144,6 @@ def _memory_seed_groups(function: FunctionSource) -> list[tuple[int, tuple[str, 
 
 
 def _dependency_closure(function: FunctionSource) -> set[str]:
-    """All values that feed a local memory operation or returned value.
-
-    Reaching definitions are calculated at each real program point.  This is
-    intentionally not a function-wide textual relation map: lexical reaching
-    definitions outside the statement's enclosing block are not valid facts.
-    """
     relevant: set[str] = set()
     for line, expressions in _memory_seed_groups(function):
         relevant.update(_expression_closure_at(function, expressions, line))
@@ -188,13 +167,11 @@ def _scoped_dependency_closure(
     function: FunctionSource,
     need: BoundaryNeed,
 ) -> set[str]:
-    boundary_names = {
+    relevant = {
         function.parameters[index]
         for index in need.parameter_indices
         if 0 <= index < len(function.parameters)
     }
-    relevant = set(boundary_names)
-
     if need.return_value:
         for line, expression in _returns(function):
             relevant.update(_expression_closure_at(function, (expression,), line))
@@ -213,24 +190,10 @@ def _scoped_dependency_closure(
     return relevant
 
 
-def _source_call(function: FunctionSource, line: int, name: str):
-    calls = function.calls()
-    matches = [
-        call for call in calls
-        if not call.indirect and call.name == name and call.line == line
-    ]
-    if len(matches) == 1:
-        return matches[0]
-    named = [call for call in calls if not call.indirect and call.name == name]
-    return named[0] if len(named) == 1 else None
-
-
 def _repository_call_for_source(
     method: RepositoryMethod,
     source_call,
 ) -> RepositoryCall | None:
-    if source_call is None:
-        return None
     exact = [
         call for call in method.calls
         if call.name == source_call.name and call.line == source_call.line
@@ -247,10 +210,10 @@ def _result_flows_to_return(function: FunctionSource, result: str | None) -> boo
     name = normalize_expression(result)
     if not re.fullmatch(r"[A-Za-z_]\w*", name):
         return False
-    for line, expression in _returns(function):
-        if name in _expression_closure_at(function, (expression,), line):
-            return True
-    return False
+    return any(
+        name in _expression_closure_at(function, (expression,), line)
+        for line, expression in _returns(function)
+    )
 
 
 def _call_need(
@@ -262,20 +225,6 @@ def _call_need(
     *,
     direct_layer: bool,
 ) -> tuple[str, BoundaryNeed] | None:
-    if source_call is None:
-        parameter_indices = tuple(
-            index
-            for index, type_text in enumerate(callee.parameter_types)
-            if _type_may_be_pointer(type_text)
-        )
-        return_needed = callee.return_type not in {"void", "<empty>"}
-        if not parameter_indices and not return_needed:
-            return None
-        return (
-            "resolved custom callee retained with conservative boundary demand",
-            BoundaryNeed(parameter_indices, return_needed),
-        )
-
     result_name = normalize_expression(source_call.result or "")
     return_needed = bool(
         source_call.returned
@@ -286,17 +235,15 @@ def _call_need(
     relevant_arguments: set[int] = set()
     pointer_arguments: set[int] = set()
     for index, argument in enumerate(source_call.arguments[: len(callee.parameter_types)]):
-        argument_closure = _expression_closure_at(
-            function, (argument,), source_call.line
-        )
+        argument_closure = _expression_closure_at(function, (argument,), source_call.line)
         if argument_closure & relevant:
             relevant_arguments.add(index)
-        if _type_may_be_pointer(callee.parameter_types[index]):
-            # A direct custom call can itself establish memory semantics on a
-            # pointer argument, so the direct layer must not require that the
-            # caller already has a modeled memory operation involving it.
-            if direct_layer or argument_closure & parameter_scope or _identifiers(argument) & parameter_scope:
-                pointer_arguments.add(index)
+        if _type_may_be_pointer(callee.parameter_types[index]) and (
+            direct_layer
+            or argument_closure & parameter_scope
+            or _identifiers(argument) & parameter_scope
+        ):
+            pointer_arguments.add(index)
 
     parameter_indices = tuple(sorted(relevant_arguments | pointer_arguments))
     if not parameter_indices and not return_needed:
@@ -372,18 +319,13 @@ def _add_candidate(
         )
         current = selections.get(key)
         if current is None or depth < current.depth:
-            selections[key] = CandidateSelection(
-                depth, caller, reason, target.resolution
-            )
+            selections[key] = CandidateSelection(depth, caller, reason, target.resolution)
 
 
 def _iter_source_calls(function: FunctionSource):
     for call in function.calls():
-        if call.indirect:
-            continue
-        if call.name.startswith("<operator>.") or call.name in STANDARD_LEAF_CALLS:
-            continue
-        yield call
+        if not call.indirect and call.name not in STANDARD_LEAF_CALLS and not call.name.startswith("<operator>."):
+            yield call
 
 
 def discover_relevant_candidates(
@@ -392,20 +334,11 @@ def discover_relevant_candidates(
     entry_method: RepositoryMethod,
     entry: FunctionSource,
 ) -> CandidateDiscovery:
-    """Discover caller-observable custom semantics with bounded recursion.
-
-    The entry layer favors recall: every uniquely resolved custom callee that
-    can expose pointer or return semantics is considered. Recursive expansion
-    is demand-driven and only follows values connected to the incoming caller
-    boundary. This separates first-hop recall from deep call-graph explosion.
-    """
     resolver = SymbolResolver(index)
     discovered: dict[tuple[str, str, int, str], Candidate] = {}
     selections: dict[tuple[str, str, int, str], CandidateSelection] = {}
     needs: dict[tuple[str, str, int, str], BoundaryNeed] = {}
-    queue: list[
-        tuple[RepositoryMethod, FunctionSource, str, int, BoundaryNeed]
-    ] = []
+    queue: list[tuple[RepositoryMethod, FunctionSource, str, int, BoundaryNeed]] = []
     expanded_needs: dict[tuple[str, int, str], BoundaryNeed] = {}
     unresolved_relevant = 0
 
@@ -415,13 +348,8 @@ def discover_relevant_candidates(
 
     for source_call in _iter_source_calls(entry):
         repository_call = _repository_call_for_source(entry_method, source_call)
-        targets = resolver.resolve(
-            repository_call, source_call, entry, entry_language
-        )
+        targets = resolver.resolve(repository_call, source_call, entry, entry_language)
         if not targets:
-            # At the direct boundary every unresolved custom call with pointer-
-            # like/value-bearing arguments is potentially memory-relevant. Keep
-            # an explicit diagnostic rather than silently dropping it.
             if source_call.arguments:
                 unresolved_relevant += 1
             continue
@@ -482,9 +410,8 @@ def discover_relevant_candidates(
             )
             if not targets:
                 argument_relevant = any(
-                    _expression_closure_at(
-                        caller_source, (argument,), source_call.line
-                    ) & caller_relevant
+                    _expression_closure_at(caller_source, (argument,), source_call.line)
+                    & caller_relevant
                     for argument in source_call.arguments
                 )
                 result_relevant = bool(
@@ -528,9 +455,7 @@ def discover_relevant_candidates(
                     need=need,
                 )
                 for source in sources:
-                    queue.append(
-                        (callee, source, source.language, depth + 1, need)
-                    )
+                    queue.append((callee, source, source.language, depth + 1, need))
 
     candidates = tuple(
         sorted(discovered.values(), key=lambda item: _candidate_key(item.function))
@@ -583,7 +508,6 @@ def write_candidate_manifest(index: JoernRepositoryIndex, discovery: CandidateDi
             "required_parameters": list(candidate.required_parameters),
             "require_return": candidate.require_return,
             "resolution": candidate.resolution,
-            "source_fingerprint": candidate_source_fingerprint(candidate),
             "skip_reason": candidate_validation_error(function),
             "depth": selection.depth,
             "caller": selection.caller,
@@ -607,15 +531,9 @@ def read_candidate_manifest(
         raise RuntimeError(
             f"{index.sample_key}: candidate manifest is missing; run preflight first"
         )
-    records = [
-        json.loads(line)
-        for line in path.read_text().splitlines()
-        if line.strip()
-    ]
+    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     if not records or records[0].get("record_type") != "manifest":
-        raise RuntimeError(
-            f"{index.sample_key}: invalid candidate manifest: {path}"
-        )
+        raise RuntimeError(f"{index.sample_key}: invalid candidate manifest: {path}")
     header = records[0]
     if (
         header.get("manifest_version") != CANDIDATE_MANIFEST_VERSION
@@ -626,14 +544,10 @@ def read_candidate_manifest(
             f"{index.sample_key}: candidate manifest is stale; rerun preflight --refresh"
         )
     candidates = [
-        record
-        for record in records[1:]
-        if record.get("record_type") == "candidate"
+        record for record in records[1:] if record.get("record_type") == "candidate"
     ]
     if len(candidates) != int(header.get("candidate_count", -1)):
-        raise RuntimeError(
-            f"{index.sample_key}: incomplete candidate manifest: {path}"
-        )
+        raise RuntimeError(f"{index.sample_key}: incomplete candidate manifest: {path}")
     return header, candidates
 
 
@@ -645,17 +559,12 @@ def _load_source_candidate(index, record, language: str) -> FunctionSource:
     text = index.repository.read_blob(path)
 
     if resolution == "source-macro":
-        # Re-run the same resolver against a synthetic call so macro/source
-        # definitions are reconstructed from repository source, not serialized
-        # code fragments in the manifest.
         from .symbol_resolution import _macro_blocks, _macro_source
 
-        for start, end, params, body, _raw in _macro_blocks(text, name):
+        for start, end, params, body in _macro_blocks(text, name):
             if start != source_line:
                 continue
-            source = _macro_source(
-                path, text, name, start, end, params, body, language
-            )
+            source = _macro_source(path, text, name, start, end, params, body, language)
             if source is not None:
                 return source
         raise RuntimeError(
@@ -705,7 +614,7 @@ def load_manifest_candidate(
             )
         source = matches[0]
 
-    candidate = Candidate(
+    return Candidate(
         sample_key=index.sample_key,
         function=source,
         call_lines=tuple(int(line) for line in record.get("call_lines", [])),
@@ -717,14 +626,8 @@ def load_manifest_candidate(
         ),
         variant_count=int(record.get("variant_count", 1)),
         required_parameters=tuple(
-            int(index) for index in record.get("required_parameters", [])
+            int(parameter) for parameter in record.get("required_parameters", [])
         ),
         require_return=bool(record.get("require_return", False)),
         resolution=resolution,
     )
-    if candidate_source_fingerprint(candidate) != str(record.get("source_fingerprint", "")):
-        raise RuntimeError(
-            f"{index.sample_key}: candidate source changed after preflight; "
-            "rerun preflight --refresh"
-        )
-    return candidate
