@@ -286,6 +286,7 @@ def normalize(args: argparse.Namespace) -> None:
                     "base_url": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
                 }
             )
+        )
     else:
         llm_context = contextlib.nullcontext({"model": expected_model})
 
