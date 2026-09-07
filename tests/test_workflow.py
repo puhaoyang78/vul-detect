@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from semantic_demo.candidate_graph import discover_relevant_candidates
 from semantic_demo.joern import RepositoryCall, RepositoryMethod
-from semantic_demo.normalization_v2 import NORMALIZATION_IMPLEMENTATION_VERSION, _slice_source
+from semantic_demo.normalization import NORMALIZATION_IMPLEMENTATION_VERSION, _slice_source
 from semantic_demo.runtime import read_jsonl, write_jsonl
 from semantic_demo.semantics import Candidate, NORMALIZATION_SCHEMA_VERSION
 from semantic_demo.source import parse_functions
