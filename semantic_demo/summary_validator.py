@@ -41,10 +41,29 @@ def _dependency_closure(
     return seen
 
 
+def _resolve_simple_value(expression: str, relations: dict[str, str]) -> str:
+    """Resolve only pure identifier-to-identifier assignment chains."""
+    current = normalize_expression(expression)
+    seen: set[str] = set()
+    while re.fullmatch(r"[A-Za-z_]\w*", current) and current not in seen:
+        seen.add(current)
+        replacement = relations.get(current)
+        if replacement is None:
+            break
+        replacement = normalize_expression(replacement)
+        if not re.fullmatch(r"[A-Za-z_]\w*", replacement):
+            break
+        current = replacement
+    return current
+
+
 def _return_expressions(function: FunctionSource) -> list[str]:
-    # FunctionSource has already been structurally parsed.  The expression-only
+    # FunctionSource has already been structurally parsed. The expression-only
     # extraction here deliberately stays local and does not infer across calls.
-    return [normalize_expression(match.group(1)) for match in _RETURN.finditer(function.text)]
+    return [
+        normalize_expression(match.group(1))
+        for match in _RETURN.finditer(function.text)
+    ]
 
 
 @dataclass(frozen=True)
@@ -59,10 +78,10 @@ class SummaryValidator:
     """Validate LLM summaries using Joern identity plus local source dataflow.
 
     Joern remains responsible for repository/revision binding, exact method
-    identity, and resolved static-call discovery during preflight.  Summary
+    identity, and resolved static-call discovery during preflight. Summary
     validation itself is intentionally intraprocedural: parameter-to-argument
     and parameter-to-return dependencies are reconstructed from the same
-    Tree-sitter reaching definitions used by candidate slicing.  This avoids
+    Tree-sitter reaching definitions used by candidate slicing. This avoids
     invoking Joern OSS dataflow for every real-world translation unit.
     """
 
@@ -74,18 +93,21 @@ class SummaryValidator:
         self._cache: dict[str, JoernFacts] = {}
 
     def ensure_available(self) -> None:
-        # A valid preflight/index is the static-analysis prerequisite.  This
+        # A valid preflight/index is the static-analysis prerequisite. This
         # performs only availability checks; it does not launch OSS dataflow.
         self.repository_index.ensure_available()
 
     @staticmethod
     def _key(function: FunctionSource) -> str:
-        return f"{function.path}:{function.name}:{function.start_line}:{function.end_line}"
+        return (
+            f"{function.path}:{function.name}:"
+            f"{function.start_line}:{function.end_line}"
+        )
 
     def _identity(self, candidate) -> _Identity:
         if not candidate.method_full_name:
             raise JoernMethodNotFound(
-                f"candidate has no Joern method identity: "
+                "candidate has no Joern method identity: "
                 f"{candidate.function.path}:{candidate.function.name}"
             )
         method = self.repository_index.methods().get(candidate.method_full_name)
@@ -100,19 +122,31 @@ class SummaryValidator:
         )
         if not same_path or method.name != function.name:
             raise JoernError(
-                f"candidate/Joern identity mismatch: {function.path}:{function.name} "
-                f"!= {method.path}:{method.name}"
+                f"candidate/Joern identity mismatch: "
+                f"{function.path}:{function.name} != {method.path}:{method.name}"
             )
         # Preprocessed entry methods can have recovered original source ranges;
         # the manifest fingerprint already binds the exact recovered source.
-        if not self.repository_index.preprocess_entry or method.path != self.repository_index.entry_path:
-            if method.start_line != function.start_line or method.end_line != function.end_line:
+        if (
+            not self.repository_index.preprocess_entry
+            or method.path != self.repository_index.entry_path
+        ):
+            if (
+                method.start_line != function.start_line
+                or method.end_line != function.end_line
+            ):
                 raise JoernError(
-                    f"candidate/Joern range mismatch: {function.path}:{function.name}@"
+                    f"candidate/Joern range mismatch: "
+                    f"{function.path}:{function.name}@"
                     f"{function.start_line}-{function.end_line} != "
                     f"{method.start_line}-{method.end_line}"
                 )
-        return _Identity(method.path, method.name, method.start_line, method.end_line)
+        return _Identity(
+            method.path,
+            method.name,
+            method.start_line,
+            method.end_line,
+        )
 
     def facts(self, candidate) -> JoernFacts:
         function = candidate.function
@@ -129,7 +163,9 @@ class SummaryValidator:
             }
         )
 
-        direct_calls = [call for call in function.calls() if not call.indirect]
+        direct_calls = [
+            call for call in function.calls() if not call.indirect
+        ]
         occurrence: dict[tuple[int, str], int] = {}
         for call in direct_calls:
             occurrence_key = (call.line, call.name)
@@ -152,14 +188,21 @@ class SummaryValidator:
             relations = _relation_map(function, call.line)
             for argument_index, argument in arguments.items():
                 dependencies = _dependency_closure(argument, relations)
-                for parameter_index, parameter in enumerate(function.parameters):
+                for parameter_index, parameter in enumerate(
+                    function.parameters
+                ):
                     if parameter in dependencies:
-                        facts.flows.add((parameter_index, call_id, argument_index))
+                        facts.flows.add(
+                            (parameter_index, call_id, argument_index)
+                        )
 
         returns = _return_expressions(function)
-        facts.returns.extend(returns)
         full_relations = _relation_map(function, function.end_line + 1)
         for expression in returns:
+            facts.returns.append(expression)
+            resolved = _resolve_simple_value(expression, full_relations)
+            if resolved != expression:
+                facts.returns.append(resolved)
             dependencies = _dependency_closure(expression, full_relations)
             for parameter_index, parameter in enumerate(function.parameters):
                 if parameter in dependencies:
