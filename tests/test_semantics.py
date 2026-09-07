@@ -71,7 +71,9 @@ class SemanticValidationTests(unittest.TestCase):
             }
             """,
         )[0]
-        self.candidate = Candidate("sample", self.function, (1,))
+        self.candidate = Candidate(
+            "sample", self.function, (1,), required_parameters=(0, 1, 2)
+        )
         self.validator = StaticFactsValidator(copy_facts(self.function))
 
     def _custom_candidate(self):
@@ -79,7 +81,9 @@ class SemanticValidationTests(unittest.TestCase):
             "custom.c",
             "void outer(char *dst, unsigned long len) { custom_copy(dst, len); }",
         )[0]
-        return Candidate("sample", function, (1,))
+        return Candidate(
+            "sample", function, (1,), required_parameters=(0, 1)
+        )
 
     def test_write_buffer_and_length_are_verified(self):
         result = validate_summary(
@@ -88,14 +92,16 @@ class SemanticValidationTests(unittest.TestCase):
             joern=self.validator,
         )
         self.assertTrue(result.passed)
+        self.assertEqual("VERIFIED", result.status)
 
-    def test_wrong_length_is_rejected(self):
+    def test_wrong_length_is_unresolved_not_invalid(self):
         result = validate_summary(
             self.candidate,
             {"kind": "WRITE", "buffer": "arg0", "length": "arg1"},
             joern=self.validator,
         )
         self.assertFalse(result.passed)
+        self.assertEqual("UNRESOLVED", result.status)
 
     def test_source_parameter_names_are_canonicalized(self):
         result = validate_summary(
@@ -112,14 +118,15 @@ class SemanticValidationTests(unittest.TestCase):
             "bad.c", "void bad(int value, unsigned long n) { write(1, &value, n); }"
         )[0]
         result = validate_summary(
-            Candidate("sample", function, (1,)),
+            Candidate("sample", function, (1,), required_parameters=(0, 1)),
             {"kind": "READ", "buffer": "arg0", "length": "arg1"},
             joern=StaticFactsValidator(JoernFacts(parameters={}, calls={}, flows=set())),
         )
         self.assertFalse(result.passed)
-        self.assertIn("not pointer-like", result.reason)
+        self.assertEqual("REJECTED", result.status)
+        self.assertIn("source-level pointer/object use", result.reason)
 
-    def test_method_not_found_rejects_summary(self):
+    def test_method_not_found_is_unresolved(self):
         class Missing:
             def facts(self, _candidate):
                 raise JoernMethodNotFound("method_not_found")
@@ -130,9 +137,10 @@ class SemanticValidationTests(unittest.TestCase):
             joern=Missing(),
         )
         self.assertFalse(result.passed)
+        self.assertEqual("UNRESOLVED", result.status)
         self.assertIn("method_not_found", result.reason)
 
-    def test_timeout_rejects_summary(self):
+    def test_timeout_is_unresolved(self):
         class Timeout:
             def facts(self, _candidate):
                 raise JoernTimeout("timed out")
@@ -143,9 +151,10 @@ class SemanticValidationTests(unittest.TestCase):
             joern=Timeout(),
         )
         self.assertFalse(result.passed)
+        self.assertEqual("UNRESOLVED", result.status)
         self.assertIn("timed out", result.reason)
 
-    def test_candidate_local_joern_error_rejects_summary(self):
+    def test_candidate_local_static_error_is_unresolved(self):
         class Broken:
             def facts(self, _candidate):
                 raise JoernError("TU parse failed")
@@ -156,9 +165,10 @@ class SemanticValidationTests(unittest.TestCase):
             joern=Broken(),
         )
         self.assertFalse(result.passed)
-        self.assertIn("candidate-local", result.reason)
+        self.assertEqual("UNRESOLVED", result.status)
+        self.assertIn("local validation context unavailable", result.reason)
 
-    def test_exact_value_return_is_verified(self):
+    def test_exact_value_return_is_verified_when_return_is_requested(self):
         function = parse_functions(
             "value.c", "unsigned long identity(unsigned long len) { return len; }"
         )[0]
@@ -170,11 +180,34 @@ class SemanticValidationTests(unittest.TestCase):
             return_flows={0},
         )
         result = validate_summary(
-            Candidate("sample", function, (1,)),
+            Candidate("sample", function, (1,), require_return=True),
             {"kind": "VALUE", "target": "return", "expression": "arg0"},
             joern=StaticFactsValidator(facts),
         )
         self.assertTrue(result.passed)
+
+    def test_prompt_placeholder_is_rejected_before_static_validation(self):
+        result = validate_summary(
+            self.candidate,
+            {"kind": "WRITE", "buffer": "arg0 expression", "length": "arg2"},
+            joern=self.validator,
+        )
+        self.assertFalse(result.passed)
+        self.assertEqual("REJECTED", result.status)
+        self.assertIn("placeholder", result.reason)
+
+    def test_unrequested_return_summary_is_rejected(self):
+        function = parse_functions(
+            "value.c", "unsigned long identity(unsigned long len) { return len; }"
+        )[0]
+        result = validate_summary(
+            Candidate("sample", function, (1,), required_parameters=(0,)),
+            {"kind": "VALUE", "target": "return", "expression": "arg0"},
+            joern=StaticFactsValidator(JoernFacts(return_flows={0})),
+        )
+        self.assertFalse(result.passed)
+        self.assertEqual("REJECTED", result.status)
+        self.assertIn("caller-observable", result.reason)
 
 
 class CompositionTests(unittest.TestCase):
@@ -202,7 +235,7 @@ class CompositionTests(unittest.TestCase):
             },
         )
         passed, reason = _validate_by_composition(
-            Candidate("sample", function, (1,)),
+            Candidate("sample", function, (1,), required_parameters=(0, 1, 2)),
             {"kind": "WRITE", "buffer": "arg0", "length": "arg2"},
             StaticFactsValidator(facts),
             {
@@ -229,7 +262,7 @@ class CompositionTests(unittest.TestCase):
             flows={(0, call.line, call.name, 0), (1, call.line, call.name, 1)},
         )
         passed, _ = _validate_by_composition(
-            Candidate("sample", function, (1,)),
+            Candidate("sample", function, (1,), required_parameters=(0, 1)),
             {"kind": "WRITE", "buffer": "arg0", "length": "arg1"},
             StaticFactsValidator(facts),
             {
