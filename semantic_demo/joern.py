@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -23,7 +24,7 @@ class JoernMethodNotFound(JoernError):
 
 
 class JoernTimeout(JoernError):
-    """Joern exceeded the per-function validation budget."""
+    """Joern exceeded the configured execution budget."""
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,73 @@ class RepositoryMethod:
     calls: tuple[RepositoryCall, ...]
 
 
+def _terminate_process_group(process: subprocess.Popen[str], grace_seconds: float = 5.0) -> None:
+    if process.poll() is not None:
+        return
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=grace_seconds)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _run_process_group(
+    command: list[str],
+    *,
+    timeout: int | float | None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run an external tool with owned process-group lifecycle.
+
+    Joern launchers are shell scripts that spawn Java. Killing only the shell on
+    timeout leaves the JVM alive, so every tool invocation gets a new process
+    group and timeout cleanup always terminates that entire group.
+    """
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        _terminate_process_group(process)
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            command,
+            timeout,
+            output=stdout,
+            stderr=stderr,
+        ) from error
+    return subprocess.CompletedProcess(
+        command,
+        process.returncode,
+        stdout,
+        stderr,
+    )
+
+
 @functools.cache
 def _tool_identity(path_text: str) -> str:
     path = Path(path_text)
@@ -90,14 +158,7 @@ def _tool_identity(path_text: str) -> str:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if path.name == "joern":
         try:
-            result = subprocess.run(
-                [str(path), "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=30,
-                check=False,
-            )
+            result = _run_process_group([str(path), "--version"], timeout=30)
             output = (result.stdout or result.stderr).strip()
             if result.returncode == 0 and output:
                 return f"{output}:{digest}"
@@ -144,7 +205,7 @@ def _source_snapshot_identity(repository) -> str:
 
 
 class JoernRepositoryIndex:
-    """Build and query one Joern 4 CPG per sample/revision."""
+    """Build and query one Joern CPG per sample/revision."""
 
     def __init__(
         self,
@@ -163,14 +224,10 @@ class JoernRepositoryIndex:
         self.repository = repository
         self.sample_key = sample_key
         self.entry_path = str(entry_path)
-        requested_scopes = tuple(
-            dict.fromkeys([*map(str, scopes), self.entry_path])
-        )
+        requested_scopes = tuple(dict.fromkeys([*map(str, scopes), self.entry_path]))
         self.scopes = self.repository.resolve_paths(requested_scopes)
         self.defines = tuple(dict.fromkeys(map(str, defines)))
-        self.explicit_include_paths = tuple(
-            dict.fromkeys(map(str, include_paths))
-        )
+        self.explicit_include_paths = tuple(dict.fromkeys(map(str, include_paths)))
         self.context_paths = self._repository_context_paths()
         self.generated_empty_headers = self._repository_generated_empty_headers()
         self.joern_dir = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
@@ -214,10 +271,7 @@ class JoernRepositoryIndex:
             cpg_descriptor["generated_empty_headers"] = self.generated_empty_headers
         if self.preprocess_entry:
             cpg_descriptor["preprocess_entry"] = self.entry_path
-        cpg_payload = json.dumps(
-            cpg_descriptor,
-            sort_keys=True,
-        ).encode()
+        cpg_payload = json.dumps(cpg_descriptor, sort_keys=True).encode()
         self.cpg_fingerprint = hashlib.sha256(cpg_payload).hexdigest()[:16]
         index_payload = json.dumps(
             {
@@ -380,14 +434,7 @@ class JoernRepositoryIndex:
         command.extend(f"-I{include_dir}" for include_dir in include_dirs)
         command.extend([str(source_path), "-o", str(output_path)])
         try:
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=self.timeout,
-                check=False,
-            )
+            result = _run_process_group(command, timeout=self.timeout)
         except subprocess.TimeoutExpired as error:
             raise JoernError(
                 f"{self.sample_key}: entry preprocessing timed out after {self.timeout}s"
@@ -434,13 +481,9 @@ class JoernRepositoryIndex:
                 temporary_cpg = _temporary_cache_file(self.cpg_path, ".bin")
                 command = self._c2cpg_command(source_root, temporary_cpg, include_dirs)
                 try:
-                    result = subprocess.run(
+                    result = _run_process_group(
                         command,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
                         timeout=self.timeout,
-                        check=False,
                         env=self._environment(),
                     )
                 except subprocess.TimeoutExpired as error:
@@ -488,13 +531,9 @@ class JoernRepositoryIndex:
             if self.preprocess_entry:
                 command.extend(["--param", f"entryPath={self.entry_path}"])
             try:
-                result = subprocess.run(
+                result = _run_process_group(
                     command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
                     timeout=self.timeout,
-                    check=False,
                     env=self._environment(),
                 )
             except subprocess.TimeoutExpired as error:
@@ -613,7 +652,7 @@ def _isolated_variant_translation_unit(function) -> str:
 
 
 class JoernValidator:
-    """Extract per-function CPG/data-flow facts with a local Joern installation."""
+    """Legacy Joern fact extractor retained for offline diagnostics."""
 
     def __init__(
         self,
@@ -890,13 +929,9 @@ class JoernValidator:
         environment["JAVA_HOME"] = str(self.java_home)
         environment["PATH"] = str(self.java.parent) + os.pathsep + environment.get("PATH", "")
         try:
-            return subprocess.run(
+            return _run_process_group(
                 command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
                 timeout=self.timeout,
-                check=False,
                 env=environment,
             )
         except subprocess.TimeoutExpired as error:
