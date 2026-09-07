@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 
 from z3 import Solver, unsat
@@ -15,9 +16,78 @@ _FIXED_WIDTH_TYPES = {
     "int64_t": (-(2**63), 2**63 - 1),
 }
 
+_C_INTEGER = re.compile(
+    r"(?<![A-Za-z0-9_])((?:0[xX][0-9A-Fa-f]+)|(?:0[bB][01]+)|(?:\d+))(?:[uU](?:ll|LL|l|L)?|(?:ll|LL|l|L)[uU]?)(?![A-Za-z0-9_])"
+)
+_COMPLEX_LVALUE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:\*\s*)?[A-Za-z_]\w*"
+    r"(?:(?:->|\.)[A-Za-z_]\w*|\[[^\[\]]+\])+"
+)
+_DEREF_ATOM = re.compile(r"(?<![A-Za-z0-9_])\*\s*[A-Za-z_]\w*")
+_CHAR_LITERAL = re.compile(r"'(?:\\.|[^'\\])'")
+
 
 def _ids(expression: str) -> set[str]:
     return set(re.findall(r"\b[A-Za-z_]\w*\b", normalize_expression(expression)))
+
+
+def _char_value(match: re.Match[str]) -> str:
+    try:
+        value = ast.literal_eval(match.group(0))
+    except Exception:
+        return match.group(0)
+    return str(ord(value)) if isinstance(value, str) and len(value) == 1 else match.group(0)
+
+
+def _normalize_c_scalar_syntax(expression: str) -> str:
+    text = normalize_expression(expression)
+    text = _C_INTEGER.sub(lambda match: match.group(1), text)
+    text = _CHAR_LITERAL.sub(_char_value, text)
+    text = re.sub(r"\b(?:NULL|nullptr)\b", "0", text)
+    text = re.sub(r"\btrue\b", "1", text, flags=re.I)
+    text = re.sub(r"\bfalse\b", "0", text, flags=re.I)
+    return text
+
+
+class CExpressionEncoder(core.ExpressionEncoder):
+    """Encode common C scalar syntax without inventing program facts.
+
+    Member/subscript/dereference expressions are treated as stable symbolic
+    lvalues. This preserves equality across repeated occurrences such as
+    ``offset < iov[i].iov_len`` while leaving their values unconstrained unless
+    the program supplies a relation.
+    """
+
+    def _symbolize_lvalues(self, expression: str) -> str:
+        text = expression
+        for pattern in (_COMPLEX_LVALUE, _DEREF_ATOM):
+            while True:
+                match = pattern.search(text)
+                if match is None:
+                    break
+                raw = normalize_expression(match.group(0))
+                text = (
+                    text[: match.start()]
+                    + str(self.symbol(raw))
+                    + text[match.end() :]
+                )
+        return text
+
+    def encode(self, expression: str):
+        text = _normalize_c_scalar_syntax(expression)
+        text = self._symbolize_lvalues(text)
+        return super().encode(text)
+
+    def comparison(self, expression: str):
+        text = _normalize_c_scalar_syntax(expression)
+        if not re.search(r"<=|>=|==|!=|<|>", text):
+            if re.search(r"(?<![=!<>])=(?!=)", text):
+                raise ValueError(f"assignment condition is not a pure constraint: {expression}")
+            return self.encode(text) != 0
+        return super().comparison(text)
+
+    def equality(self, left: str, right: str):
+        return self.encode(left) == self.encode(right)
 
 
 def _parameter_ranges(entry, identifiers: set[str]):
@@ -38,7 +108,7 @@ def _parameter_ranges(entry, identifiers: set[str]):
 
 
 def _arithmetic_provably_bounded(entry, line: int, expression: str) -> bool:
-    text = normalize_expression(expression)
+    text = _normalize_c_scalar_syntax(expression)
     if not re.search(r"[+*\-]", text):
         return True
     identifiers = _ids(text)
@@ -106,7 +176,9 @@ def _opaque_dependency_error(operation, capacities, operations) -> str | None:
 
 def _check_access(entry, operation, capacities, signed, unsigned, operations):
     line = int(getattr(operation, "line", 0))
-    original = core._has_unmodeled_c_arithmetic
+    original_arithmetic = core._has_unmodeled_c_arithmetic
+    original_encoder = core.ExpressionEncoder
+    core.ExpressionEncoder = CExpressionEncoder
     core._has_unmodeled_c_arithmetic = lambda expression: not _arithmetic_provably_bounded(
         entry, line, expression
     )
@@ -120,7 +192,8 @@ def _check_access(entry, operation, capacities, signed, unsigned, operations):
             operations,
         )
     finally:
-        core._has_unmodeled_c_arithmetic = original
+        core._has_unmodeled_c_arithmetic = original_arithmetic
+        core.ExpressionEncoder = original_encoder
 
     dependency_error = _opaque_dependency_error(operation, capacities, operations)
     if dependency_error is not None:
