@@ -14,18 +14,18 @@ ALLOCATORS = {
     "kmalloc": (0,), "kzalloc": (0,), "vmalloc": (0,),
 }
 WRITES = {
-    "memcpy": (0, 2), "memmove": (0, 2), "memset": (0, 2),
+    "memcpy": (0, 2), "memmove": (0, 2), "mempcpy": (0, 2),
+    "memset": (0, 2), "bzero": (0, 1), "explicit_bzero": (0, 1),
     "read": (1, 2), "recv": (1, 2), "recvfrom": (1, 2),
     "fread": (0, 1), "ReadFile": (1, 2),
-    "bzero": (0, 1), "explicit_bzero": (0, 1),
 }
 READS = {
-    "memcpy": (1, 2), "memmove": (1, 2), "write": (1, 2),
-    "send": (1, 2), "sendto": (1, 2), "fwrite": (0, 1),
-    "memcmp": (0, 2),
+    "memcpy": (1, 2), "memmove": (1, 2), "mempcpy": (1, 2),
+    "write": (1, 2), "send": (1, 2), "sendto": (1, 2),
+    "fwrite": (0, 1), "memcmp": (0, 2),
 }
 UNBOUNDED_WRITES = {"sprintf", "strcpy", "strcat", "vsprintf"}
-NORMALIZATION_SCHEMA_VERSION = 7
+NORMALIZATION_SCHEMA_VERSION = 8
 NORMALIZATION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -101,8 +101,7 @@ def _strip_leading_casts(value: str) -> str:
 
 
 def _buffer_root_index(value: str) -> int | None:
-    text = _strip_leading_casts(value)
-    text = text.lstrip("(")
+    text = _strip_leading_casts(value).lstrip("(")
     match = re.match(r"^arg(\d+)\b", text)
     return int(match.group(1)) if match else None
 
@@ -118,8 +117,11 @@ def _schema_error(summary: dict[str, object], parameter_count: int) -> str | Non
     kind = summary.get("kind")
     if kind == "ALLOC":
         required = {"kind", "buffer", "size"}
-        if set(summary) != required or summary.get("buffer") != "return":
-            return "ALLOC must contain exactly kind/buffer/size and buffer=return"
+        if set(summary) != required:
+            return "ALLOC must contain exactly kind/buffer/size"
+        buffer = str(summary.get("buffer", ""))
+        if buffer != "return" and _buffer_root_index(buffer) is None:
+            return "ALLOC buffer must be return or rooted at a caller-supplied argN"
     elif kind in {"READ", "WRITE"}:
         required = {"kind", "buffer", "length"}
         if set(summary) != required:
@@ -159,8 +161,14 @@ def canonicalize_summary(function: FunctionSource, summary: dict[str, object]) -
 
 def summary_matches_demand(candidate: Candidate, summary: dict[str, str]) -> bool:
     kind = summary.get("kind")
-    if kind in {"ALLOC", "VALUE"}:
+    if kind == "VALUE":
         return candidate.require_return
+    if kind == "ALLOC":
+        buffer = summary.get("buffer", "")
+        if buffer == "return":
+            return candidate.require_return
+        root = _buffer_root_index(buffer)
+        return root is not None and root in set(candidate.required_parameters)
     referenced = set(_arg_indices(summary.get("buffer", ""))) | set(
         _arg_indices(summary.get("length", ""))
     )
@@ -176,19 +184,22 @@ def _substitute_args(expression: str, parameters: tuple[str, ...]) -> str:
     return result
 
 
+def _substitute_call_args(expression: str, arguments: tuple[str, ...]) -> str:
+    result = expression
+    for index in reversed(range(len(arguments))):
+        result = re.sub(rf"\barg{index}\b", f"({arguments[index]})", result)
+    return result
+
+
 def _known_call_indices(name: str, kind: str) -> tuple[tuple[int, ...], tuple[int, ...]]:
     if kind == "ALLOC" and name in ALLOCATORS:
         return (), ALLOCATORS[name]
     if kind == "WRITE" and name in WRITES:
         buffer, length = WRITES[name]
-        if name == "fread":
-            return (buffer,), (1, 2)
-        return (buffer,), (length,)
+        return (buffer,), (1, 2) if name == "fread" else (length,)
     if kind == "READ" and name in READS:
         buffer, length = READS[name]
-        if name == "fwrite":
-            return (buffer,), (1, 2)
-        return (buffer,), (length,)
+        return (buffer,), (1, 2) if name == "fwrite" else (length,)
     return (), ()
 
 
@@ -228,6 +239,25 @@ def _source_call_for_fact(candidate: Candidate, fact_call):
     return calls[0] if len(calls) == 1 else None
 
 
+def _allocation_target_matches(
+    candidate: Candidate,
+    summary_buffer: str,
+    source_call,
+    returned: set[str],
+) -> bool:
+    if summary_buffer == "return":
+        return source_call.returned or (
+            source_call.result is not None
+            and normalize_expression(source_call.result) in returned
+        )
+    if source_call.result is None:
+        return False
+    expected = normalize_expression(
+        _substitute_args(summary_buffer, candidate.function.parameters)
+    )
+    return normalize_expression(source_call.result) == expected
+
+
 def _validate_with_static_facts(candidate: Candidate, summary: dict[str, str], validator) -> tuple[bool, str]:
     facts = validator.facts(candidate)
     kind = summary["kind"]
@@ -240,15 +270,12 @@ def _validate_with_static_facts(candidate: Candidate, summary: dict[str, str], v
             source_call = _source_call_for_fact(candidate, call)
             if source_call is None:
                 continue
-            returns_allocation = source_call.returned or (
-                source_call.result is not None
-                and normalize_expression(source_call.result) in returned
-            )
-            if returns_allocation and _expr_reaches(
-                facts, summary["size"], call, size_indices
-            ):
-                return True, "local static flow verified returned allocation size"
-        return False, "local static flow did not prove a returned allocation with the declared size"
+            if _allocation_target_matches(
+                candidate, summary["buffer"], source_call, returned
+            ) and _expr_reaches(facts, summary["size"], call, size_indices):
+                target = "return value" if summary["buffer"] == "return" else summary["buffer"]
+                return True, f"local static flow verified allocation capacity for {target}"
+        return False, "local static flow did not prove the declared allocation capacity"
     if kind in {"READ", "WRITE"}:
         for call in facts.call_list():
             buffer_indices, length_indices = _known_call_indices(call.name, kind)
@@ -298,6 +325,9 @@ def _validate_by_composition(
         ]
         if len(matches) != 1:
             continue
+        source_call = _source_call_for_fact(candidate, call)
+        if source_call is None:
+            continue
         for child in matches[0]:
             if child.get("kind") != kind:
                 continue
@@ -311,21 +341,39 @@ def _validate_by_composition(
                 ):
                     return True, f"validated callee composition verified {kind.lower()} through {call.name}"
             elif kind == "ALLOC":
+                child_buffer = child.get("buffer", "")
+                if child_buffer == "return":
+                    if source_call.result is None:
+                        continue
+                    child_target = normalize_expression(source_call.result)
+                else:
+                    child_target = normalize_expression(
+                        _substitute_call_args(child_buffer, source_call.arguments)
+                    )
+                requested_target = (
+                    "return"
+                    if summary["buffer"] == "return"
+                    else normalize_expression(
+                        _substitute_args(summary["buffer"], candidate.function.parameters)
+                    )
+                )
+                if summary["buffer"] == "return":
+                    if not _source_call_returns_value(source_call, facts):
+                        continue
+                elif child_target != requested_target:
+                    continue
                 child_size_args = tuple(_arg_indices(child.get("size", "")))
-                if not child_size_args or not _expr_reaches(
+                if child_size_args and not _expr_reaches(
                     facts, summary["size"], call, child_size_args
                 ):
                     continue
-                source_call = _source_call_for_fact(candidate, call)
-                if source_call is not None and _source_call_returns_value(source_call, facts):
-                    return True, f"validated callee composition verified allocation through {call.name}"
+                return True, f"validated callee composition verified allocation through {call.name}"
             elif kind == "VALUE":
                 child_expression = child.get("expression", "")
                 child_args = _arg_indices(child_expression)
                 if len(child_args) != 1 or child_expression != f"arg{child_args[0]}":
                     continue
-                source_call = _source_call_for_fact(candidate, call)
-                if source_call is None or not _source_call_returns_value(source_call, facts):
+                if not _source_call_returns_value(source_call, facts):
                     continue
                 if _expr_reaches(facts, summary["expression"], call, (child_args[0],)):
                     return True, f"validated callee composition verified value through {call.name}"
@@ -350,6 +398,9 @@ def _parameter_pointer_supported(function: FunctionSource, index: int) -> bool:
     parameter = function.parameters[index]
     for access in function.direct_memory_accesses():
         if parameter in re.findall(r"\b[A-Za-z_]\w*\b", access.buffer):
+            return True
+    for call in function.calls():
+        if call.result and parameter in re.findall(r"\b[A-Za-z_]\w*\b", call.result):
             return True
     for summary in summaries_for_function(function):
         if summary.get("kind") not in {"READ", "WRITE"}:
@@ -416,14 +467,18 @@ def validate_summary(
         error = _schema_error(clean_summary, len(function.parameters))
     if error is None and not summary_matches_demand(candidate, clean_summary):
         error = "summary does not describe a caller-observable semantic role requested for this candidate"
-    if not error and clean_summary.get("kind") in {"READ", "WRITE"}:
-        root_index = _buffer_root_index(clean_summary.get("buffer", ""))
-        if root_index is None:
-            error = f"{clean_summary.get('kind')} buffer must be rooted at a caller-supplied argN"
-        elif not _parameter_pointer_supported(function, root_index):
-            error = (
-                f"{clean_summary.get('kind')} buffer root arg{root_index} has no source-level pointer use"
-            )
+    if not error and clean_summary.get("kind") in {"READ", "WRITE", "ALLOC"}:
+        buffer = clean_summary.get("buffer", "")
+        if clean_summary.get("kind") == "ALLOC" and buffer == "return":
+            root_index = None
+        else:
+            root_index = _buffer_root_index(buffer)
+            if root_index is None:
+                error = f"{clean_summary.get('kind')} buffer must be rooted at a caller-supplied argN"
+            elif not _parameter_pointer_supported(function, root_index):
+                error = (
+                    f"{clean_summary.get('kind')} buffer root arg{root_index} has no source-level pointer/object use"
+                )
     if error:
         return _validation(
             candidate,
