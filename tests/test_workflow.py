@@ -4,14 +4,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from semantic_demo.candidate_graph import discover_relevant_candidates
+from semantic_demo.candidate_graph import DISCOVERY_POLICY_VERSION, discover_relevant_candidates
 from semantic_demo.joern import RepositoryCall, RepositoryMethod
-from semantic_demo.normalization import NORMALIZATION_IMPLEMENTATION_VERSION, _slice_source
+from semantic_demo.normalization import _slice_source
 from semantic_demo.runtime import read_jsonl, write_jsonl
 from semantic_demo.semantics import Candidate, NORMALIZATION_SCHEMA_VERSION
 from semantic_demo.source import parse_functions
 from semantic_demo.standard_semantics import summaries_for_function
-from semantic_demo.workflow import _upsert_by_sample, normalize
+from semantic_demo.workflow import _record_matches_candidate, _upsert_by_sample, normalize
 
 
 class _FakeRepository:
@@ -164,6 +164,26 @@ class WorkflowStateTests(unittest.TestCase):
         self.assertEqual("old-2", by_key["S02"])
         self.assertEqual("old-3", by_key["S03"])
 
+    def test_explicit_candidate_state_controls_reuse(self):
+        manifest = {
+            "call_lines": [12],
+            "required_parameters": [0, 2],
+            "require_return": False,
+            "resolution": "source-function",
+        }
+        record = {
+            "schema_version": NORMALIZATION_SCHEMA_VERSION,
+            "revision": "a" * 40,
+            "candidate_policy_version": DISCOVERY_POLICY_VERSION,
+            "call_lines": [12],
+            "required_parameters": [0, 2],
+            "require_return": False,
+            "resolution": "source-function",
+        }
+        self.assertTrue(_record_matches_candidate(record, manifest, "a" * 40))
+        changed = dict(manifest, required_parameters=[0])
+        self.assertFalse(_record_matches_candidate(record, changed, "a" * 40))
+
     def test_subset_refresh_preserves_unselected_normalization(self):
         function = parse_functions("helper.c", "int helper(int n) { return n; }\n")[0]
         candidate = Candidate("S01", function, (1,), method_full_name="helper")
@@ -173,7 +193,10 @@ class WorkflowStateTests(unittest.TestCase):
             "source_path": "helper.c",
             "function": "helper",
             "source_line": function.start_line,
-            "source_fingerprint": "fresh",
+            "call_lines": [1],
+            "required_parameters": [],
+            "require_return": False,
+            "resolution": "joern-exact",
             "skip_reason": None,
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -190,12 +213,16 @@ class WorkflowStateTests(unittest.TestCase):
             }])
             write_jsonl(output_path, [{
                 "schema_version": NORMALIZATION_SCHEMA_VERSION,
-                "normalization_implementation_version": NORMALIZATION_IMPLEMENTATION_VERSION,
                 "sample_key": "S99",
+                "revision": "b" * 40,
                 "source_path": "old.c",
                 "function": "old",
                 "source_line": 1,
-                "source_fingerprint": "old",
+                "candidate_policy_version": DISCOVERY_POLICY_VERSION,
+                "call_lines": [1],
+                "required_parameters": [],
+                "require_return": False,
+                "resolution": "joern-exact",
                 "normalizer": "static-skip",
                 "skip_reason": "old",
                 "summaries": [],
@@ -211,8 +238,6 @@ class WorkflowStateTests(unittest.TestCase):
                 return_value=(Mock(), ({"candidate_count": 1}, [manifest])),
             ), patch(
                 "semantic_demo.workflow.load_manifest_candidate", return_value=candidate
-            ), patch(
-                "semantic_demo.workflow.candidate_source_fingerprint", return_value="fresh"
             ), patch(
                 "semantic_demo.workflow.llm_normalize", return_value=[]
             ):
