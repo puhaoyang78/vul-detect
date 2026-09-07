@@ -19,7 +19,7 @@ from .candidate_graph import (
     read_candidate_manifest,
     write_candidate_manifest,
 )
-from .normalization_v2 import NORMALIZATION_IMPLEMENTATION_VERSION, llm_normalize
+from .normalization import NORMALIZATION_IMPLEMENTATION_VERSION, llm_normalize
 from .runtime import (
     detect,
     entry_from_index,
