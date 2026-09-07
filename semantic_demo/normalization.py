@@ -1,36 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import urllib.request
-from pathlib import Path
 
 from . import semantics
 from .source import FunctionSource, normalize_expression
 from .standard_semantics import STANDARD_LEAF_CALLS, summaries_for_function
 
 
-def _implementation_digest() -> str:
-    source = Path(__file__).read_text()
-    start_marker = "def _implementation_digest() -> str:"
-    end_marker = "\n\nNORMALIZATION_IMPLEMENTATION_VERSION"
-    start = source.index(start_marker)
-    end = source.index(end_marker, start)
-    canonical_source = (
-        source[:start]
-        + "<normalization-fingerprint-bootstrap>"
-        + source[end:]
-    )
-    digest = hashlib.sha256()
-    digest.update(canonical_source.encode())
-    digest.update(Path(__file__).with_name("standard_semantics.py").read_bytes())
-    digest.update(Path(__file__).with_name("semantics.py").read_bytes())
-    return digest.hexdigest()[:20]
-
-
-NORMALIZATION_IMPLEMENTATION_VERSION = _implementation_digest()
 MAX_FULL_SOURCE_CHARS = 18000
 MAX_SLICE_LINES = 140
 
@@ -43,19 +22,14 @@ def _line_number(function: FunctionSource, offset: int) -> int:
     return function.start_line + function.text[:offset].count("\n")
 
 
-def _assignment_lines(function: FunctionSource) -> list[tuple[int, str, str, str]]:
-    result: list[tuple[int, str, str, str]] = []
+def _assignment_lines(function: FunctionSource) -> list[tuple[int, str, str]]:
+    result: list[tuple[int, str, str]] = []
     pattern = re.compile(
         r"(?m)^\s*(?:[A-Za-z_][\w\s*:&<>]*\s+)?([A-Za-z_]\w*)\s*=\s*([^;]+);"
     )
     for match in pattern.finditer(function.text):
         result.append(
-            (
-                _line_number(function, match.start()),
-                match.group(1),
-                match.group(2),
-                match.group(0),
-            )
+            (_line_number(function, match.start()), match.group(1), match.group(2))
         )
     return result
 
@@ -74,25 +48,23 @@ def _slice_source(
         (index for index, line in enumerate(lines[:24]) if "{" in line),
         min(23, len(lines) - 1),
     )
-    selected.update(range(0, signature_end + 1))
+    selected.update(range(signature_end + 1))
 
     relative = endpoint_line - function.start_line
     if 0 <= relative < len(lines):
         selected.update(range(max(0, relative - 3), min(len(lines), relative + 4)))
 
     relevant = set().union(*(_ids(expression) for expression in expressions))
-    relevant &= set(re.findall(r"\b[A-Za-z_]\w*\b", function.text))
     assignments = _assignment_lines(function)
     changed = True
     while changed:
         changed = False
-        for line, left, right, _text_value in reversed(assignments):
+        for line, left, right in reversed(assignments):
             if left not in relevant or line > endpoint_line:
                 continue
             before = len(relevant)
             relevant.update(_ids(right))
-            if len(relevant) != before:
-                changed = True
+            changed |= len(relevant) != before
             index = line - function.start_line
             selected.update(range(max(0, index - 1), min(len(lines), index + 2)))
 
@@ -100,9 +72,7 @@ def _slice_source(
         if function.start_line + index > endpoint_line:
             break
         stripped = line.strip()
-        if not stripped.startswith(("if", "else if", "while", "for")):
-            continue
-        if _ids(stripped) & relevant:
+        if stripped.startswith(("if", "else if", "while", "for")) and _ids(stripped) & relevant:
             selected.update(range(max(0, index - 1), min(len(lines), index + 2)))
 
     ordered = sorted(selected)
@@ -115,7 +85,7 @@ def _slice_source(
     previous = None
     for index in ordered:
         if previous is not None and index > previous + 1:
-            chunks.append("/* ... irrelevant source omitted by static slice ... */")
+            chunks.append("/* ... irrelevant source omitted ... */")
         chunks.append(lines[index])
         previous = index
     return "\n".join(chunks)
@@ -130,9 +100,7 @@ def _dependency_names(
         normalize_expression(left): normalize_expression(right)
         for left, right in function.value_relations_before(line)
     }
-    pending: list[str] = []
-    for expression in expressions:
-        pending.extend(_ids(expression))
+    pending = [name for expression in expressions for name in _ids(expression)]
     seen: set[str] = set()
     while pending:
         name = pending.pop()
@@ -164,33 +132,27 @@ def _call_endpoints(candidate):
         for index in candidate.required_parameters
         if 0 <= index < len(candidate.function.parameters)
     }
+    returns = [
+        (
+            _line_number(candidate.function, match.start()),
+            match.group(1),
+        )
+        for match in re.finditer(r"\breturn\s+([^;]+);", candidate.function.text)
+    ]
     for call in candidate.function.calls():
         if call.indirect or call.name in STANDARD_LEAF_CALLS:
             continue
-        dependencies = _dependency_names(
-            candidate.function,
-            tuple(call.arguments),
-            call.line,
-        )
+        dependencies = _dependency_names(candidate.function, tuple(call.arguments), call.line)
         return_dependency = bool(
             candidate.require_return
             and call.result
             and any(
                 normalize_expression(call.result)
-                in _dependency_names(
-                    candidate.function,
-                    (match.group(1),),
-                    _line_number(candidate.function, match.start()),
-                )
-                for match in re.finditer(
-                    r"\breturn\s+([^;]+);",
-                    candidate.function.text,
-                )
+                in _dependency_names(candidate.function, (expression,), line)
+                for line, expression in returns
             )
         )
-        if required_names and not dependencies & required_names and not return_dependency:
-            continue
-        if not required_names and not return_dependency:
+        if not return_dependency and not dependencies & required_names:
             continue
         yield (
             "call",
@@ -240,25 +202,25 @@ def _request_json(
         },
         method="POST",
     )
-    if disable_proxy:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        context = opener.open(request, timeout=180)
-    else:
-        context = urllib.request.urlopen(request, timeout=180)
-    with context as response:
+    opener = (
+        urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        if disable_proxy
+        else urllib.request.build_opener()
+    )
+    with opener.open(request, timeout=180) as response:
         result = json.load(response)
     return semantics._extract_json_object(semantics._response_content(result))
 
 
 def _demand_text(candidate) -> str:
-    parameter_names = [
+    parameters = [
         f"arg{index} ({candidate.function.parameters[index]})"
         for index in candidate.required_parameters
         if 0 <= index < len(candidate.function.parameters)
     ]
     parts = []
-    if parameter_names:
-        parts.append("caller-observed parameters: " + ", ".join(parameter_names))
+    if parameters:
+        parts.append("caller-observed parameters: " + ", ".join(parameters))
     if candidate.require_return:
         parts.append("caller observes the return value")
     return "; ".join(parts) or "no caller-observable role"
@@ -275,9 +237,7 @@ def llm_normalize(
     response_schema: dict[str, object] | None = None,
 ):
     api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
-    base_url = base_url or os.environ.get(
-        "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
-    )
+    base_url = base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY is not set")
@@ -294,42 +254,39 @@ def llm_normalize(
             if len(candidate.function.text) <= MAX_FULL_SOURCE_CHARS
             else _slice_source(candidate.function, endpoint_line, expressions)
         )
-        if endpoint_kind == "return":
-            allowed = "ALLOC or VALUE"
-            instruction = (
-                "Describe only what the caller receives from the function return."
-            )
-        else:
-            allowed = "ALLOC, READ, WRITE, or VALUE"
-            instruction = (
-                "Describe only caller-visible effects of this one custom call that "
-                "depend on the requested caller boundary."
-            )
+        is_return = endpoint_kind == "return"
+        instruction = (
+            "Describe only what the caller receives from the function return. "
+            "For this endpoint ALLOC must use buffer=return."
+            if is_return
+            else "Describe only caller-visible effects of this one custom call on the requested boundary."
+        )
+        examples = (
+            '{"kind":"ALLOC","buffer":"return","size":"arg1"}\n'
+            '{"kind":"VALUE","target":"return","expression":"arg0->len"}'
+            if is_return
+            else '{"kind":"ALLOC","buffer":"arg0->data","size":"arg1"}\n'
+            '{"kind":"READ","buffer":"arg0","length":"arg2"}\n'
+            '{"kind":"WRITE","buffer":"arg0->data","length":"arg1 + 1"}'
+        )
 
         prompt = f"""Normalize one caller-observable semantic endpoint in this C/C++ function.
 Endpoint: {endpoint_text}
 Caller demand: {_demand_text(candidate)}
-Allowed summary kinds: {allowed}
 {instruction}
 
-Return exactly one JSON object with key summaries. The array may contain at most four summaries.
-Every expression must be copied or algebraically derived from the shown source. Use positional
-argument names arg0, arg1, ... in place of the function's parameter names.
+Return exactly one JSON object with key summaries and at most four summaries.
+Use positional arg0, arg1, ... names. Every expression must come from the shown source.
+Valid forms for this endpoint:
+{examples}
 
-Valid examples of expression syntax are:
-{{"kind":"ALLOC","buffer":"return","size":"arg1"}}
-{{"kind":"READ","buffer":"arg0","length":"arg2"}}
-{{"kind":"WRITE","buffer":"arg0->data","length":"arg1 + 1"}}
-{{"kind":"VALUE","target":"return","expression":"arg0->len"}}
-
-Never output words such as "argN expression", "arg0 expression", "unknown", or placeholders.
-Do not infer vulnerability labels, guards, caller behavior, or effects not visible in this source.
-Emit {{"summaries":[]}} when the shown source does not establish a requested caller-visible role.
+Do not infer vulnerability labels, guards, caller behavior, or effects not visible here.
+Never emit placeholders such as "argN expression" or "unknown".
+Emit {{"summaries":[]}} when the source is insufficient.
 
 Function: {candidate.function.name}
 Parameters: {json.dumps(list(candidate.function.parameters))}
-Resolution source: {candidate.resolution}
-Statically selected source context:
+Source context:
 {source_context}
 """
         parsed = _request_json(
@@ -341,26 +298,23 @@ Statically selected source context:
             disable_proxy=disable_proxy,
             response_schema=response_schema,
         )
-        endpoint_summaries = parsed.get("summaries")
-        if not isinstance(endpoint_summaries, list):
+        raw_summaries = parsed.get("summaries")
+        if not isinstance(raw_summaries, list):
             raise ValueError("LLM response summaries must be a list")
-        if len(endpoint_summaries) > 4:
+        if len(raw_summaries) > 4:
             raise ValueError("LLM response exceeds the endpoint summary bound")
-        for raw in endpoint_summaries:
+
+        for raw in raw_summaries:
             if not isinstance(raw, dict):
                 continue
             clean = semantics.canonicalize_summary(candidate.function, raw)
-            error = semantics._schema_error(
-                clean,
-                len(candidate.function.parameters),
-            )
-            if error is not None:
+            if semantics._schema_error(clean, len(candidate.function.parameters)) is not None:
                 continue
-            if endpoint_kind == "return" and clean.get("kind") not in {
-                "ALLOC",
-                "VALUE",
-            }:
-                continue
+            if is_return:
+                if clean.get("kind") not in {"ALLOC", "VALUE"}:
+                    continue
+                if clean.get("kind") == "ALLOC" and clean.get("buffer") != "return":
+                    continue
             if not semantics.summary_matches_demand(candidate, clean):
                 continue
             if clean not in summaries:
