@@ -41,6 +41,7 @@ def _write(path: str | Path, records) -> None:
             str(record.get("source_path", "")),
             str(record.get("function", "")),
             int(record.get("source_line", 0) or 0),
+            str(record.get("language", "")),
         ),
     )
     write_jsonl(path, ordered)
@@ -148,6 +149,21 @@ def _normalization_key(record: dict[str, object]):
         str(record.get("source_path", "")),
         str(record.get("function", "")),
         int(record.get("source_line", 0)),
+        str(record.get("language", "")),
+    )
+
+
+def _base_normalization_key(record: dict[str, object]):
+    return _normalization_key(record)[:4]
+
+
+def _manifest_key(sample_key: str, manifest_record: dict[str, object]):
+    return (
+        sample_key,
+        str(manifest_record["source_path"]),
+        str(manifest_record["function"]),
+        int(manifest_record["source_line"]),
+        str(manifest_record.get("language", "")),
     )
 
 
@@ -215,13 +231,23 @@ def normalize(args: argparse.Namespace) -> None:
         for record in old_records
         if str(record.get("sample_key", "")) not in selected_keys
     ]
-    old_selected = {
-        _normalization_key(record): record
+    selected_old = [
+        record
         for record in old_records
         if str(record.get("sample_key", "")) in selected_keys
+    ]
+    old_exact = {
+        _normalization_key(record): record
+        for record in selected_old
+        if record.get("language")
     }
+    old_by_base: dict[tuple[str, str, str, int], list[dict[str, object]]] = {}
+    for record in selected_old:
+        old_by_base.setdefault(_base_normalization_key(record), []).append(record)
+
     expected_model = _expected_model(args)
-    existing: dict[tuple[str, str, str, int], dict[str, object]] = {}
+    existing: dict[tuple[str, str, str, int, str], dict[str, object]] = {}
+    used_old_records: set[int] = set()
     sample_work = []
     llm_pending_total = 0
     candidate_total = 0
@@ -235,21 +261,43 @@ def normalize(args: argparse.Namespace) -> None:
         pending = []
         reused_for_sample = 0
         for manifest_record in manifest_records:
-            logical_key = (
-                key,
-                str(manifest_record["source_path"]),
-                str(manifest_record["function"]),
-                int(manifest_record["source_line"]),
-            )
-            cached = old_selected.get(logical_key)
+            logical_key = _manifest_key(key, manifest_record)
+            cached = old_exact.get(logical_key)
+            if cached is not None and id(cached) in used_old_records:
+                cached = None
             if (
                 not args.refresh
                 and cached is not None
                 and _record_reusable(cached, manifest_record, revision, args, expected_model)
             ):
-                existing[logical_key] = cached
+                upgraded = dict(cached)
+                upgraded["language"] = logical_key[4]
+                existing[logical_key] = upgraded
+                used_old_records.add(id(cached))
                 reused_for_sample += 1
                 continue
+
+            if not args.refresh:
+                for candidate_record in old_by_base.get(logical_key[:4], []):
+                    if id(candidate_record) in used_old_records:
+                        continue
+                    if _record_reusable(
+                        candidate_record,
+                        manifest_record,
+                        revision,
+                        args,
+                        expected_model,
+                    ):
+                        upgraded = dict(candidate_record)
+                        upgraded["language"] = logical_key[4]
+                        existing[logical_key] = upgraded
+                        used_old_records.add(id(candidate_record))
+                        reused_for_sample += 1
+                        cached = candidate_record
+                        break
+                if cached is not None and logical_key in existing:
+                    continue
+
             candidate = load_manifest_candidate(index, manifest_record, parse_cache)
             pending.append((candidate, manifest_record))
             if manifest_record.get("skip_reason") is None:
@@ -300,12 +348,7 @@ def normalize(args: argparse.Namespace) -> None:
                 print(f"normalize_sample_cached={key}", flush=True)
                 continue
             for position, (candidate, manifest_record) in enumerate(pending, 1):
-                logical_key = (
-                    key,
-                    candidate.function.path,
-                    candidate.function.name,
-                    candidate.function.start_line,
-                )
+                logical_key = _manifest_key(key, manifest_record)
                 skip_reason = manifest_record.get("skip_reason")
                 if skip_reason is None:
                     try:
@@ -329,6 +372,7 @@ def normalize(args: argparse.Namespace) -> None:
                     "source_path": candidate.function.path,
                     "function": candidate.function.name,
                     "source_line": candidate.function.start_line,
+                    "language": candidate.function.language,
                     "parameters": list(candidate.function.parameters),
                     **_candidate_state(manifest_record),
                     "normalizer": normalizer,
@@ -366,16 +410,12 @@ def _selected_replay(samples, args) -> list[dict[str, object]]:
         revision = str(sample["vulnerable_commit"])
         _index, (_header, manifest_records) = _load_sample_manifest(sample, args)
         for manifest_record in manifest_records:
-            logical_key = (
-                key,
-                str(manifest_record["source_path"]),
-                str(manifest_record["function"]),
-                int(manifest_record["source_line"]),
-            )
+            logical_key = _manifest_key(key, manifest_record)
             record = by_key.get(logical_key)
             if record is None or not _record_usable_for_run(record, manifest_record, revision):
                 missing.append(
                     f"{key}:{manifest_record['function']}@{manifest_record['source_line']}"
+                    f"[{manifest_record.get('language', '')}]"
                 )
             else:
                 selected.append(record)
