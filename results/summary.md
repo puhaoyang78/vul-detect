@@ -1,39 +1,64 @@
 # Demo 结果摘要
 
 - 函数级样本：60（VULNERABLE=35, BENIGN=25）
-- LineVul Baseline：TP=1, FP=3, TN=22, FN=34, Precision=0.2500, Recall=0.0286, F1=0.0513, Accuracy=0.3833
-- Proposed：TP=13, FP=8, TN=17, FN=22, Precision=0.6190, Recall=0.3714, F1=0.4643, Accuracy=0.5000
-- 静态验证拒绝的语义摘要：676 条
-- Z3 状态：POTENTIAL_VIOLATION=21, UNKNOWN=39
+- LineVul Baseline：TP=1, FP=3, TN=22, FN=34, UNKNOWN=0 (V=0, B=0), Precision=0.2500, Recall=0.0286, F1=0.0513, Accuracy=0.3833, Coverage=1.0000
+- Proposed：TP=1, FP=0, TN=0, FN=0, UNKNOWN=59 (V=34, B=25), Precision=1.0000, Recall=0.0286, F1=0.0556, Accuracy=1.0000, Coverage=0.0167
+- 静态验证拒绝的语义摘要：3802 条
+- Z3 状态：POTENTIAL_VIOLATION=1, UNKNOWN=59
 
 ## 主要未解析原因
 
-- 9 个：verification incomplete: no supported memory access was available for bounds analysis
-- 3 个：verification incomplete: all currently modeled memory accesses satisfy their generated bounds conditions, but complete function-level memory-access coverage is not established
-- 1 个：verification incomplete: 2 memory access(es) remain unresolved; first at line 98: capacity/valid extent is unknown for c->in_s->data
-- 1 个：verification incomplete: 1 memory access(es) remain unresolved; first at line 356: capacity/valid extent is unknown for xcfdata
-- 1 个：verification incomplete: 2 memory access(es) remain unresolved; first at line 244: capacity is unknown for indexed/pointer-offset access ie->ie_buffer+le16_to_cpu(ie->ie_length)
-- 1 个：verification incomplete: 3 memory access(es) remain unresolved; first at line 92: capacity/valid extent is unknown for msg->stun_hdr.tran_id
-- 1 个：verification incomplete: 3 memory access(es) remain unresolved; first at line 119: access extent is not represented as a bounded integer expression
-- 1 个：verification incomplete: 2 memory access(es) remain unresolved; first at line 1223: access extent is not represented as a bounded integer expression
-- 1 个：verification incomplete: 25 memory access(es) remain unresolved; first at line 315: capacity/valid extent is unknown for pass_salt
-- 1 个：verification incomplete: 2 memory access(es) remain unresolved; first at line 290: capacity/valid extent is unknown for buf
-- 1 个：verification incomplete: 3 memory access(es) remain unresolved; first at line 1593: access extent is not represented as a bounded integer expression
-- 1 个：verification incomplete: 3 memory access(es) remain unresolved; first at line 444: access extent is not represented as a bounded integer expression
-- 1 个：verification incomplete: 18 memory access(es) remain unresolved; first at line 265: capacity/valid extent is unknown for pkt_info
-- 1 个：verification incomplete: 1 memory access(es) remain unresolved; first at line 306: capacity is unknown for indexed/pointer-offset access bucket->elem+(bucket->num++)
-- 1 个：verification incomplete: 3 memory access(es) remain unresolved; first at line 2001: capacity/valid extent is unknown for blob->ei+(0)
-- 1 个：verification incomplete: 8 memory access(es) remain unresolved; first at line 310: capacity is unknown for indexed/pointer-offset access g->codes+(code)
-- 1 个：verification incomplete: 13 memory access(es) remain unresolved; first at line 840: capacity/valid extent is unknown for &sig8
-- 1 个：verification incomplete: 7 memory access(es) remain unresolved; first at line 2016: capacity/valid extent is unknown for &cap
-- 1 个：verification incomplete: 1 memory access(es) remain unresolved; first at line 101: capacity/valid extent is unknown for sb->buf+(0)
-- 1 个：verification incomplete: 5 memory access(es) remain unresolved; first at line 306: capacity/valid extent is unknown for pkt->data
-- 1 个：verification incomplete: 17 memory access(es) remain unresolved; first at line 2495: capacity is unknown for indexed/pointer-offset access &addr->ip6[dc+(14-n)]
-- 1 个：verification incomplete: 12 memory access(es) remain unresolved; first at line 373: cannot encode access extent "--datadir"
-- 1 个：verification incomplete: 16 memory access(es) remain unresolved; first at line 198: capacity/valid extent is unknown for &eld->b[eld->b_len]
-- 1 个：verification incomplete: 2 memory access(es) remain unresolved; first at line 3254: capacity/valid extent is unknown for buf
-- 1 个：verification incomplete: 5 memory access(es) remain unresolved; first at line 792: capacity/valid extent is unknown for data
-- 1 个：verification incomplete: 5 memory access(es) remain unresolved; first at line 169: access extent is not represented as a bounded integer expression
-- 1 个：verification incomplete: 2 memory access(es) remain unresolved; first at line 646: capacity/valid extent is unknown for map
-- 1 个：verification incomplete: 4 memory access(es) remain unresolved; first at line 2619: capacity is unknown for indexed/pointer-offset access msg->attr+(i)
-- 1 个：verification incomplete: 1 memory access(es) remain unresolved; first at line 365: capacity/valid extent is unknown for buf
+- 6 个：no supported memory access was available for bounds analysis
+- 1 个：5 memory access(es) remain unresolved; first at line 790: signed access extent depends on unconstrained parameter domain: len
+- 1 个：8 memory access(es) remain unresolved; first at line 145: unresolved call fz_seek@60 shares access-dependent values
+- 1 个：8 memory access(es) remain unresolved; first at line 3679: reaching value definition is not safely encodable for: pages
+- 1 个：1 memory access(es) remain unresolved; first at line 374: object capacity/valid extent is unknown for graydata
+- 1 个：8 memory access(es) remain unresolved; first at line 230: object capacity/valid extent is unknown for ie_ptr
+- 1 个：3 memory access(es) remain unresolved; first at line 92: unresolved call get16@90 shares access-dependent values
+- 1 个：10 memory access(es) remain unresolved; first at line 71: object capacity/valid extent is unknown for outlen
+- 1 个：2 memory access(es) remain unresolved; first at line 119: access extent is not represented as a bounded integer expression
+- 1 个：4 memory access(es) remain unresolved; first at line 291: unsupported path constraint: width<=0xFFFFU
+- 1 个：29 memory access(es) remain unresolved; first at line 2359: unresolved path symbol: *len<get_arglen[GET_CMDID(cmd)]
+- 1 个：69 memory access(es) remain unresolved; first at line 2363: unsupported path constraint: (p=header_bytes(a,1))!=NULL
+- 1 个：7 memory access(es) remain unresolved; first at line 1197: object capacity/valid extent is unknown for sockaddr_url
+- 1 个：18 memory access(es) remain unresolved; first at line 282: unresolved path symbol: data_len>=MT_HEADER_LEN
+- 1 个：6 memory access(es) remain unresolved; first at line 455: unresolved path symbol: file_gets(line,COSINE_LINE_LENGTH,fh)==NULL
+- 1 个：4 memory access(es) remain unresolved; first at line 3350: unsupported path constraint: *value_utf8!='\0'
+- 1 个：17 memory access(es) remain unresolved; first at line 391: object capacity/valid extent is unknown for bs+(0)
+- 1 个：8 memory access(es) remain unresolved; first at line 1593: unresolved call strstr@1587 shares access-dependent values
+- 1 个：8 memory access(es) remain unresolved; first at line 104: object capacity/valid extent is unknown for in++
+- 1 个：49 memory access(es) remain unresolved; first at line 346: object capacity/valid extent is unknown for idxt.offsets+(curr_number+1)
+- 1 个：7 memory access(es) remain unresolved; first at line 444: access extent is not represented as a bounded integer expression
+- 1 个：17 memory access(es) remain unresolved; first at line 684: unsupported path constraint: wsctx->readbuflen
+- 1 个：38 memory access(es) remain unresolved; first at line 247: object capacity/valid extent is unknown for p
+- 1 个：13 memory access(es) remain unresolved; first at line 629: object capacity/valid extent is unknown for ret_username
+- 1 个：1 memory access(es) remain unresolved; first at line 306: unresolved call return_val_if_fail@301 shares access-dependent values
+- 1 个：6 memory access(es) remain unresolved; first at line 1999: object capacity/valid extent is unknown for blob
+- 1 个：5 memory access(es) remain unresolved; first at line 310: object capacity/valid extent is unknown for g->codes+(code)
+- 1 个：13 memory access(es) remain unresolved; first at line 699: unresolved path symbol: res==DW_DLV_OK
+- 1 个：8 memory access(es) remain unresolved; first at line 2015: object capacity/valid extent is unknown for pnt
+- 1 个：4 memory access(es) remain unresolved; first at line 85: C integer overflow semantics are not modeled for extent (size)-result
+- 1 个：11 memory access(es) remain unresolved; first at line 279: unresolved call scanf@243 shares access-dependent values
+- 1 个：8 memory access(es) remain unresolved; first at line 794: C integer overflow semantics are not modeled for extent strm_name_len*2
+- 1 个：1 memory access(es) remain unresolved; first at line 101: unresolved call unsigned_add_overflows@95 shares access-dependent values
+- 1 个：6 memory access(es) remain unresolved; first at line 151: unresolved call EVUTIL_ASSERT@149 shares access-dependent values
+- 1 个：6 memory access(es) remain unresolved; first at line 50: unsupported path constraint: offset<iov[i].iov_len
+- 1 个：14 memory access(es) remain unresolved; first at line 278: unresolved call avio_tell@250 shares access-dependent values
+- 1 个：18 memory access(es) remain unresolved; first at line 2466: unsupported path constraint: str.ptr[0]=='['
+- 1 个：11 memory access(es) remain unresolved; first at line 170: object capacity/valid extent is unknown for permute+(i)
+- 1 个：2 memory access(es) remain unresolved; first at line 343: unresolved call bzero@326 shares access-dependent values
+- 1 个：4 memory access(es) remain unresolved; first at line 6637: unresolved path symbol: opp->flags&P_NUM
+- 1 个：22 memory access(es) remain unresolved; first at line 162: object capacity/valid extent is unknown for buf
+- 1 个：2 memory access(es) remain unresolved; first at line 3254: unsupported path constraint: in-<=error
+- 1 个：8 memory access(es) remain unresolved; first at line 792: unresolved call gf_bs_is_align@786 shares access-dependent values
+- 1 个：2 memory access(es) remain unresolved; first at line 148: unresolved call gs_malloc@146 shares access-dependent values
+- 1 个：5 memory access(es) remain unresolved; first at line 169: access extent is not represented as a bounded integer expression
+- 1 个：1 memory access(es) remain unresolved; first at line 91: C integer overflow semantics are not modeled for extent len+1
+- 1 个：20 memory access(es) remain unresolved; first at line 2176: object capacity/valid extent is unknown for tiffout
+- 1 个：3 memory access(es) remain unresolved; first at line 659: object capacity/valid extent is unknown for map
+- 1 个：5 memory access(es) remain unresolved; first at line 2619: unresolved call PJ_ASSERT_RETURN@2597 shares access-dependent values
+- 1 个：7 memory access(es) remain unresolved; first at line 365: unresolved call TIFFErrorExt@336 shares access-dependent values
+- 1 个：2 memory access(es) remain unresolved; first at line 575: signed access extent depends on unconstrained parameter domain: datalen
+- 1 个：1 memory access(es) remain unresolved; first at line 185: object capacity/valid extent is unknown for s++
+- 1 个：3 memory access(es) remain unresolved; first at line 146: unsupported path constraint: str->length>=len
+- 1 个：6 memory access(es) remain unresolved; first at line 473: object capacity/valid extent is unknown for s

@@ -1,0 +1,1 @@
+{"sample_key": "S44", "repository_git_dir": "/SSD/phy/bln-cache/repositories/github.com__vim__vim.git", "vulnerable_commit": "10c83dde554b57ab4db71b96a0a02a5b6d1798e9", "entry_path": "src/option.c", "entry_function": "option_value2string", "scan_paths": ["src"]}
