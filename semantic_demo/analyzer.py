@@ -148,6 +148,20 @@ def _direct_operations(entry: FunctionSource) -> list[Operation]:
         if call.indirect:
             continue
         for effect in effects_for_call(call):
+            if effect.kind == "ALLOC":
+                if effect.buffer == "return":
+                    continue
+                operations.append(
+                    Operation(
+                        "ALLOC",
+                        call.name,
+                        effect.buffer,
+                        effect.extent,
+                        call.line,
+                        False,
+                    )
+                )
+                continue
             operations.append(
                 Operation(
                     effect.kind,
