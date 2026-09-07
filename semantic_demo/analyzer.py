@@ -4,7 +4,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-from .semantics import ALLOCATORS, Validation
+from .semantics import Validation
 from .source import FunctionSource
 from .standard_semantics import STANDARD_LEAF_CALLS, effects_for_call
 from .solver import reason_memory_safety
@@ -43,15 +43,34 @@ def _substitute(expression: str, arguments: tuple[str, ...]) -> str:
     return result
 
 
+def _accepted_by_callsite(
+    validations: Iterable[Validation],
+) -> tuple[
+    dict[tuple[str, int], list[dict[str, str]]],
+    dict[str, list[dict[str, str]]],
+]:
+    by_callsite: dict[tuple[str, int], list[dict[str, str]]] = {}
+    legacy_by_name: dict[str, list[dict[str, str]]] = {}
+    for validation in validations:
+        if not validation.passed:
+            continue
+        if validation.call_lines:
+            for line in validation.call_lines:
+                bucket = by_callsite.setdefault((validation.function, line), [])
+                if validation.summary not in bucket:
+                    bucket.append(validation.summary)
+        else:
+            bucket = legacy_by_name.setdefault(validation.function, [])
+            if validation.summary not in bucket:
+                bucket.append(validation.summary)
+    return by_callsite, legacy_by_name
+
+
 def _custom_operations(
     entry: FunctionSource,
     validations: Iterable[Validation],
 ) -> list[Operation]:
-    accepted: dict[str, list[dict[str, str]]] = {}
-    for validation in validations:
-        if not validation.passed:
-            continue
-        accepted.setdefault(validation.function, []).append(validation.summary)
+    accepted_by_callsite, legacy_by_name = _accepted_by_callsite(validations)
 
     operations: list[Operation] = []
     for call in entry.calls():
@@ -69,7 +88,9 @@ def _custom_operations(
             continue
         if call.name in STANDARD_LEAF_CALLS:
             continue
-        summaries = accepted.get(call.name, [])
+        summaries = accepted_by_callsite.get((call.name, call.line), [])
+        if not summaries:
+            summaries = legacy_by_name.get(call.name, [])
         if not summaries:
             operations.append(
                 Operation(
@@ -127,29 +148,16 @@ def _direct_operations(entry: FunctionSource) -> list[Operation]:
         if call.indirect:
             continue
         for effect in effects_for_call(call):
-            if effect.kind == "ALLOC":
-                if call.result:
-                    operations.append(
-                        Operation(
-                            "ALLOC",
-                            call.name,
-                            call.result,
-                            effect.extent,
-                            call.line,
-                            False,
-                        )
-                    )
-            else:
-                operations.append(
-                    Operation(
-                        effect.kind,
-                        call.name,
-                        effect.buffer,
-                        effect.extent,
-                        call.line,
-                        False,
-                    )
+            operations.append(
+                Operation(
+                    effect.kind,
+                    call.name,
+                    effect.buffer,
+                    effect.extent,
+                    call.line,
+                    False,
                 )
+            )
     for access in entry.direct_memory_accesses():
         operations.append(
             Operation(
