@@ -12,7 +12,7 @@ from .standard_semantics import STANDARD_LEAF_CALLS, effects_for_call
 from .symbol_resolution import ResolvedTarget, SymbolResolver
 
 
-CANDIDATE_MANIFEST_VERSION = 4
+CANDIDATE_MANIFEST_VERSION = 5
 DISCOVERY_POLICY_VERSION = 4
 
 
@@ -39,7 +39,7 @@ class CandidateSelection:
 @dataclass(frozen=True)
 class CandidateDiscovery:
     candidates: tuple[Candidate, ...]
-    selections: dict[tuple[str, str, int, str], CandidateSelection]
+    selections: dict[tuple[str, str, int], CandidateSelection]
     direct_candidates: int
     recursive_candidates: int
     expanded_methods: int
@@ -262,14 +262,14 @@ def _call_need(
     return reason, BoundaryNeed(parameter_indices, return_needed)
 
 
-def _candidate_key(source: FunctionSource) -> tuple[str, str, int, str]:
-    return (source.path, source.name, source.start_line, source.language)
+def _candidate_key(source: FunctionSource) -> tuple[str, str, int]:
+    return (source.path, source.name, source.start_line)
 
 
 def _add_candidate(
-    discovered: dict[tuple[str, str, int, str], Candidate],
-    selections: dict[tuple[str, str, int, str], CandidateSelection],
-    needs: dict[tuple[str, str, int, str], BoundaryNeed],
+    discovered: dict[tuple[str, str, int], Candidate],
+    selections: dict[tuple[str, str, int], CandidateSelection],
+    needs: dict[tuple[str, str, int], BoundaryNeed],
     *,
     sample_key: str,
     sources: list[FunctionSource],
@@ -335,9 +335,9 @@ def discover_relevant_candidates(
     entry: FunctionSource,
 ) -> CandidateDiscovery:
     resolver = SymbolResolver(index)
-    discovered: dict[tuple[str, str, int, str], Candidate] = {}
-    selections: dict[tuple[str, str, int, str], CandidateSelection] = {}
-    needs: dict[tuple[str, str, int, str], BoundaryNeed] = {}
+    discovered: dict[tuple[str, str, int], Candidate] = {}
+    selections: dict[tuple[str, str, int], CandidateSelection] = {}
+    needs: dict[tuple[str, str, int], BoundaryNeed] = {}
     queue: list[tuple[RepositoryMethod, FunctionSource, str, int, BoundaryNeed]] = []
     expanded_needs: dict[tuple[str, int, str], BoundaryNeed] = {}
     unresolved_relevant = 0
