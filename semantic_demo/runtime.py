@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import csv
-import hashlib
 import json
 import os
 import socket
@@ -16,7 +15,11 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from .analyzer import analyze
-from .candidate_graph import load_manifest_candidate, read_candidate_manifest
+from .candidate_graph import (
+    DISCOVERY_POLICY_VERSION,
+    load_manifest_candidate,
+    read_candidate_manifest,
+)
 from .joern import JoernRepositoryIndex
 from .linevul_baseline import LineVulBaseline
 from .semantics import NORMALIZATION_RESPONSE_SCHEMA, Validation, validate_summary
@@ -33,7 +36,7 @@ FORBIDDEN_DETECTION_FIELDS = {
     "mechanism",
     "ground_truth",
 }
-ANALYSIS_CHECKPOINT_VERSION = 15
+ANALYSIS_VERSION = 1
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, object]]:
@@ -221,75 +224,6 @@ def local_llm_server(executable: str, model_path: str) -> Iterator[dict[str, obj
                     process.wait(timeout=15)
 
 
-def _candidate_fingerprint(candidate) -> str:
-    payload = (
-        candidate.function.path + "\0" + candidate.function.name + "\0"
-        + candidate.function.text + "\0"
-        + hashlib.sha256(candidate.function.translation_unit.encode()).hexdigest()
-    ).encode()
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _implementation_digest() -> str:
-    root = Path(__file__).parent
-    names = (
-        "runtime.py",
-        "candidate_graph.py",
-        "normalization.py",
-        "semantics.py",
-        "analyzer.py",
-        "solver.py",
-        "summary_validator.py",
-        "standard_semantics.py",
-    )
-    digest = hashlib.sha256()
-    for name in names:
-        path = root / name
-        digest.update(name.encode())
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
-
-
-def _analysis_fingerprint(
-    sample: dict[str, object],
-    entry,
-    candidates,
-    replay: dict[tuple[str, str, str, int], list[dict[str, str]]],
-    backend: str,
-    validator_timeout: int | None,
-    baseline_signature: str,
-) -> str:
-    candidate_inputs = []
-    sample_key = str(sample["sample_key"])
-    for candidate in candidates:
-        replay_key = (
-            sample_key,
-            candidate.function.path,
-            candidate.function.name,
-            candidate.function.start_line,
-        )
-        candidate_inputs.append({
-            "source_path": candidate.function.path,
-            "function": candidate.function.name,
-            "source_line": candidate.function.start_line,
-            "source_fingerprint": _candidate_fingerprint(candidate),
-            "summaries": replay.get(replay_key, []),
-        })
-    payload = {
-        "checkpoint_version": ANALYSIS_CHECKPOINT_VERSION,
-        "implementation": _implementation_digest(),
-        "sample": sample,
-        "entry_source": hashlib.sha256(entry.text.encode()).hexdigest(),
-        "candidates": candidate_inputs,
-        "backend": backend,
-        "validator_timeout": validator_timeout,
-        "baseline_signature": baseline_signature,
-    }
-    return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
-    ).hexdigest()
-
-
 def _load_replay(path: str | Path):
     replay: dict[tuple[str, str, str, int], list[dict[str, str]]] = {}
     for record in read_jsonl(path):
@@ -310,6 +244,44 @@ def _manifest_candidates(index):
     _header, records = read_candidate_manifest(index)
     parse_cache = {}
     return [load_manifest_candidate(index, record, parse_cache) for record in records]
+
+
+def _analysis_state(
+    sample: dict[str, object],
+    candidates,
+    replay: dict[tuple[str, str, str, int], list[dict[str, str]]],
+    *,
+    linevul_checkpoint: str,
+    linevul_threshold: float,
+) -> dict[str, object]:
+    sample_key = str(sample["sample_key"])
+    summaries = []
+    for candidate in candidates:
+        key = (
+            sample_key,
+            candidate.function.path,
+            candidate.function.name,
+            candidate.function.start_line,
+        )
+        summaries.append({
+            "source_path": candidate.function.path,
+            "function": candidate.function.name,
+            "source_line": candidate.function.start_line,
+            "summaries": replay.get(key, []),
+        })
+    return {
+        "analysis_version": ANALYSIS_VERSION,
+        "revision": str(sample["vulnerable_commit"]),
+        "entry_path": str(sample["entry_path"]),
+        "entry_function": str(sample["entry_function"]),
+        "scan_paths": list(sample.get("scan_paths", [])),
+        "defines": list(sample.get("defines", [])),
+        "include_paths": list(sample.get("include_paths", [])),
+        "candidate_policy_version": DISCOVERY_POLICY_VERSION,
+        "linevul_checkpoint": str(linevul_checkpoint),
+        "linevul_threshold": float(linevul_threshold),
+        "summaries": summaries,
+    }
 
 
 def detect(
@@ -367,14 +339,12 @@ def detect(
             for summary in replay.get(key, []):
                 summary_entries.append((candidate, summary))
 
-        analysis_fingerprint = _analysis_fingerprint(
+        analysis_state = _analysis_state(
             sample,
-            entry,
             candidates,
             replay,
-            backend,
-            validator.timeout,
-            baseline_model.signature,
+            linevul_checkpoint=linevul_checkpoint,
+            linevul_threshold=linevul_threshold,
         )
         print(
             f"validate_sample={sample_index}/{len(samples)} sample={sample_key} "
@@ -383,7 +353,7 @@ def detect(
         )
 
         cached_detection = detection_cache.get(sample_key)
-        if cached_detection is not None and cached_detection.get("analysis_fingerprint") == analysis_fingerprint:
+        if cached_detection is not None and cached_detection.get("analysis_state") == analysis_state:
             detection_records.append(cached_detection)
             semantic_records.extend(cached_detection.get("semantic_validations", []))
             write_jsonl(detections_path, detection_records)
@@ -472,9 +442,10 @@ def detect(
         semantic_records.extend(item.as_json() for item in validations)
         baseline = baseline_model.predict(entry.text)
         proposed = analyze(entry, validations=validations)
+        status_counts = Counter(item.status for item in validations)
         detection_records.append({
             "sample_key": sample_key,
-            "analysis_fingerprint": analysis_fingerprint,
+            "analysis_state": analysis_state,
             "repository_git_dir": sample["repository_git_dir"],
             "vulnerable_commit": sample["vulnerable_commit"],
             "entry_path": entry.path,
@@ -485,14 +456,16 @@ def detect(
             ],
             "baseline": baseline.as_json(),
             "proposed": proposed.as_json(),
-            "validated_semantic_count": sum(item.passed for item in validations),
-            "rejected_semantic_count": sum(not item.passed for item in validations),
+            "verified_semantic_count": status_counts["VERIFIED"],
+            "rejected_semantic_count": status_counts["REJECTED"],
+            "unresolved_semantic_count": status_counts["UNRESOLVED"],
             "semantic_validations": [item.as_json() for item in validations],
         })
         print(
             f"validate_sample_done={sample_key} "
-            f"passed={sum(item.passed for item in validations)} "
-            f"rejected={sum(not item.passed for item in validations)}",
+            f"verified={status_counts['VERIFIED']} "
+            f"rejected={status_counts['REJECTED']} "
+            f"unresolved={status_counts['UNRESOLVED']}",
             flush=True,
         )
         write_jsonl(detections_path, detection_records)
@@ -530,7 +503,11 @@ def evaluate(
         )
         rejected_details = " | ".join(
             f"{item['function']}: {item['reason']}"
-            for item in validations if not item["passed"]
+            for item in validations if item.get("status") == "REJECTED"
+        )
+        unresolved_details = " | ".join(
+            f"{item['function']}: {item['reason']}"
+            for item in validations if item.get("status") == "UNRESOLVED"
         )
         corrected = (
             baseline["verdict"] != "VULNERABLE"
@@ -562,12 +539,15 @@ def evaluate(
             "custom_functions": ", ".join(truth["custom_functions"]),
             "automatic_semantics": automatic_semantics,
             "validation": (
-                f"PASS={result['validated_semantic_count']}; "
-                f"REJECT={result['rejected_semantic_count']}"
+                f"VERIFIED={result['verified_semantic_count']}; "
+                f"REJECTED={result['rejected_semantic_count']}; "
+                f"UNRESOLVED={result['unresolved_semantic_count']}"
             ),
-            "validated_semantics": result["validated_semantic_count"],
+            "verified_semantics": result["verified_semantic_count"],
             "rejected_semantics": result["rejected_semantic_count"],
+            "unresolved_semantics": result["unresolved_semantic_count"],
             "rejected_details": rejected_details,
+            "unresolved_details": unresolved_details,
             "baseline_verdict": baseline["verdict"],
             "baseline_reason": baseline["reason"],
             "proposed_verdict": proposed["verdict"],
@@ -627,6 +607,7 @@ def evaluate(
     baseline_metrics = classification_metrics("baseline")
     proposed_metrics = classification_metrics("proposed")
     rejected = sum(int(row["rejected_semantics"]) for row in rows)
+    unresolved = sum(int(row["unresolved_semantics"]) for row in rows)
     z3_statuses = Counter(row["z3_status"] for row in rows if row.get("z3_status"))
     failures = Counter(
         row["proposed_reason"] for row in rows if row["proposed_verdict"] != "VULNERABLE"
@@ -656,7 +637,7 @@ def evaluate(
             f"Recall={proposed_metrics['recall']:.4f}, F1={proposed_metrics['f1']:.4f}, "
             f"Accuracy={proposed_metrics['accuracy']:.4f}, Coverage={proposed_metrics['coverage']:.4f}"
         ),
-        f"- 静态验证拒绝的语义摘要：{rejected} 条",
+        f"- 语义摘要：REJECTED={rejected}, UNRESOLVED={unresolved}",
         (
             "- Z3 状态：" + ", ".join(
                 f"{status}={count}" for status, count in sorted(z3_statuses.items())
