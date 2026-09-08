@@ -33,16 +33,17 @@ class FunctionGraph:
 _NODE = re.compile(r'^\s*"?(\d+)"?\s*\[label\s*=\s*(.+?)\]\s*;?\s*$')
 _EDGE = re.compile(r'^\s*"?(\d+)"?\s*->\s*"?(\d+)"?')
 _GRAPH = re.compile(r'^\s*digraph\s+"?([^"{]+)"?')
+_SUB = re.compile(r'<SUB>.*?</SUB>', flags=re.I)
 
 
 def _clean_dot_label(raw: str) -> str:
     text = raw.strip()
     if text.startswith('"') and text.endswith('"'):
         text = text[1:-1]
-    text = text.replace('\\"', '"').replace('\\n', ' ')
-    text = re.sub(r'<[^>]+>', '', text)
-    if text.startswith('<') and text.endswith('>'):
+    elif text.startswith('<') and text.endswith('>'):
         text = text[1:-1]
+    text = text.replace('\\"', '"').replace('\\n', ' ')
+    text = _SUB.sub('', text)
     return ' '.join(text.split())
 
 
@@ -180,8 +181,8 @@ def extract_function_cpg(
         for representation in ('ast', 'cfg', 'cdg', 'ddg'):
             output = work / representation
             command = [
-                str(exporter), '--repr', representation, '--format', 'dot',
-                '--out', str(output), str(cpg),
+                str(exporter), str(cpg), '--repr', representation, '--format', 'dot',
+                '--out', str(output),
             ]
             exported = _run_process_group(command, timeout=timeout, env=env)
             if exported.returncode != 0:
