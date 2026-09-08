@@ -1,4 +1,6 @@
-/workspace/
 __pycache__/
 *.py[cod]
-/data/joern_cpg/
+.venv/
+/data/
+/results/
+*.pt

@@ -6,7 +6,11 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .joern import JoernError, _run_process_group
+from .process import run_process
+
+
+class CPGError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -33,25 +37,20 @@ class FunctionGraph:
 _NODE = re.compile(r'^\s*"?(\d+)"?\s*\[label\s*=\s*(.+?)\]\s*;?\s*$')
 _EDGE = re.compile(r'^\s*"?(\d+)"?\s*->\s*"?(\d+)"?')
 _GRAPH = re.compile(r'^\s*digraph\s+"?([^"{]+)"?')
-_SUB = re.compile(r'<SUB>.*?</SUB>', flags=re.I)
 
 
 def _clean_dot_label(raw: str) -> str:
-    text = raw.strip()
-    if text.startswith('"') and text.endswith('"'):
-        text = text[1:-1]
-    elif text.startswith('<') and text.endswith('>'):
-        text = text[1:-1]
-    text = text.replace('\\"', '"').replace('\\n', ' ')
-    text = _SUB.sub('', text)
-    return ' '.join(text.split())
+    value = raw.strip()
+    if value.startswith('"') and value.endswith('"'):
+        value = value[1:-1]
+    value = value.replace('\\"', '"').replace('\\n', ' ')
+    value = re.sub(r'<[^>]+>', '', value)
+    return ' '.join(value.split())
 
 
 def _node_parts(label: str) -> tuple[str, str]:
-    text = label.strip()
-    if text.startswith('(') and text.endswith(')'):
-        text = text[1:-1]
-    parts = [part.strip() for part in text.split(',', 2)]
+    value = label[1:-1] if label.startswith('(') and label.endswith(')') else label
+    parts = [part.strip() for part in value.split(',', 2)]
     kind = parts[0] if parts else ''
     code = parts[-1] if len(parts) >= 2 else kind
     return kind, code
@@ -97,14 +96,14 @@ def _find_executable(root: Path, names: tuple[str, ...]) -> Path:
         path = root / name
         if path.is_file() and os.access(path, os.X_OK):
             return path
-    raise JoernError(f"required Joern executable not found under {root}: {', '.join(names)}")
+    raise CPGError(f"required Joern executable not found under {root}: {', '.join(names)}")
 
 
 def _environment(java_home: str | Path) -> dict[str, str]:
     java_home = Path(java_home).expanduser()
     java = java_home / 'bin' / 'java'
     if not java.is_file() or not os.access(java, os.X_OK):
-        raise JoernError(f'Java executable not found at {java}')
+        raise CPGError(f'Java executable not found at {java}')
     env = os.environ.copy()
     env['JAVA_HOME'] = str(java_home)
     env['PATH'] = str(java.parent) + os.pathsep + env.get('PATH', '')
@@ -112,20 +111,17 @@ def _environment(java_home: str | Path) -> dict[str, str]:
 
 
 def _matching_dot(directory: Path, function: str) -> Path:
-    candidates = sorted(directory.rglob('*.dot'))
     matches: list[Path] = []
-    for path in candidates:
+    for path in sorted(directory.rglob('*.dot')):
         try:
             first = path.read_text(errors='replace').splitlines()[0]
         except (OSError, IndexError):
             continue
-        graph = _GRAPH.match(first)
-        if graph and graph.group(1).strip().strip('"') == function:
+        match = _GRAPH.match(first)
+        if match and match.group(1).strip().strip('"') == function:
             matches.append(path)
     if len(matches) != 1:
-        raise JoernError(
-            f"expected one exported graph for {function} in {directory}, found {len(matches)}"
-        )
+        raise CPGError(f'expected one graph for {function}, found {len(matches)}')
     return matches[0]
 
 
@@ -138,56 +134,42 @@ def extract_function_cpg(
     java_home: str | Path = '/home/phy/jdk21',
     timeout: int = 300,
 ) -> FunctionGraph:
-    """Build AST/CFG/CDG/DDG for one standalone C/C++ function.
-
-    The input is intentionally a function snippet. No repository checkout,
-    includes, callers, callees, patch metadata, or vulnerability oracle is used.
-    """
+    """Build AST/CFG/CDG/DDG from one standalone C/C++ function snippet."""
     if language not in {'c', 'cpp'}:
         raise ValueError('language must be c or cpp')
     root = Path(os.environ.get('JOERN_HOME', str(joern_dir))).expanduser()
-    c2cpg = _find_executable(
-        root,
-        (
-            'c2cpg.sh',
-            'joern-cli/c2cpg.sh',
-            'joern-cli/frontends/c2cpg/c2cpg.sh',
-        ),
-    )
-    exporter = _find_executable(
-        root,
-        ('joern-export', 'joern-cli/joern-export', 'joern-cli/bin/joern-export'),
-    )
+    c2cpg = _find_executable(root, (
+        'c2cpg.sh', 'joern-cli/c2cpg.sh', 'joern-cli/frontends/c2cpg/c2cpg.sh'
+    ))
+    exporter = _find_executable(root, (
+        'joern-export', 'joern-cli/joern-export', 'joern-cli/bin/joern-export'
+    ))
     env = _environment(java_home)
 
-    with tempfile.TemporaryDirectory(prefix='vul-function-cpg-') as directory:
+    with tempfile.TemporaryDirectory(prefix='vulnmechanism-cpg-') as directory:
         work = Path(directory)
         src = work / 'src'
         src.mkdir()
         suffix = '.cpp' if language == 'cpp' else '.c'
         (src / f'input{suffix}').write_text(source)
         cpg = work / 'cpg.bin'
-        parse_command = [
+        parsed = run_process([
             str(c2cpg), str(src), '--output', str(cpg),
             '--with-include-auto-discovery', '--log-problems',
-        ]
-        result = _run_process_group(parse_command, timeout=timeout, env=env)
-        if result.returncode != 0 or not cpg.is_file():
-            raise JoernError(
-                'standalone c2cpg failed: ' + (result.stderr.strip() or result.stdout.strip())
-            )
+        ], timeout=timeout, env=env)
+        if parsed.returncode != 0 or not cpg.is_file():
+            raise CPGError('standalone c2cpg failed: ' + (parsed.stderr.strip() or parsed.stdout.strip()))
 
         graphs: list[FunctionGraph] = []
         for representation in ('ast', 'cfg', 'cdg', 'ddg'):
             output = work / representation
-            command = [
-                str(exporter), str(cpg), '--repr', representation, '--format', 'dot',
-                '--out', str(output),
-            ]
-            exported = _run_process_group(command, timeout=timeout, env=env)
+            exported = run_process([
+                str(exporter), '--repr', representation, '--format', 'dot',
+                '--out', str(output), str(cpg),
+            ], timeout=timeout, env=env)
             if exported.returncode != 0:
-                raise JoernError(
-                    f"joern-export {representation} failed: "
+                raise CPGError(
+                    f'joern-export {representation} failed: '
                     + (exported.stderr.strip() or exported.stdout.strip())
                 )
             path = _matching_dot(output, function)

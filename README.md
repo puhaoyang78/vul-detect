@@ -1,48 +1,51 @@
 # Function-Level Vulnerability Mechanism Learning
 
-本仓库当前主实验方向是：
+本仓库只保留当前研究主线：
 
 > **Patch-Grounded, CPG-Constrained Vulnerability Mechanism Learning**
 
-目标不是继续扩展仓库级 Z3 verifier，也不是用 LLM 补全自定义函数语义，而是研究：
+目标是研究：仅使用函数级源码和函数内 CPG，能否让小型 Code LLM 学到真正决定漏洞的程序关系，而不是函数名、API、变量名等 shortcut。
 
-> 仅使用函数级源码和函数内 CPG，能否让小型 Code LLM 学到真正决定漏洞的程序关系，而不是函数名、API、变量名等 shortcut。
+测试阶段只输入单个函数及其函数内 CPG，不依赖完整仓库、caller/callee、fix commit、CVE 描述或 ground truth。
 
-测试阶段只输入单个函数及其函数内 CPG，不依赖 repository clone、caller/callee、fix commit、CVE 描述或 ground truth。
-
-## New experiment
-
-训练阶段使用 vulnerable/fixed 函数对：
+## Pipeline
 
 ```text
-vulnerable function ──┐
-                      ├─> AST / CFG / CDG / DDG
-fixed function ───────┘
-                              ↓
-                    aligned graph relation delta
-                              ↓
-                    vulnerability mechanism
-                              ↓
-          mechanism-supervised Qwen bottleneck
-                              ↓
-                       VUL / BENIGN
+vulnerable / fixed function pairs
+            ↓
+standalone AST / CFG / CDG / DDG
+            ↓
+aligned security-relevant graph delta
+            ↓
+vulnerability mechanism supervision
+            ↓
+Qwen mechanism bottleneck
+            ↓
+VUL / BENIGN
 ```
 
-当前 mechanism 只保留可以回溯到函数源码或 CPG 的结构化信息：
+训练阶段允许使用 vulnerable/fixed 函数对生成 supervision；测试阶段只使用目标函数本身。
 
-- guard / bounds
-- allocation
-- memory access
-- size arithmetic
-- data dependency
-- control dependency
-- pointer/index relation
+## Repository layout
 
-模型不允许直接从 patch 或 CVE 信息完成测试时判断。
+```text
+vulnmechanism/
+  syntax.py       standalone C/C++ function parsing and identifier handling
+  process.py      safe external-process execution
+  cpg.py          standalone Joern AST/CFG/CDG/DDG extraction
+  mechanism.py    graph-grounded mechanism construction and dataset builder
+  model.py        Qwen baseline and mechanism-bottleneck classifier
+  cli.py          build / train / eval commands
 
-### Pair input
+tests/
+  test_vulnmechanism.py
+```
 
-`build` 接受 JSONL。每条记录至少包含一个 ID、vulnerable function 和 fixed function：
+旧的 repository-context、custom-function semantic normalization、Z3 verifier、LineVul experiment、旧结果与缓存均已移除。
+
+## Pair input
+
+JSONL 每条记录至少包含 vulnerable/fixed 函数：
 
 ```json
 {
@@ -55,34 +58,48 @@ fixed function ───────┘
 }
 ```
 
-也支持 `vulnerable` / `fixed` 字段；MegaVul 风格的 `func_before` / `func` 也可直接映射。
+也支持 `vulnerable` / `fixed` 字段，以及 MegaVul 风格的 `func_before` / `func`。
 
-### Build mechanism dataset
+## Build mechanism dataset
 
 ```bash
-python -m semantic_demo.mechanism_cli build \
+python -m vulnmechanism.cli build \
   --pairs data/pairs.jsonl \
   --output data/mechanism_dataset.jsonl
 ```
 
-该阶段对每个函数片段单独运行 Joern，导出 AST、CFG、CDG、DDG，并比较 vulnerable/fixed 两侧的安全相关关系。不会克隆或恢复完整仓库。
+每个函数片段单独运行 Joern，导出 AST、CFG、CDG、DDG。不会克隆或恢复完整仓库。
 
-输出同时保存：
+输出包含：
 
 - raw source
 - canonicalized source
 - identifier-renamed source
-- compact security-relevant graph relations
-- changed CPG relations
+- compact security-relevant CPG relations
+- vulnerable/fixed graph-relation delta
 - mechanism components
-- vulnerable/fixed label
+- VUL/BENIGN label
 
-### Train
+当前 mechanism components：
+
+```text
+guard
+bounds
+allocation
+memory_access
+size_arithmetic
+data_dependency
+control_dependency
+pointer_index
+other
+```
+
+## Train
 
 默认使用本地 Qwen2.5-Coder-7B-Instruct：
 
 ```bash
-python -m semantic_demo.mechanism_cli train \
+python -m vulnmechanism.cli train \
   --dataset data/mechanism_dataset.jsonl \
   --model /home/phy/models/Qwen2.5-Coder-7B-Instruct \
   --output results/mechanism_model.pt
@@ -106,18 +123,18 @@ canonical function + compact CPG relations
             VUL/BENIGN
 ```
 
-分类头只能消费 mechanism bottleneck，不能直接绕过它读取 Qwen hidden state。
+最终分类头只消费 mechanism bottleneck，不直接读取 Qwen hidden state。
 
-### Evaluate
+## Evaluate
 
 ```bash
-python -m semantic_demo.mechanism_cli eval \
+python -m vulnmechanism.cli eval \
   --dataset data/mechanism_dataset.jsonl \
   --checkpoint results/mechanism_model.pt \
   --split test
 ```
 
-当前报告：
+报告：
 
 - Accuracy
 - Precision / Recall / F1
@@ -125,20 +142,6 @@ python -m semantic_demo.mechanism_cli eval \
 - mechanism component accuracy
 - identifier-renaming prediction agreement
 - identifier-renaming probability shift
-
-## Existing repository-context verifier
-
-旧的 repository-context + custom semantics + Z3 selective verifier 暂时保留为历史基线，没有继续扩展。
-
-入口仍然是：
-
-```bash
-python -m semantic_demo.cli preflight
-python -m semantic_demo.cli normalize
-python -m semantic_demo.cli run
-```
-
-其原有数据、结果和测试未删除。
 
 ## Environment
 
@@ -159,3 +162,5 @@ python -m pip install -r requirements.txt
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+`data/` 和 `results/` 是运行时生成目录，不进入版本控制。

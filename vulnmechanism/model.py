@@ -102,18 +102,13 @@ class QwenEncoder:
         for start in range(0, len(texts), batch_size):
             batch = texts[start:start + batch_size]
             tokens = self.tokenizer(
-                batch,
-                return_tensors='pt',
-                padding=True,
-                truncation=True,
-                max_length=self.max_length,
+                batch, return_tensors='pt', padding=True, truncation=True, max_length=self.max_length,
             )
             tokens = {key: value.to(self.device) for key, value in tokens.items()}
             encoded = self.model(**tokens).last_hidden_state
             lengths = tokens['attention_mask'].sum(dim=1) - 1
             row = torch.arange(encoded.size(0), device=self.device)
-            pooled = encoded[row, lengths].float().cpu()
-            outputs.append(pooled)
+            outputs.append(encoded[row, lengths].float().cpu())
         return torch.cat(outputs, dim=0) if outputs else torch.empty((0, self.hidden_size))
 
 
@@ -145,70 +140,44 @@ def _tensor_rows(records: list[dict[str, object]]) -> tuple[torch.Tensor, torch.
     return labels, targets, masks
 
 
-def _train_baseline(
-    train_embeddings: torch.Tensor,
-    train_labels: torch.Tensor,
-    hidden_size: int,
-    *,
-    epochs: int,
-    learning_rate: float,
-    batch_size: int,
-) -> BaselineHead:
+def _train_baseline(embeddings, labels, hidden_size, *, epochs, learning_rate, batch_size):
     model = BaselineHead(hidden_size)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = nn.BCEWithLogitsLoss()
-    loader = DataLoader(TensorDataset(train_embeddings, train_labels), batch_size=batch_size, shuffle=True)
+    loader = DataLoader(TensorDataset(embeddings, labels), batch_size=batch_size, shuffle=True)
     model.train()
     for _ in range(epochs):
-        for embeddings, labels in loader:
+        for batch_embeddings, batch_labels in loader:
             optimizer.zero_grad()
-            loss = loss_fn(model(embeddings), labels)
+            loss = loss_fn(model(batch_embeddings), batch_labels)
             loss.backward()
             optimizer.step()
     return model.eval()
 
 
-def _train_proposed(
-    train_embeddings: torch.Tensor,
-    labels: torch.Tensor,
-    targets: torch.Tensor,
-    masks: torch.Tensor,
-    hidden_size: int,
-    *,
-    epochs: int,
-    learning_rate: float,
-    batch_size: int,
-    mechanism_weight: float,
-) -> MechanismBottleneckHead:
+def _train_proposed(embeddings, labels, targets, masks, hidden_size, *, epochs, learning_rate, batch_size, mechanism_weight):
     model = MechanismBottleneckHead(hidden_size)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     vuln_loss_fn = nn.BCEWithLogitsLoss()
     mech_loss_fn = nn.BCEWithLogitsLoss(reduction='none')
     loader = DataLoader(
-        TensorDataset(train_embeddings, labels, targets, masks),
-        batch_size=batch_size,
-        shuffle=True,
+        TensorDataset(embeddings, labels, targets, masks), batch_size=batch_size, shuffle=True,
     )
     model.train()
     for _ in range(epochs):
-        for embeddings, batch_labels, batch_targets, batch_masks in loader:
+        for batch_embeddings, batch_labels, batch_targets, batch_masks in loader:
             optimizer.zero_grad()
-            mechanism_logits, vulnerability_logits = model(embeddings)
+            mechanism_logits, vulnerability_logits = model(batch_embeddings)
             vuln_loss = vuln_loss_fn(vulnerability_logits, batch_labels)
             per_component = mech_loss_fn(mechanism_logits, batch_targets) * batch_masks
-            denominator = batch_masks.sum().clamp_min(1.0)
-            mechanism_loss = per_component.sum() / denominator
+            mechanism_loss = per_component.sum() / batch_masks.sum().clamp_min(1.0)
             loss = vuln_loss + mechanism_weight * mechanism_loss
             loss.backward()
             optimizer.step()
     return model.eval()
 
 
-def _classification_metrics(
-    records: list[dict[str, object]],
-    probabilities: torch.Tensor,
-    mechanism_logits: torch.Tensor | None = None,
-) -> Metrics:
+def _classification_metrics(records, probabilities, mechanism_logits=None) -> Metrics:
     predictions = probabilities >= 0.5
     truth = torch.tensor([int(record['label']) for record in records], dtype=torch.bool)
     tp = int((predictions & truth).sum())
@@ -219,7 +188,6 @@ def _classification_metrics(
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     accuracy = (tp + tn) / len(records) if records else 0.0
-
     by_pair: dict[str, dict[str, bool]] = {}
     for record, prediction in zip(records, predictions.tolist()):
         by_pair.setdefault(str(record['sample_key']), {})[str(record['side'])] = bool(prediction)
@@ -228,7 +196,6 @@ def _classification_metrics(
         sum(pair['vulnerable'] and not pair['fixed'] for pair in complete) / len(complete)
         if complete else 0.0
     )
-
     mechanism_accuracy = None
     if mechanism_logits is not None and records:
         predicted = mechanism_logits >= 0
@@ -243,9 +210,10 @@ def _classification_metrics(
 def _rename_stability(original: torch.Tensor, renamed: torch.Tensor) -> dict[str, float]:
     if original.numel() == 0:
         return {'prediction_agreement': 0.0, 'mean_abs_probability_change': 0.0}
-    agreement = float(((original >= 0.5) == (renamed >= 0.5)).float().mean())
-    delta = float((original - renamed).abs().mean())
-    return {'prediction_agreement': agreement, 'mean_abs_probability_change': delta}
+    return {
+        'prediction_agreement': float(((original >= 0.5) == (renamed >= 0.5)).float().mean()),
+        'mean_abs_probability_change': float((original - renamed).abs().mean()),
+    }
 
 
 def train_mechanism_models(
@@ -274,24 +242,13 @@ def train_mechanism_models(
     baseline_train = encoder.encode([_baseline_text(record) for record in train_records], encoder_batch_size)
     proposed_train = encoder.encode([_proposed_text(record) for record in train_records], encoder_batch_size)
     labels, targets, masks = _tensor_rows(train_records)
-
     baseline = _train_baseline(
-        baseline_train,
-        labels,
-        encoder.hidden_size,
-        epochs=epochs,
-        learning_rate=learning_rate,
-        batch_size=head_batch_size,
+        baseline_train, labels, encoder.hidden_size,
+        epochs=epochs, learning_rate=learning_rate, batch_size=head_batch_size,
     )
     proposed = _train_proposed(
-        proposed_train,
-        labels,
-        targets,
-        masks,
-        encoder.hidden_size,
-        epochs=epochs,
-        learning_rate=learning_rate,
-        batch_size=head_batch_size,
+        proposed_train, labels, targets, masks, encoder.hidden_size,
+        epochs=epochs, learning_rate=learning_rate, batch_size=head_batch_size,
         mechanism_weight=mechanism_weight,
     )
 
@@ -338,11 +295,8 @@ def evaluate_mechanism_models(
     records = [record for record in _read_jsonl(dataset_path) if _record_split(record) == split]
     if not records:
         raise ValueError(f'{split} split is empty')
-
     encoder = QwenEncoder(
-        str(checkpoint['model_path']),
-        max_length=int(checkpoint['max_length']),
-        device=device,
+        str(checkpoint['model_path']), max_length=int(checkpoint['max_length']), device=device,
     )
     baseline = BaselineHead(int(checkpoint['hidden_size']))
     baseline.load_state_dict(checkpoint['baseline_state'])
@@ -360,7 +314,7 @@ def evaluate_mechanism_models(
         renamed_baseline_probability = torch.sigmoid(baseline(renamed_baseline_embeddings))
         mechanism_logits, proposed_logits = proposed(proposed_embeddings)
         proposed_probability = torch.sigmoid(proposed_logits)
-        _renamed_mechanism, renamed_proposed_logits = proposed(renamed_proposed_embeddings)
+        _, renamed_proposed_logits = proposed(renamed_proposed_embeddings)
         renamed_proposed_probability = torch.sigmoid(renamed_proposed_logits)
     result = {
         'split': split,

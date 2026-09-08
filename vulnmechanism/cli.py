@@ -3,48 +3,12 @@ from __future__ import annotations
 import argparse
 
 from .mechanism import build_mechanism_dataset
-from .mechanism_model import evaluate_mechanism_models, train_mechanism_models
-
-
-def _build(args: argparse.Namespace) -> None:
-    build_mechanism_dataset(
-        args.pairs,
-        args.output,
-        joern_dir=args.joern_dir,
-        java_home=args.java_home,
-        timeout=args.timeout,
-    )
-
-
-def _train(args: argparse.Namespace) -> None:
-    train_mechanism_models(
-        args.dataset,
-        args.output,
-        model_path=args.model,
-        max_length=args.max_length,
-        encoder_batch_size=args.encoder_batch_size,
-        head_batch_size=args.head_batch_size,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        mechanism_weight=args.mechanism_weight,
-        seed=args.seed,
-        device=args.device,
-    )
-
-
-def _evaluate(args: argparse.Namespace) -> None:
-    evaluate_mechanism_models(
-        args.dataset,
-        args.checkpoint,
-        split=args.split,
-        encoder_batch_size=args.encoder_batch_size,
-        device=args.device,
-    )
+from .model import evaluate_mechanism_models, train_mechanism_models
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Function-only patch-grounded CPG mechanism learning experiment'
+        description='Function-only vulnerability mechanism learning'
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
@@ -54,7 +18,12 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument('--joern-dir', default='/home/phy/joern')
     build.add_argument('--java-home', default='/home/phy/jdk21')
     build.add_argument('--timeout', type=int, default=300)
-    build.set_defaults(func=_build)
+    build.set_defaults(func=lambda args: build_mechanism_dataset(
+        args.pairs, args.output,
+        joern_dir=args.joern_dir,
+        java_home=args.java_home,
+        timeout=args.timeout,
+    ))
 
     train = sub.add_parser('train')
     train.add_argument('--dataset', default='data/mechanism_dataset.jsonl')
@@ -68,7 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument('--mechanism-weight', type=float, default=1.0)
     train.add_argument('--seed', type=int, default=42)
     train.add_argument('--device', default='auto')
-    train.set_defaults(func=_train)
+    train.set_defaults(func=lambda args: train_mechanism_models(
+        args.dataset,
+        args.output,
+        model_path=args.model,
+        max_length=args.max_length,
+        encoder_batch_size=args.encoder_batch_size,
+        head_batch_size=args.head_batch_size,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        mechanism_weight=args.mechanism_weight,
+        seed=args.seed,
+        device=args.device,
+    ))
 
     evaluate = sub.add_parser('eval')
     evaluate.add_argument('--dataset', default='data/mechanism_dataset.jsonl')
@@ -76,7 +57,13 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument('--split', choices=('train', 'valid', 'test'), default='test')
     evaluate.add_argument('--encoder-batch-size', type=int, default=2)
     evaluate.add_argument('--device', default='auto')
-    evaluate.set_defaults(func=_evaluate)
+    evaluate.set_defaults(func=lambda args: evaluate_mechanism_models(
+        args.dataset,
+        args.checkpoint,
+        split=args.split,
+        encoder_batch_size=args.encoder_batch_size,
+        device=args.device,
+    ))
     return parser
 
 
