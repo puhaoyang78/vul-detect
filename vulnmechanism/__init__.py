@@ -1,3 +1,3 @@
-"""Function-level vulnerability mechanism learning."""
+"""Function-level C/C++ vulnerability classification."""
 
 __all__ = []
