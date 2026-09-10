@@ -65,13 +65,15 @@ def _record_split(record: dict[str, object]) -> str:
 
 
 def _baseline_text(record: dict[str, object]) -> str:
-    return str(record['raw_source'])
+    return (
+        'TASK: classify whether this C/C++ function is vulnerable.\n'
+        'FUNCTION:\n' + str(record['raw_source'])
+    )
 
 
 def _cpg_text(record: dict[str, object]) -> str:
     return (
-        'TASK: classify whether this C/C++ function is vulnerable.\n'
-        'FUNCTION:\n' + str(record['raw_source']) + '\n'
+        _baseline_text(record) + '\n'
         'INTRA_FUNCTION_CPG:\n' + str(record['graph'])
     )
 
