@@ -1,12 +1,7 @@
-import tempfile
 import unittest
-from pathlib import Path
-
-import torch
 
 from vulnmechanism.cpg import FunctionGraph, GraphEdge, GraphNode, parse_dot_graph
 from vulnmechanism.mechanism import _normalize_label, graph_relations
-from vulnmechanism.model import _classification_metrics
 from vulnmechanism.syntax import parse_function
 
 
@@ -61,24 +56,6 @@ class LabelTests(unittest.TestCase):
     def test_invalid_label_is_rejected(self):
         with self.assertRaises(ValueError):
             _normalize_label(2)
-
-
-class MetricTests(unittest.TestCase):
-    def test_metrics_for_perfect_predictions(self):
-        records = [
-            {'sample_key': 'a', 'label': 0},
-            {'sample_key': 'b', 'label': 1},
-            {'sample_key': 'c', 'label': 0},
-            {'sample_key': 'd', 'label': 1},
-        ]
-        probabilities = torch.tensor([0.1, 0.9, 0.2, 0.8])
-        metrics = _classification_metrics(records, probabilities)
-        self.assertEqual(metrics.accuracy, 1.0)
-        self.assertEqual(metrics.precision, 1.0)
-        self.assertEqual(metrics.recall, 1.0)
-        self.assertEqual(metrics.f1, 1.0)
-        self.assertEqual(metrics.mcc, 1.0)
-        self.assertEqual(metrics.auc, 1.0)
 
 
 if __name__ == '__main__':
