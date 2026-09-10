@@ -11,8 +11,6 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer
 
-from .mechanism import MECHANISM_COMPONENTS
-
 
 @dataclass(frozen=True)
 class Metrics:
@@ -20,8 +18,8 @@ class Metrics:
     precision: float
     recall: float
     f1: float
-    pair_accuracy: float
-    mechanism_accuracy: float | None = None
+    mcc: float
+    auc: float | None
 
     def as_json(self) -> dict[str, float | None]:
         return {
@@ -29,8 +27,8 @@ class Metrics:
             'precision': self.precision,
             'recall': self.recall,
             'f1': self.f1,
-            'pair_accuracy': self.pair_accuracy,
-            'mechanism_accuracy': self.mechanism_accuracy,
+            'mcc': self.mcc,
+            'auc': self.auc,
         }
 
 
@@ -41,9 +39,12 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
             if not line.strip():
                 continue
             try:
-                records.append(json.loads(line))
+                record = json.loads(line)
             except json.JSONDecodeError as error:
                 raise ValueError(f'invalid JSON at {path}:{line_number}: {error}') from error
+            if not isinstance(record, dict):
+                raise ValueError(f'{path}:{line_number}: each JSONL row must be an object')
+            records.append(record)
     return records
 
 
@@ -64,14 +65,13 @@ def _record_split(record: dict[str, object]) -> str:
 
 
 def _baseline_text(record: dict[str, object]) -> str:
-    return str(record.get('raw_source') or record['canonical_source'])
+    return str(record['raw_source'])
 
 
-def _proposed_text(record: dict[str, object], *, renamed: bool = False) -> str:
-    source_key = 'renamed_canonical_source' if renamed else 'canonical_source'
+def _cpg_text(record: dict[str, object]) -> str:
     return (
-        'TASK: infer security mechanism state from one C/C++ function.\n'
-        'FUNCTION:\n' + str(record[source_key]) + '\n'
+        'TASK: classify whether this C/C++ function is vulnerable.\n'
+        'FUNCTION:\n' + str(record['raw_source']) + '\n'
         'INTRA_FUNCTION_CPG:\n' + str(record['graph'])
     )
 
@@ -102,7 +102,11 @@ class QwenEncoder:
         for start in range(0, len(texts), batch_size):
             batch = texts[start:start + batch_size]
             tokens = self.tokenizer(
-                batch, return_tensors='pt', padding=True, truncation=True, max_length=self.max_length,
+                batch,
+                return_tensors='pt',
+                padding=True,
+                truncation=True,
+                max_length=self.max_length,
             )
             tokens = {key: value.to(self.device) for key, value in tokens.items()}
             encoded = self.model(**tokens).last_hidden_state
@@ -112,7 +116,7 @@ class QwenEncoder:
         return torch.cat(outputs, dim=0) if outputs else torch.empty((0, self.hidden_size))
 
 
-class BaselineHead(nn.Module):
+class BinaryHead(nn.Module):
     def __init__(self, hidden_size: int) -> None:
         super().__init__()
         self.classifier = nn.Linear(hidden_size, 1)
@@ -121,27 +125,26 @@ class BaselineHead(nn.Module):
         return self.classifier(embeddings).squeeze(-1)
 
 
-class MechanismBottleneckHead(nn.Module):
-    def __init__(self, hidden_size: int) -> None:
-        super().__init__()
-        self.mechanism = nn.Linear(hidden_size, len(MECHANISM_COMPONENTS))
-        self.classifier = nn.Linear(len(MECHANISM_COMPONENTS), 1)
-
-    def forward(self, embeddings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        mechanism_logits = self.mechanism(embeddings)
-        vulnerability_logits = self.classifier(torch.sigmoid(mechanism_logits)).squeeze(-1)
-        return mechanism_logits, vulnerability_logits
+def _labels(records: list[dict[str, object]]) -> torch.Tensor:
+    labels = []
+    for record in records:
+        value = int(record['label'])
+        if value not in {0, 1}:
+            raise ValueError(f"{record.get('sample_key')}: label must be 0 or 1")
+        labels.append(float(value))
+    return torch.tensor(labels, dtype=torch.float32)
 
 
-def _tensor_rows(records: list[dict[str, object]]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    labels = torch.tensor([float(record['label']) for record in records], dtype=torch.float32)
-    targets = torch.tensor([record['mechanism_targets'] for record in records], dtype=torch.float32)
-    masks = torch.tensor([record['mechanism_mask'] for record in records], dtype=torch.float32)
-    return labels, targets, masks
-
-
-def _train_baseline(embeddings, labels, hidden_size, *, epochs, learning_rate, batch_size):
-    model = BaselineHead(hidden_size)
+def _train_head(
+    embeddings: torch.Tensor,
+    labels: torch.Tensor,
+    hidden_size: int,
+    *,
+    epochs: int,
+    learning_rate: float,
+    batch_size: int,
+) -> BinaryHead:
+    model = BinaryHead(hidden_size)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = nn.BCEWithLogitsLoss()
     loader = DataLoader(TensorDataset(embeddings, labels), batch_size=batch_size, shuffle=True)
@@ -155,68 +158,50 @@ def _train_baseline(embeddings, labels, hidden_size, *, epochs, learning_rate, b
     return model.eval()
 
 
-def _train_proposed(embeddings, labels, targets, masks, hidden_size, *, epochs, learning_rate, batch_size, mechanism_weight):
-    model = MechanismBottleneckHead(hidden_size)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    vuln_loss_fn = nn.BCEWithLogitsLoss()
-    mech_loss_fn = nn.BCEWithLogitsLoss(reduction='none')
-    loader = DataLoader(
-        TensorDataset(embeddings, labels, targets, masks), batch_size=batch_size, shuffle=True,
+def _binary_auc(truth: torch.Tensor, scores: torch.Tensor) -> float | None:
+    positives = int(truth.sum().item())
+    negatives = int((~truth).sum().item())
+    if positives == 0 or negatives == 0:
+        return None
+
+    pairs = sorted(
+        ((float(score), bool(label)) for score, label in zip(scores.tolist(), truth.tolist())),
+        key=lambda item: item[0],
     )
-    model.train()
-    for _ in range(epochs):
-        for batch_embeddings, batch_labels, batch_targets, batch_masks in loader:
-            optimizer.zero_grad()
-            mechanism_logits, vulnerability_logits = model(batch_embeddings)
-            vuln_loss = vuln_loss_fn(vulnerability_logits, batch_labels)
-            per_component = mech_loss_fn(mechanism_logits, batch_targets) * batch_masks
-            mechanism_loss = per_component.sum() / batch_masks.sum().clamp_min(1.0)
-            loss = vuln_loss + mechanism_weight * mechanism_loss
-            loss.backward()
-            optimizer.step()
-    return model.eval()
+    rank_sum = 0.0
+    rank = 1
+    index = 0
+    while index < len(pairs):
+        end = index + 1
+        while end < len(pairs) and pairs[end][0] == pairs[index][0]:
+            end += 1
+        average_rank = (rank + (rank + end - index - 1)) / 2.0
+        rank_sum += average_rank * sum(1 for _, label in pairs[index:end] if label)
+        rank += end - index
+        index = end
+    return (rank_sum - positives * (positives + 1) / 2.0) / (positives * negatives)
 
 
-def _classification_metrics(records, probabilities, mechanism_logits=None) -> Metrics:
+def _classification_metrics(records: list[dict[str, object]], probabilities: torch.Tensor) -> Metrics:
     predictions = probabilities >= 0.5
     truth = torch.tensor([int(record['label']) for record in records], dtype=torch.bool)
     tp = int((predictions & truth).sum())
     fp = int((predictions & ~truth).sum())
     tn = int((~predictions & ~truth).sum())
     fn = int((~predictions & truth).sum())
+
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     accuracy = (tp + tn) / len(records) if records else 0.0
-    by_pair: dict[str, dict[str, bool]] = {}
-    for record, prediction in zip(records, predictions.tolist()):
-        by_pair.setdefault(str(record['sample_key']), {})[str(record['side'])] = bool(prediction)
-    complete = [pair for pair in by_pair.values() if {'vulnerable', 'fixed'} <= set(pair)]
-    pair_accuracy = (
-        sum(pair['vulnerable'] and not pair['fixed'] for pair in complete) / len(complete)
-        if complete else 0.0
-    )
-    mechanism_accuracy = None
-    if mechanism_logits is not None and records:
-        predicted = mechanism_logits >= 0
-        targets = torch.tensor([record['mechanism_targets'] for record in records], dtype=torch.bool)
-        masks = torch.tensor([record['mechanism_mask'] for record in records], dtype=torch.bool)
-        denominator = int(masks.sum())
-        if denominator:
-            mechanism_accuracy = float(((predicted == targets) & masks).sum()) / denominator
-    return Metrics(accuracy, precision, recall, f1, pair_accuracy, mechanism_accuracy)
+
+    denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
+    mcc = ((tp * tn) - (fp * fn)) / denominator if denominator else 0.0
+    auc = _binary_auc(truth, probabilities)
+    return Metrics(accuracy, precision, recall, f1, mcc, auc)
 
 
-def _rename_stability(original: torch.Tensor, renamed: torch.Tensor) -> dict[str, float]:
-    if original.numel() == 0:
-        return {'prediction_agreement': 0.0, 'mean_abs_probability_change': 0.0}
-    return {
-        'prediction_agreement': float(((original >= 0.5) == (renamed >= 0.5)).float().mean()),
-        'mean_abs_probability_change': float((original - renamed).abs().mean()),
-    }
-
-
-def train_mechanism_models(
+def train_models(
     dataset_path: str | Path,
     output_path: str | Path,
     *,
@@ -226,7 +211,6 @@ def train_mechanism_models(
     head_batch_size: int = 64,
     epochs: int = 20,
     learning_rate: float = 1e-3,
-    mechanism_weight: float = 1.0,
     seed: int = 42,
     device: str = 'auto',
 ) -> dict[str, object]:
@@ -238,40 +222,54 @@ def train_mechanism_models(
     if not train_records:
         raise ValueError('training split is empty')
 
+    labels = _labels(train_records)
     encoder = QwenEncoder(model_path, max_length=max_length, device=device)
-    baseline_train = encoder.encode([_baseline_text(record) for record in train_records], encoder_batch_size)
-    proposed_train = encoder.encode([_proposed_text(record) for record in train_records], encoder_batch_size)
-    labels, targets, masks = _tensor_rows(train_records)
-    baseline = _train_baseline(
-        baseline_train, labels, encoder.hidden_size,
-        epochs=epochs, learning_rate=learning_rate, batch_size=head_batch_size,
+
+    baseline_train = encoder.encode(
+        [_baseline_text(record) for record in train_records], encoder_batch_size
     )
-    proposed = _train_proposed(
-        proposed_train, labels, targets, masks, encoder.hidden_size,
-        epochs=epochs, learning_rate=learning_rate, batch_size=head_batch_size,
-        mechanism_weight=mechanism_weight,
+    cpg_train = encoder.encode(
+        [_cpg_text(record) for record in train_records], encoder_batch_size
+    )
+    baseline = _train_head(
+        baseline_train,
+        labels,
+        encoder.hidden_size,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        batch_size=head_batch_size,
+    )
+    cpg = _train_head(
+        cpg_train,
+        labels,
+        encoder.hidden_size,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        batch_size=head_batch_size,
     )
 
     validation: dict[str, object] = {}
     if valid_records:
-        baseline_valid = encoder.encode([_baseline_text(record) for record in valid_records], encoder_batch_size)
-        proposed_valid = encoder.encode([_proposed_text(record) for record in valid_records], encoder_batch_size)
+        baseline_valid = encoder.encode(
+            [_baseline_text(record) for record in valid_records], encoder_batch_size
+        )
+        cpg_valid = encoder.encode(
+            [_cpg_text(record) for record in valid_records], encoder_batch_size
+        )
         with torch.no_grad():
             baseline_prob = torch.sigmoid(baseline(baseline_valid))
-            mechanism_logits, proposed_logits = proposed(proposed_valid)
-            proposed_prob = torch.sigmoid(proposed_logits)
+            cpg_prob = torch.sigmoid(cpg(cpg_valid))
         validation = {
             'baseline': _classification_metrics(valid_records, baseline_prob).as_json(),
-            'proposed': _classification_metrics(valid_records, proposed_prob, mechanism_logits).as_json(),
+            'cpg': _classification_metrics(valid_records, cpg_prob).as_json(),
         }
 
     checkpoint = {
         'model_path': model_path,
         'hidden_size': encoder.hidden_size,
         'max_length': max_length,
-        'components': MECHANISM_COMPONENTS,
         'baseline_state': baseline.state_dict(),
-        'proposed_state': proposed.state_dict(),
+        'cpg_state': cpg.state_dict(),
         'validation': validation,
     }
     target = Path(output_path)
@@ -281,7 +279,7 @@ def train_mechanism_models(
     return checkpoint
 
 
-def evaluate_mechanism_models(
+def evaluate_models(
     dataset_path: str | Path,
     checkpoint_path: str | Path,
     *,
@@ -290,44 +288,39 @@ def evaluate_mechanism_models(
     device: str = 'auto',
 ) -> dict[str, object]:
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
-    if tuple(checkpoint['components']) != MECHANISM_COMPONENTS:
-        raise ValueError('checkpoint mechanism component schema does not match current code')
     records = [record for record in _read_jsonl(dataset_path) if _record_split(record) == split]
     if not records:
         raise ValueError(f'{split} split is empty')
+
     encoder = QwenEncoder(
-        str(checkpoint['model_path']), max_length=int(checkpoint['max_length']), device=device,
+        str(checkpoint['model_path']),
+        max_length=int(checkpoint['max_length']),
+        device=device,
     )
-    baseline = BaselineHead(int(checkpoint['hidden_size']))
+    baseline = BinaryHead(int(checkpoint['hidden_size']))
     baseline.load_state_dict(checkpoint['baseline_state'])
     baseline.eval()
-    proposed = MechanismBottleneckHead(int(checkpoint['hidden_size']))
-    proposed.load_state_dict(checkpoint['proposed_state'])
-    proposed.eval()
+    cpg = BinaryHead(int(checkpoint['hidden_size']))
+    cpg.load_state_dict(checkpoint['cpg_state'])
+    cpg.eval()
 
-    baseline_embeddings = encoder.encode([_baseline_text(record) for record in records], encoder_batch_size)
-    proposed_embeddings = encoder.encode([_proposed_text(record) for record in records], encoder_batch_size)
-    renamed_baseline_embeddings = encoder.encode([str(record['renamed_source']) for record in records], encoder_batch_size)
-    renamed_proposed_embeddings = encoder.encode([_proposed_text(record, renamed=True) for record in records], encoder_batch_size)
+    baseline_embeddings = encoder.encode(
+        [_baseline_text(record) for record in records], encoder_batch_size
+    )
+    cpg_embeddings = encoder.encode(
+        [_cpg_text(record) for record in records], encoder_batch_size
+    )
     with torch.no_grad():
         baseline_probability = torch.sigmoid(baseline(baseline_embeddings))
-        renamed_baseline_probability = torch.sigmoid(baseline(renamed_baseline_embeddings))
-        mechanism_logits, proposed_logits = proposed(proposed_embeddings)
-        proposed_probability = torch.sigmoid(proposed_logits)
-        _, renamed_proposed_logits = proposed(renamed_proposed_embeddings)
-        renamed_proposed_probability = torch.sigmoid(renamed_proposed_logits)
+        cpg_probability = torch.sigmoid(cpg(cpg_embeddings))
+
     result = {
         'split': split,
         'samples': len(records),
-        'pairs': len({str(record['sample_key']) for record in records}),
-        'baseline': {
-            **_classification_metrics(records, baseline_probability).as_json(),
-            'rename_stability': _rename_stability(baseline_probability, renamed_baseline_probability),
-        },
-        'proposed': {
-            **_classification_metrics(records, proposed_probability, mechanism_logits).as_json(),
-            'rename_stability': _rename_stability(proposed_probability, renamed_proposed_probability),
-        },
+        'positive': sum(int(record['label']) == 1 for record in records),
+        'negative': sum(int(record['label']) == 0 for record in records),
+        'baseline': _classification_metrics(records, baseline_probability).as_json(),
+        'cpg': _classification_metrics(records, cpg_probability).as_json(),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return result
