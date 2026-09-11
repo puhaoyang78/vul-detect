@@ -106,8 +106,6 @@ def render_graph(graph: FunctionGraph, max_relations: int = 160) -> str:
     groups: dict[str, list[GraphRelation]] = {}
     for relation in relations:
         groups.setdefault(relation.kind, []).append(relation)
-    # Share the compact representation budget across graph kinds instead of
-    # allowing a large AST to consume all slots before CFG/CDG/DDG are seen.
     selected = [
         item
         for row in zip_longest(*groups.values())
@@ -244,12 +242,8 @@ def _load_reusable_records(
                 raise ValueError(f"{path}: invalid saved JSON at byte {start}") from error
             if not isinstance(record, dict):
                 raise ValueError(f"{path}: saved record must be an object at byte {start}")
-
-            # Older schema records were produced by a different CPG parser and
-            # must be rebuilt rather than silently resumed.
             if record.get("schema_version") != DATASET_SCHEMA_VERSION:
                 continue
-
             key = record.get("sample_key")
             if not isinstance(key, str) or key not in sample_by_key:
                 raise ValueError(f"{path}: unknown saved sample_key={key!r}")
@@ -266,6 +260,22 @@ def _write_jsonl_line(handle, value: dict[str, object]) -> None:
     handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
     handle.flush()
     os.fsync(handle.fileno())
+
+
+def _rewrite_in_sample_order(
+    target: Path,
+    samples: list[FunctionSample],
+    records_by_key: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+    ordered = [
+        records_by_key[sample.sample_key]
+        for sample in samples
+        if sample.sample_key in records_by_key
+    ]
+    with target.open("w", encoding="utf-8") as output:
+        for record in ordered:
+            _write_jsonl_line(output, record)
+    return ordered
 
 
 def build_function_dataset(
@@ -291,20 +301,12 @@ def build_function_dataset(
     if incomplete_tail:
         print(f"discard_incomplete_output_tail={target}", flush=True)
 
-    # Rewrite the output using only records that are valid for the current
-    # schema/input, so stale schema records cannot survive alongside new data.
-    records: list[dict[str, object]] = []
-    with target.open("w", encoding="utf-8") as output:
-        for sample in samples:
-            record = reusable.get(sample.sample_key)
-            if record is not None:
-                records.append(record)
-                _write_jsonl_line(output, record)
-
-    completed = {str(record["sample_key"]) for record in records}
+    records = _rewrite_in_sample_order(target, samples, reusable)
+    completed = set(reusable)
     print(f"function_samples_total={len(samples)} resumed={len(completed)}", flush=True)
 
     failures = 0
+    records_by_key = dict(reusable)
     with target.open("a", encoding="utf-8") as output, errors_path.open("w", encoding="utf-8") as errors:
         for sample in samples:
             if sample.sample_key in completed:
@@ -370,13 +372,18 @@ def build_function_dataset(
                 "split": sample.split,
             }
             _write_jsonl_line(output, record)
-            records.append(record)
+            records_by_key[sample.sample_key] = record
             completed.add(sample.sample_key)
             print(
                 f"function_sample_done={sample.sample_key} label={sample.label} "
                 f"relations={len(relations)} semantic_facts={len(semantics.facts)}",
                 flush=True,
             )
+
+    # A successful run normalizes output order to the original samples file.
+    # If the process is interrupted before this point, every completed record
+    # has already been fsync'ed and remains resumable.
+    records = _rewrite_in_sample_order(target, samples, records_by_key)
 
     total = len(samples)
     success = len(records)
