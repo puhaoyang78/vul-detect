@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+<<<<<<< Updated upstream
+=======
+from itertools import zip_longest
+>>>>>>> Stashed changes
 from dataclasses import dataclass
 from pathlib import Path
 
 from .cpg import CPGError, FunctionGraph, GraphNode, extract_function_cpg
+<<<<<<< Updated upstream
 from .semantics import extract_vulnerability_semantics
+=======
+>>>>>>> Stashed changes
 from .syntax import parse_function
 
 
@@ -95,8 +103,20 @@ def graph_relations(graph: FunctionGraph) -> tuple[GraphRelation, ...]:
 
 
 def render_graph(graph: FunctionGraph, max_relations: int = 160) -> str:
+    if max_relations <= 0:
+        raise ValueError('max_relations must be positive')
     relations = graph_relations(graph)
+<<<<<<< Updated upstream
     return "\n".join(item.as_text() for item in relations[:max_relations]) or "NO_SECURITY_RELEVANT_GRAPH_RELATIONS"
+=======
+    groups: dict[str, list[GraphRelation]] = {}
+    for relation in relations:
+        groups.setdefault(relation.kind, []).append(relation)
+    # Round-robin shares the budget across available kinds; unused slots
+    # automatically go to kinds with more edges.
+    selected = [item for row in zip_longest(*groups.values()) for item in row if item is not None]
+    return '\n'.join(item.as_text() for item in selected[:max_relations]) or 'NO_SECURITY_RELEVANT_GRAPH_RELATIONS'
+>>>>>>> Stashed changes
 
 
 def _required_string(record: dict[str, object], names: tuple[str, ...], label: str) -> str:
@@ -156,9 +176,28 @@ def _sample_fields(record: dict[str, object]) -> FunctionSample:
     return FunctionSample(key, source, label, language, str(function_name) if function_name else None, split)
 
 
+<<<<<<< Updated upstream
 def _read_samples(samples_path: str | Path) -> list[FunctionSample]:
     samples: list[FunctionSample] = []
     seen: set[str] = set()
+=======
+def build_function_dataset(
+    samples_path: str | Path,
+    output_path: str | Path,
+    *,
+    joern_dir: str | Path = '/home/phy/joern',
+    java_home: str | Path = '/home/phy/jdk21',
+    timeout: int = 300,
+) -> list[dict[str, object]]:
+    """Build one CPG-augmented record per function while preserving the dataset's original binary label."""
+    target = Path(output_path)
+    if target.resolve() == Path(samples_path).resolve():
+        raise ValueError('samples and output must be different files')
+    errors_path = target.with_suffix('.errors.jsonl')
+    if errors_path.resolve() in {target.resolve(), Path(samples_path).resolve()}:
+        raise ValueError('error log must be different from samples and output')
+    samples = {}
+>>>>>>> Stashed changes
     with Path(samples_path).open() as handle:
         for line_number, line in enumerate(handle, 1):
             if not line.strip():
@@ -176,6 +215,7 @@ def _read_samples(samples_path: str | Path) -> list[FunctionSample]:
             samples.append(sample)
     return samples
 
+<<<<<<< Updated upstream
 
 def _load_existing(path: Path) -> dict[str, dict[str, object]]:
     if not path.is_file():
@@ -274,6 +314,90 @@ def build_function_dataset(
 
             semantics = extract_vulnerability_semantics(graph)
             relations = graph_relations(graph)
+=======
+            key, source, label, language, function_name, split = _sample_fields(raw)
+            if key in samples:
+                raise ValueError(f'{samples_path}:{line_number}: duplicate sample_key={key}')
+            samples[key] = (line_number, source, label, language, function_name, split)
+
+    records: list[dict[str, object]] = []
+    completed = set()
+    truncate_at = None
+    needs_newline = False
+    if target.exists():
+        with target.open('rb') as handle:
+            size = target.stat().st_size
+            while line := handle.readline():
+                start = handle.tell() - len(line)
+                try:
+                    record = json.loads(line)
+                except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                    if handle.tell() == size and not line.endswith(b'\n'):
+                        truncate_at = start
+                        break
+                    raise ValueError(f'{target}: invalid saved JSON at byte {start}') from error
+                if not isinstance(record, dict):
+                    raise ValueError(f'{target}: saved record must be an object at byte {start}')
+                key = record.get('sample_key')
+                if not isinstance(key, str) or key not in samples or key in completed:
+                    raise ValueError(f'{target}: unknown or duplicate saved sample_key={key!r}')
+                _, source, label, language, function_name, split = samples[key]
+                parsed = parse_function(source, language, function_name)
+                expected = {'raw_source': source, 'label': label, 'language': language,
+                            'function_name': parsed.name, 'split': split}
+                if (any(record.get(field) != value for field, value in expected.items())
+                        or type(record.get('label')) is not int
+                        or not isinstance(record.get('graph'), str) or not record['graph'].strip()):
+                    raise ValueError(f'{target}: saved record does not match input or lacks graph: {key}')
+                records.append(record)
+                completed.add(key)
+                needs_newline = not line.endswith(b'\n')
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if truncate_at is not None:
+        with target.open('r+b') as handle:
+            handle.truncate(truncate_at)
+        print(f'discard_incomplete_output_tail={target} byte={truncate_at}', flush=True)
+    print(f'function_samples_total={len(samples)} resumed={len(completed)}', flush=True)
+    failures = 0
+    with target.open('a', encoding='utf-8') as handle, errors_path.open('w', encoding='utf-8') as errors:
+        if needs_newline:
+            handle.write('\n')
+        for key, (line_number, source, label, language, function_name, split) in samples.items():
+            if key in completed:
+                continue
+            stage = 'syntax'
+            try:
+                parsed = parse_function(source, language, function_name)
+            except ValueError as error:
+                failure = error
+            else:
+                failure = None
+            if failure is None:
+                stage = 'joern'
+                try:
+                    graph = extract_function_cpg(
+                        source,
+                        parsed.name,
+                        language=language,
+                        joern_dir=joern_dir,
+                        java_home=java_home,
+                        timeout=timeout,
+                    )
+                except (CPGError, subprocess.TimeoutExpired) as error:
+                    failure = error
+            if failure is not None:
+                failures += 1
+                errors.write(json.dumps({
+                    'sample_key': key, 'line': line_number, 'label': label,
+                    'split': split, 'language': language, 'stage': stage,
+                    'error_type': type(failure).__name__, 'error': str(failure),
+                }, ensure_ascii=False) + '\n')
+                errors.flush()
+                os.fsync(errors.fileno())
+                print(f'function_sample_failed={key} stage={stage} error={failure}', flush=True)
+                continue
+>>>>>>> Stashed changes
             record: dict[str, object] = {
                 "schema_version": DATASET_SCHEMA_VERSION,
                 "sample_key": sample.sample_key,
@@ -288,6 +412,14 @@ def build_function_dataset(
                 "semantic_fact_count": len(semantics.facts),
                 "split": sample.split,
             }
+<<<<<<< Updated upstream
+=======
+            if split is not None:
+                record['split'] = split
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + '\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+>>>>>>> Stashed changes
             records.append(record)
             completed.add(sample.sample_key)
             _write_jsonl_line(output, record)
@@ -297,6 +429,7 @@ def build_function_dataset(
                 flush=True,
             )
 
+<<<<<<< Updated upstream
     total = len(samples)
     success = len(records)
     rate = success / total if total else 0.0
@@ -305,4 +438,9 @@ def build_function_dataset(
         f"success_rate={rate:.2%} errors={errors_path}",
         flush=True,
     )
+=======
+    rate = len(records) / len(samples) if samples else 0.0
+    print(f'function_build_summary total={len(samples)} success={len(records)} '
+          f'failed={failures} success_rate={rate:.2%} errors={errors_path}', flush=True)
+>>>>>>> Stashed changes
     return records

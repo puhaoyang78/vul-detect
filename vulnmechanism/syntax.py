@@ -39,8 +39,22 @@ def text(node: Node, source: bytes) -> str:
 def identifier(node: Node | None, source: bytes) -> str | None:
     if node is None:
         return None
-    if node.type == "identifier":
+    # In a typeless f(args) {...} header, the C grammar may interpret f as
+    # a type and (args) as a parenthesized declarator (including macro args).
+    if node.type == 'parenthesized_declarator' and node.parent is not None:
+        parent = node.parent
+        type_node = parent.child_by_field_name('type')
+        if (parent.type == 'function_definition' and type_node is not None
+                and type_node.type == 'type_identifier'):
+            return text(type_node, source)
+    if node.type in {'identifier', 'destructor_name', 'operator_name'}:
         return text(node, source)
+    if node.type == 'operator_cast':
+        parameters = next((n for n in walk(node) if n.type == 'parameter_list'), None)
+        if parameters is not None:
+            return source[node.start_byte:parameters.start_byte].decode().strip()
+    if node.type in {'parameter_list', 'template_argument_list', 'attribute_specifier'}:
+        return None
     name = node.child_by_field_name("name")
     if name is not None:
         found = identifier(name, source)

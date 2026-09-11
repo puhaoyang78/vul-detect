@@ -6,18 +6,16 @@ import subprocess
 
 
 def terminate_process_group(process: subprocess.Popen[str], grace_seconds: float = 5.0) -> None:
-    if process.poll() is not None:
-        return
     try:
         if hasattr(os, "killpg"):
             os.killpg(process.pid, signal.SIGTERM)
         else:
             process.terminate()
     except ProcessLookupError:
+        process.wait()
         return
     try:
         process.wait(timeout=grace_seconds)
-        return
     except subprocess.TimeoutExpired:
         pass
     try:
@@ -26,7 +24,7 @@ def terminate_process_group(process: subprocess.Popen[str], grace_seconds: float
         else:
             process.kill()
     except ProcessLookupError:
-        return
+        pass
     try:
         process.wait(timeout=grace_seconds)
     except subprocess.TimeoutExpired:
@@ -55,4 +53,8 @@ def run_process(
         raise subprocess.TimeoutExpired(
             command, timeout, output=stdout, stderr=stderr
         ) from error
+    except KeyboardInterrupt:
+        terminate_process_group(process)
+        process.communicate()
+        raise
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)

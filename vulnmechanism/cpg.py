@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from html import unescape
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,16 +42,20 @@ _GRAPH = re.compile(r'^\s*digraph\s+"?([^"{]+)"?')
 
 def _clean_dot_label(raw: str) -> str:
     value = raw.strip()
+    if value.startswith('<') and value.endswith('>'):
+        parts = re.split(r'<BR\s*/?>', value[1:-1], maxsplit=1, flags=re.I)
+        kind = unescape(parts[0].split(',', 1)[0].strip())
+        code = parts[1] if len(parts) == 2 else kind
+        return '(' + kind + ',' + unescape(code) + ')'
     if value.startswith('"') and value.endswith('"'):
         value = value[1:-1]
     value = value.replace('\\"', '"').replace('\\n', ' ')
-    value = re.sub(r'<[^>]+>', '', value)
     return ' '.join(value.split())
 
 
 def _node_parts(label: str) -> tuple[str, str]:
     value = label[1:-1] if label.startswith('(') and label.endswith(')') else label
-    parts = [part.strip() for part in value.split(',', 2)]
+    parts = [part.strip() for part in value.split(',', 1)]
     kind = parts[0] if parts else ''
     code = parts[-1] if len(parts) >= 2 else kind
     return kind, code
@@ -64,7 +69,7 @@ def parse_dot_graph(text: str, edge_kind: str, function: str | None = None) -> F
         if not graph_name:
             match = _GRAPH.match(line)
             if match:
-                graph_name = match.group(1).strip()
+                graph_name = unescape(match.group(1).strip())
         edge = _EDGE.match(line)
         if edge:
             edges.append(GraphEdge(edge_kind.upper(), edge.group(1), edge.group(2)))
@@ -107,21 +112,42 @@ def _environment(java_home: str | Path) -> dict[str, str]:
     env = os.environ.copy()
     env['JAVA_HOME'] = str(java_home)
     env['PATH'] = str(java.parent) + os.pathsep + env.get('PATH', '')
+    env.setdefault('JAVA_OPTS', '-Xmx4g -XX:ActiveProcessorCount=4')
     return env
 
 
-def _matching_dot(directory: Path, function: str) -> Path:
+def _matching_dot(directory: Path, function: str, method_index: str | None = None) -> Path:
+    """Select a source-defined method, then keep its export index across layers."""
+    # Joern omits "operator" for overloads and conversions ([], bool, ...).
+    operator = re.fullmatch(r'operator\s+(.+)|operator\s*([+\-*/%<>=!&|^~\[\](),]+)', function)
+    exported_name = (operator.group(1) or operator.group(2)) if operator else function
     matches: list[Path] = []
+    available: list[str] = []
     for path in sorted(directory.rglob('*.dot')):
         try:
-            first = path.read_text(errors='replace').splitlines()[0]
+            contents = path.read_text(errors='replace')
+            first = contents.splitlines()[0]
         except (OSError, IndexError):
             continue
         match = _GRAPH.match(first)
-        if match and match.group(1).strip().strip('"') == function:
-            matches.append(path)
+        if match:
+            name = unescape(match.group(1).strip())
+            available.append(name)
+            if name == exported_name:
+                if method_index is not None:
+                    if path.name == f'{method_index}-{directory.name}.dot':
+                        matches.append(path)
+                else:
+                    # External call stubs also have METHOD/BLOCK nodes, but
+                    # only source definitions carry a METHOD source line.
+                    for line in contents.splitlines():
+                        node = _NODE.match(line)
+                        if node and re.match(r'<METHOD,\s*\d+<BR\s*/?>', node.group(2), re.I):
+                            matches.append(path)
+                            break
     if len(matches) != 1:
-        raise CPGError(f'expected one graph for {function}, found {len(matches)}')
+        raise CPGError(f'expected one {directory.name} graph for {function}, '
+                       f'found {len(matches)}; exported methods: {available}')
     return matches[0]
 
 
@@ -138,8 +164,8 @@ def extract_function_cpg(
     if language not in {'c', 'cpp'}:
         raise ValueError('language must be c or cpp')
     root = Path(os.environ.get('JOERN_HOME', str(joern_dir))).expanduser()
-    c2cpg = _find_executable(root, (
-        'c2cpg.sh', 'joern-cli/c2cpg.sh', 'joern-cli/frontends/c2cpg/c2cpg.sh'
+    parser = _find_executable(root, (
+        'joern-parse', 'joern-cli/joern-parse', 'joern-cli/bin/joern-parse'
     ))
     exporter = _find_executable(root, (
         'joern-export', 'joern-cli/joern-export', 'joern-cli/bin/joern-export'
@@ -154,13 +180,13 @@ def extract_function_cpg(
         (src / f'input{suffix}').write_text(source)
         cpg = work / 'cpg.bin'
         parsed = run_process([
-            str(c2cpg), str(src), '--output', str(cpg),
-            '--with-include-auto-discovery', '--log-problems',
+            str(parser), str(src), '--output', str(cpg),
         ], timeout=timeout, env=env)
         if parsed.returncode != 0 or not cpg.is_file():
-            raise CPGError('standalone c2cpg failed: ' + (parsed.stderr.strip() or parsed.stdout.strip()))
+            raise CPGError('joern-parse failed: ' + (parsed.stderr.strip() or parsed.stdout.strip()))
 
         graphs: list[FunctionGraph] = []
+        method_index: str | None = None
         for representation in ('ast', 'cfg', 'cdg', 'ddg'):
             output = work / representation
             exported = run_process([
@@ -172,6 +198,14 @@ def extract_function_cpg(
                     f'joern-export {representation} failed: '
                     + (exported.stderr.strip() or exported.stdout.strip())
                 )
-            path = _matching_dot(output, function)
-            graphs.append(parse_dot_graph(path.read_text(errors='replace'), representation, function))
+            path = _matching_dot(output, function, method_index)
+            if representation == 'ast':
+                index_match = re.fullmatch(r'(\d+)-ast\.dot', path.name)
+                if index_match is None:
+                    raise CPGError(f'unexpected Joern export filename: {path.name}')
+                method_index = index_match.group(1)
+            graph = parse_dot_graph(path.read_text(errors='replace'), representation, function)
+            if representation in {'ast', 'cfg'} and (not graph.nodes or not graph.edges):
+                raise CPGError(f'{function}: empty {representation} graph')
+            graphs.append(graph)
         return merge_graphs(function, graphs)
