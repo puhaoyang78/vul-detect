@@ -86,17 +86,9 @@ python -m vulnmechanism.cli build \
   --output data/function_dataset.jsonl
 ```
 
-<<<<<<< Updated upstream
+每个函数片段单独运行 Joern，导出 AST / CFG / CDG / DDG。当前实现使用修正后的 Joern DOT 解析与 method-index 对齐，区分源码函数定义和 external method stub，并支持常见 C++ operator 名称。
+
 输出保留原始源码和标签，并新增：
-=======
-`build` 每完成一个样本便写入并同步输出文件。重跑相同命令时，自动校验已保存记录的源码、标签、语言、函数名和 split，并跳过已完成样本。失败前的结果会保留；中断留下的不完整末行会被移除后重新处理。完整行损坏或输入与已有结果不一致时会报错，不会静默覆盖。
-
-单个函数的语法解析、Joern 构图失败或超时会记录到输出旁的 `function_dataset.errors.jsonl`，并继续处理下一条。该文件每次运行重新生成，保存本次失败的样本 ID、输入行号、阶段及错误原因。重跑仍只跳过成功记录，失败样本会重新处理。结束时输出总数、成功数、失败数及以全部输入为分母的成功率；成功数包含已恢复记录。输入格式错误和程序错误仍直接报错，Ctrl+C 会清理当前 Joern 进程组。
-
-图文本在 160 条关系预算内按关系类型轮流选取，保留各个非空类型。已经保存的旧图文本不会自动重算。
-
-每个函数片段单独运行 Joern，并导出：
->>>>>>> Stashed changes
 
 ```text
 graph
@@ -106,9 +98,13 @@ relation_count
 semantic_fact_count
 ```
 
-构建支持按 `sample_key` 复用同 schema 的已完成记录。失败样本写入与输出同名的 `.errors.jsonl`。
+`graph` 最多保留 160 条安全相关关系，并在 AST / CFG / CDG / DDG 等非空关系类型之间轮转分配预算，避免某一种关系独占全部空间。
 
-语义 schema 变化时旧记录不会被静默复用。
+`build` 每完成一个样本就写入并同步输出文件。重跑相同命令时，只复用当前 schema 且与输入完全匹配的成功记录；失败样本会重新处理。单个函数的语法解析、Joern 构图失败或超时会记录到 `data/function_dataset.errors.jsonl` 并继续处理其他样本。
+
+中断后可以直接重跑。若输出末尾存在未完整写入的 JSON 行，会丢弃该不完整尾部后继续。完整 JSON 行损坏、重复 `sample_key` 或当前 schema 记录与输入不一致时会明确报错，不会静默覆盖。Ctrl+C 和 timeout 会清理当前 Joern 进程组。
+
+当前数据 schema 为 version 3。旧 schema 由之前的 CPG 解析实现生成，不会被复用；升级后第一次执行 `build` 会重新构建这些样本。
 
 ## Train
 
