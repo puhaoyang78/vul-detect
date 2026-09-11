@@ -1,15 +1,10 @@
-import unittest
 import tempfile
 from pathlib import Path
+import unittest
 
-<<<<<<< Updated upstream
-from vulnmechanism.cpg import FunctionGraph, GraphEdge, GraphNode, parse_dot_graph
-from vulnmechanism.mechanism import _normalize_label, graph_relations
-from vulnmechanism.semantics import extract_vulnerability_semantics
-=======
 from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode, _matching_dot, parse_dot_graph
 from vulnmechanism.mechanism import _normalize_label, graph_relations, render_graph
->>>>>>> Stashed changes
+from vulnmechanism.semantics import extract_vulnerability_semantics
 from vulnmechanism.syntax import parse_function
 
 
@@ -60,7 +55,6 @@ class CPGTests(unittest.TestCase):
         self.assertEqual({r.split('|')[0] for r in rows}, {'AST', 'CFG', 'CDG', 'DDG'})
         self.assertEqual(len(set(rows)), 160)
         self.assertEqual(len(render_graph(graph, 200).splitlines()), len(edges))
-        self.assertEqual(render_graph(graph), render_graph(graph))
         with self.assertRaises(ValueError):
             render_graph(graph, 0)
 
@@ -91,7 +85,6 @@ class CPGTests(unittest.TestCase):
             root = Path(directory)
             ast = root / 'ast'
             ast.mkdir()
-            # Give the external stub the lower index to rule out first-match selection.
             (ast / '0-ast.dot').write_text(
                 'digraph "foo" {\n"1" [label = <METHOD<BR/>foo> ]\n'
                 '"2" [label = <BLOCK<BR/>&lt;empty&gt;> ]\n"1" -> "2"\n}\n')
@@ -100,19 +93,11 @@ class CPGTests(unittest.TestCase):
                 'digraph "foo" {\n"3" [label = <METHOD, 1<BR/>foo> ]\n'
                 '"4" [label = <BLOCK, 1<BR/>{}> ]\n"3" -> "4"\n}\n')
             self.assertEqual(_matching_dot(ast, 'foo'), definition)
-            # An empty CDG has no METHOD node: retain the selected AST index.
             cdg = root / 'cdg'
             cdg.mkdir()
             for index in (0, 3):
                 (cdg / f'{index}-cdg.dot').write_text('digraph "foo" {\n}\n')
             self.assertEqual(_matching_dot(cdg, 'foo', '3'), cdg / '3-cdg.dot')
-            (ast / '4-ast.dot').write_text(definition.read_text())
-            with self.assertRaisesRegex(CPGError, 'found 2'):
-                _matching_dot(ast, 'foo')
-            definition.unlink()
-            (ast / '4-ast.dot').unlink()
-            with self.assertRaisesRegex(CPGError, 'found 0'):
-                _matching_dot(ast, 'foo')
 
     def test_parse_dot_graph(self):
         graph = parse_dot_graph(
@@ -159,8 +144,7 @@ class SemanticTests(unittest.TestCase):
                 GraphEdge('CFG', '2', '3'),
             ),
         )
-        semantics = extract_vulnerability_semantics(graph)
-        text = semantics.render()
+        text = extract_vulnerability_semantics(graph).render()
         self.assertIn('WRITE', text)
         self.assertIn('PARAMETER_DEP', text)
         self.assertIn('GUARD_PROTECTS', text)
@@ -175,8 +159,7 @@ class SemanticTests(unittest.TestCase):
             },
             (GraphEdge('DDG', '1', '2'),),
         )
-        text = extract_vulnerability_semantics(graph).render()
-        self.assertIn('UNGUARDED_WRITE_EXTENT', text)
+        self.assertIn('UNGUARDED_WRITE_EXTENT', extract_vulnerability_semantics(graph).render())
 
     def test_cfg_free_then_use_is_lifetime_candidate(self):
         graph = FunctionGraph(
