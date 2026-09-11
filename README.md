@@ -1,10 +1,10 @@
 # Function-Level Vulnerability Classification
 
-本仓库当前只保留一个直接的函数级 C/C++ 漏洞二分类实验：
+当前主线是：
 
-> **给定单个函数及其函数内 CPG，预测数据集原始二分类标签 0 / 1。**
+> **CPG-Grounded Vulnerability Semantic Learning for Function-Level C/C++ Classification**
 
-不再判断 vulnerable/fixed pair，不使用 patch、fix commit、CVE 描述、caller/callee 或仓库上下文完成分类。
+最终任务仍然是单函数原始二分类标签 `0 / 1`。不使用 vulnerable/fixed pair、patch、CVE 描述、caller/callee 或仓库上下文作为测试输入。
 
 ## Pipeline
 
@@ -13,45 +13,64 @@ single C/C++ function
         ↓
 standalone Joern AST / CFG / CDG / DDG
         ↓
-┌──────────────────────────────────────┐
-│ Baseline: raw source                 │
-│ CPG:      raw source + compact CPG   │
-└──────────────────────────────────────┘
+CPG-grounded vulnerability semantic extraction
         ↓
-frozen Qwen2.5-Coder-7B representation
+MEMORY / OBJECT / DEPENDENCY / GUARD / LIFETIME / RISK_CANDIDATE facts
         ↓
-linear binary classifier
+┌─────────────────────────────────────────────────┐
+│ Baseline: source                                │
+│ Proposed: source + CPG-derived semantic facts   │
+└─────────────────────────────────────────────────┘
+        ↓
+Qwen2.5-Coder-7B + LoRA fine-tuning
+        ↓
+masked mean pooling + binary classification head
         ↓
 0 / 1
 ```
 
-第一阶段实验只回答一个问题：
+Baseline 与 Proposed 使用相同数据、源码 token budget、LoRA 配置、pooling、分类头和训练设置。唯一实验变量是 Proposed 额外获得 CPG 派生的漏洞语义事实。
 
-> 函数内 CPG 信息能否在相同 Qwen 编码器和相同二分类设置下，相比纯源码输入提升函数级漏洞检测效果？
+## CPG-derived semantics
 
-## Repository layout
+当前从函数内 CPG 提取：
 
 ```text
-vulnmechanism/
-  syntax.py       standalone C/C++ function parsing
-  process.py      external-process execution
-  cpg.py          standalone Joern AST/CFG/CDG/DDG extraction
-  mechanism.py    compact CPG relation extraction and dataset building
-  model.py        frozen-Qwen baseline and CPG classifier
-  cli.py          build / train / eval commands
+MEMORY
+  WRITE / READ / INDEX / DEREF
 
-tests/
-  test_vulnmechanism.py
+OBJECT
+  ALLOC / STATIC_CAPACITY
+
+DEPENDENCY
+  DATA_DEP / PARAMETER_DEP / SIZE_ARITHMETIC
+
+GUARD
+  CONDITION / GUARD_PROTECTS
+
+LIFETIME
+  FREE
+
+RISK_CANDIDATE
+  UNGUARDED_WRITE_EXTENT
+  WRITE_EXCEEDS_STATIC_CAPACITY
+  UNCHECKED_INDEX
+  UNGUARDED_DEREFERENCE
+  UNGUARDED_SIZE_ARITHMETIC
+  UNBOUNDED_WRITE_API
+  DOUBLE_FREE
+  USE_AFTER_FREE
 ```
 
-## Input format
+`RISK_CANDIDATE` 只是由程序关系得到的保守候选事实，不作为人工标签，也不会覆盖数据集原始 `0/1` 标签。最终分类仍完全由训练数据监督。
 
-`build` 接收 JSONL，每行是一条独立函数样本。至少需要样本 ID、函数源码和原始二分类标签：
+## Build
+
+输入 `data/functions.jsonl` 每行至少包含：
 
 ```json
 {
   "sample_key": "example-1",
-  "function_name": "foo",
   "language": "c",
   "function": "int foo(char *buf, int len) { return buf[len]; }",
   "label": 1,
@@ -59,23 +78,7 @@ tests/
 }
 ```
 
-支持的源码字段：
-
-```text
-function / func / source / code / func_before
-```
-
-支持的标签字段：
-
-```text
-label / target
-```
-
-标签必须是二分类 `0/1`。`BENIGN/VULNERABLE` 字符串也会分别映射到 `0/1`。
-
-如果输入已经包含 `train / valid / test`，程序直接保留该划分。如果没有 `split`，训练和评估阶段按 `sample_key` 的稳定哈希产生 70/15/15 划分。
-
-## Build dataset
+构建：
 
 ```bash
 python -m vulnmechanism.cli build \
@@ -83,37 +86,29 @@ python -m vulnmechanism.cli build \
   --output data/function_dataset.jsonl
 ```
 
-每个函数片段单独运行 Joern，并导出：
+输出保留原始源码和标签，并新增：
 
 ```text
-AST
-CFG
-CDG
-DDG
+graph
+semantic_facts
+semantic_tags
+relation_count
+semantic_fact_count
 ```
 
-随后只保留与以下安全相关操作相连的紧凑关系及其一跳上下文：
+构建支持按 `sample_key` 复用同 schema 的已完成记录。失败样本写入与输出同名的 `.errors.jsonl`。
 
-```text
-control structures
-comparisons
-allocation
-memory APIs
-pointer/index access
-arithmetic
-```
-
-输出的每条记录仍然对应一个函数，并保留其原始 0/1 标签。
+语义 schema 变化时旧记录不会被静默复用。
 
 ## Train
 
-默认使用本地模型：
+安装依赖：
 
-```text
-/home/phy/models/Qwen2.5-Coder-7B-Instruct
+```bash
+python -m pip install -r requirements.txt
 ```
 
-运行：
+训练：
 
 ```bash
 python -m vulnmechanism.cli train \
@@ -122,23 +117,26 @@ python -m vulnmechanism.cli train \
   --output results/function_classifier.pt
 ```
 
-当前 Qwen 参数冻结，只训练两个独立线性分类头：
+默认设置：
 
 ```text
-Baseline:
-raw source
-→ frozen Qwen
-→ Linear
-→ 0 / 1
-
-CPG:
-raw source + compact intra-function CPG
-→ frozen Qwen
-→ Linear
-→ 0 / 1
+source token budget:   1536
+semantic token budget: 384
+LoRA targets: q_proj, k_proj, v_proj, o_proj
+LoRA r: 16
+LoRA alpha: 32
+LoRA dropout: 0.05
+batch size: 1
+gradient accumulation: 8
+epochs: 3
+learning rate: 2e-4
 ```
 
-两个模型使用相同训练数据、Qwen 编码器、epoch、学习率和分类头结构。
+源码部分在 Baseline 与 Proposed 中使用完全相同的截断结果；Proposed 的语义事实使用独立 token budget，因此不会通过加入语义信息进一步截短源码。
+
+模型使用 masked mean pooling，不再取最后一个 token 作为函数表示。
+
+验证集按 AUC 选择每个 variant 的最佳 epoch，并分别保存 Baseline 和 Proposed 的 LoRA adapter 与分类头。
 
 ## Evaluate
 
@@ -152,8 +150,6 @@ python -m vulnmechanism.cli eval \
 报告：
 
 ```text
-samples
-positive / negative
 Accuracy
 Precision
 Recall
@@ -161,8 +157,6 @@ F1
 MCC
 AUC
 ```
-
-正式比较时重点观察同一 test split 下的 `baseline` 与 `cpg`。
 
 ## Environment
 
@@ -172,13 +166,7 @@ JDK: /home/phy/jdk21
 Qwen: /home/phy/models/Qwen2.5-Coder-7B-Instruct
 ```
 
-安装依赖：
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-运行测试：
+轻量单元测试：
 
 ```bash
 python -m unittest discover -s tests -v
