@@ -2,30 +2,20 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 from dataclasses import dataclass
 from itertools import zip_longest
 from pathlib import Path
 
-from .cpg import CPGError, FunctionGraph, GraphNode, extract_function_cpg
+from .cpg import CPGError, FunctionGraph, extract_function_cpg
 from .semantics import extract_vulnerability_semantics
 from .syntax import parse_function
 
 
-# Version 4 stores normalized CPG relations, structured vulnerability semantics,
-# and fixed-vocabulary vulnerability features used by downstream ablations.
-DATASET_SCHEMA_VERSION = 4
-
-_MEMORY_NAMES = {
-    "memcpy", "memmove", "mempcpy", "memset", "memcmp", "bcopy", "bzero",
-    "read", "recv", "recvfrom", "fread", "write", "send", "sendto", "fwrite",
-    "strcpy", "strcat", "strncpy", "strncat", "strlcpy", "strlcat",
-    "sprintf", "vsprintf", "snprintf", "vsnprintf", "free",
-}
-_ALLOC_NAMES = {"malloc", "calloc", "realloc", "kmalloc", "kzalloc", "vmalloc", "new"}
-_COMPARE = re.compile(r"<=|>=|==|!=|<|>")
-_ARITHMETIC = re.compile(r"(?<![+\-*/%&|^<>])[+\-*/%]|<<|>>")
+# Version 5 stores unfiltered normalized CPG relations for the raw-CPG
+# ablation, structured vulnerability semantics, and fixed-vocabulary
+# vulnerability features used by downstream ablations.
+DATASET_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -49,45 +39,16 @@ class FunctionSample:
     split: str | None
 
 
-def _node_categories(node: GraphNode) -> set[str]:
-    code = node.code
-    lower = code.lower()
-    categories: set[str] = set()
-    if node.label == "CONTROL_STRUCTURE" or lower.startswith(("if ", "if(", "while ", "while(", "for ", "for(")):
-        categories.add("control")
-    if _COMPARE.search(code):
-        categories.add("comparison")
-    if any(re.search(rf"\b{re.escape(name)}\b", code) for name in _ALLOC_NAMES):
-        categories.add("allocation")
-    if any(re.search(rf"\b{re.escape(name)}\b", code) for name in _MEMORY_NAMES):
-        categories.add("memory")
-    if any(token in node.label for token in ("indirectIndexAccess", "indirection", "fieldAccess")) or "[" in code:
-        categories.add("pointer_index")
-    if _ARITHMETIC.search(code) or any(
-        token in node.label
-        for token in ("addition", "subtraction", "multiplication", "division", "shiftLeft", "shiftRight")
-    ):
-        categories.add("arithmetic")
-    return categories
-
-
-def _node_text(node: GraphNode) -> str:
-    code = re.sub(r"\s+", " ", node.code).strip()
+def _node_text(node) -> str:
+    code = " ".join(node.code.split())
     return f"{node.label}:{code}"
 
 
-def extract_relevant_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, ...]:
-    """Retain CPG relations touching security-relevant operations and one-hop context."""
-    relevant = {node_id for node_id, node in graph.nodes.items() if _node_categories(node)}
-    for edge in graph.edges:
-        if edge.source in relevant or edge.target in relevant:
-            relevant.update((edge.source, edge.target))
-
+def extract_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, ...]:
+    """Normalize all exported AST/CFG/CDG/DDG relations without semantic filtering."""
     relations: list[CPGRelation] = []
     seen: set[str] = set()
     for edge in graph.edges:
-        if edge.source not in relevant and edge.target not in relevant:
-            continue
         source = graph.nodes.get(edge.source)
         target = graph.nodes.get(edge.target)
         if source is None or target is None:
@@ -103,7 +64,7 @@ def extract_relevant_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, .
 def render_cpg_relations(graph: FunctionGraph, max_relations: int = 160) -> str:
     if max_relations <= 0:
         raise ValueError("max_relations must be positive")
-    relations = extract_relevant_cpg_relations(graph)
+    relations = extract_cpg_relations(graph)
     groups: dict[str, list[CPGRelation]] = {}
     for relation in relations:
         groups.setdefault(relation.kind, []).append(relation)
@@ -113,7 +74,7 @@ def render_cpg_relations(graph: FunctionGraph, max_relations: int = 160) -> str:
         for item in row
         if item is not None
     ] if groups else []
-    return "\n".join(item.as_text() for item in selected[:max_relations]) or "NO_RELEVANT_CPG_RELATIONS"
+    return "\n".join(item.as_text() for item in selected[:max_relations]) or "NO_CPG_RELATIONS"
 
 
 def _required_string(record: dict[str, object], names: tuple[str, ...], label: str) -> str:
@@ -371,7 +332,7 @@ def build_function_dataset(
                 continue
 
             semantics = extract_vulnerability_semantics(graph)
-            relations = extract_relevant_cpg_relations(graph)
+            relations = extract_cpg_relations(graph)
             record: dict[str, object] = {
                 "schema_version": DATASET_SCHEMA_VERSION,
                 "sample_key": sample.sample_key,
