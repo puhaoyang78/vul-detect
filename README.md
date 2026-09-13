@@ -30,16 +30,16 @@ single C/C++ function
 
 ### CPG-based Vulnerability Semantic Extraction
 
-Joern 为每个函数独立导出 AST / CFG / CDG / DDG。程序分析首先定位 security-relevant program points，并进一步提取：
+Joern 为每个函数独立导出 AST / CFG / CDG / DDG。程序分析从这些结构关系中提取：
 
 - memory operations: write / read / array access / pointer dereference
 - memory objects: allocation / static capacity
 - data dependence: data dependence / parameter dependence / size arithmetic
-- control constraints: control condition / guard / bounds check / null check
-- lifetime semantics: deallocation and free-to-use/free relations
-- potential vulnerability patterns: unchecked write/index/dereference, unbounded write, double free, use after free, etc.
+- control constraints: controlling condition / bounds-related condition / null-related condition
+- lifetime semantics: deallocation / free-then-free / free-then-use relations
+- potential vulnerability patterns: unbounded write, memory extent/index/dereference without a related control condition, static-capacity violation, unchecked size arithmetic, etc.
 
-`POTENTIAL_PATTERN` 是静态分析得到的候选模式，不作为 ground-truth vulnerability label。最终监督始终来自数据集原始 `0/1` 标签。
+这里的 control constraint 表示 **CPG 中控制该内存操作的相关条件**。Joern 导出的 CDG 不保留 true/false 分支方向，因此实现不会把条件直接表述成“安全 guard”或“已通过 bounds/null check”。`POTENTIAL_PATTERN` 也只是静态分析得到的候选模式，不作为 ground-truth vulnerability label。最终漏洞监督始终来自数据集原始 `0/1` 标签。
 
 ### Cross-Attention-based Semantic Fusion
 
@@ -47,7 +47,7 @@ Joern 为每个函数独立导出 AST / CFG / CDG / DDG。程序分析首先定�
 
 ### Vulnerability-Feature Supervision
 
-完整模型在分类损失之外增加 auxiliary multi-label supervision。辅助目标来自 CPG 提取出的 vulnerability-related features，例如 memory write、array access、parameter dependence、bounds check 和 lifetime relation。
+完整模型在分类损失之外增加 auxiliary multi-label supervision。辅助目标来自 CPG 提取出的 vulnerability-related features，例如 memory write、array access、parameter dependence、bounds-related control constraint 和 lifetime relation。
 
 该辅助头只读取 **source representation before semantic fusion**，避免直接从已经输入的 semantic text 中复制答案；目的是要求源码表示本身编码这些 vulnerability-related features。
 
@@ -58,7 +58,7 @@ Joern 为每个函数独立导出 AST / CFG / CDG / DDG。程序分析首先定�
 | Variant | Input / module | Purpose |
 | --- | --- | --- |
 | `baseline` | source only | Code LLM baseline |
-| `raw_cpg` | source + compact CPG relations | test whether raw structural context helps |
+| `raw_cpg` | source + unfiltered compact AST/CFG/CDG/DDG relations | test whether raw structural context helps |
 | `semantic_concat` | source + vulnerability semantics by concatenation | semantic extraction only |
 | `semantic_fusion` | separate source/semantics + cross-attention | add semantic fusion |
 | `full` | semantic fusion + vulnerability-feature supervision | complete method |
@@ -73,7 +73,7 @@ baseline
   → full
 ```
 
-其中 `raw_cpg` 与 `semantic_concat` 使用相同 context token budget，因此 raw CPG 与 vulnerability semantics 的比较不会由额外输入长度造成。
+`raw_cpg` 不经过 vulnerability-semantic filtering，只对全部导出的 CPG relations 进行统一 token budget 下的压缩；`raw_cpg` 与 `semantic_concat` 使用相同 context token budget，因此二者的比较不会由额外输入长度造成。
 
 ## Semantic-group ablation
 
@@ -155,7 +155,7 @@ label / target
 
 ## Build dataset
 
-新的 dataset schema 保存源码、compact CPG relations、structured vulnerability semantics 和 fixed-vocabulary vulnerability features：
+新的 dataset schema 保存源码、compact raw CPG relations、structured vulnerability semantics 和 fixed-vocabulary vulnerability features：
 
 ```bash
 python -m vulnmechanism.cli build \
