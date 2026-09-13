@@ -3,8 +3,13 @@ from pathlib import Path
 import unittest
 
 from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode, _matching_dot, parse_dot_graph
-from vulnmechanism.mechanism import _normalize_label, graph_relations, render_graph
-from vulnmechanism.semantics import extract_vulnerability_semantics
+from vulnmechanism.dataset import _normalize_label, extract_relevant_cpg_relations, render_cpg_relations
+from vulnmechanism.semantics import (
+    VULNERABILITY_FEATURES,
+    extract_vulnerability_semantics,
+    render_semantic_items,
+    validate_semantic_groups,
+)
 from vulnmechanism.syntax import parse_function
 
 
@@ -50,13 +55,13 @@ class CPGTests(unittest.TestCase):
         edges = tuple(GraphEdge('AST', '0', str(i)) for i in range(1, 161))
         edges += tuple(GraphEdge(kind, '0', str(i)) for i, kind in enumerate(('CFG', 'CDG', 'DDG'), 161))
         graph = FunctionGraph('f', nodes, edges)
-        rows = render_graph(graph).splitlines()
+        rows = render_cpg_relations(graph).splitlines()
         self.assertEqual(len(rows), 160)
         self.assertEqual({r.split('|')[0] for r in rows}, {'AST', 'CFG', 'CDG', 'DDG'})
         self.assertEqual(len(set(rows)), 160)
-        self.assertEqual(len(render_graph(graph, 200).splitlines()), len(edges))
+        self.assertEqual(len(render_cpg_relations(graph, 200).splitlines()), len(edges))
         with self.assertRaises(ValueError):
-            render_graph(graph, 0)
+            render_cpg_relations(graph, 0)
 
     def test_joern_html_labels_preserve_operators_and_arguments(self):
         graph = parse_dot_graph('''digraph "foo" {
@@ -124,13 +129,13 @@ class CPGTests(unittest.TestCase):
             },
             (GraphEdge('CDG', '1', '2'), GraphEdge('DDG', '3', '2')),
         )
-        relations = graph_relations(graph)
+        relations = extract_relevant_cpg_relations(graph)
         self.assertEqual({relation.kind for relation in relations}, {'CDG', 'DDG'})
         self.assertTrue(any('memcpy' in relation.as_text() for relation in relations))
 
 
 class SemanticTests(unittest.TestCase):
-    def test_guarded_write_extracts_memory_dependency_and_guard(self):
+    def test_guarded_write_extracts_dependence_and_bounds_check(self):
         graph = FunctionGraph(
             'foo',
             {
@@ -144,13 +149,18 @@ class SemanticTests(unittest.TestCase):
                 GraphEdge('CFG', '2', '3'),
             ),
         )
-        text = extract_vulnerability_semantics(graph).render()
-        self.assertIn('WRITE', text)
-        self.assertIn('PARAMETER_DEP', text)
+        semantics = extract_vulnerability_semantics(graph)
+        text = semantics.render()
+        self.assertIn('MEMORY_WRITE', text)
+        self.assertIn('PARAMETER_DEPENDENCE', text)
         self.assertIn('GUARD_PROTECTS', text)
-        self.assertNotIn('UNGUARDED_WRITE_EXTENT', text)
+        self.assertIn('BOUNDS_CHECK', text)
+        self.assertNotIn('UNCHECKED_WRITE_EXTENT', text)
+        self.assertIn('memory_write', semantics.feature_names)
+        self.assertIn('bounds_check', semantics.feature_names)
+        self.assertTrue(set(semantics.feature_names) <= set(VULNERABILITY_FEATURES))
 
-    def test_unguarded_write_is_risk_candidate(self):
+    def test_unguarded_write_is_potential_pattern(self):
         graph = FunctionGraph(
             'foo',
             {
@@ -159,9 +169,10 @@ class SemanticTests(unittest.TestCase):
             },
             (GraphEdge('DDG', '1', '2'),),
         )
-        self.assertIn('UNGUARDED_WRITE_EXTENT', extract_vulnerability_semantics(graph).render())
+        text = extract_vulnerability_semantics(graph).render()
+        self.assertIn('UNCHECKED_WRITE_EXTENT', text)
 
-    def test_cfg_free_then_use_is_lifetime_candidate(self):
+    def test_cfg_free_then_use_is_lifetime_pattern_and_feature(self):
         graph = FunctionGraph(
             'foo',
             {
@@ -170,9 +181,25 @@ class SemanticTests(unittest.TestCase):
             },
             (GraphEdge('CFG', '1', '2'),),
         )
-        text = extract_vulnerability_semantics(graph).render()
-        self.assertIn('FREE', text)
+        semantics = extract_vulnerability_semantics(graph)
+        text = semantics.render()
+        self.assertIn('DEALLOCATION', text)
         self.assertIn('USE_AFTER_FREE', text)
+        self.assertIn('lifetime_relation', semantics.feature_names)
+
+    def test_semantic_group_ablation_filters_only_requested_group(self):
+        items = [
+            {'category': 'MEMORY_OPERATION', 'kind': 'MEMORY_WRITE', 'detail': 'object=buf'},
+            {'category': 'DATA_DEPENDENCE', 'kind': 'PARAMETER_DEPENDENCE', 'detail': 'parameter=len'},
+            {'category': 'CONTROL_CONSTRAINT', 'kind': 'BOUNDS_CHECK', 'detail': 'expr=len<cap'},
+        ]
+        text = render_semantic_items(items, excluded_groups=('dependence',))
+        self.assertIn('MEMORY_WRITE', text)
+        self.assertNotIn('PARAMETER_DEPENDENCE', text)
+        self.assertIn('BOUNDS_CHECK', text)
+        self.assertEqual(validate_semantic_groups(('Memory', 'memory', 'constraint')), ('memory', 'constraint'))
+        with self.assertRaises(ValueError):
+            validate_semantic_groups(('unknown',))
 
 
 class LabelTests(unittest.TestCase):
