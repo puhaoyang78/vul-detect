@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import argparse
 
-from .mechanism import build_function_dataset
-from .model import evaluate_models, train_models
+from .dataset import build_function_dataset
+from .model import MODEL_VARIANTS, evaluate_model, train_model
+from .semantics import SEMANTIC_GROUPS, validate_semantic_groups
+
+
+def _semantic_groups(value: str) -> tuple[str, ...]:
+    if not value.strip():
+        return ()
+    return validate_semantic_groups(tuple(part.strip() for part in value.split(",")))
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Function-level C/C++ vulnerability classification")
+    parser = argparse.ArgumentParser(
+        description="Function-level C/C++ vulnerability-semantic learning"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     build = sub.add_parser("build")
@@ -26,10 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = sub.add_parser("train")
     train.add_argument("--dataset", default="data/function_dataset.jsonl")
-    train.add_argument("--output", default="results/function_classifier.pt")
+    train.add_argument("--variant", choices=MODEL_VARIANTS, default="full")
+    train.add_argument("--output")
     train.add_argument("--model", default="/home/phy/models/Qwen2.5-Coder-7B-Instruct")
     train.add_argument("--source-max-length", type=int, default=1536)
-    train.add_argument("--semantic-max-length", type=int, default=384)
+    train.add_argument("--context-max-length", type=int, default=384)
     train.add_argument("--batch-size", type=int, default=1)
     train.add_argument("--gradient-accumulation", type=int, default=8)
     train.add_argument("--epochs", type=int, default=3)
@@ -38,14 +48,28 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--lora-r", type=int, default=16)
     train.add_argument("--lora-alpha", type=int, default=32)
     train.add_argument("--lora-dropout", type=float, default=0.05)
+    train.add_argument("--fusion-dim", type=int, default=256)
+    train.add_argument("--fusion-heads", type=int, default=8)
+    train.add_argument("--feature-loss-weight", type=float, default=0.2)
+    train.add_argument(
+        "--exclude-groups",
+        type=_semantic_groups,
+        default=(),
+        metavar="GROUPS",
+        help=(
+            "comma-separated semantic ablation groups: "
+            + ",".join(SEMANTIC_GROUPS)
+        ),
+    )
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--device", default="auto")
-    train.set_defaults(func=lambda args: train_models(
+    train.set_defaults(func=lambda args: train_model(
         args.dataset,
-        args.output,
+        args.output or f"results/{args.variant}.pt",
+        variant=args.variant,
         model_path=args.model,
         source_max_length=args.source_max_length,
-        semantic_max_length=args.semantic_max_length,
+        context_max_length=args.context_max_length,
         batch_size=args.batch_size,
         gradient_accumulation=args.gradient_accumulation,
         epochs=args.epochs,
@@ -54,17 +78,21 @@ def build_parser() -> argparse.ArgumentParser:
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        fusion_dim=args.fusion_dim,
+        fusion_heads=args.fusion_heads,
+        feature_loss_weight=args.feature_loss_weight,
+        excluded_groups=args.exclude_groups,
         seed=args.seed,
         device=args.device,
     ))
 
     evaluate = sub.add_parser("eval")
     evaluate.add_argument("--dataset", default="data/function_dataset.jsonl")
-    evaluate.add_argument("--checkpoint", default="results/function_classifier.pt")
+    evaluate.add_argument("--checkpoint", required=True)
     evaluate.add_argument("--split", choices=("train", "valid", "test"), default="test")
     evaluate.add_argument("--batch-size", type=int, default=1)
     evaluate.add_argument("--device", default="auto")
-    evaluate.set_defaults(func=lambda args: evaluate_models(
+    evaluate.set_defaults(func=lambda args: evaluate_model(
         args.dataset,
         args.checkpoint,
         split=args.split,
