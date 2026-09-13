@@ -31,9 +31,9 @@ VULNERABILITY_FEATURES = (
     "data_dependence",
     "parameter_dependence",
     "size_arithmetic",
-    "control_guard",
-    "bounds_check",
-    "null_check",
+    "control_constraint",
+    "bounds_constraint",
+    "null_constraint",
     "lifetime_relation",
 )
 FEATURE_TO_GROUP = {
@@ -47,9 +47,9 @@ FEATURE_TO_GROUP = {
     "data_dependence": "dependence",
     "parameter_dependence": "dependence",
     "size_arithmetic": "dependence",
-    "control_guard": "constraint",
-    "bounds_check": "constraint",
-    "null_check": "constraint",
+    "control_constraint": "constraint",
+    "bounds_constraint": "constraint",
+    "null_constraint": "constraint",
     "lifetime_relation": "lifetime",
 }
 
@@ -76,9 +76,17 @@ _ARRAY_DECL = re.compile(r"\b([A-Za-z_]\w*)\s*\[\s*([A-Za-z_0-9()+\-*/<>&| ]+)\s
 _ASSIGNMENT = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*(?=[A-Za-z_]\w*\s*\()")
 _DEREF = re.compile(r"(?<![\w)])\*\s*([A-Za-z_]\w*)")
 _ARROW = re.compile(r"\b([A-Za-z_]\w*)\s*->")
+_DELETE = re.compile(r"\bdelete(?:\s*\[\s*\])?\s+([A-Za-z_]\w*)")
+_NEW_EXTENT = re.compile(r"\bnew\b[^;\[]*\[\s*([^\]]+)\s*\]")
 _INTEGER = re.compile(r"^(?:0[xX][0-9A-Fa-f]+|\d+)[uUlL]*$")
-_ARITHMETIC = re.compile(r"(?<![+\-*/%&|^<>])[+\-*/%]|<<|>>")
+_BINARY_ARITHMETIC = re.compile(
+    r"(?:[A-Za-z_0-9)\]]\s*(?:\+|-|\*|/|%|<<|>>)\s*[A-Za-z_0-9(\[])"
+)
 _COMPARISON = re.compile(r"<=|>=|==|!=|<|>")
+_ARITHMETIC_LABEL_PARTS = (
+    "addition", "subtraction", "multiplication", "division", "modulo",
+    "shiftleft", "shiftright",
+)
 
 
 @dataclass(frozen=True)
@@ -205,13 +213,13 @@ def feature_names_from_items(items) -> tuple[str, ...]:
             features.update(("data_dependence", "parameter_dependence"))
         elif kind == "SIZE_ARITHMETIC":
             features.add("size_arithmetic")
-        elif kind in {"CONTROL_CONDITION", "GUARD_PROTECTS"}:
-            features.add("control_guard")
-        elif kind == "BOUNDS_CHECK":
-            features.update(("control_guard", "bounds_check"))
-        elif kind == "NULL_CHECK":
-            features.update(("control_guard", "null_check"))
-        elif kind in {"DOUBLE_FREE", "USE_AFTER_FREE"}:
+        elif kind in {"CONTROL_CONDITION", "CONDITION_CONTROLS"}:
+            features.add("control_constraint")
+        elif kind == "BOUNDS_RELATED_CONDITION":
+            features.update(("control_constraint", "bounds_constraint"))
+        elif kind == "NULL_RELATED_CONDITION":
+            features.update(("control_constraint", "null_constraint"))
+        elif kind in {"FREE_THEN_FREE", "FREE_THEN_USE"}:
             features.add("lifetime_relation")
     return tuple(feature for feature in VULNERABILITY_FEATURES if feature in features)
 
@@ -277,6 +285,13 @@ def _allocation_extent(name: str, args: tuple[str, ...]) -> str | None:
     return _argument(args, 0)
 
 
+def _is_arithmetic_node(node: GraphNode) -> bool:
+    label = node.label.lower()
+    return any(part in label for part in _ARITHMETIC_LABEL_PARTS) or bool(
+        _BINARY_ARITHMETIC.search(node.code)
+    )
+
+
 def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
     code = node.code
     operations: list[_Operation] = []
@@ -294,11 +309,27 @@ def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
     if name in _FREE_APIS:
         operations.append(_Operation(node.node_id, "DEALLOCATION", _argument(args, 0), None, code))
 
+    label_lower = node.label.lower()
+    if "<operator>.new" in label_lower or label_lower.endswith(".new"):
+        extent_match = _NEW_EXTENT.search(code)
+        extent = extent_match.group(1).strip() if extent_match else None
+        operations.append(_Operation(node.node_id, "ALLOCATION", None, extent, code))
+    if "<operator>.delete" in label_lower or label_lower.endswith(".delete"):
+        delete_match = _DELETE.search(code)
+        operations.append(
+            _Operation(
+                node.node_id,
+                "DEALLOCATION",
+                delete_match.group(1) if delete_match else None,
+                None,
+                code,
+            )
+        )
+
     for base, index in _ARRAY_ACCESS.findall(code):
         operations.append(_Operation(node.node_id, "ARRAY_ACCESS", base, index.strip(), code))
 
     pointer_names: set[str] = set()
-    label_lower = node.label.lower()
     if "indirection" in label_lower or "fieldaccess" in label_lower:
         pointer_names.update(_DEREF.findall(code))
         pointer_names.update(_ARROW.findall(code))
@@ -313,22 +344,23 @@ def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
     return tuple(dedup.values())
 
 
-def _guard_condition(node: GraphNode) -> str | None:
-    code = " ".join(node.code.split())
-    lower = code.lower()
-    if node.label != "CONTROL_STRUCTURE" and not lower.startswith(_CONTROL_PREFIXES):
+def _control_expression(node: GraphNode) -> str | None:
+    code = " ".join(node.code.split()).strip()
+    if not code:
         return None
-    start = code.find("(")
-    if start < 0:
-        return code
-    depth = 0
-    for index in range(start, len(code)):
-        if code[index] == "(":
-            depth += 1
-        elif code[index] == ")":
-            depth -= 1
-            if depth == 0:
-                return code[start + 1 : index].strip()
+    lower = code.lower()
+    if node.label == "CONTROL_STRUCTURE" or lower.startswith(_CONTROL_PREFIXES):
+        start = code.find("(")
+        if start < 0:
+            return code
+        depth = 0
+        for index in range(start, len(code)):
+            if code[index] == "(":
+                depth += 1
+            elif code[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    return code[start + 1 : index].strip()
     return code
 
 
@@ -349,7 +381,7 @@ def _static_integer(expression: str | None) -> int | None:
         return None
 
 
-def _condition_checks_null(condition: str, pointer: str) -> bool:
+def _condition_mentions_null(condition: str, pointer: str) -> bool:
     escaped = re.escape(pointer)
     patterns = (
         rf"\b{escaped}\b\s*(?:!=|==)\s*(?:NULL|nullptr|0)\b",
@@ -360,18 +392,18 @@ def _condition_checks_null(condition: str, pointer: str) -> bool:
     return any(re.search(pattern, condition) for pattern in patterns)
 
 
-def _controlling_guards(graph: FunctionGraph) -> dict[str, list[tuple[str, str]]]:
-    guards: dict[str, list[tuple[str, str]]] = {}
+def _controlling_conditions(graph: FunctionGraph) -> dict[str, list[tuple[str, str]]]:
+    conditions: dict[str, list[tuple[str, str]]] = {}
     for edge in graph.edges:
         if edge.kind != "CDG":
             continue
         source = graph.nodes.get(edge.source)
         if source is None:
             continue
-        condition = _guard_condition(source)
+        condition = _control_expression(source)
         if condition:
-            guards.setdefault(edge.target, []).append((edge.source, condition))
-    return guards
+            conditions.setdefault(edge.target, []).append((edge.source, condition))
+    return conditions
 
 
 def _cfg_adjacency(graph: FunctionGraph) -> dict[str, list[str]]:
@@ -396,13 +428,26 @@ def _reachable(adjacency: dict[str, list[str]], start: str) -> set[str]:
     return reachable
 
 
-def _has_matching_guard(guards: dict[str, list[tuple[str, str]]], node_id: str, expression: str | None) -> bool:
+def _has_related_condition(
+    conditions: dict[str, list[tuple[str, str]]],
+    node_id: str,
+    expression: str | None,
+) -> bool:
     names = _identifiers(expression)
-    return bool(names) and any(names & _identifiers(condition) for _, condition in guards.get(node_id, ()))
+    return bool(names) and any(
+        names & _identifiers(condition) for _, condition in conditions.get(node_id, ())
+    )
 
 
-def _has_null_guard(guards: dict[str, list[tuple[str, str]]], node_id: str, pointer: str) -> bool:
-    return any(_condition_checks_null(condition, pointer) for _, condition in guards.get(node_id, ()))
+def _has_null_related_condition(
+    conditions: dict[str, list[tuple[str, str]]],
+    node_id: str,
+    pointer: str,
+) -> bool:
+    return any(
+        _condition_mentions_null(condition, pointer)
+        for _, condition in conditions.get(node_id, ())
+    )
 
 
 def _capacity_facts(graph: FunctionGraph) -> dict[str, str]:
@@ -468,7 +513,7 @@ def _dependence_items(
                                 f"parameter={_compact(source.code, 80)} operation={operation.kind} object={operation.object_name or '?'}",
                             )
                         )
-                    if _ARITHMETIC.search(source.code):
+                    if _is_arithmetic_node(source):
                         items.append(
                             SemanticItem(
                                 "DATA_DEPENDENCE",
@@ -481,37 +526,42 @@ def _dependence_items(
 
 
 def _constraint_items(
-    graph: FunctionGraph,
-    guards: dict[str, list[tuple[str, str]]],
+    conditions: dict[str, list[tuple[str, str]]],
     operations_by_node: dict[str, tuple[_Operation, ...]],
 ) -> list[SemanticItem]:
     items: list[SemanticItem] = []
-    seen_conditions: set[str] = set()
-    for node in graph.nodes.values():
-        condition = _guard_condition(node)
-        if condition and condition not in seen_conditions:
-            seen_conditions.add(condition)
-            items.append(
-                SemanticItem("CONTROL_CONSTRAINT", "CONTROL_CONDITION", f"expr={_compact(condition)}")
-            )
-
-    for node_id, controlling in guards.items():
-        for _, condition in controlling:
+    seen_conditions: set[tuple[str, str]] = set()
+    for node_id, controlling in conditions.items():
+        for source_id, condition in controlling:
+            condition_key = (source_id, condition)
+            if condition_key not in seen_conditions:
+                seen_conditions.add(condition_key)
+                items.append(
+                    SemanticItem(
+                        "CONTROL_CONSTRAINT",
+                        "CONTROL_CONDITION",
+                        f"node={source_id} expr={_compact(condition)}",
+                    )
+                )
             for operation in operations_by_node.get(node_id, ()):
                 detail = (
                     f"expr={_compact(condition, 100)} operation={operation.kind} "
                     f"object={operation.object_name or '?'} extent={operation.extent or '?'}"
                 )
-                items.append(SemanticItem("CONTROL_CONSTRAINT", "GUARD_PROTECTS", detail))
+                items.append(SemanticItem("CONTROL_CONSTRAINT", "CONDITION_CONTROLS", detail))
                 if operation.kind in {"MEMORY_WRITE", "ARRAY_ACCESS"}:
                     controlled = operation.extent
                     if controlled and _COMPARISON.search(condition) and (
                         _identifiers(controlled) & _identifiers(condition)
                     ):
-                        items.append(SemanticItem("CONTROL_CONSTRAINT", "BOUNDS_CHECK", detail))
+                        items.append(
+                            SemanticItem("CONTROL_CONSTRAINT", "BOUNDS_RELATED_CONDITION", detail)
+                        )
                 if operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-                    if _condition_checks_null(condition, operation.object_name):
-                        items.append(SemanticItem("CONTROL_CONSTRAINT", "NULL_CHECK", detail))
+                    if _condition_mentions_null(condition, operation.object_name):
+                        items.append(
+                            SemanticItem("CONTROL_CONSTRAINT", "NULL_RELATED_CONDITION", detail)
+                        )
     return items
 
 
@@ -534,8 +584,8 @@ def _lifetime_items(
                 if operation.kind == "DEALLOCATION":
                     items.append(
                         SemanticItem(
-                            "POTENTIAL_PATTERN",
-                            "DOUBLE_FREE",
+                            "LIFETIME",
+                            "FREE_THEN_FREE",
                             f"object={deallocation.object_name} first_node={deallocation.node_id} second_node={node_id}",
                         )
                     )
@@ -544,8 +594,8 @@ def _lifetime_items(
                 }:
                     items.append(
                         SemanticItem(
-                            "POTENTIAL_PATTERN",
-                            "USE_AFTER_FREE",
+                            "LIFETIME",
+                            "FREE_THEN_USE",
                             f"object={deallocation.object_name} free_node={deallocation.node_id} use_node={node_id} operation={operation.kind}",
                         )
                     )
@@ -555,7 +605,7 @@ def _lifetime_items(
 def _potential_pattern_items(
     graph: FunctionGraph,
     operations: list[_Operation],
-    guards: dict[str, list[tuple[str, str]]],
+    conditions: dict[str, list[tuple[str, str]]],
     capacities: dict[str, str],
 ) -> list[SemanticItem]:
     items: list[SemanticItem] = []
@@ -572,13 +622,13 @@ def _potential_pattern_items(
                 )
             if (
                 operation.extent
-                and not _has_matching_guard(guards, operation.node_id, operation.extent)
+                and not _has_related_condition(conditions, operation.node_id, operation.extent)
                 and _identifiers(operation.extent)
             ):
                 items.append(
                     SemanticItem(
                         "POTENTIAL_PATTERN",
-                        "UNCHECKED_WRITE_EXTENT",
+                        "WRITE_EXTENT_WITHOUT_RELATED_CONDITION",
                         f"object={operation.object_name or '?'} extent={_compact(operation.extent)}",
                     )
                 )
@@ -598,20 +648,20 @@ def _potential_pattern_items(
                     )
                 )
         elif operation.kind == "ARRAY_ACCESS" and operation.extent:
-            if not _has_matching_guard(guards, operation.node_id, operation.extent):
+            if not _has_related_condition(conditions, operation.node_id, operation.extent):
                 items.append(
                     SemanticItem(
                         "POTENTIAL_PATTERN",
-                        "UNCHECKED_ARRAY_INDEX",
+                        "ARRAY_INDEX_WITHOUT_RELATED_CONDITION",
                         f"object={operation.object_name or '?'} index={_compact(operation.extent)}",
                     )
                 )
         elif operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-            if not _has_null_guard(guards, operation.node_id, operation.object_name):
+            if not _has_null_related_condition(conditions, operation.node_id, operation.object_name):
                 items.append(
                     SemanticItem(
                         "POTENTIAL_PATTERN",
-                        "UNCHECKED_POINTER_DEREFERENCE",
+                        "DEREFERENCE_WITHOUT_NULL_CONDITION",
                         f"pointer={operation.object_name}",
                     )
                 )
@@ -621,17 +671,17 @@ def _potential_pattern_items(
             continue
         source = graph.nodes.get(edge.source)
         target = graph.nodes.get(edge.target)
-        if source is None or target is None or not _ARITHMETIC.search(source.code):
+        if source is None or target is None or not _is_arithmetic_node(source):
             continue
         target_operations = _node_operations(target)
         if any(
             operation.kind in {"MEMORY_WRITE", "ALLOCATION", "ARRAY_ACCESS"}
             for operation in target_operations
-        ) and not _has_matching_guard(guards, target.node_id, source.code):
+        ) and not _has_related_condition(conditions, target.node_id, source.code):
             items.append(
                 SemanticItem(
                     "POTENTIAL_PATTERN",
-                    "UNCHECKED_SIZE_ARITHMETIC",
+                    "SIZE_ARITHMETIC_WITHOUT_RELATED_CONDITION",
                     f"expr={_compact(source.code, 100)} sink={_compact(target.code, 100)}",
                 )
             )
@@ -645,7 +695,7 @@ def extract_vulnerability_semantics(graph: FunctionGraph) -> VulnerabilitySemant
         if (operations := _node_operations(node))
     }
     operations = [operation for values in operations_by_node.values() for operation in values]
-    guards = _controlling_guards(graph)
+    conditions = _controlling_conditions(graph)
     capacities = _capacity_facts(graph)
 
     items: list[SemanticItem] = []
@@ -659,9 +709,9 @@ def extract_vulnerability_semantics(graph: FunctionGraph) -> VulnerabilitySemant
             )
         )
     items.extend(_dependence_items(graph, operations_by_node))
-    items.extend(_constraint_items(graph, guards, operations_by_node))
+    items.extend(_constraint_items(conditions, operations_by_node))
     items.extend(_lifetime_items(graph, operations, operations_by_node))
-    items.extend(_potential_pattern_items(graph, operations, guards, capacities))
+    items.extend(_potential_pattern_items(graph, operations, conditions, capacities))
 
     deduplicated: list[SemanticItem] = []
     seen: set[tuple[str, str, str]] = set()
