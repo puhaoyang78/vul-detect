@@ -46,13 +46,13 @@ else:
                     run_process([sys.executable, '-c', program, str(pid_path)], timeout=1)
                 pid = int(pid_path.read_text())
                 stat = Path(f'/proc/{pid}/stat')
-                # An orphan may disappear during procfs access, or remain briefly
-                # as a zombie until PID 1 reaps it.
+                # The descendant must no longer be running. procfs may already
+                # have removed it, or may briefly expose zombie/dead states.
                 try:
                     state = stat.read_text().split()[2]
                 except (FileNotFoundError, ProcessLookupError):
                     state = None
-                self.assertIn(state, (None, 'Z'))
+                self.assertIn(state, (None, 'Z', 'X', 'x'))
             finally:
                 if pid_path.exists():
                     try:
