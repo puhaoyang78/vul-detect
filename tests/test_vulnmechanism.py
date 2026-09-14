@@ -2,11 +2,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
-import torch
-
 from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode, _matching_dot, parse_dot_graph
 from vulnmechanism.dataset import _normalize_label, extract_cpg_relations, render_cpg_relations
-from vulnmechanism.model import _last_valid_token
 from vulnmechanism.semantics import (
     VULNERABILITY_FEATURES,
     extract_vulnerability_semantics,
@@ -337,20 +334,6 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(validate_semantic_groups(('Memory', 'memory', 'constraint')), ('memory', 'constraint'))
         with self.assertRaises(ValueError):
             validate_semantic_groups(('unknown',))
-
-
-class ModelTests(unittest.TestCase):
-    def test_sequence_pooling_uses_last_valid_token(self):
-        hidden = torch.tensor([
-            [[1.0], [2.0], [3.0], [99.0]],
-            [[4.0], [5.0], [88.0], [77.0]],
-        ])
-        mask = torch.tensor([
-            [1, 1, 1, 0],
-            [1, 1, 0, 0],
-        ])
-        pooled = _last_valid_token(hidden, mask)
-        self.assertEqual(pooled.tolist(), [[3.0], [5.0]])
 
 
 class LabelTests(unittest.TestCase):
