@@ -2,8 +2,11 @@ import tempfile
 from pathlib import Path
 import unittest
 
+import torch
+
 from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode, _matching_dot, parse_dot_graph
 from vulnmechanism.dataset import _normalize_label, extract_cpg_relations, render_cpg_relations
+from vulnmechanism.model import _last_valid_token
 from vulnmechanism.semantics import (
     VULNERABILITY_FEATURES,
     extract_vulnerability_semantics,
@@ -140,7 +143,7 @@ class CPGTests(unittest.TestCase):
 
 
 class SemanticTests(unittest.TestCase):
-    def test_joern_predicate_controls_write_and_yields_bounds_related_condition(self):
+    def test_upper_bound_form_condition_controls_write(self):
         graph = FunctionGraph(
             'foo',
             {
@@ -159,11 +162,24 @@ class SemanticTests(unittest.TestCase):
         self.assertIn('MEMORY_WRITE', text)
         self.assertIn('PARAMETER_DEPENDENCE', text)
         self.assertIn('CONDITION_CONTROLS', text)
-        self.assertIn('BOUNDS_RELATED_CONDITION', text)
-        self.assertNotIn('WRITE_EXTENT_WITHOUT_RELATED_CONDITION', text)
+        self.assertIn('UPPER_BOUND_RELATED_CONDITION', text)
+        self.assertNotIn('WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION', text)
         self.assertIn('memory_write', semantics.feature_names)
         self.assertIn('bounds_constraint', semantics.feature_names)
         self.assertTrue(set(semantics.feature_names) <= set(VULNERABILITY_FEATURES))
+
+    def test_positive_length_test_is_not_upper_bound_condition(self):
+        graph = FunctionGraph(
+            'foo',
+            {
+                '1': GraphNode('1', '<operator>.greaterThan', 'len > 0'),
+                '2': GraphNode('2', 'CALL', 'memcpy(buf, src, len)'),
+            },
+            (GraphEdge('CDG', '1', '2'),),
+        )
+        text = extract_vulnerability_semantics(graph).render()
+        self.assertIn('WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION', text)
+        self.assertNotIn('UPPER_BOUND_RELATED_CONDITION', text)
 
     def test_condition_is_not_claimed_to_be_a_safe_guard(self):
         graph = FunctionGraph(
@@ -175,7 +191,8 @@ class SemanticTests(unittest.TestCase):
             (GraphEdge('CDG', '1', '2'),),
         )
         text = extract_vulnerability_semantics(graph).render()
-        self.assertIn('BOUNDS_RELATED_CONDITION', text)
+        self.assertIn('WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION', text)
+        self.assertNotIn('UPPER_BOUND_RELATED_CONDITION', text)
         self.assertNotIn('GUARD_PROTECTS', text)
         self.assertNotIn('BOUNDS_CHECK', text)
 
@@ -189,9 +206,69 @@ class SemanticTests(unittest.TestCase):
             (GraphEdge('DDG', '1', '2'),),
         )
         text = extract_vulnerability_semantics(graph).render()
-        self.assertIn('WRITE_EXTENT_WITHOUT_RELATED_CONDITION', text)
+        self.assertIn('WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION', text)
+        self.assertIn('data_from=len', text)
 
-    def test_cfg_free_then_use_is_lifetime_relation_and_feature(self):
+    def test_null_branch_is_not_treated_as_nonnull_condition(self):
+        graph = FunctionGraph(
+            'foo',
+            {
+                '1': GraphNode('1', '<operator>.equals', 'p == NULL'),
+                '2': GraphNode('2', '<operator>.indirection', '*p'),
+            },
+            (GraphEdge('CDG', '1', '2'),),
+        )
+        text = extract_vulnerability_semantics(graph).render()
+        self.assertIn('NULL_RELATED_CONDITION', text)
+        self.assertIn('DEREFERENCE_WITHOUT_NONNULL_CONDITION', text)
+        self.assertNotIn('NONNULL_RELATED_CONDITION', text)
+
+    def test_nonnull_form_condition_is_recorded(self):
+        graph = FunctionGraph(
+            'foo',
+            {
+                '1': GraphNode('1', '<operator>.notEquals', 'p != NULL'),
+                '2': GraphNode('2', '<operator>.indirection', '*p'),
+            },
+            (GraphEdge('CDG', '1', '2'),),
+        )
+        text = extract_vulnerability_semantics(graph).render()
+        self.assertIn('NONNULL_RELATED_CONDITION', text)
+        self.assertNotIn('DEREFERENCE_WITHOUT_NONNULL_CONDITION', text)
+
+    def test_dynamic_allocation_capacity_is_attached_to_write(self):
+        graph = FunctionGraph(
+            'foo',
+            {
+                '1': GraphNode('1', 'CALL', 'buf = malloc(cap)'),
+                '2': GraphNode('2', 'CALL', 'memcpy(buf, src, len)'),
+            },
+            (
+                GraphEdge('CFG', '1', '2'),
+                GraphEdge('DDG', '1', '2'),
+            ),
+        )
+        text = extract_vulnerability_semantics(graph).render()
+        self.assertIn('DYNAMIC_CAPACITY object=buf capacity=cap', text)
+        self.assertIn('capacity=cap', text)
+
+    def test_ambiguous_dynamic_capacities_are_not_collapsed(self):
+        graph = FunctionGraph(
+            'foo',
+            {
+                '1': GraphNode('1', 'CALL', 'buf = malloc(a)'),
+                '2': GraphNode('2', 'CALL', 'buf = realloc(buf, b)'),
+                '3': GraphNode('3', 'CALL', 'memcpy(buf, src, len)'),
+            },
+            (
+                GraphEdge('CFG', '1', '2'),
+                GraphEdge('CFG', '2', '3'),
+            ),
+        )
+        text = extract_vulnerability_semantics(graph).render()
+        self.assertNotIn('DYNAMIC_CAPACITY object=buf', text)
+
+    def test_cfg_free_then_use_is_lifetime_relation_and_pattern(self):
         graph = FunctionGraph(
             'foo',
             {
@@ -205,8 +282,8 @@ class SemanticTests(unittest.TestCase):
         self.assertIn('DEALLOCATION', text)
         self.assertIn('FREE_THEN_USE', text)
         self.assertIn('lifetime_relation', semantics.feature_names)
-        without_lifetime = semantics.render(excluded_groups=('lifetime',))
-        self.assertNotIn('FREE_THEN_USE', without_lifetime)
+        pattern_only = semantics.render(excluded_groups=('memory', 'dependence', 'constraint', 'lifetime'))
+        self.assertIn('FREE_THEN_USE', pattern_only)
 
     def test_pointer_syntax_is_not_size_arithmetic(self):
         graph = FunctionGraph(
@@ -225,7 +302,7 @@ class SemanticTests(unittest.TestCase):
         graph = FunctionGraph(
             'foo',
             {
-                '1': GraphNode('1', '<operator>.new', 'new char[n]'),
+                '1': GraphNode('1', '<operator>.new', 'p = new char[n]'),
                 '2': GraphNode('2', '<operator>.delete', 'delete[] p'),
             },
             (GraphEdge('CFG', '1', '2'),),
@@ -237,19 +314,43 @@ class SemanticTests(unittest.TestCase):
         self.assertIn('allocation', semantics.feature_names)
         self.assertIn('deallocation', semantics.feature_names)
 
+    def test_patterns_render_before_lower_level_categories(self):
+        items = [
+            {'category': 'MEMORY_OPERATION', 'kind': 'MEMORY_WRITE', 'detail': 'object=buf'},
+            {'category': 'POTENTIAL_PATTERN', 'kind': 'UNBOUNDED_WRITE', 'detail': 'object=buf'},
+            {'category': 'DATA_DEPENDENCE', 'kind': 'PARAMETER_DEPENDENCE', 'detail': 'parameter=len'},
+        ]
+        text = render_semantic_items(items)
+        self.assertLess(text.index('[POTENTIAL_PATTERN]'), text.index('[MEMORY_OPERATION]'))
+        self.assertLess(text.index('[MEMORY_OPERATION]'), text.index('[DATA_DEPENDENCE]'))
+
     def test_semantic_group_ablation_filters_only_requested_group(self):
         items = [
             {'category': 'MEMORY_OPERATION', 'kind': 'MEMORY_WRITE', 'detail': 'object=buf'},
             {'category': 'DATA_DEPENDENCE', 'kind': 'PARAMETER_DEPENDENCE', 'detail': 'parameter=len'},
-            {'category': 'CONTROL_CONSTRAINT', 'kind': 'BOUNDS_RELATED_CONDITION', 'detail': 'expr=len<cap'},
+            {'category': 'CONTROL_CONSTRAINT', 'kind': 'UPPER_BOUND_RELATED_CONDITION', 'detail': 'expr=len<cap'},
         ]
         text = render_semantic_items(items, excluded_groups=('dependence',))
         self.assertIn('MEMORY_WRITE', text)
         self.assertNotIn('PARAMETER_DEPENDENCE', text)
-        self.assertIn('BOUNDS_RELATED_CONDITION', text)
+        self.assertIn('UPPER_BOUND_RELATED_CONDITION', text)
         self.assertEqual(validate_semantic_groups(('Memory', 'memory', 'constraint')), ('memory', 'constraint'))
         with self.assertRaises(ValueError):
             validate_semantic_groups(('unknown',))
+
+
+class ModelTests(unittest.TestCase):
+    def test_sequence_pooling_uses_last_valid_token(self):
+        hidden = torch.tensor([
+            [[1.0], [2.0], [3.0], [99.0]],
+            [[4.0], [5.0], [88.0], [77.0]],
+        ])
+        mask = torch.tensor([
+            [1, 1, 1, 0],
+            [1, 1, 0, 0],
+        ])
+        pooled = _last_valid_token(hidden, mask)
+        self.assertEqual(pooled.tolist(), [[3.0], [5.0]])
 
 
 class LabelTests(unittest.TestCase):

@@ -38,7 +38,7 @@ MODEL_VARIANTS = (
 )
 _SEQUENCE_VARIANTS = {"baseline", "raw_cpg", "semantic_concat"}
 _FUSION_VARIANTS = {"semantic_fusion", "full"}
-_CHECKPOINT_VERSION = 3
+_CHECKPOINT_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -355,6 +355,14 @@ def _masked_mean(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Te
     return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
 
 
+def _last_valid_token(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    lengths = attention_mask.sum(dim=1) - 1
+    if bool((lengths < 0).any()):
+        raise ValueError("attention_mask contains an empty sequence")
+    rows = torch.arange(hidden.size(0), device=hidden.device)
+    return hidden[rows, lengths]
+
+
 class SequenceVulnerabilityClassifier(nn.Module):
     def __init__(
         self,
@@ -390,7 +398,7 @@ class SequenceVulnerabilityClassifier(nn.Module):
             attention_mask=attention_mask,
             use_cache=False,
         ).last_hidden_state
-        pooled = _masked_mean(hidden, attention_mask)
+        pooled = _last_valid_token(hidden, attention_mask)
         logits = self.task_modules["classifier"](pooled.float()).squeeze(-1)
         return logits, None
 

@@ -2,7 +2,7 @@
 
 本仓库研究函数级 C/C++ 漏洞二分类：
 
-> **利用静态程序分析提取 vulnerability-related program semantics，并用这些语义引导 Code LLM 学习函数的原始 0/1 漏洞标签。**
+> **利用静态程序分析从 CPG 中提取与高风险内存操作直接相关的程序语义，并用这些语义引导 Code LLM 学习函数的原始 0/1 漏洞标签。**
 
 测试阶段的预测单位始终是单个函数。不使用 vulnerable/fixed pair、fix commit、CVE 描述、caller/callee 或仓库上下文作为分类输入。
 
@@ -11,73 +11,100 @@
 ```text
 single C/C++ function
         │
-        ├────────────── source code ───────────────────────────┐
+        ├────────────── source code ──────────────────────────┐
         │                                                      │
-        └→ Joern CPG                                           │
+        └→ Joern AST / CFG / CDG / DDG                         │
              ↓                                                 │
-   CPG-based Vulnerability Semantic Extraction                 │
+   vulnerability-semantic extraction                          │
              ↓                                                 │
-   vulnerability-related program semantics                     │
+   high-risk operation + directly related semantics            │
              │                                                 │
-             └──── Cross-Attention-based Semantic Fusion ──────┤
+             └──── optional cross-attention fusion ────────────┤
                                                                ↓
                                                        LoRA Code LLM
                                                                ↓
                                                 vulnerability classification
-                                                               │
-                                  optional Vulnerability-Feature Supervision
 ```
 
-### CPG-based Vulnerability Semantic Extraction
+## Vulnerability-semantic extraction
 
-Joern 为每个函数独立导出 AST / CFG / CDG / DDG。程序分析从这些结构关系中提取：
+Joern 为每个函数独立导出 AST / CFG / CDG / DDG。实现首先识别 memory write、array access、pointer dereference、allocation/deallocation 等安全相关操作，再从 CPG 中提取与这些操作直接相关的信息。
 
-- memory operations: write / read / array access / pointer dereference
-- memory objects: allocation / static capacity
-- data dependence: data dependence / parameter dependence / size arithmetic
-- control constraints: controlling condition / bounds-related condition / null-related condition
-- lifetime semantics: deallocation / free-then-free / free-then-use relations
-- potential vulnerability patterns: unbounded write, memory extent/index/dereference without a related control condition, static-capacity violation, unchecked size arithmetic, etc.
+每个 memory write、array access 和 pointer dereference 都保存在 `MEMORY_OPERATION` 中。若静态关系进一步表现出高风险特征，再额外生成 `POTENTIAL_PATTERN`。当前高风险模式包括：
 
-这里的 control constraint 表示 **CPG 中控制该内存操作的相关条件**。Joern 导出的 CDG 不保留 true/false 分支方向，因此实现不会把条件直接表述成“安全 guard”或“已通过 bounds/null check”。`POTENTIAL_PATTERN` 也只是静态分析得到的候选模式，不作为 ground-truth vulnerability label。最终漏洞监督始终来自数据集原始 `0/1` 标签。
+- unbounded memory write；
+- variable write extent without an upper-bound-form controlling condition；
+- array index without an upper-bound-form controlling condition；
+- pointer dereference without a non-null-form controlling condition；
+- write/index exceeding a known capacity；
+- unchecked size arithmetic reaching a memory operation；
+- a free operation that can reach a later use or later free of the same object。
 
-### Cross-Attention-based Semantic Fusion
+每条与高风险操作相关的语义尽量附带：
 
-源码与 structured vulnerability semantics 分别经过同一个 LoRA-Qwen 编码器。低维 cross-attention 使用源码表示作为 query、漏洞语义表示作为 key/value，在源码 token 上融合程序分析语义，再完成函数级分类。
+```text
+operation
+object / pointer
+extent / index
+known capacity
+upper-bound-form or non-null-form controlling condition
+data sources reachable through DDG (up to depth 3)
+```
 
-### Vulnerability-Feature Supervision
+例如：
 
-完整模型在分类损失之外增加 auxiliary multi-label supervision。辅助目标来自 CPG 提取出的 vulnerability-related features，例如 memory write、array access、parameter dependence、bounds-related control constraint 和 lifetime relation。
+```text
+WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION
+operation=memcpy(dst, src, len)
+object=dst
+extent=len
+capacity=64
+upper_bound_condition=none
+data_from=len
+```
 
-该辅助头只读取 **source representation before semantic fusion**，避免直接从已经输入的 semantic text 中复制答案；目的是要求源码表示本身编码这些 vulnerability-related features。
+这里的 `UPPER_BOUND_RELATED_CONDITION` 和 `NONNULL_RELATED_CONDITION` 只表示 **控制该操作的条件文本具有相应形式**。当前 Joern DOT 导出在本项目的数据结构中没有保留 true/false 分支方向，因此实现不会把这些条件表述为“已证明安全的 guard”。所有 `POTENTIAL_PATTERN` 都只是静态分析得到的候选模式，不是 ground-truth vulnerability label。
+
+当前上界条件识别是保守的：`len < cap`、`len <= cap`、`cap > len`、`cap >= len` 这类形式可被识别为与 `len` 上界相关；`len > 0`、`len != 0`、`len > cap` 不会被误认为上界条件。非空条件同样区分 `p != NULL` 与 `p == NULL`/`!p`。
+
+### Capacity information
+
+已知容量来自两类信息：
+
+- local fixed-size arrays，例如 `char buf[64]`；
+- 只有一个明确分配大小的 `malloc/calloc/realloc/new[]` 对象。
+
+如果同一个对象存在多个不同的动态分配大小，实现不会选择其中一个作为容量，避免使用过期或不确定的 allocation extent。
+
+### Compact semantic rendering
+
+`POTENTIAL_PATTERN` 在 semantic text 中最先输出，随后是 `MEMORY_OPERATION`。两类信息内部都按 kind 轮转选择，避免同一种操作或模式占满 384-token context。较低层的 memory object、dependence、constraint 和 lifetime facts 排在它们之后。
+
+因此 `semantic_concat` 的固定 context budget 优先保留高风险模式及其直接相关的信息，而不是先被大量普通 memory-operation facts 占满。
 
 ## Model variants
 
 所有 variant 使用相同的 Qwen2.5-Coder-7B、LoRA 配置、源码 token budget、数据划分和二分类指标。
 
-| Variant | Input / module | Purpose |
-| --- | --- | --- |
-| `baseline` | source only | Code LLM baseline |
-| `raw_cpg` | source + unfiltered compact AST/CFG/CDG/DDG relations | test whether raw structural context helps |
-| `semantic_concat` | source + vulnerability semantics by concatenation | semantic extraction only |
-| `semantic_fusion` | separate source/semantics + cross-attention | add semantic fusion |
-| `full` | semantic fusion + vulnerability-feature supervision | complete method |
+| Variant | Input / module |
+| --- | --- |
+| `baseline` | source only |
+| `raw_cpg` | source + compact AST/CFG/CDG/DDG relations |
+| `semantic_concat` | source + vulnerability semantics |
+| `semantic_fusion` | separate source/semantics + cross-attention |
+| `full` | semantic fusion + vulnerability-feature supervision |
 
-这组 variant 对应主消融链：
+`raw_cpg` 与 `semantic_concat` 使用相同的 context token budget。
 
-```text
-baseline
-  → raw_cpg
-  → semantic_concat
-  → semantic_fusion
-  → full
-```
+### Sequence representation
 
-`raw_cpg` 不经过 vulnerability-semantic filtering，只对全部导出的 CPG relations 进行统一 token budget 下的压缩；`raw_cpg` 与 `semantic_concat` 使用相同 context token budget，因此二者的比较不会由额外输入长度造成。
+`baseline`、`raw_cpg` 和 `semantic_concat` 都在输入末尾追加 EOS，并使用 **最后一个有效 token 的 hidden state** 完成二分类。对于 causal Code LLM，这个位置可以访问前面的完整 source/context；不再对大量 source tokens 与少量 semantic tokens 做全序列平均。
 
-## Semantic-group ablation
+`semantic_fusion` 和 `full` 保持独立的 source/semantic encoding 与 source-to-semantics cross-attention。
 
-Structured vulnerability semantics 按五组组织：
+## Semantic groups
+
+结构化语义仍保存为五组，便于诊断：
 
 ```text
 memory
@@ -96,37 +123,11 @@ pattern
   POTENTIAL_PATTERN
 ```
 
-使用 `--exclude-groups` 删除指定组。例如：
+使用 `--exclude-groups` 可以删除指定输出组。需要注意：`POTENTIAL_PATTERN` 本身由 CPG 的数据依赖、控制依赖、容量和生命周期关系推导，因此删除 lower-level group 不会反向删除已经形成的 pattern；如果要删除 pattern，必须显式排除 `pattern`。
 
-```bash
-python -m vulnmechanism.cli train \
-  --variant full \
-  --exclude-groups memory \
-  --dataset data/function_dataset.jsonl \
-  --output results/full_wo_memory.pt
-```
+## Build dataset
 
-对 `full` 做消融时，被删除语义组对应的 auxiliary feature targets 也会同时 mask，避免通过 feature supervision 重新引入被删除的信息。
-
-## Repository layout
-
-```text
-vulnmechanism/
-  syntax.py       standalone C/C++ function parsing
-  process.py      external-process execution
-  cpg.py          standalone Joern AST/CFG/CDG/DDG extraction
-  semantics.py    vulnerability-related program semantic extraction
-  dataset.py      CPG/semantic dataset construction and resume
-  model.py        LoRA baselines, semantic fusion and feature supervision
-  cli.py          build / train / eval commands
-
-tests/
-  test_vulnmechanism.py
-```
-
-## Input format
-
-`build` 接收 JSONL，每行一个函数样本：
+输入 `data/functions.jsonl` 每行是一个函数样本：
 
 ```json
 {
@@ -139,23 +140,7 @@ tests/
 }
 ```
 
-源码字段支持：
-
-```text
-function / func / source / code / func_before
-```
-
-标签字段支持：
-
-```text
-label / target
-```
-
-原始标签必须是 `0/1`；`BENIGN/VULNERABLE` 字符串分别映射为 `0/1`。已有 `train / valid / test` 会被直接保留；没有 `split` 时，训练阶段按 `sample_key` 稳定哈希得到 70/15/15 划分。
-
-## Build dataset
-
-新的 dataset schema 保存源码、compact raw CPG relations、structured vulnerability semantics 和 fixed-vocabulary vulnerability features：
+构建：
 
 ```bash
 python -m vulnmechanism.cli build \
@@ -163,13 +148,13 @@ python -m vulnmechanism.cli build \
   --output data/function_dataset.jsonl
 ```
 
-构建支持 resume。单个 Joern/语法失败会记录到：
+当前 dataset schema 为 version 6。旧 semantic records 不会被复用，因此更新代码后重新执行 `build` 会重新生成语义数据。
+
+构建支持 resume。单个 Joern/语法失败会写入：
 
 ```text
 data/function_dataset.errors.jsonl
 ```
-
-而不会丢失已经完成的样本。
 
 ## Train
 
@@ -179,7 +164,7 @@ data/function_dataset.errors.jsonl
 /home/phy/models/Qwen2.5-Coder-7B-Instruct
 ```
 
-各 variant 单独训练并保存 checkpoint，便于逐项比较：
+示例：
 
 ```bash
 python -m vulnmechanism.cli train \
@@ -188,27 +173,12 @@ python -m vulnmechanism.cli train \
   --output results/baseline.pt
 
 python -m vulnmechanism.cli train \
-  --variant raw_cpg \
-  --dataset data/function_dataset.jsonl \
-  --output results/raw_cpg.pt
-
-python -m vulnmechanism.cli train \
   --variant semantic_concat \
   --dataset data/function_dataset.jsonl \
   --output results/semantic_concat.pt
-
-python -m vulnmechanism.cli train \
-  --variant semantic_fusion \
-  --dataset data/function_dataset.jsonl \
-  --output results/semantic_fusion.pt
-
-python -m vulnmechanism.cli train \
-  --variant full \
-  --dataset data/function_dataset.jsonl \
-  --output results/full.pt
 ```
 
-主要默认参数：
+默认参数：
 
 ```text
 source_max_length = 1536
@@ -221,29 +191,34 @@ fusion_heads = 8
 feature_loss_weight = 0.2
 ```
 
-`baseline`、`raw_cpg`、`semantic_concat` 使用 masked mean pooling。`semantic_fusion` 和 `full` 使用 source-to-semantics cross-attention 后在源码 token 上做 masked mean pooling。
+模型表示方式已经变化，checkpoint version 为 4；旧 checkpoint 不能直接按新实现评估，需要重新训练。
 
 ## Evaluate
 
 ```bash
 python -m vulnmechanism.cli eval \
   --dataset data/function_dataset.jsonl \
-  --checkpoint results/full.pt \
+  --checkpoint results/semantic_concat.pt \
   --split test
 ```
 
-分类指标：
+分类指标：Accuracy / Precision / Recall / F1 / MCC / AUC。
+
+## Repository layout
 
 ```text
-Accuracy
-Precision
-Recall
-F1
-MCC
-AUC
-```
+vulnmechanism/
+  syntax.py       standalone C/C++ function parsing
+  process.py      external-process execution
+  cpg.py          standalone Joern AST/CFG/CDG/DDG extraction
+  semantics.py    vulnerability-semantic extraction
+  dataset.py      dataset construction and resume
+  model.py        LoRA classifiers, semantic fusion and feature supervision
+  cli.py          build / train / eval commands
 
-`full` 额外报告 vulnerability-feature prediction 的 micro Precision / Recall / F1，用于检查 auxiliary supervision 是否实际学到对应程序特征。
+tests/
+  test_vulnmechanism.py
+```
 
 ## Environment
 
@@ -264,5 +239,3 @@ python -m pip install -r requirements.txt
 ```bash
 python -m unittest discover -s tests -v
 ```
-
-`data/`、`results/` 和 `*.pt` 不进入版本控制。

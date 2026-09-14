@@ -12,10 +12,10 @@ from .semantics import extract_vulnerability_semantics
 from .syntax import parse_function
 
 
-# Version 5 stores unfiltered normalized CPG relations for the raw-CPG
-# ablation, structured vulnerability semantics, and fixed-vocabulary
-# vulnerability features used by downstream ablations.
-DATASET_SCHEMA_VERSION = 5
+# Version 6 stores the revised high-risk-operation-centered semantic representation.
+# Older records must be rebuilt because their semantic_items were produced by the
+# previous global category-wise extractor.
+DATASET_SCHEMA_VERSION = 6
 
 
 @dataclass(frozen=True)
