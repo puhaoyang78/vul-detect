@@ -38,7 +38,7 @@ MODEL_VARIANTS = (
 )
 _SEQUENCE_VARIANTS = {"baseline", "raw_cpg", "semantic_concat"}
 _FUSION_VARIANTS = {"semantic_fusion", "full"}
-_CHECKPOINT_VERSION = 5
+_CHECKPOINT_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -573,8 +573,12 @@ def _binary_auc(truth: torch.Tensor, scores: torch.Tensor) -> float | None:
 def _classification_metrics(
     records: list[dict[str, object]],
     probabilities: torch.Tensor,
+    *,
+    threshold: float = 0.5,
 ) -> Metrics:
-    predictions = probabilities >= 0.5
+    if not 0.0 < threshold < 1.0:
+        raise ValueError("classification threshold must be between 0 and 1")
+    predictions = probabilities >= threshold
     truth = torch.tensor([int(record["label"]) for record in records], dtype=torch.bool)
     tp = int((predictions & truth).sum())
     fp = int((predictions & ~truth).sum())
@@ -588,6 +592,37 @@ def _classification_metrics(
     mcc = ((tp * tn) - (fp * fn)) / denominator if denominator else 0.0
     auc = _binary_auc(truth, probabilities)
     return Metrics(accuracy, precision, recall, f1, mcc, auc)
+
+
+def _select_validation_threshold(
+    records: list[dict[str, object]],
+    probabilities: torch.Tensor,
+) -> tuple[float, Metrics]:
+    """Choose a decision threshold using validation labels only."""
+    best_threshold = 0.5
+    best_metrics = _classification_metrics(records, probabilities, threshold=best_threshold)
+    best_key = (
+        best_metrics.mcc,
+        best_metrics.f1,
+        best_metrics.accuracy,
+        -abs(best_threshold - 0.5),
+        -best_threshold,
+    )
+    for value in range(5, 96):
+        threshold = value / 100.0
+        metrics = _classification_metrics(records, probabilities, threshold=threshold)
+        key = (
+            metrics.mcc,
+            metrics.f1,
+            metrics.accuracy,
+            -abs(threshold - 0.5),
+            -threshold,
+        )
+        if key > best_key:
+            best_threshold = threshold
+            best_metrics = metrics
+            best_key = key
+    return best_threshold, best_metrics
 
 
 def _feature_metrics(
@@ -667,8 +702,13 @@ def _cpu_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().clone() for key, value in state.items()}
 
 
-def _selection_score(metrics: Metrics) -> float:
-    return metrics.auc if metrics.auc is not None else metrics.f1
+def _selection_score(metrics: Metrics) -> tuple[float, float, float, float]:
+    return (
+        metrics.mcc,
+        metrics.f1,
+        metrics.accuracy,
+        metrics.auc if metrics.auc is not None else float("-inf"),
+    )
 
 
 def _train_variant(
@@ -715,7 +755,8 @@ def _train_variant(
     )
     classification_loss_fn = nn.BCEWithLogitsLoss()
 
-    best_score = float("-inf")
+    best_score = (float("-inf"),) * 4
+    best_threshold = 0.5
     best_adapter: dict[str, torch.Tensor] | None = None
     best_task: dict[str, torch.Tensor] | None = None
     best_validation: Metrics | None = None
@@ -780,6 +821,7 @@ def _train_variant(
                 pending_steps = 0
 
         validation_metrics = None
+        validation_threshold = 0.5
         feature_validation = None
         if valid_records:
             probabilities, feature_probabilities = _predict(
@@ -791,7 +833,10 @@ def _train_variant(
                 batch_size=batch_size,
                 device=device,
             )
-            validation_metrics = _classification_metrics(valid_records, probabilities)
+            validation_threshold, validation_metrics = _select_validation_threshold(
+                valid_records,
+                probabilities,
+            )
             if variant == "full":
                 if feature_probabilities is None:
                     raise RuntimeError("full variant did not return vulnerability-feature predictions")
@@ -807,7 +852,7 @@ def _train_variant(
                 )
             score = _selection_score(validation_metrics)
         else:
-            score = float(epoch)
+            score = (float(epoch), float("-inf"), float("-inf"), float("-inf"))
 
         print(
             json.dumps(
@@ -823,6 +868,7 @@ def _train_variant(
                         else None
                     ),
                     "optimizer_steps": optimizer_steps,
+                    "validation_threshold": validation_threshold if validation_metrics else None,
                     "validation": validation_metrics.as_json() if validation_metrics else None,
                     "feature_validation": (
                         feature_validation.as_json() if feature_validation else None
@@ -835,6 +881,7 @@ def _train_variant(
 
         if score > best_score:
             best_score = score
+            best_threshold = validation_threshold
             best_adapter = _cpu_state(get_peft_model_state_dict(model.encoder))
             best_task = _cpu_state(model.task_modules.state_dict())
             best_validation = validation_metrics
@@ -846,6 +893,7 @@ def _train_variant(
     result = {
         "adapter_state": best_adapter,
         "task_state": best_task,
+        "decision_threshold": best_threshold,
         "validation": best_validation.as_json() if best_validation else {},
         "feature_validation": (
             best_feature_validation.as_json() if best_feature_validation else None
@@ -949,6 +997,7 @@ def train_model(
         "fusion_dim": fusion_dim,
         "fusion_heads": fusion_heads,
         "feature_loss_weight": feature_loss_weight,
+        "decision_threshold": trained["decision_threshold"],
         "adapter_state": trained["adapter_state"],
         "task_state": trained["task_state"],
         "validation": trained["validation"],
@@ -964,6 +1013,7 @@ def train_model(
                 "checkpoint": str(target),
                 "variant": variant,
                 "excluded_groups": list(excluded_groups),
+                "decision_threshold": checkpoint["decision_threshold"],
                 "validation": checkpoint["validation"],
                 "feature_validation": checkpoint["feature_validation"],
                 "trainable_parameters": checkpoint["trainable_parameters"],
@@ -1014,6 +1064,9 @@ def evaluate_model(
         tuple(str(value) for value in checkpoint.get("excluded_groups", ()))
     )
     _validate_variant(variant, excluded_groups)
+    decision_threshold = float(checkpoint["decision_threshold"])
+    if not 0.0 < decision_threshold < 1.0:
+        raise ValueError("checkpoint contains an invalid decision threshold")
 
     records = [record for record in _read_jsonl(dataset_path) if _record_split(record) == split]
     if not records:
@@ -1041,7 +1094,11 @@ def evaluate_model(
         batch_size=batch_size,
         device=resolved_device,
     )
-    metrics = _classification_metrics(records, probabilities)
+    metrics = _classification_metrics(
+        records,
+        probabilities,
+        threshold=decision_threshold,
+    )
     feature_metrics = None
     if variant == "full":
         if feature_probabilities is None:
@@ -1061,6 +1118,7 @@ def evaluate_model(
         "split": split,
         "variant": variant,
         "excluded_groups": list(excluded_groups),
+        "decision_threshold": decision_threshold,
         "samples": len(records),
         "positive": sum(int(record["label"]) == 1 for record in records),
         "negative": sum(int(record["label"]) == 0 for record in records),
