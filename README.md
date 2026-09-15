@@ -98,7 +98,7 @@ data_from=len
 
 ### Sequence representation
 
-`baseline`、`raw_cpg` 和 `semantic_concat` 都在输入末尾追加 EOS，并使用 **最后一个有效 token 的 hidden state** 完成二分类。对于 causal Code LLM，这个位置可以访问前面的完整 source/context；不再对大量 source tokens 与少量 semantic tokens 做全序列平均。
+`baseline`、`raw_cpg` 和 `semantic_concat` 对所有有效 token 的 hidden states 使用 **masked mean pooling** 后完成二分类。该实现与此前表现稳定的正式 baseline 保持一致；last-token pooling 已通过对照实验排除，因为它会显著降低当前函数级分类性能。
 
 `semantic_fusion` 和 `full` 保持独立的 source/semantic encoding 与 source-to-semantics cross-attention。
 
@@ -191,7 +191,7 @@ fusion_heads = 8
 feature_loss_weight = 0.2
 ```
 
-模型表示方式已经变化，checkpoint version 为 4；旧 checkpoint 不能直接按新实现评估，需要重新训练。
+当前 checkpoint version 为 5；last-token pooling 阶段生成的 version 4 checkpoint 会被拒绝加载，需要按当前实现重新训练。dataset schema 仍为 version 6，因此已经按新版语义构建好的 `data/function_dataset.jsonl` 不需要再次 build。
 
 ## Evaluate
 
