@@ -148,7 +148,7 @@ python -m vulnmechanism.cli build \
   --output data/function_dataset.jsonl
 ```
 
-当前 dataset schema 为 version 6。旧 semantic records 不会被复用，因此更新代码后重新执行 `build` 会重新生成语义数据。
+当前 dataset schema 为 version 6。旧 semantic records 不会被复用，因此更新语义提取代码后重新执行 `build` 会重新生成语义数据。
 
 构建支持 resume。单个 Joern/语法失败会写入：
 
@@ -191,7 +191,19 @@ fusion_heads = 8
 feature_loss_weight = 0.2
 ```
 
-当前 checkpoint version 为 5；last-token pooling 阶段生成的 version 4 checkpoint 会被拒绝加载，需要按当前实现重新训练。dataset schema 仍为 version 6，因此已经按新版语义构建好的 `data/function_dataset.jsonl` 不需要再次 build。
+### Validation threshold selection
+
+每个 epoch 都只使用 validation split 选择二分类阈值：
+
+```text
+threshold = 0.05, 0.06, ..., 0.95
+```
+
+首先最大化 validation MCC；MCC 相同时依次比较 F1、Accuracy，并优先选择更接近 0.5 的阈值。最佳 epoch 同样首先按 validation MCC 选择。AUC 继续报告，但不再用于选择 epoch。
+
+最佳 epoch 的 `decision_threshold` 会保存到 checkpoint。测试时 `eval` 直接读取该阈值，不使用 test labels 调整阈值。
+
+当前 checkpoint version 为 6；version 5 及以前的 checkpoint 不会被当前实现加载，需要重新训练。dataset schema 仍为 version 6，因此已经按新版语义构建好的 `data/function_dataset.jsonl` 不需要再次 build。
 
 ## Evaluate
 
@@ -202,7 +214,7 @@ python -m vulnmechanism.cli eval \
   --split test
 ```
 
-分类指标：Accuracy / Precision / Recall / F1 / MCC / AUC。
+输出会包含保存于 checkpoint 的 `decision_threshold`。分类指标为 Accuracy / Precision / Recall / F1 / MCC / AUC。
 
 ## Repository layout
 
