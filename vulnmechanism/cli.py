@@ -15,10 +15,12 @@ def _semantic_groups(value: str) -> tuple[str, ...]:
 
 
 def _train(args):
+    if args.source_dataset == "sven":
+        raise ValueError("SVEN is external-test-only and cannot be used for training")
     with dataset_view(args.dataset, args.source_dataset) as dataset:
         return train_model(
             dataset,
-            args.output or f"results/{args.variant}.pt",
+            args.output or f"results/{args.source_dataset}_{args.variant}.pt",
             variant=args.variant,
             model_path=args.model,
             source_max_length=args.source_max_length,
@@ -41,11 +43,16 @@ def _train(args):
 
 
 def _evaluate(args):
+    expected_split = "external_test" if args.source_dataset == "sven" else args.split
+    if args.source_dataset == "sven" and args.split != "external_test":
+        raise ValueError("SVEN evaluation must use --split external_test")
+    if args.source_dataset != "sven" and args.split == "external_test":
+        raise ValueError("external_test is reserved for SVEN")
     with dataset_view(args.dataset, args.source_dataset) as dataset:
         return evaluate_model(
             dataset,
             args.checkpoint,
-            split=args.split,
+            split=expected_split,
             batch_size=args.batch_size,
             device=args.device,
         )
@@ -63,23 +70,23 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--joern-dir", default="/home/phy/joern")
     build.add_argument("--java-home", default="/home/phy/jdk21")
     build.add_argument("--timeout", type=int, default=300)
-    build.set_defaults(func=lambda args: build_function_dataset(
-        args.samples,
-        args.output,
-        joern_dir=args.joern_dir,
-        java_home=args.java_home,
-        timeout=args.timeout,
-    ))
+    build.set_defaults(
+        func=lambda args: build_function_dataset(
+            args.samples,
+            args.output,
+            joern_dir=args.joern_dir,
+            java_home=args.java_home,
+            timeout=args.timeout,
+        )
+    )
 
     train = sub.add_parser("train")
     train.add_argument("--dataset", default="data/function_dataset.jsonl")
     train.add_argument(
         "--source-dataset",
-        choices=FORMAL_DATASETS,
-        help=(
-            "formal benchmark source to train on. Required when the built JSONL contains "
-            "multiple formal sources; use primevul or cleanvul for the main experiments"
-        ),
+        choices=("primevul", "cleanvul"),
+        required=True,
+        help="formal benchmark source used for training",
     )
     train.add_argument("--variant", choices=MODEL_VARIANTS, default="full")
     train.add_argument("--output")
@@ -102,10 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_semantic_groups,
         default=(),
         metavar="GROUPS",
-        help=(
-            "comma-separated semantic ablation groups: "
-            + ",".join(SEMANTIC_GROUPS)
-        ),
+        help="comma-separated semantic ablation groups: " + ",".join(SEMANTIC_GROUPS),
     )
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--device", default="auto")
@@ -117,9 +121,14 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument(
         "--source-dataset",
         choices=FORMAL_DATASETS,
-        help="formal benchmark source to evaluate; e.g. primevul, cleanvul, or sven",
+        required=True,
+        help="formal benchmark source to evaluate",
     )
-    evaluate.add_argument("--split", choices=("train", "valid", "test", "external_test"), default="test")
+    evaluate.add_argument(
+        "--split",
+        choices=("train", "valid", "test", "external_test"),
+        default="test",
+    )
     evaluate.add_argument("--batch-size", type=int, default=1)
     evaluate.add_argument("--device", default="auto")
     evaluate.set_defaults(func=_evaluate)
