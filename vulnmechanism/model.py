@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import random
@@ -19,6 +18,7 @@ from peft import (
 from torch import nn
 from transformers import AutoModel, AutoTokenizer
 
+from .benchmark_view import record_dataset, record_split
 from .dataset import DATASET_SCHEMA_VERSION
 from .semantics import (
     FEATURE_TO_GROUP,
@@ -38,7 +38,7 @@ MODEL_VARIANTS = (
 )
 _SEQUENCE_VARIANTS = {"baseline", "raw_cpg", "semantic_concat"}
 _FUSION_VARIANTS = {"semantic_fusion", "full"}
-_CHECKPOINT_VERSION = 6
+_CHECKPOINT_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -92,20 +92,23 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
                 raise ValueError(
                     f"{path}:{line_number}: dataset schema must be {DATASET_SCHEMA_VERSION}; rebuild the dataset"
                 )
-            key_value = record.get("sample_key")
-            key = str(key_value) if key_value is not None else ""
-            if not key:
+            key = record.get("sample_key")
+            if not isinstance(key, str) or not key:
                 raise ValueError(f"{path}:{line_number}: sample_key is required")
             if key in seen:
                 raise ValueError(f"{path}:{line_number}: duplicate sample_key {key}")
-            if record.get("label") not in {0, 1}:
-                raise ValueError(f"{path}:{line_number}: label must be 0 or 1")
-            if not isinstance(record.get("raw_source"), str):
+            record_dataset(record)
+            record_split(record)
+            if type(record.get("label")) is not int or record.get("label") not in {0, 1}:
+                raise ValueError(f"{path}:{line_number}: label must be integer 0 or 1")
+            if not isinstance(record.get("raw_source"), str) or not record["raw_source"]:
                 raise ValueError(f"{path}:{line_number}: raw_source is required")
-            if not isinstance(record.get("cpg_relations"), str):
+            if not isinstance(record.get("cpg_relations"), str) or not record["cpg_relations"]:
                 raise ValueError(f"{path}:{line_number}: cpg_relations is required")
             if not isinstance(record.get("vulnerability_semantics"), str):
                 raise ValueError(f"{path}:{line_number}: vulnerability_semantics is required")
+            if not isinstance(record.get("cpg_quality"), dict):
+                raise ValueError(f"{path}:{line_number}: cpg_quality is required")
             semantic_items = record.get("semantic_items")
             if not isinstance(semantic_items, list) or not all(
                 isinstance(item, dict)
@@ -123,25 +126,9 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
                 raise ValueError(f"{path}:{line_number}: vulnerability_features is malformed")
             seen.add(key)
             records.append(record)
+    if not records:
+        raise ValueError("dataset is empty")
     return records
-
-
-def _split_for_key(key: str) -> str:
-    bucket = int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) % 100
-    if bucket < 70:
-        return "train"
-    if bucket < 85:
-        return "valid"
-    return "test"
-
-
-def _record_split(record: dict[str, object]) -> str:
-    split = str(record.get("split") or "").lower()
-    if split in {"train", "valid", "validation", "test", "external_test"}:
-        return "valid" if split == "validation" else split
-    if split:
-        raise ValueError(f"unknown explicit dataset split: {split!r}")
-    return _split_for_key(str(record["sample_key"]))
 
 
 def _seed_everything(seed: int) -> None:
@@ -160,7 +147,10 @@ def _resolve_device(device: str) -> torch.device:
     return resolved
 
 
-def _validate_variant(variant: str, excluded_groups: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
+def _validate_variant(
+    variant: str,
+    excluded_groups: tuple[str, ...],
+) -> tuple[str, tuple[str, ...]]:
     if variant not in MODEL_VARIANTS:
         raise ValueError(f"unknown variant {variant!r}; expected one of {', '.join(MODEL_VARIANTS)}")
     excluded = validate_semantic_groups(excluded_groups)
@@ -170,8 +160,6 @@ def _validate_variant(variant: str, excluded_groups: tuple[str, ...]) -> tuple[s
 
 
 class InputBuilder:
-    """Keep the function token budget identical while varying only auxiliary context."""
-
     def __init__(self, tokenizer, *, source_max_length: int, context_max_length: int) -> None:
         if source_max_length <= 0 or context_max_length <= 0:
             raise ValueError("source_max_length and context_max_length must be positive")
@@ -201,9 +189,7 @@ class InputBuilder:
         return list(encoded["input_ids"])
 
     def _with_eos(self, ids: list[int]) -> list[int]:
-        if self.eos_token_id is None:
-            return ids
-        return [*ids, self.eos_token_id]
+        return ids if self.eos_token_id is None else [*ids, self.eos_token_id]
 
     def source_ids(self, record: dict[str, object]) -> list[int]:
         source = self._encode(str(record["raw_source"]), self.source_max_length)
@@ -348,8 +334,7 @@ def _build_lora_encoder(
         target_modules=list(target_modules),
         bias="none",
     )
-    encoder = get_peft_model(base, config)
-    return encoder, int(base.config.hidden_size)
+    return get_peft_model(base, config), int(base.config.hidden_size)
 
 
 def _masked_mean(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -393,8 +378,7 @@ class SequenceVulnerabilityClassifier(nn.Module):
             use_cache=False,
         ).last_hidden_state
         pooled = _masked_mean(hidden, attention_mask)
-        logits = self.task_modules["classifier"](pooled.float()).squeeze(-1)
-        return logits, None
+        return self.task_modules["classifier"](pooled.float()).squeeze(-1), None
 
 
 class SemanticFusionClassifier(nn.Module):
@@ -458,7 +442,6 @@ class SemanticFusionClassifier(nn.Module):
             attention_mask=semantic_mask,
             use_cache=False,
         ).last_hidden_state
-
         source_projected = self.task_modules["source_projection"](source_hidden.float())
         semantic_projected = self.task_modules["semantic_projection"](semantic_hidden.float())
         attended, _ = self.task_modules["cross_attention"](
@@ -471,7 +454,6 @@ class SemanticFusionClassifier(nn.Module):
         fused = self.task_modules["layer_norm"](source_projected + attended)
         pooled = _masked_mean(fused, source_mask)
         logits = self.task_modules["classifier"](pooled).squeeze(-1)
-
         feature_logits = None
         if self.feature_supervision:
             source_pooled = _masked_mean(source_hidden, source_mask)
@@ -540,13 +522,12 @@ def _feature_targets(
     )
     if int(active.sum().item()) == 0:
         raise ValueError("feature supervision has no active vulnerability features")
-    rows: list[list[float]] = []
+    rows = []
     for record in records:
         present = set(record["vulnerability_features"])
         rows.append([1.0 if feature in present else 0.0 for feature in VULNERABILITY_FEATURES])
     targets = torch.tensor(rows, dtype=torch.float32, device=device)
-    mask = active.unsqueeze(0).expand_as(targets)
-    return targets, mask
+    return targets, active.unsqueeze(0).expand_as(targets)
 
 
 def _binary_auc(truth: torch.Tensor, scores: torch.Tensor) -> float | None:
@@ -576,7 +557,7 @@ def _classification_metrics(
     records: list[dict[str, object]],
     probabilities: torch.Tensor,
     *,
-    threshold: float = 0.5,
+    threshold: float,
 ) -> Metrics:
     if not 0.0 < threshold < 1.0:
         raise ValueError("classification threshold must be between 0 and 1")
@@ -592,15 +573,13 @@ def _classification_metrics(
     accuracy = (tp + tn) / len(records) if records else 0.0
     denominator = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     mcc = ((tp * tn) - (fp * fn)) / denominator if denominator else 0.0
-    auc = _binary_auc(truth, probabilities)
-    return Metrics(accuracy, precision, recall, f1, mcc, auc)
+    return Metrics(accuracy, precision, recall, f1, mcc, _binary_auc(truth, probabilities))
 
 
 def _select_validation_threshold(
     records: list[dict[str, object]],
     probabilities: torch.Tensor,
 ) -> tuple[float, Metrics]:
-    """Choose a decision threshold using validation labels only."""
     best_threshold = 0.5
     best_metrics = _classification_metrics(records, probabilities, threshold=best_threshold)
     best_key = (
@@ -621,9 +600,7 @@ def _select_validation_threshold(
             -threshold,
         )
         if key > best_key:
-            best_threshold = threshold
-            best_metrics = metrics
-            best_key = key
+            best_threshold, best_metrics, best_key = threshold, metrics, key
     return best_threshold, best_metrics
 
 
@@ -764,11 +741,11 @@ def _train_variant(
     best_validation: Metrics | None = None
     best_feature_validation: FeatureMetrics | None = None
 
-    optimizer.zero_grad(set_to_none=True)
     for epoch in range(epochs):
         model.train()
         order = list(range(len(train_records)))
         random.Random(seed + epoch).shuffle(order)
+        optimizer.zero_grad(set_to_none=True)
         running_loss = 0.0
         running_classification_loss = 0.0
         running_feature_loss = 0.0
@@ -805,7 +782,6 @@ def _train_variant(
                 )
                 feature_loss = (per_feature * feature_mask).sum() / feature_mask.sum().clamp_min(1.0)
             loss = classification_loss + feature_loss_weight * feature_loss
-
             group_start = (batch_index // gradient_accumulation) * gradient_accumulation
             group_size = min(gradient_accumulation, num_batches - group_start)
             (loss / group_size).backward()
@@ -813,48 +789,36 @@ def _train_variant(
             running_classification_loss += float(classification_loss.detach().cpu())
             running_feature_loss += float(feature_loss.detach().cpu())
             pending_steps += 1
-
-            is_last_batch = batch_index + 1 == num_batches
-            if pending_steps == gradient_accumulation or is_last_batch:
+            if pending_steps == gradient_accumulation or batch_index + 1 == num_batches:
                 torch.nn.utils.clip_grad_norm_(trainable_parameters, 1.0)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 optimizer_steps += 1
                 pending_steps = 0
 
-        validation_metrics = None
-        validation_threshold = 0.5
+        probabilities, feature_probabilities = _predict(
+            model,
+            valid_records,
+            input_builder,
+            variant=variant,
+            excluded_groups=excluded_groups,
+            batch_size=batch_size,
+            device=device,
+        )
+        validation_threshold, validation_metrics = _select_validation_threshold(
+            valid_records,
+            probabilities,
+        )
         feature_validation = None
-        if valid_records:
-            probabilities, feature_probabilities = _predict(
-                model,
+        if variant == "full":
+            if feature_probabilities is None:
+                raise RuntimeError("full variant did not return vulnerability-feature predictions")
+            targets, feature_mask = _feature_targets(
                 valid_records,
-                input_builder,
-                variant=variant,
                 excluded_groups=excluded_groups,
-                batch_size=batch_size,
-                device=device,
+                device=torch.device("cpu"),
             )
-            validation_threshold, validation_metrics = _select_validation_threshold(
-                valid_records,
-                probabilities,
-            )
-            if variant == "full":
-                if feature_probabilities is None:
-                    raise RuntimeError("full variant did not return vulnerability-feature predictions")
-                targets, feature_mask = _feature_targets(
-                    valid_records,
-                    excluded_groups=excluded_groups,
-                    device=torch.device("cpu"),
-                )
-                feature_validation = _feature_metrics(
-                    feature_probabilities,
-                    targets,
-                    feature_mask,
-                )
-            score = _selection_score(validation_metrics)
-        else:
-            score = (float(epoch), float("-inf"), float("-inf"), float("-inf"))
+            feature_validation = _feature_metrics(feature_probabilities, targets, feature_mask)
 
         print(
             json.dumps(
@@ -864,23 +828,17 @@ def _train_variant(
                     "epoch": epoch + 1,
                     "train_loss": running_loss / max(1, num_batches),
                     "classification_loss": running_classification_loss / max(1, num_batches),
-                    "feature_loss": (
-                        running_feature_loss / max(1, num_batches)
-                        if variant == "full"
-                        else None
-                    ),
+                    "feature_loss": running_feature_loss / max(1, num_batches) if variant == "full" else None,
                     "optimizer_steps": optimizer_steps,
-                    "validation_threshold": validation_threshold if validation_metrics else None,
-                    "validation": validation_metrics.as_json() if validation_metrics else None,
-                    "feature_validation": (
-                        feature_validation.as_json() if feature_validation else None
-                    ),
+                    "validation_threshold": validation_threshold,
+                    "validation": validation_metrics.as_json(),
+                    "feature_validation": feature_validation.as_json() if feature_validation else None,
                 },
                 ensure_ascii=False,
             ),
             flush=True,
         )
-
+        score = _selection_score(validation_metrics)
         if score > best_score:
             best_score = score
             best_threshold = validation_threshold
@@ -889,17 +847,14 @@ def _train_variant(
             best_validation = validation_metrics
             best_feature_validation = feature_validation
 
-    if best_adapter is None or best_task is None:
+    if best_adapter is None or best_task is None or best_validation is None:
         raise RuntimeError("training did not produce a checkpoint")
-
     result = {
         "adapter_state": best_adapter,
         "task_state": best_task,
         "decision_threshold": best_threshold,
-        "validation": best_validation.as_json() if best_validation else {},
-        "feature_validation": (
-            best_feature_validation.as_json() if best_feature_validation else None
-        ),
+        "validation": best_validation.as_json(),
+        "feature_validation": best_feature_validation.as_json() if best_feature_validation else None,
         "trainable_parameters": sum(parameter.numel() for parameter in trainable_parameters),
     }
     del model
@@ -942,12 +897,20 @@ def train_model(
         raise ValueError("fusion_dim must be positive and divisible by fusion_heads")
 
     records = _read_jsonl(dataset_path)
-    train_records = [record for record in records if _record_split(record) == "train"]
-    valid_records = [record for record in records if _record_split(record) == "valid"]
-    if not train_records:
-        raise ValueError("training split is empty")
+    sources = {record_dataset(record) for record in records}
+    if len(sources) != 1:
+        raise ValueError(f"training dataset view must contain exactly one source, got {sorted(sources)}")
+    source_dataset = next(iter(sources))
+    if source_dataset == "sven":
+        raise ValueError("SVEN is external-test-only")
+    train_records = [record for record in records if record_split(record) == "train"]
+    valid_records = [record for record in records if record_split(record) == "valid"]
+    if not train_records or not valid_records:
+        raise ValueError("formal training requires non-empty train and valid splits")
     if {int(record["label"]) for record in train_records} != {0, 1}:
         raise ValueError("training split must contain both labels 0 and 1")
+    if {int(record["label"]) for record in valid_records} != {0, 1}:
+        raise ValueError("validation split must contain both labels 0 and 1")
 
     resolved_device = _resolve_device(device)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -961,7 +924,6 @@ def train_model(
         context_max_length=context_max_length,
     )
     target_modules = ("q_proj", "k_proj", "v_proj", "o_proj")
-
     trained = _train_variant(
         train_records,
         valid_records,
@@ -984,9 +946,10 @@ def train_model(
         seed=seed,
         device=resolved_device,
     )
-
     checkpoint = {
         "checkpoint_version": _CHECKPOINT_VERSION,
+        "dataset_schema_version": DATASET_SCHEMA_VERSION,
+        "trained_on": source_dataset,
         "variant": variant,
         "excluded_groups": excluded_groups,
         "model_path": model_path,
@@ -1013,6 +976,7 @@ def train_model(
         json.dumps(
             {
                 "checkpoint": str(target),
+                "trained_on": source_dataset,
                 "variant": variant,
                 "excluded_groups": list(excluded_groups),
                 "decision_threshold": checkpoint["decision_threshold"],
@@ -1052,7 +1016,7 @@ def evaluate_model(
     dataset_path: str | Path,
     checkpoint_path: str | Path,
     *,
-    split: str = "test",
+    split: str,
     batch_size: int = 1,
     device: str = "auto",
 ) -> dict[str, object]:
@@ -1060,7 +1024,9 @@ def evaluate_model(
         raise ValueError("batch_size must be positive")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     if checkpoint.get("checkpoint_version") != _CHECKPOINT_VERSION:
-        raise ValueError("checkpoint is incompatible with the current semantic-learning model")
+        raise ValueError("checkpoint is incompatible with the current formal experiment model")
+    if checkpoint.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
+        raise ValueError("checkpoint was not trained on the current dataset schema")
     variant = str(checkpoint["variant"])
     excluded_groups = validate_semantic_groups(
         tuple(str(value) for value in checkpoint.get("excluded_groups", ()))
@@ -1070,7 +1036,12 @@ def evaluate_model(
     if not 0.0 < decision_threshold < 1.0:
         raise ValueError("checkpoint contains an invalid decision threshold")
 
-    records = [record for record in _read_jsonl(dataset_path) if _record_split(record) == split]
+    all_records = _read_jsonl(dataset_path)
+    sources = {record_dataset(record) for record in all_records}
+    if len(sources) != 1:
+        raise ValueError(f"evaluation dataset view must contain exactly one source, got {sorted(sources)}")
+    evaluated_on = next(iter(sources))
+    records = [record for record in all_records if record_split(record) == split]
     if not records:
         raise ValueError(f"{split} split is empty")
 
@@ -1085,7 +1056,6 @@ def evaluate_model(
         source_max_length=int(checkpoint["source_max_length"]),
         context_max_length=int(checkpoint["context_max_length"]),
     )
-
     model = _load_model(checkpoint, device=resolved_device)
     probabilities, feature_probabilities = _predict(
         model,
@@ -1096,11 +1066,7 @@ def evaluate_model(
         batch_size=batch_size,
         device=resolved_device,
     )
-    metrics = _classification_metrics(
-        records,
-        probabilities,
-        threshold=decision_threshold,
-    )
+    metrics = _classification_metrics(records, probabilities, threshold=decision_threshold)
     feature_metrics = None
     if variant == "full":
         if feature_probabilities is None:
@@ -1110,13 +1076,11 @@ def evaluate_model(
             excluded_groups=excluded_groups,
             device=torch.device("cpu"),
         )
-        feature_metrics = _feature_metrics(
-            feature_probabilities,
-            targets,
-            feature_mask,
-        )
+        feature_metrics = _feature_metrics(feature_probabilities, targets, feature_mask)
 
     result = {
+        "trained_on": checkpoint["trained_on"],
+        "evaluated_on": evaluated_on,
         "split": split,
         "variant": variant,
         "excluded_groups": list(excluded_groups),
