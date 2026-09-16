@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+
 from tree_sitter import Language, Node, Parser
 import tree_sitter_c
 import tree_sitter_cpp
@@ -39,21 +41,22 @@ def text(node: Node, source: bytes) -> str:
 def identifier(node: Node | None, source: bytes) -> str | None:
     if node is None:
         return None
-    # In a typeless f(args) {...} header, the C grammar may interpret f as
-    # a type and (args) as a parenthesized declarator (including macro args).
-    if node.type == 'parenthesized_declarator' and node.parent is not None:
+    if node.type == "parenthesized_declarator" and node.parent is not None:
         parent = node.parent
-        type_node = parent.child_by_field_name('type')
-        if (parent.type == 'function_definition' and type_node is not None
-                and type_node.type == 'type_identifier'):
+        type_node = parent.child_by_field_name("type")
+        if (
+            parent.type == "function_definition"
+            and type_node is not None
+            and type_node.type == "type_identifier"
+        ):
             return text(type_node, source)
-    if node.type in {'identifier', 'destructor_name', 'operator_name'}:
+    if node.type in {"identifier", "destructor_name", "operator_name"}:
         return text(node, source)
-    if node.type == 'operator_cast':
-        parameters = next((n for n in walk(node) if n.type == 'parameter_list'), None)
+    if node.type == "operator_cast":
+        parameters = next((n for n in walk(node) if n.type == "parameter_list"), None)
         if parameters is not None:
             return source[node.start_byte:parameters.start_byte].decode().strip()
-    if node.type in {'parameter_list', 'template_argument_list', 'attribute_specifier'}:
+    if node.type in {"parameter_list", "template_argument_list", "attribute_specifier"}:
         return None
     name = node.child_by_field_name("name")
     if name is not None:
@@ -74,10 +77,11 @@ def identifier(node: Node | None, source: bytes) -> str | None:
 
 def _parameters(function: Node, source: bytes) -> tuple[str, ...]:
     declarator = function.child_by_field_name("declarator")
-    parameter_list = next(
-        (node for node in walk(declarator) if node.type == "parameter_list"),
-        None,
-    ) if declarator is not None else None
+    parameter_list = (
+        next((node for node in walk(declarator) if node.type == "parameter_list"), None)
+        if declarator is not None
+        else None
+    )
     if parameter_list is None:
         return ()
     names: list[str] = []
@@ -90,17 +94,20 @@ def _parameters(function: Node, source: bytes) -> tuple[str, ...]:
     return tuple(names)
 
 
-def parse_function(source_text: str, language: str = "c", function_name: str | None = None) -> ParsedFunction:
+def parse_function(
+    source_text: str,
+    language: str = "c",
+    function_name: str | None = None,
+) -> ParsedFunction:
     source = source_text.encode()
     tree = parser_for(language).parse(source)
     functions = [node for node in walk(tree.root_node) if node.type == "function_definition"]
     if function_name:
-        matches = []
-        for node in functions:
-            name = identifier(node.child_by_field_name("declarator"), source)
-            if name == function_name:
-                matches.append(node)
-        functions = matches
+        functions = [
+            node
+            for node in functions
+            if identifier(node.child_by_field_name("declarator"), source) == function_name
+        ]
     if len(functions) != 1:
         label = f" named {function_name}" if function_name else ""
         raise ValueError(f"expected exactly one function{label}, found {len(functions)}")
@@ -111,7 +118,68 @@ def parse_function(source_text: str, language: str = "c", function_name: str | N
     return ParsedFunction(name=name, parameters=_parameters(node, source))
 
 
-def local_identifiers(source_text: str, language: str, function_name: str | None = None) -> tuple[str, ...]:
+def single_function_language(source_text: str, file_name: str = "") -> str | None:
+    """Infer C vs C++ only when a standalone function can be parsed unambiguously."""
+    encoded = source_text.encode("utf-8")
+    suffix = Path(file_name).suffix
+    languages = (
+        ("c",)
+        if suffix == ".c"
+        else (
+            ("cpp",)
+            if suffix in {".C", ".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx"}
+            else ("c", "cpp")
+        )
+    )
+    for language in languages:
+        root = parser_for(language).parse(encoded).root_node
+        if root.has_error:
+            continue
+        nodes = [node for node in root.named_children if node.type != "comment"]
+        if len(nodes) != 1:
+            continue
+        top = nodes[0]
+        while top.type == "template_declaration":
+            children = [
+                node
+                for node in top.named_children
+                if node.type not in {"template_parameter_list", "comment"}
+            ]
+            if len(children) != 1:
+                break
+            top = children[0]
+        if top.type != "function_definition":
+            continue
+        if top.child_by_field_name("type") is None:
+            declarator = top.child_by_field_name("declarator")
+            while declarator is not None and declarator.type != "qualified_identifier":
+                declarator = declarator.child_by_field_name("declarator")
+            if language != "cpp" or declarator is None:
+                continue
+            scope = declarator.child_by_field_name("scope")
+            name = declarator.child_by_field_name("name")
+            if scope is None or name is None:
+                continue
+            while scope.type == "qualified_identifier":
+                scope = scope.child_by_field_name("name")
+            if scope.type == "template_type":
+                scope = scope.child_by_field_name("name")
+            owner = encoded[scope.start_byte:scope.end_byte].decode()
+            method = encoded[name.start_byte:name.end_byte].decode()
+            if name.type != "operator_cast" and method not in {owner, "~" + owner}:
+                continue
+        if sum(node.type == "function_definition" for node in walk(root)) != 1:
+            continue
+        if identifier(top.child_by_field_name("declarator"), encoded):
+            return language
+    return None
+
+
+def local_identifiers(
+    source_text: str,
+    language: str,
+    function_name: str | None = None,
+) -> tuple[str, ...]:
     function = parse_function(source_text, language, function_name)
     source = source_text.encode()
     tree = parser_for(language).parse(source)
@@ -120,7 +188,11 @@ def local_identifiers(source_text: str, language: str, function_name: str | None
         if node.type != "declaration":
             continue
         for child in node.named_children:
-            declarator = child.child_by_field_name("declarator") if child.type == "init_declarator" else child
+            declarator = (
+                child.child_by_field_name("declarator")
+                if child.type == "init_declarator"
+                else child
+            )
             name = identifier(declarator, source)
             if name and name not in names:
                 names.append(name)
