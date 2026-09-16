@@ -16,7 +16,7 @@ import sys
 import subprocess
 from urllib.parse import urlsplit
 
-from .prepare_primevul import single_function_language
+from .syntax import single_function_language
 
 
 # Preserve literals and token boundaries: deleting all whitespace would conflate
@@ -46,8 +46,6 @@ def normalized_source(source: str) -> str:
 def shingles(source: str) -> frozenset[bytes]:
     tokens = [m.group().encode('utf-8') for m in TOKEN.finditer(source)
               if m.lastgroup not in {'space', 'comment'}]
-    # Length framing is unambiguous even when a literal contains NUL. Encode
-    # each token once rather than serializing five overlapping tokens per gram.
     tokens = [len(token).to_bytes(4, 'big') + token for token in tokens]
     width = min(5, len(tokens))
     return frozenset(hashlib.blake2b(b''.join(tokens[i:i + width]),
@@ -74,7 +72,7 @@ class NearIndex:
                 other, previous, partition, label, groups = self.entries[i]
                 if (partition == (item['dataset'], item['split']) and label != row['label']
                         and groups.intersection(row.get('counterpart_groups', []))):
-                    continue  # Declared repair counterparts are intentionally similar.
+                    continue
                 if min(len(signature), len(other)) * 10 < max(len(signature), len(other)) * 9:
                     continue
                 common = len(signature.intersection(other))
@@ -106,7 +104,6 @@ def repository(value: str) -> str:
         value = 'https://' + value
     parsed = urlsplit(value)
     path = parsed.path.rstrip('/').removesuffix('.git')
-    # GitHub host and owner/repository names are case insensitive.
     if parsed.hostname in {'github.com', 'www.github.com'}:
         return 'github.com/' + path.strip('/').lower()
     return (parsed.hostname or '').lower() + path
@@ -150,8 +147,6 @@ def source_language(source: str, file_name: str) -> tuple[str | None, str]:
     if suffix in {'.C', '.cc', '.cpp', '.cxx', '.c++', '.hpp', '.hh', '.hxx'}:
         return 'cpp', 'extension'
     if suffix == '.h':
-        # .h is C-family evidence, not proof of C versus C++. This choice is
-        # only a parser hint; retain that ambiguity in language_evidence.
         return single_function_language(source, file_name) or 'cpp', 'c_family_header'
     if suffix:
         return None, 'non_c_cpp_extension'
@@ -220,9 +215,6 @@ def load_sources(root: Path) -> tuple[list[dict], dict, list[dict]]:
                 counts['filename_restored_from_file_info'] += bool(filename)
             language, evidence = source_language(row['func'], filename)
             if language is None and not filename:
-                # Upstream explicitly defines PrimeVul as C/C++. Failed parsing
-                # of extracted/macro-containing snippets cannot disprove that
-                # provenance. Do not invent a C-versus-C++ distinction here.
                 language, evidence = 'c_cpp', 'upstream_c_cpp_unspecified'
             key = f"primevul:{row['idx']}"
             if language is None or not row['func'].strip():
@@ -452,7 +444,6 @@ def temporal_split(units: list[dict]) -> tuple[list[dict], dict]:
 
 
 def overlap_report(units: list[dict]) -> dict:
-    """Count shared keys and affected units, not quadratic matching row pairs."""
     indexes = defaultdict(lambda: defaultdict(list))
     commit_sources = defaultdict(lambda: defaultdict(set))
     for item in units:
@@ -499,8 +490,6 @@ def select(units: list[dict]) -> tuple[list[dict], list[dict]]:
     for dataset, split in PRIORITY:
         pool = sorted((u for u in units if (u['dataset'], u['split']) == (dataset, split)),
                       key=lambda u: (-u['rows'][0]['label'], digest('benchmark-benign-v1:' + u['id']), u['id']))
-        # Check complete declared counterpart families against higher-priority
-        # partitions before sampling any of their members.
         blocked_groups, direct = {}, {}
         for item in pool:
             groups = [key for key in item['keys'] if key[0] == 'pair_counterpart']
@@ -524,8 +513,6 @@ def select(units: list[dict]) -> tuple[list[dict], list[dict]]:
             if dataset == 'primevul' and label == 0 and benign_count >= vulnerable_count:
                 reject(item, 'benign_balance_not_selected')
                 continue
-            # Pair-group equality inside this partition is allowed, while
-            # exact/normalized repeats and unrelated near clones are removed.
             found = [dict(kind=k[0], retained_unit=seen[k]) for k in sorted(item['keys'])
                      if k in seen and k[0] != 'repo_commit'
                      and not (k[0] == 'pair_counterpart' and k in partition_keys)]
@@ -615,8 +602,6 @@ def commit_disjoint(units: list[dict], candidates: list[dict]) -> tuple[list[dic
                        reason='unresolved_commit_revision' if u['id'] in unknown else 'sven_commit_or_counterpart',
                        labels=[r['label'] for r in u['rows']])
                   for u in candidates if u['id'] in removed]
-    # Refill benign rows from the same official split using the same ranking;
-    # never discard a remaining vulnerable merely to restore class balance.
     retained, selection_exclusions = select([u for u in candidates if u['id'] not in removed])
     exclusions.extend(selection_exclusions)
     if any(shared_commit(u) for u in retained if u['split'] in {'train', 'valid'}):
@@ -636,7 +621,6 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 
 def deletion_statistics(rows: list[dict], exclusions: list[dict]) -> dict:
-    """Reconcile persisted units, using disjoint reason and evidence-set bins."""
     retained = {}
     for row in rows:
         key = row.get('pair_id') or row['sample_key']
@@ -776,14 +760,12 @@ def prepare(root: Path, output: Path, final_score: int | None = None) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source-dir', type=Path, default=Path('/home/PublicData/PHY-data/vul_detect/data'))
+    parser.add_argument('--source-dir', type=Path,
+                        default=Path('/home/PublicData/PHY-data/vul_detect/data'))
     parser.add_argument('--output-dir', type=Path, default=Path('data/benchmark'))
-    parser.add_argument('--final-score', type=int, choices=(3, 4),
-                        help='Choose only after reviewing both printed candidate counts.')
-    parser.add_argument("--audit-deletions", action="store_true",
-                        help="Reconcile existing manifests and exclusion ledgers without rebuilding splits.")
+    parser.add_argument('--final-score', type=int, choices=(3, 4))
+    parser.add_argument('--audit-deletions', action='store_true')
     args = parser.parse_args()
-    csv.field_size_limit(sys.maxsize)
     if args.audit_deletions:
         audit_deletions(args.output_dir)
     else:
