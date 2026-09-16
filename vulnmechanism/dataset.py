@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 import json
 import os
 import subprocess
@@ -12,10 +13,11 @@ from .semantics import extract_vulnerability_semantics
 from .syntax import parse_function, parser_for, walk
 
 
-# Version 6 stores the revised high-risk-operation-centered semantic representation.
-# Older records must be rebuilt because their semantic_items were produced by the
-# previous global category-wise extractor.
-DATASET_SCHEMA_VERSION = 6
+DATASET_SCHEMA_VERSION = 7
+_VALID_DATASETS = {"primevul", "cleanvul", "sven"}
+_VALID_SPLITS = {"train", "valid", "test", "external_test"}
+_PAIRED_DATASETS = {"cleanvul", "sven"}
+_GRAPH_KINDS = ("AST", "CFG", "CDG", "DDG")
 
 
 @dataclass(frozen=True)
@@ -32,12 +34,14 @@ class CPGRelation:
 class FunctionSample:
     line_number: int
     sample_key: str
+    dataset: str
     source: str
     label: int
     language: str
     function_name: str | None
-    split: str | None
-    file_name: str = ""
+    split: str
+    pair_id: str | None
+    file_name: str
 
 
 def _node_text(node) -> str:
@@ -46,7 +50,6 @@ def _node_text(node) -> str:
 
 
 def extract_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, ...]:
-    """Normalize all exported AST/CFG/CDG/DDG relations without semantic filtering."""
     relations: list[CPGRelation] = []
     seen: set[str] = set()
     for edge in graph.edges:
@@ -69,78 +72,67 @@ def render_cpg_relations(graph: FunctionGraph, max_relations: int = 160) -> str:
     groups: dict[str, list[CPGRelation]] = {}
     for relation in relations:
         groups.setdefault(relation.kind, []).append(relation)
-    selected = [
-        item
-        for row in zip_longest(*groups.values())
-        for item in row
-        if item is not None
-    ] if groups else []
+    selected = (
+        [item for row in zip_longest(*groups.values()) for item in row if item is not None]
+        if groups
+        else []
+    )
     return "\n".join(item.as_text() for item in selected[:max_relations]) or "NO_CPG_RELATIONS"
 
 
-def _required_string(record: dict[str, object], names: tuple[str, ...], label: str) -> str:
-    for name in names:
-        value = record.get(name)
-        if isinstance(value, str) and value.strip():
-            return value
-    raise ValueError(f"missing {label}; expected one of {', '.join(names)}")
-
-
-def _normalize_label(value: object) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int) and value in {0, 1}:
-        return value
-    if isinstance(value, float) and value in {0.0, 1.0}:
-        return int(value)
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"0", "benign"}:
-            return 0
-        if normalized in {"1", "vulnerable"}:
-            return 1
-    raise ValueError(f"label must be binary 0/1, got {value!r}")
+def _required_string(record: dict[str, object], name: str, context: str) -> str:
+    value = record.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{context}: required non-empty string field {name!r}")
+    return value
 
 
 def _sample_fields(record: dict[str, object], line_number: int) -> FunctionSample:
-    key_value = next(
-        (record[name] for name in ("sample_key", "id", "idx") if name in record and record[name] is not None),
-        None,
-    )
-    if key_value is None or str(key_value).strip() == "":
-        raise ValueError("sample record requires sample_key, id, or idx")
-    key = str(key_value)
-    source = _required_string(record, ("function", "func", "source", "code", "func_before"), "function source")
-
-    if "label" in record:
-        label_value = record["label"]
-    elif "target" in record:
-        label_value = record["target"]
-    else:
-        raise ValueError(f"{key}: sample record requires label or target")
-    label = _normalize_label(label_value)
-
-    language = str(record.get("language") or "c").lower()
-    language = "cpp" if language in {"c++", "cpp"} else language
+    context = f"manifest line {line_number}"
+    sample_key = _required_string(record, "sample_key", context)
+    dataset = _required_string(record, "dataset", context).lower()
+    if dataset not in _VALID_DATASETS:
+        raise ValueError(f"{sample_key}: dataset must be one of {sorted(_VALID_DATASETS)}")
+    source = _required_string(record, "function", context)
+    label = record.get("label")
+    if type(label) is not int or label not in {0, 1}:
+        raise ValueError(f"{sample_key}: label must be integer 0 or 1")
+    language = _required_string(record, "language", context).lower()
     if language not in {"c", "cpp", "c_cpp"}:
-        raise ValueError(f"{key}: language must be c, cpp, or c_cpp")
+        raise ValueError(f"{sample_key}: language must be c, cpp, or c_cpp")
+    split = _required_string(record, "split", context).lower()
+    if split not in _VALID_SPLITS:
+        raise ValueError(f"{sample_key}: split must be one of {sorted(_VALID_SPLITS)}")
+    if dataset == "sven" and split != "external_test":
+        raise ValueError(f"{sample_key}: SVEN must be external_test")
+    if dataset != "sven" and split == "external_test":
+        raise ValueError(f"{sample_key}: only SVEN may use external_test")
+
+    pair_value = record.get("pair_id")
+    pair_id = str(pair_value) if isinstance(pair_value, str) and pair_value else None
+    if dataset in _PAIRED_DATASETS and pair_id is None:
+        raise ValueError(f"{sample_key}: {dataset} requires pair_id")
+    if dataset == "primevul" and pair_id is not None:
+        raise ValueError(f"{sample_key}: PrimeVul formal classification rows must not use pair_id")
 
     function_name = record.get("function_name")
-    split_value = record.get("split")
-    split = str(split_value).lower() if split_value is not None else None
-    if split == "validation":
-        split = "valid"
-    if split is not None and split not in {"train", "valid", "test", "external_test"}:
-        raise ValueError(f"{key}: split must be train, valid, validation, test, or external_test")
+    if function_name is not None and not isinstance(function_name, str):
+        raise ValueError(f"{sample_key}: function_name must be a string when present")
+    file_name = record.get("file_name")
+    if file_name is not None and not isinstance(file_name, str):
+        raise ValueError(f"{sample_key}: file_name must be a string when present")
+
     return FunctionSample(
         line_number=line_number,
-        sample_key=key,
+        sample_key=sample_key,
+        dataset=dataset,
         source=source,
         label=label,
         language=language,
-        function_name=str(function_name) if function_name else None,
+        function_name=function_name or None,
         split=split,
-        file_name=str(record.get("file_name") or ""),
+        pair_id=pair_id,
+        file_name=file_name or "",
     )
 
 
@@ -162,13 +154,13 @@ def _read_samples(samples_path: str | Path) -> list[FunctionSample]:
                 raise ValueError(f"{samples_path}:{line_number}: duplicate sample_key {sample.sample_key}")
             seen.add(sample.sample_key)
             samples.append(sample)
+    if not samples:
+        raise ValueError("formal manifest is empty")
     return samples
 
 
 def _valid_semantic_items(value: object) -> bool:
-    if not isinstance(value, list):
-        return False
-    return all(
+    return isinstance(value, list) and all(
         isinstance(item, dict)
         and isinstance(item.get("category"), str)
         and isinstance(item.get("kind"), str)
@@ -178,39 +170,61 @@ def _valid_semantic_items(value: object) -> bool:
 
 
 def _resolve_sample(sample: FunctionSample):
-    """Resolve ambiguous C-family inputs without changing declared provenance."""
     if sample.language != "c_cpp":
         return sample.language, parse_function(sample.source, sample.language, sample.function_name)
     suffix = Path(sample.file_name).suffix
-    language = "cpp" if suffix == ".C" or suffix.lower() in {
-        ".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++"
-    } else "c" if suffix == ".c" else None
+    language = (
+        "cpp"
+        if suffix == ".C"
+        or suffix.lower() in {".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++"}
+        else "c" if suffix == ".c" else None
+    )
     if language:
         return language, parse_function(sample.source, language, sample.function_name)
+
     candidates, failures = [], []
-    for language in ("c", "cpp"):
+    for candidate in ("c", "cpp"):
         try:
-            parsed = parse_function(sample.source, language, sample.function_name)
+            parsed = parse_function(sample.source, candidate, sample.function_name)
         except ValueError as error:
-            failures.append(f"{language}: {error}")
+            failures.append(f"{candidate}: {error}")
             continue
-        tree = parser_for(language).parse(sample.source.encode())
+        tree = parser_for(candidate).parse(sample.source.encode())
         errors = sum(node.is_error or node.is_missing for node in walk(tree.root_node))
-        candidates.append((errors, language, parsed))
+        candidates.append((errors, candidate, parsed))
     if not candidates:
         raise ValueError("C/C++ resolution failed; " + "; ".join(failures))
     _, language, parsed = min(candidates, key=lambda item: (item[0], item[1]))
     return language, parsed
 
 
+def _cpg_quality(graph: FunctionGraph) -> dict[str, object]:
+    edge_counts = Counter(edge.kind for edge in graph.edges)
+    missing = [kind for kind in _GRAPH_KINDS if edge_counts[kind] == 0]
+    # AST and CFG are structural requirements; CDG/DDG may legitimately be empty.
+    if edge_counts["AST"] == 0 or edge_counts["CFG"] == 0:
+        raise CPGError(
+            f"{graph.function}: structurally incomplete CPG "
+            f"(AST={edge_counts['AST']}, CFG={edge_counts['CFG']})"
+        )
+    return {
+        "node_count": len(graph.nodes),
+        "edge_count": len(graph.edges),
+        "edge_counts": {kind: edge_counts[kind] for kind in _GRAPH_KINDS},
+        "missing_relation_kinds": missing,
+    }
+
+
 def _record_matches_sample(record: dict[str, object], sample: FunctionSample) -> bool:
     resolved_language, parsed = _resolve_sample(sample)
     return (
-        record.get("raw_source") == sample.source
+        record.get("dataset") == sample.dataset
+        and record.get("pair_id") == sample.pair_id
+        and record.get("raw_source") == sample.source
         and type(record.get("label")) is int
         and record.get("label") == sample.label
         and record.get("language") == sample.language
-        and record.get("resolved_language", record.get("language")) == resolved_language
+        and record.get("resolved_language") == resolved_language
         and record.get("function_name") == parsed.name
         and record.get("split") == sample.split
         and isinstance(record.get("cpg_relations"), str)
@@ -219,18 +233,17 @@ def _record_matches_sample(record: dict[str, object], sample: FunctionSample) ->
         and _valid_semantic_items(record.get("semantic_items"))
         and isinstance(record.get("vulnerability_features"), list)
         and all(isinstance(value, str) for value in record.get("vulnerability_features", []))
+        and isinstance(record.get("cpg_quality"), dict)
         and type(record.get("cpg_relation_count")) is int
         and type(record.get("semantic_item_count")) is int
     )
 
 
 def _load_reusable_records(
-    path: Path,
-    samples: list[FunctionSample],
+    path: Path, samples: list[FunctionSample]
 ) -> tuple[dict[str, dict[str, object]], bool]:
     if not path.is_file():
         return {}, False
-
     sample_by_key = {sample.sample_key: sample for sample in samples}
     reusable: dict[str, dict[str, object]] = {}
     incomplete_tail = False
@@ -254,8 +267,7 @@ def _load_reusable_records(
                 raise ValueError(f"{path}: unknown saved sample_key={key!r}")
             if key in reusable:
                 raise ValueError(f"{path}: duplicate saved sample_key={key!r}")
-            sample = sample_by_key[key]
-            if not _record_matches_sample(record, sample):
+            if not _record_matches_sample(record, sample_by_key[key]):
                 raise ValueError(f"{path}: saved record does not match input: {key}")
             reusable[key] = record
     return reusable, incomplete_tail
@@ -283,6 +295,63 @@ def _rewrite_in_sample_order(
     return ordered
 
 
+def _build_audit(
+    samples: list[FunctionSample], records: list[dict[str, object]], errors_path: Path
+) -> dict[str, object]:
+    success = {str(record["sample_key"]): record for record in records}
+    failures = []
+    if errors_path.is_file():
+        failures = [json.loads(line) for line in errors_path.read_text().splitlines() if line.strip()]
+
+    groups: dict[str, Counter] = defaultdict(Counter)
+    for sample in samples:
+        key = f"{sample.dataset}/{sample.split}/label_{sample.label}"
+        groups[key]["input"] += 1
+        if sample.sample_key in success:
+            groups[key]["success"] += 1
+        else:
+            groups[key]["failed"] += 1
+
+    quality = Counter()
+    pattern_count = Counter()
+    for record in records:
+        q = record["cpg_quality"]
+        assert isinstance(q, dict)
+        edge_counts = q.get("edge_counts", {})
+        if isinstance(edge_counts, dict):
+            for kind in _GRAPH_KINDS:
+                if int(edge_counts.get(kind, 0)) == 0:
+                    quality[f"success_without_{kind.lower()}"] += 1
+        items = record.get("semantic_items", [])
+        patterns = sum(
+            isinstance(item, dict) and item.get("category") == "POTENTIAL_PATTERN"
+            for item in items
+        )
+        pattern_count[str(patterns)] += 1
+        if patterns == 0:
+            quality["success_without_potential_pattern"] += 1
+
+    failure_stage = Counter(str(row.get("stage")) for row in failures)
+    failure_type = Counter(str(row.get("error_type")) for row in failures)
+    return {
+        "schema_version": DATASET_SCHEMA_VERSION,
+        "total": len(samples),
+        "success": len(records),
+        "failed": len(samples) - len(records),
+        "success_rate": len(records) / len(samples) if samples else 0.0,
+        "groups": {name: dict(sorted(counts.items())) for name, counts in sorted(groups.items())},
+        "failure_stage": dict(sorted(failure_stage.items())),
+        "failure_type": dict(sorted(failure_type.items())),
+        "quality_flags": dict(sorted(quality.items())),
+        "potential_pattern_count_distribution": dict(sorted(pattern_count.items(), key=lambda x: int(x[0]))),
+        "quality_note": (
+            "AST and CFG presence plus target-method alignment are enforced. Empty CDG/DDG or absence "
+            "of a potential pattern is reported, not treated as failure; these facts do not by themselves "
+            "prove or disprove the true vulnerability mechanism."
+        ),
+    }
+
+
 def build_function_dataset(
     samples_path: str | Path,
     output_path: str | Path,
@@ -291,73 +360,66 @@ def build_function_dataset(
     java_home: str | Path = "/home/phy/jdk21",
     timeout: int = 300,
 ) -> list[dict[str, object]]:
-    """Build one CPG and vulnerability-semantic record per labeled function."""
     samples_file = Path(samples_path)
     target = Path(output_path)
     errors_path = target.with_suffix(".errors.jsonl")
-    resolved = {samples_file.resolve(), target.resolve(), errors_path.resolve()}
-    if len(resolved) != 3:
-        raise ValueError("samples, output, and error log must be different files")
+    audit_path = target.with_suffix(".audit.json")
+    resolved_paths = {
+        samples_file.resolve(),
+        target.resolve(),
+        errors_path.resolve(),
+        audit_path.resolve(),
+    }
+    if len(resolved_paths) != 4:
+        raise ValueError("samples, output, error log, and audit file must be different files")
 
     samples = _read_samples(samples_file)
     target.parent.mkdir(parents=True, exist_ok=True)
-
     reusable, incomplete_tail = _load_reusable_records(target, samples)
     if incomplete_tail:
         print(f"discard_incomplete_output_tail={target}", flush=True)
 
-    records = _rewrite_in_sample_order(target, samples, reusable)
+    _rewrite_in_sample_order(target, samples, reusable)
     completed = set(reusable)
     print(f"function_samples_total={len(samples)} resumed={len(completed)}", flush=True)
 
-    failures = 0
     records_by_key = dict(reusable)
-    with target.open("a", encoding="utf-8") as output, errors_path.open("w", encoding="utf-8") as errors:
+    current_failures: list[dict[str, object]] = []
+    with target.open("a", encoding="utf-8") as output:
         for sample in samples:
             if sample.sample_key in completed:
                 continue
-
             stage = "syntax"
             resolved_language = None
             try:
                 resolved_language, parsed = _resolve_sample(sample)
-            except ValueError as error:
-                failure: BaseException | None = error
-            else:
-                failure = None
-
-            if failure is None:
                 stage = "joern"
-                try:
-                    graph = extract_function_cpg(
-                        sample.source,
-                        parsed.name,
-                        language=resolved_language,
-                        joern_dir=joern_dir,
-                        java_home=java_home,
-                        timeout=timeout,
-                    )
-                except (CPGError, subprocess.TimeoutExpired, OSError) as error:
-                    failure = error
-
-            if failure is not None:
-                failures += 1
-                _write_jsonl_line(
-                    errors,
-                    {
-                        "sample_key": sample.sample_key,
-                        "line": sample.line_number,
-                        "label": sample.label,
-                        "split": sample.split,
-                        "language": sample.language,
-                        "resolved_language": resolved_language,
-                        "stage": stage,
-                        "error_type": type(failure).__name__,
-                        "error": str(failure),
-                    },
+                graph = extract_function_cpg(
+                    sample.source,
+                    parsed.name,
+                    language=resolved_language,
+                    joern_dir=joern_dir,
+                    java_home=java_home,
+                    timeout=timeout,
                 )
+                quality = _cpg_quality(graph)
+            except (ValueError, CPGError, subprocess.TimeoutExpired, OSError) as error:
+                failure = {
+                    "sample_key": sample.sample_key,
+                    "dataset": sample.dataset,
+                    "pair_id": sample.pair_id,
+                    "line": sample.line_number,
+                    "label": sample.label,
+                    "split": sample.split,
+                    "language": sample.language,
+                    "resolved_language": resolved_language,
+                    "stage": stage,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                }
+                current_failures.append(failure)
                 print(
-                    f"function_sample_failed={sample.sample_key} stage={stage} error={failure}",
+                    f"function_sample_failed={sample.sample_key} stage={stage} error={error}",
                     flush=True,
                 )
                 continue
@@ -367,6 +429,8 @@ def build_function_dataset(
             record: dict[str, object] = {
                 "schema_version": DATASET_SCHEMA_VERSION,
                 "sample_key": sample.sample_key,
+                "dataset": sample.dataset,
+                "pair_id": sample.pair_id,
                 "label": sample.label,
                 "language": sample.language,
                 "resolved_language": resolved_language,
@@ -376,6 +440,7 @@ def build_function_dataset(
                 "vulnerability_semantics": semantics.render(),
                 "semantic_items": semantics.as_json(),
                 "vulnerability_features": list(semantics.feature_names),
+                "cpg_quality": quality,
                 "cpg_relation_count": len(relations),
                 "semantic_item_count": len(semantics.items),
                 "split": sample.split,
@@ -391,13 +456,38 @@ def build_function_dataset(
             )
 
     records = _rewrite_in_sample_order(target, samples, records_by_key)
+    failed_keys = {sample.sample_key for sample in samples} - set(records_by_key)
+    # Recreate the error log for every currently failed sample. Reusable successes never remain here.
+    failure_by_key = {str(row["sample_key"]): row for row in current_failures}
+    with errors_path.open("w", encoding="utf-8") as errors:
+        for sample in samples:
+            if sample.sample_key in failed_keys:
+                row = failure_by_key.get(sample.sample_key)
+                if row is None:
+                    row = {
+                        "sample_key": sample.sample_key,
+                        "dataset": sample.dataset,
+                        "pair_id": sample.pair_id,
+                        "line": sample.line_number,
+                        "label": sample.label,
+                        "split": sample.split,
+                        "language": sample.language,
+                        "resolved_language": None,
+                        "stage": "unknown",
+                        "error_type": "UnresolvedFailure",
+                        "error": "sample did not produce a reusable schema-v7 record",
+                    }
+                _write_jsonl_line(errors, row)
 
-    total = len(samples)
-    success = len(records)
-    rate = success / total if total else 0.0
+    audit = _build_audit(samples, records, errors_path)
+    audit_path.write_text(
+        json.dumps(audit, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(
-        f"function_build_summary total={total} success={success} failed={failures} "
-        f"success_rate={rate:.2%} errors={errors_path}",
+        f"function_build_summary total={audit['total']} success={audit['success']} "
+        f"failed={audit['failed']} success_rate={audit['success_rate']:.2%} "
+        f"errors={errors_path} audit={audit_path}",
         flush=True,
     )
     return records
