@@ -137,8 +137,10 @@ def _split_for_key(key: str) -> str:
 
 def _record_split(record: dict[str, object]) -> str:
     split = str(record.get("split") or "").lower()
-    if split in {"train", "valid", "validation", "test"}:
+    if split in {"train", "valid", "validation", "test", "external_test"}:
         return "valid" if split == "validation" else split
+    if split:
+        raise ValueError(f"unknown explicit dataset split: {split!r}")
     return _split_for_key(str(record["sample_key"]))
 
 

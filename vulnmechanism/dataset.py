@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .cpg import CPGError, FunctionGraph, extract_function_cpg
 from .semantics import extract_vulnerability_semantics
-from .syntax import parse_function
+from .syntax import parse_function, parser_for, walk
 
 
 # Version 6 stores the revised high-risk-operation-centered semantic representation.
@@ -37,6 +37,7 @@ class FunctionSample:
     language: str
     function_name: str | None
     split: str | None
+    file_name: str = ""
 
 
 def _node_text(node) -> str:
@@ -121,16 +122,16 @@ def _sample_fields(record: dict[str, object], line_number: int) -> FunctionSampl
 
     language = str(record.get("language") or "c").lower()
     language = "cpp" if language in {"c++", "cpp"} else language
-    if language not in {"c", "cpp"}:
-        raise ValueError(f"{key}: language must be c or cpp")
+    if language not in {"c", "cpp", "c_cpp"}:
+        raise ValueError(f"{key}: language must be c, cpp, or c_cpp")
 
     function_name = record.get("function_name")
     split_value = record.get("split")
     split = str(split_value).lower() if split_value is not None else None
     if split == "validation":
         split = "valid"
-    if split is not None and split not in {"train", "valid", "test"}:
-        raise ValueError(f"{key}: split must be train, valid, validation, or test")
+    if split is not None and split not in {"train", "valid", "test", "external_test"}:
+        raise ValueError(f"{key}: split must be train, valid, validation, test, or external_test")
     return FunctionSample(
         line_number=line_number,
         sample_key=key,
@@ -139,6 +140,7 @@ def _sample_fields(record: dict[str, object], line_number: int) -> FunctionSampl
         language=language,
         function_name=str(function_name) if function_name else None,
         split=split,
+        file_name=str(record.get("file_name") or ""),
     )
 
 
@@ -175,13 +177,40 @@ def _valid_semantic_items(value: object) -> bool:
     )
 
 
+def _resolve_sample(sample: FunctionSample):
+    """Resolve ambiguous C-family inputs without changing declared provenance."""
+    if sample.language != "c_cpp":
+        return sample.language, parse_function(sample.source, sample.language, sample.function_name)
+    suffix = Path(sample.file_name).suffix
+    language = "cpp" if suffix == ".C" or suffix.lower() in {
+        ".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++"
+    } else "c" if suffix == ".c" else None
+    if language:
+        return language, parse_function(sample.source, language, sample.function_name)
+    candidates, failures = [], []
+    for language in ("c", "cpp"):
+        try:
+            parsed = parse_function(sample.source, language, sample.function_name)
+        except ValueError as error:
+            failures.append(f"{language}: {error}")
+            continue
+        tree = parser_for(language).parse(sample.source.encode())
+        errors = sum(node.is_error or node.is_missing for node in walk(tree.root_node))
+        candidates.append((errors, language, parsed))
+    if not candidates:
+        raise ValueError("C/C++ resolution failed; " + "; ".join(failures))
+    _, language, parsed = min(candidates, key=lambda item: (item[0], item[1]))
+    return language, parsed
+
+
 def _record_matches_sample(record: dict[str, object], sample: FunctionSample) -> bool:
-    parsed = parse_function(sample.source, sample.language, sample.function_name)
+    resolved_language, parsed = _resolve_sample(sample)
     return (
         record.get("raw_source") == sample.source
         and type(record.get("label")) is int
         and record.get("label") == sample.label
         and record.get("language") == sample.language
+        and record.get("resolved_language", record.get("language")) == resolved_language
         and record.get("function_name") == parsed.name
         and record.get("split") == sample.split
         and isinstance(record.get("cpg_relations"), str)
@@ -289,8 +318,9 @@ def build_function_dataset(
                 continue
 
             stage = "syntax"
+            resolved_language = None
             try:
-                parsed = parse_function(sample.source, sample.language, sample.function_name)
+                resolved_language, parsed = _resolve_sample(sample)
             except ValueError as error:
                 failure: BaseException | None = error
             else:
@@ -302,7 +332,7 @@ def build_function_dataset(
                     graph = extract_function_cpg(
                         sample.source,
                         parsed.name,
-                        language=sample.language,
+                        language=resolved_language,
                         joern_dir=joern_dir,
                         java_home=java_home,
                         timeout=timeout,
@@ -320,6 +350,7 @@ def build_function_dataset(
                         "label": sample.label,
                         "split": sample.split,
                         "language": sample.language,
+                        "resolved_language": resolved_language,
                         "stage": stage,
                         "error_type": type(failure).__name__,
                         "error": str(failure),
@@ -338,6 +369,7 @@ def build_function_dataset(
                 "sample_key": sample.sample_key,
                 "label": sample.label,
                 "language": sample.language,
+                "resolved_language": resolved_language,
                 "function_name": parsed.name,
                 "raw_source": sample.source,
                 "cpg_relations": render_cpg_relations(graph),

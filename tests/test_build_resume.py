@@ -98,3 +98,41 @@ class BuildResumeTests(unittest.TestCase):
         with patch('vulnmechanism.dataset.extract_function_cpg', side_effect=TypeError('bug')):
             with self.assertRaisesRegex(TypeError, 'bug'):
                 build_function_dataset(self.samples, self.output)
+
+    def test_c_family_external_roundtrip_and_failure(self):
+        from vulnmechanism.dataset import _sample_fields, _resolve_sample
+        from vulnmechanism.model import _record_split
+        from vulnmechanism.cli import build_parser
+        for name, source, expected in [
+            ('x.c', 'void f(void) {}', 'c'),
+            ('x.cpp', 'void f(void) {}', 'cpp'),
+            ('x.C', 'void f(void) {}', 'cpp'),
+            ('', 'void f(void) {}', 'c'),
+            ('', 'void f() { auto x = []() { return 1; }; }', 'cpp'),
+        ]:
+            row = dict(sample_key='x', function=source, label=1,
+                       language='c_cpp', file_name=name, split='external_test')
+            self.assertEqual(_resolve_sample(_sample_fields(row, 1))[0], expected)
+        row['function'] = 'not a function'
+        with self.assertRaisesRegex(ValueError, r'C/C\+\+ resolution failed'):
+            _resolve_sample(_sample_fields(row, 1))
+        self.rows[0].update(language='c_cpp', file_name='x.cpp', split='external_test')
+        self.rows[1].update(language='c_cpp', function='not a function', split='external_test')
+        self.samples.write_text(''.join(json.dumps(r) + '\n' for r in self.rows))
+        with patch('vulnmechanism.dataset.extract_function_cpg', return_value=self.graph) as extract:
+            records = build_function_dataset(self.samples, self.output)
+            self.assertEqual(extract.call_args_list[0].kwargs['language'], 'cpp')
+        self.assertEqual(records[0]['resolved_language'], 'cpp')
+        self.assertEqual(records[0]['language'], 'c_cpp')
+        with patch('vulnmechanism.model._split_for_key', side_effect=AssertionError('hash called')):
+            self.assertEqual(_record_split(records[0]), 'external_test')
+            self.assertFalse(any(_record_split(r) == 'valid' for r in records))
+            self.assertEqual([r['sample_key'] for r in records if _record_split(r) == 'train'], ['2'])
+        failure = json.loads(self.output.with_suffix('.errors.jsonl').read_text())
+        self.assertEqual(failure['split'], 'external_test')
+        self.assertIsNone(failure['resolved_language'])
+        with patch('vulnmechanism.dataset.extract_function_cpg') as extract:
+            self.assertEqual(build_function_dataset(self.samples, self.output), records)
+            extract.assert_not_called()
+        args = build_parser().parse_args(['eval', '--checkpoint', 'unused', '--split', 'external_test'])
+        self.assertEqual(args.split, 'external_test')

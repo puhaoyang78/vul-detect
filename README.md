@@ -125,6 +125,53 @@ pattern
 
 使用 `--exclude-groups` 可以删除指定输出组。需要注意：`POTENTIAL_PATTERN` 本身由 CPG 的数据依赖、控制依赖、容量和生命周期关系推导，因此删除 lower-level group 不会反向删除已经形成的 pattern；如果要删除 pattern，必须显式排除 `pattern`。
 
+## Formal benchmark preparation
+
+正式 benchmark 使用 `vulnmechanism.prepare_benchmark`。原始数据保持只读，不执行训练、Joern 或模型结构修改。现有 `prepare_primevul` 是早期小规模 smoke 数据入口，不用于正式 benchmark。
+
+```bash
+conda run --no-capture-output -n vul-detect \
+  python -m vulnmechanism.prepare_benchmark \
+  --source-dir /home/PublicData/PHY-data/vul_detect/data \
+  --output-dir data/benchmark
+```
+
+首次运行同时打印并保存 CleanVul `score=4` 和 `score>=3` 的原始统计、清理损失及最终候选数量。审阅后用 `--final-score 4` 或 `--final-score 3` 生成正式清单；不通过随机种子重新抽样。
+
+本次正式门槛选择 **score=4**：清理后保留 2,022 对；score>=3 保留 2,080 对，仅增加 58 对。复现正式清单时，在上面的命令追加 `--final-score 4`。
+
+- PrimeVul：只读取官方非 paired train/valid/test 作为分类样本，保持每条记录的官方 split。paired 文件仅提供 counterpart 关系，不添加样本。扩展名明确的 C/C++ 片段不会因宏、上下文缺失或解析错误被删除；缺失文件名时先查 `file_info.json`，仍缺失才用现有语法识别。若仍无法细分，依据 [PrimeVul 官方 C/C++ 数据定义](https://github.com/DLVulDet/PrimeVul#-overview) 保留为 `language=c_cpp`，并记录 `upstream_c_cpp_unspecified`，不因解析失败丢弃漏洞函数；此值不是已确认的 C 或 C++ 子语言标签。`.h` 的 C/C++ 细分只是解析提示，`language_evidence` 保留其歧义。清理后保留所有剩余 vulnerable，在同一 split 内按 `SHA256("benchmark-benign-v1:" + sample_key)` 排序选择等量 benign。
+- CleanVul：只用显式 C/C++ extension。以 fixing commit 为组，按 UTC commit 时间划分；在完整时间戳组之间选择最接近 70% 和 85% 累积 pair 数的边界，相同时间不跨 split。缺失日期的 pair 排除，不补造日期。先确定时间边界，再清理重叠，清理后比例可能偏离 70/15/15，不重新切分。
+- SVEN：使用官方仓库 `data_train_val/{train,val}/*.jsonl` 中的 C/C++ 函数对，全部归入 `external_test`。不使用 `data_eval` 的代码生成 prompt，也不参与训练、验证或阈值选择。前后 normalized source 不变的 pair 不用于二分类。
+- 所有来源：保留原始代码。exact source、去注释/格式差异但保留字面量及 token 边界的 normalized source、已知 pair counterpart，以及 token 5-gram 集合 Jaccard ≥ 0.90 的 near duplicate 均参与清理。近重复检索使用确定性的精确 prefix join，不使用随机 LSH；标识符不重命名。已知修复对内部允许近似且标签不同。exact/normalized 同代码的标签冲突及其 counterpart 整组隔离。
+- 去重优先级依次为 SVEN external test、PrimeVul test、CleanVul test、PrimeVul valid、CleanVul valid、PrimeVul train、CleanVul train。CleanVul/SVEN 每次保留或删除完整 pair。同 repo+commit 的不同函数在主 benchmark 中仅统计，不因 commit 相同删除。
+- 部分 CleanVul URL 使用缩写 commit SHA。仅使用本地三个来源中的唯一前缀对应关系展开，保留原始值；未能展开的前缀逐项列在统计报告中，不伪造完整 SHA。
+- PrimeVul 缺失的仓库 URL 若能从 Gitiles commit URL 明确恢复，则记录恢复依据；仍缺失时保持为空，不把所有未知仓库视为同一仓库。原始 Git revision 表达式保留大小写并单列报告；无法解析为 SHA 的训练/验证记录不进入 commit-disjoint 实验。
+- 严格泛化实验另存 `manifest_sven_commit_disjoint.jsonl`：固定主 benchmark 的三个测试集，从训练/验证候选中删除与保留的 SVEN 测试集共享 commit SHA（包括可匹配缩写）的记录及 counterpart；该严格规则跨仓库别名和分叉生效，再使用相同清理和排序规则选择样本、补齐 benign。它可能选择与主 benchmark 不同的 benign，但不会为了平衡而下采样剩余 vulnerable。
+
+输出位于 `data/benchmark/`：
+
+- `score_4/`、`score_3/`：两种门槛各自的主/严格实验 JSONL manifest 和逐条排除理由。
+- `statistics.json`：原始语言/标签数量、时间边界、清理前后数量、重叠统计、运行环境和 SVEN revision。
+- 指定 `--final-score` 后，根目录另写所选的 `manifest.jsonl` 和 `manifest_sven_commit_disjoint.jsonl`。manifest 每行含原始函数、标签、split、pair/counterpart 关系和可回查原始文件的记录位置；这些来源信息用于准备和审计，不作为模型输入。
+
+完整 manifest 可直接传给 `build --samples data/benchmark/manifest.jsonl`。build 保留输入 `language`，新增 `resolved_language` 供 Joern 使用：`c_cpp` 优先依据明确的源文件扩展名（`.C` 为 C++，`.h` 保持歧义），否则双解析，选择能识别目标函数且语法错误/缺失节点更少的语言，同分固定选择 C；这只是确定性的解析提示，并非语言真值判定。双解析都不能识别函数时写入 errors JSONL。`external_test` 在成功记录、失败记录、恢复构建和模型读取中保留；train 仅使用 train/valid，eval 支持 `--split external_test` 并沿用 checkpoint 阈值，不在外部测试集选阈值。
+
+删除统计写入 `data/benchmark/deletion_statistics.json`，按数据集、split、标签/完整 pair 分组，列出输入、保留、删除数量、互斥删除原因、互斥匹配证据组合及匹配的保留分区。既有产物无需重新划分即可审计：
+
+```bash
+python -m vulnmechanism.prepare_benchmark --output-dir data/benchmark --audit-deletions
+```
+
+score=4 对账：PrimeVul train vulnerable `4862 - 106（标签冲突）- 65（冲突 counterpart）- 771（重复/counterpart）= 3920`。CleanVul 先从 3067 对排除 28 对缺日期、8 对规范化后无变化，得到 3031 对；再删除 132 对标签冲突及 877 对重复，保留 2022 对。后一步按 train/valid/test 分别删除 888/93/28 对。重复证据可同时包含 exact、normalized 和 counterpart，不能把各证据命中数相加；near 检查只在前述查重未命中时执行。主 benchmark 不因单纯同 repo+commit 删除不同函数。
+
+复验准备逻辑：
+
+```bash
+conda run --no-capture-output -n vul-detect \
+  python -m unittest discover -s tests -p 'test_prepare*.py' -v
+```
+
 ## Build dataset
 
 输入 `data/functions.jsonl` 每行是一个函数样本：

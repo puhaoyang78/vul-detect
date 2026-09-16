@@ -89,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("eval")
     evaluate.add_argument("--dataset", default="data/function_dataset.jsonl")
     evaluate.add_argument("--checkpoint", required=True)
-    evaluate.add_argument("--split", choices=("train", "valid", "test"), default="test")
+    evaluate.add_argument("--split", choices=("train", "valid", "test", "external_test"), default="test")
     evaluate.add_argument("--batch-size", type=int, default=1)
     evaluate.add_argument("--device", default="auto")
     evaluate.set_defaults(func=lambda args: evaluate_model(
