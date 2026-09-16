@@ -1,8 +1,15 @@
 # Formal benchmark run commands
 
-The formal benchmark is built from `data/benchmark/manifest.jsonl`. The resulting CPG dataset contains PrimeVul, CleanVul, and SVEN together, but training/evaluation must select one source explicitly.
+## 1. Prepare the fixed manifest
 
-## 1. Build once
+```bash
+python -m vulnmechanism.prepare_benchmark \
+  --source-dir /home/PublicData/PHY-data/vul_detect/data \
+  --output-dir data/benchmark \
+  --final-score 4
+```
+
+## 2. Build once with Joern
 
 ```bash
 python -m vulnmechanism.cli build \
@@ -13,17 +20,30 @@ python -m vulnmechanism.cli build \
   --timeout 300
 ```
 
-Build failures are written to `data/function_dataset.errors.jsonl`.
+The schema-v7 build produces:
 
-At train/eval time the benchmark view is derived only from successful build records:
+```text
+data/function_dataset.jsonl
+  successful samples only
 
-- PrimeVul keeps every build-success vulnerable record and deterministically selects the same number of build-success benign records within each official train/valid/test split.
-- CleanVul and SVEN keep only complete vulnerable/fixed pairs; if either side failed to build, the complete pair is excluded.
-- A mixed formal dataset cannot be trained without `--source-dataset`.
+data/function_dataset.errors.jsonl
+  current failures with dataset/split/label/stage
 
-The CLI prints `benchmark_dataset_view=...` before loading the model. Save this line with every experiment because it is the exact build-success cohort used by that run.
+data/function_dataset.audit.json
+  success coverage and CPG quality statistics
+```
 
-## 2. PrimeVul source-only baseline
+Before training, inspect `function_dataset.audit.json`. In particular check:
+
+- overall and per-dataset/split/label build success rates;
+- whether failure rate differs materially between vulnerable and benign samples;
+- `success_without_cdg` / `success_without_ddg`;
+- `success_without_potential_pattern`;
+- the potential-pattern count distribution.
+
+Main baseline-vs-method comparisons use exactly the same build-success cohort. PrimeVul is rebalanced after build by keeping every successful vulnerable and selecting the same number of successful benign functions per official split. CleanVul/SVEN keep only complete successful pairs.
+
+## 3. PrimeVul baseline
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli train \
@@ -34,8 +54,6 @@ CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli train \
   --device cuda
 ```
 
-Evaluate the frozen PrimeVul test split:
-
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli eval \
   --source-dataset primevul \
@@ -45,7 +63,7 @@ CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli eval \
   --device cuda
 ```
 
-## 3. CleanVul source-only baseline
+## 4. CleanVul baseline
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli train \
@@ -65,9 +83,7 @@ CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli eval \
   --device cuda
 ```
 
-## 4. SVEN external evaluation
-
-Use an already trained PrimeVul or CleanVul checkpoint. SVEN never selects an epoch or threshold; evaluation uses the decision threshold stored in the checkpoint.
+## 5. SVEN external evaluation
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli eval \
@@ -78,4 +94,30 @@ CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli eval \
   --device cuda
 ```
 
-Do not train with `--source-dataset sven`.
+SVEN is test-only. The checkpoint's validation-selected threshold is reused unchanged.
+
+## 6. Audit semantic fidelity before trusting the CPG mechanism
+
+After the full build, run the pair diagnostics:
+
+```bash
+python -m vulnmechanism.audit_semantics \
+  --dataset data/function_dataset.jsonl \
+  --source-dataset cleanvul \
+  --output results/cleanvul_semantic_audit.json
+
+python -m vulnmechanism.audit_semantics \
+  --dataset data/function_dataset.jsonl \
+  --source-dataset sven \
+  --output results/sven_semantic_audit.json
+```
+
+This reports, among other things:
+
+- vulnerable-side potential-pattern coverage;
+- fixed-side potential-pattern coverage;
+- percentage of complete pairs in which at least one vulnerable-side pattern disappears after the fix;
+- patterns that persist after the fix;
+- patterns newly introduced in the fixed version.
+
+These are diagnostics, not causal ground truth. A Joern-successful CPG can still be semantically incomplete or path-insensitive, and a real patch can change more than the vulnerability mechanism. Use these reports together with manual stratified review before claiming that a pattern represents the true root cause.
