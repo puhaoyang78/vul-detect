@@ -5,15 +5,21 @@ from vulnmechanism.benchmark_view import record_dataset, record_pair_id, record_
 
 class BenchmarkViewTests(unittest.TestCase):
     def test_multiple_sources_require_explicit_selection(self):
-        records = [
-            dict(sample_key='primevul:1', split='train', label=1),
+        records = []
+        for split in ('train', 'valid', 'test'):
+            records.extend([
+                dict(sample_key=f'primevul:{split}:v', split=split, label=1),
+                dict(sample_key=f'primevul:{split}:b', split=split, label=0),
+            ])
+        records.extend([
             dict(sample_key='cleanvul:4:1:before', split='train', label=1),
             dict(sample_key='cleanvul:4:1:after', split='train', label=0),
-        ]
+        ])
         with self.assertRaisesRegex(ValueError, 'multiple formal benchmark sources'):
             select_source_records(records, None)
         selected, summary = select_source_records(records, 'primevul')
-        self.assertEqual([r['sample_key'] for r in selected], ['primevul:1'])
+        self.assertEqual(len(selected), 6)
+        self.assertTrue(all(record_dataset(r) == 'primevul' for r in selected))
         self.assertEqual(summary['source_dataset'], 'primevul')
 
     def test_primevul_build_success_is_balanced_per_split(self):
