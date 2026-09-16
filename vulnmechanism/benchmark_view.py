@@ -105,6 +105,33 @@ def _complete_pairs(records: list[dict[str, object]], dataset: str) -> tuple[lis
     return filtered, dropped_records
 
 
+def _primevul_balance_key(record: dict[str, object]) -> tuple[str, str]:
+    key = str(record.get("sample_key") or "")
+    return hashlib.sha256(("build-success-benign-v1:" + key).encode()).hexdigest(), key
+
+
+def _balance_primevul(records: list[dict[str, object]]) -> tuple[list[dict[str, object]], int]:
+    selected: list[dict[str, object]] = []
+    dropped = 0
+    for split in ("train", "valid", "test"):
+        rows = [record for record in records if record_split(record) == split]
+        vulnerable = [record for record in rows if record.get("label") == 1]
+        benign = [record for record in rows if record.get("label") == 0]
+        if not vulnerable:
+            raise ValueError(f"PrimeVul {split} has no build-success vulnerable records")
+        if len(benign) < len(vulnerable):
+            raise ValueError(
+                f"PrimeVul {split} has fewer build-success benign than vulnerable records: "
+                f"{len(benign)} < {len(vulnerable)}"
+            )
+        kept_benign = sorted(benign, key=_primevul_balance_key)[: len(vulnerable)]
+        dropped += len(benign) - len(kept_benign)
+        selected.extend(vulnerable)
+        selected.extend(kept_benign)
+    selected.sort(key=lambda record: (("train", "valid", "test").index(record_split(record)), str(record["sample_key"])))
+    return selected, dropped
+
+
 def select_source_records(
     records: list[dict[str, object]],
     source_dataset: str | None,
@@ -134,21 +161,34 @@ def select_source_records(
             raise ValueError(f"no records found for source dataset {source_dataset!r}")
 
     dropped_incomplete_pair_records = 0
+    dropped_primevul_benign_records = 0
     if resolved_source in PAIRED_DATASETS:
         selected, dropped_incomplete_pair_records = _complete_pairs(selected, resolved_source)
         if not selected:
             raise ValueError(f"no complete {resolved_source} pairs remain after build filtering")
+    elif resolved_source == "primevul":
+        selected, dropped_primevul_benign_records = _balance_primevul(selected)
 
     split_counts = Counter(record_split(record) for record in selected)
     label_counts = Counter(int(record["label"]) for record in selected if record.get("label") in {0, 1})
+    split_label_counts = Counter(
+        (record_split(record), int(record["label"]))
+        for record in selected
+        if record.get("label") in {0, 1}
+    )
     summary: dict[str, object] = {
         "source_dataset": resolved_source,
         "input_records": len(records),
         "selected_records": len(selected),
         "dropped_incomplete_pair_records": dropped_incomplete_pair_records,
+        "dropped_primevul_benign_records": dropped_primevul_benign_records,
         "detected_sources": dict(sorted(detected.items())),
         "split_counts": dict(sorted(split_counts.items())),
         "label_counts": {str(key): value for key, value in sorted(label_counts.items())},
+        "split_label_counts": {
+            f"{split}/label_{label}": count
+            for (split, label), count in sorted(split_label_counts.items())
+        },
     }
     return selected, summary
 
