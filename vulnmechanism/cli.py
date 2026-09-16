@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from .benchmark_view import FORMAL_DATASETS, dataset_view
 from .dataset import build_function_dataset
 from .model import MODEL_VARIANTS, evaluate_model, train_model
 from .semantics import SEMANTIC_GROUPS, validate_semantic_groups
@@ -11,6 +12,43 @@ def _semantic_groups(value: str) -> tuple[str, ...]:
     if not value.strip():
         return ()
     return validate_semantic_groups(tuple(part.strip() for part in value.split(",")))
+
+
+def _train(args):
+    with dataset_view(args.dataset, args.source_dataset) as dataset:
+        return train_model(
+            dataset,
+            args.output or f"results/{args.variant}.pt",
+            variant=args.variant,
+            model_path=args.model,
+            source_max_length=args.source_max_length,
+            context_max_length=args.context_max_length,
+            batch_size=args.batch_size,
+            gradient_accumulation=args.gradient_accumulation,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            lora_r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            fusion_dim=args.fusion_dim,
+            fusion_heads=args.fusion_heads,
+            feature_loss_weight=args.feature_loss_weight,
+            excluded_groups=args.exclude_groups,
+            seed=args.seed,
+            device=args.device,
+        )
+
+
+def _evaluate(args):
+    with dataset_view(args.dataset, args.source_dataset) as dataset:
+        return evaluate_model(
+            dataset,
+            args.checkpoint,
+            split=args.split,
+            batch_size=args.batch_size,
+            device=args.device,
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +73,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = sub.add_parser("train")
     train.add_argument("--dataset", default="data/function_dataset.jsonl")
+    train.add_argument(
+        "--source-dataset",
+        choices=FORMAL_DATASETS,
+        help=(
+            "formal benchmark source to train on. Required when the built JSONL contains "
+            "multiple formal sources; use primevul or cleanvul for the main experiments"
+        ),
+    )
     train.add_argument("--variant", choices=MODEL_VARIANTS, default="full")
     train.add_argument("--output")
     train.add_argument("--model", default="/home/phy/models/Qwen2.5-Coder-7B-Instruct")
@@ -63,42 +109,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--device", default="auto")
-    train.set_defaults(func=lambda args: train_model(
-        args.dataset,
-        args.output or f"results/{args.variant}.pt",
-        variant=args.variant,
-        model_path=args.model,
-        source_max_length=args.source_max_length,
-        context_max_length=args.context_max_length,
-        batch_size=args.batch_size,
-        gradient_accumulation=args.gradient_accumulation,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        lora_r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        fusion_dim=args.fusion_dim,
-        fusion_heads=args.fusion_heads,
-        feature_loss_weight=args.feature_loss_weight,
-        excluded_groups=args.exclude_groups,
-        seed=args.seed,
-        device=args.device,
-    ))
+    train.set_defaults(func=_train)
 
     evaluate = sub.add_parser("eval")
     evaluate.add_argument("--dataset", default="data/function_dataset.jsonl")
     evaluate.add_argument("--checkpoint", required=True)
+    evaluate.add_argument(
+        "--source-dataset",
+        choices=FORMAL_DATASETS,
+        help="formal benchmark source to evaluate; e.g. primevul, cleanvul, or sven",
+    )
     evaluate.add_argument("--split", choices=("train", "valid", "test", "external_test"), default="test")
     evaluate.add_argument("--batch-size", type=int, default=1)
     evaluate.add_argument("--device", default="auto")
-    evaluate.set_defaults(func=lambda args: evaluate_model(
-        args.dataset,
-        args.checkpoint,
-        split=args.split,
-        batch_size=args.batch_size,
-        device=args.device,
-    ))
+    evaluate.set_defaults(func=_evaluate)
     return parser
 
 
