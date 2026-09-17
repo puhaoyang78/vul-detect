@@ -1,6 +1,6 @@
 # CPG-Guided Vulnerability-Mechanism Learning
 
-本仓库研究 **C/C++ 函数级漏洞二分类**。核心目标不是把整张 CPG 直接作为“漏洞知识”交给模型，而是从 Joern CPG 中恢复与漏洞形成过程相关的程序关系，再与源码表示融合，使 Code LLM 更关注漏洞机理而不是词法或命名等虚假相关特征。
+本仓库研究 **C/C++ 函数级漏洞二分类**。核心目标不是把整张 CPG 直接作为“漏洞知识”交给模型，而是从 Joern CPG 中恢复与漏洞形成过程相关的程序关系，再与源码表示融合，使 Code LLM 更关注漏洞机理而不是词法、命名或单纯的安全敏感操作等虚假相关特征。
 
 正式实验使用：
 
@@ -40,7 +40,7 @@ python -m vulnmechanism.cli build \
   --batch-size 8
 ```
 
-当前数据集 schema 为 **9**。旧 schema 不会被 resume。
+当前数据集 schema 为 **9**。旧 schema 不会被 resume。改变机理提取规则后的诊断实验应删除旧输出并完整重建，不能复用旧记录。
 
 输出：
 
@@ -73,13 +73,22 @@ data/function_dataset.audit.json
 
 ## 3. 从 CPG 到漏洞机理
 
-`semantics.py` 只保留三层信息：
+`semantics.py` 内部保存三层信息：
 
 ```text
 SECURITY_OPERATION
 MECHANISM_RELATION
 MECHANISM_CANDIDATE
 ```
+
+但模型上下文只渲染：
+
+```text
+MECHANISM_CANDIDATE
++ 与候选直接关联的 MECHANISM_RELATION
+```
+
+`SECURITY_OPERATION` 仅用于审计，不进入 `mechanism_concat` 或 `mechanism_fusion`，避免模型把“pointer/array/memory 操作多”当成漏洞捷径。
 
 ### 3.1 Security operation
 
@@ -90,18 +99,21 @@ MECHANISM_CANDIDATE
 - pointer dereference；
 - allocation/deallocation。
 
-这些事实 **不是漏洞标签**。
+这些事实 **不是漏洞标签，也不是模型输入本身**。
 
 ### 3.2 Mechanism relation
 
-CPG 用来验证操作之间的关系，例如：
+CPG 用来验证与漏洞形成有关的关系，例如：
 
-- 参数/派生值经 DDG 到达 array index 或 write extent；
-- 对象存在静态/动态 capacity；
-- 参数经 DDG 到达 pointer dereference；
+- 参数或其派生值经 DDG 到达 array index 或 write extent；
+- 内存对象存在静态/动态 capacity；
 - arithmetic expression 经 DDG 到达 allocation/memory sink；
+- `malloc/calloc/realloc/kmalloc/kzalloc/vmalloc` 等可返回空的分配结果经 DDG 到达后续解引用；
+- 显式 `p = NULL/nullptr/0` 经 DDG 到达后续解引用；
 - free 经 CFG 到达后续 use/free，且路径上未观察到同名指针重定义；
 - 控制条件通过直接 CDG 或 AST 祖先继承与具体操作关联。
+
+**普通 pointer parameter 经 DDG 到达 dereference 只表示数据关系，不足以构成 NULL_DEREFERENCE_FLOW。** 参数契约可能保证 non-null，因此必须有更明确的 nullable provenance 才能升级为 null-dereference mechanism candidate。
 
 控制条件不编码 true/false branch polarity，因此只能表述为 `present / not_observed / unknown_no_cdg`，不能宣称为已证明安全的 guard。
 
@@ -118,7 +130,13 @@ SIZE_ARITHMETIC_FLOW
 
 候选必须有关系证据。普通 `a[i]`、`p->x` 本身不会升级为漏洞机理候选。
 
+NULL 候选目前要求明确的 nullable provenance，例如可返回空的分配结果或显式空值赋值；普通函数参数不作为 nullable 证据。链式 `tree->cdr->car->x` 使用完整 base expression，不把 `cdr`、`car` 这类字段名误当成独立指针变量。
+
+对于 `snprintf/vsnprintf/strlcpy/strlcat`，size 参数本身是目标写入边界；只有存在独立 destination capacity 时才形成 bounds candidate，避免把安全 API 的 size 参数误当成过量写入证据。
+
 同一对象/来源/机理的重复访问会聚合为一条候选并记录 `occurrences`，不再逐 CPG 节点生成数百条“缺少检查”pattern。
+
+候选和支撑关系的模型文本不复制原始 `examples=...` 源码片段，避免 semantic branch 通过重复源码而非程序关系获得增益。
 
 这些仍是 **CPG-derived mechanism candidates**，不是 ground-truth root cause。正式训练前应通过真实 vulnerable/fixed pair、人工抽查和小型 counterfactual tests 验证 fidelity。
 
@@ -142,7 +160,7 @@ python -m vulnmechanism.audit_semantics \
   --output results/sven_mechanism_audit.json
 ```
 
-报告比较的是具体候选关系及其状态，不再只比较粗粒度 pattern kind。
+报告比较的是具体候选关系及其状态，不再只比较粗粒度 pattern kind。修复后 candidate removal/state change 可以支持相关性，但不能单独当作因果 ground truth；反之，candidate persistence 也不能自动解释为错误。
 
 ## 5. Fair comparison cohort
 
@@ -161,7 +179,7 @@ python -m vulnmechanism.audit_semantics \
 | --- | --- |
 | `baseline` | source only |
 | `raw_cpg` | source + compact AST/CFG/CDG/DDG relations |
-| `mechanism_concat` | source + CPG-derived mechanism context |
+| `mechanism_concat` | source + CPG-derived candidate/supporting-relation context |
 | `mechanism_fusion` | source/mechanism 分开编码 + cross-attention |
 
 旧的 generic `feature supervision` 已删除。原因是当前没有独立的 ground-truth mechanism labels，不能用规则自身产生的普通程序特征再反向监督 Code LLM。
