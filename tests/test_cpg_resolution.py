@@ -39,7 +39,7 @@ class TargetResolutionTests(unittest.TestCase):
         self.assertTrue(g.quality['hint_mismatch'])
         self.assertEqual(g.quality['resolution_mode'], 'standalone_file_unique_method')
 
-    def test_wrong_file_and_nested_method_are_not_targets(self):
+    def test_wrong_file_and_ambiguous_nested_method_require_hint(self):
         n,e=fixture()
         with self.assertRaises(TargetMethodError):
             resolve_target_graph(n,e,filename='other.cpp',source=n['0']['CONTENT'])
@@ -48,8 +48,11 @@ class TargetResolutionTests(unittest.TestCase):
                       LINE_NUMBER=1, LINE_NUMBER_END=1, IS_EXTERNAL=False, CODE='inner')
         n['6'] = dict(kind='BLOCK', CODE='{ return; }')
         e += [('AST','1','5'),('AST','5','6')]
-        g=resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
+        with self.assertRaises(TargetMethodError):
+            resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
+        g=resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'],function_hint='f')
         self.assertEqual(g.function,'f')
+        self.assertIn('name_hint', g.quality['resolution_mode'])
 
     def test_external_global_and_ambiguous_top_level_methods_are_rejected(self):
         for field,value in [('IS_EXTERNAL',True),('NAME','<global>'),('NAME','if')]:
