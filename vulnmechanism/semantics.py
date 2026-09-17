@@ -504,6 +504,70 @@ def _ddg_upstream_from_ids(
     return tuple(result)
 
 
+def _relevant_ddg_upstream(
+    graph: FunctionGraph,
+    root_ids: tuple[str, ...] | list[str],
+    seed_names: set[str],
+    *,
+    max_depth: int = 6,
+    max_nodes: int = 96,
+) -> tuple[GraphNode, ...]:
+    """Follow only DDG definitions relevant to the current expression names.
+
+    Joern may connect several arguments/operands through one local dataflow
+    region. Starting from an expression node is therefore not sufficient by
+    itself: unrelated parameters can still appear upstream. We keep an active
+    identifier set and only traverse a definition when its code mentions an
+    active identifier. Assignment/arithmetic definitions may introduce new RHS
+    identifiers, allowing derived flows such as lenDelim <- delim.size() while
+    preventing data/header from contaminating data_size-header_size.
+    """
+    if not seed_names:
+        return ()
+    reverse = _ddg_reverse(graph)
+    queue: deque[tuple[str, frozenset[str], int]] = deque(
+        (root_id, frozenset(seed_names), 0) for root_id in root_ids
+    )
+    seen: set[tuple[str, frozenset[str]]] = {
+        (root_id, frozenset(seed_names)) for root_id in root_ids
+    }
+    result: list[GraphNode] = []
+    result_ids: set[str] = set()
+
+    while queue and len(result) < max_nodes:
+        current, active_frozen, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        active = set(active_frozen)
+        for source_id in reverse.get(current, ()):
+            source = graph.nodes.get(source_id)
+            if source is None:
+                continue
+            source_names = _runtime_identifiers(source.code)
+            if not (source_names & active):
+                continue
+
+            if source.node_id not in result_ids:
+                result_ids.add(source.node_id)
+                result.append(source)
+
+            next_active = set(active)
+            lower = source.label.lower()
+            if (
+                source.label.upper() in {"IDENTIFIER", "LOCAL"}
+                or "assignment" in lower
+                or _is_arithmetic_node(source)
+            ):
+                next_active.update(source_names)
+
+            state = (source_id, frozenset(next_active))
+            if state not in seen:
+                seen.add(state)
+                queue.append((source_id, state[1], depth + 1))
+
+    return tuple(result)
+
+
 def _parameter_names(graph: FunctionGraph) -> dict[str, str]:
     result: dict[str, str] = {}
     for node in graph.nodes.values():
@@ -528,12 +592,17 @@ def _parameter_sources(
     roots = _expression_nodes(graph, operation_node_id, expression)
     if not roots:
         return tuple(sorted(sources))
-    upstream = _ddg_upstream_from_ids(graph, [node.node_id for node in roots])
+    upstream = _relevant_ddg_upstream(
+        graph,
+        [node.node_id for node in roots],
+        runtime_names,
+    )
     for node in upstream:
-        if node.label.upper() == "PARAM":
-            name = _parameter_name(node.code)
-            if name:
-                sources.add(name)
+        if node.label.upper() != "PARAM":
+            continue
+        name = _parameter_name(node.code)
+        if name:
+            sources.add(name)
     return tuple(sorted(sources))
 
 
@@ -547,7 +616,8 @@ def _arithmetic_sources(
     operation_node_id: str,
     expression: str | None,
 ) -> tuple[GraphNode, ...]:
-    if not _runtime_identifiers(expression):
+    runtime_names = _runtime_identifiers(expression)
+    if not runtime_names:
         return ()
     roots = _expression_nodes(graph, operation_node_id, expression)
     if not roots:
@@ -556,7 +626,11 @@ def _arithmetic_sources(
     for root in roots:
         nodes.append(root)
         nodes.extend(_ast_descendants(graph, root.node_id, max_depth=5))
-    nodes.extend(_ddg_upstream_from_ids(graph, [root.node_id for root in roots]))
+    nodes.extend(_relevant_ddg_upstream(
+        graph,
+        [root.node_id for root in roots],
+        runtime_names,
+    ))
     result: list[GraphNode] = []
     seen: set[str] = set()
     for node in nodes:
@@ -766,7 +840,11 @@ def _nullable_origins(
     roots = _expression_nodes(graph, sink_id, pointer)
     if not roots:
         return ()
-    upstream = _ddg_upstream_from_ids(graph, [node.node_id for node in roots])
+    upstream = _relevant_ddg_upstream(
+        graph,
+        [node.node_id for node in roots],
+        {pointer},
+    )
     upstream_ids = {node.node_id for node in upstream}
     origins: set[str] = set()
     for operation in operations:
