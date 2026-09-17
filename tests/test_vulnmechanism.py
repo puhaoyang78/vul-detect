@@ -1,8 +1,6 @@
-import tempfile
-from pathlib import Path
 import unittest
 
-from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode, _matching_dot, parse_dot_graph
+from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode
 from vulnmechanism.dataset import extract_cpg_relations, render_cpg_relations
 from vulnmechanism.semantics import (
     VULNERABILITY_FEATURES,
@@ -36,46 +34,6 @@ class SyntaxTests(unittest.TestCase):
 
 
 class CPGTests(unittest.TestCase):
-    def test_matching_source_method_and_export_index(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            ast = root / "ast"
-            ast.mkdir()
-            (ast / "0-ast.dot").write_text(
-                'digraph "foo" {\n"1" [label = <METHOD<BR/>foo> ]\n"2" [label = <BLOCK<BR/>&lt;empty&gt;> ]\n"1" -> "2"\n}\n'
-            )
-            definition = ast / "3-ast.dot"
-            definition.write_text(
-                'digraph "foo" {\n"3" [label = <METHOD, 1<BR/>foo> ]\n"4" [label = <BLOCK, 1<BR/>{}> ]\n"3" -> "4"\n}\n'
-            )
-            self.assertEqual(_matching_dot(ast, "foo"), definition)
-            cdg = root / "cdg"
-            cdg.mkdir()
-            for index in (0, 3):
-                (cdg / f"{index}-cdg.dot").write_text('digraph "foo" {\n}\n')
-            self.assertEqual(_matching_dot(cdg, "foo", "3"), cdg / "3-cdg.dot")
-
-    def test_symbolic_operator_names(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "0-ast.dot"
-            path.write_text('digraph "[]" {\n"1" [label = <METHOD, 1<BR/>[]> ]\n}\n')
-            self.assertEqual(_matching_dot(Path(directory), "operator[]"), path)
-
-    def test_dot_parser_preserves_operator_text(self):
-        graph = parse_dot_graph(
-            '''digraph "foo" {
-"1" [label = <METHOD, 1<BR/>foo> ]
-"2" [label = <&lt;operator&gt;.lessThan, 2<BR/>n &lt; cap> ]
-"3" [label = <memcpy, 3<BR/>memcpy(dst, src, n)> ]
-"1" -> "2"
-"2" -> "3"
-}''',
-            "ast",
-        )
-        self.assertEqual(graph.nodes["2"].label, "<operator>.lessThan")
-        self.assertEqual(graph.nodes["2"].code, "n < cap")
-        self.assertEqual(graph.nodes["3"].code, "memcpy(dst, src, n)")
-
     def test_relation_rendering_preserves_graph_kinds(self):
         nodes = {str(i): GraphNode(str(i), "IDENTIFIER", f"value{i}") for i in range(164)}
         edges = tuple(GraphEdge("AST", "0", str(i)) for i in range(1, 161))
@@ -86,12 +44,6 @@ class CPGTests(unittest.TestCase):
         self.assertEqual({row.split("|")[0] for row in rows}, {"AST", "CFG", "CDG", "DDG"})
         self.assertEqual(len(extract_cpg_relations(graph)), len(edges))
 
-    def test_missing_source_method_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "0-ast.dot"
-            path.write_text('digraph "other" {\n"1" [label = <METHOD, 1<BR/>other> ]\n}\n')
-            with self.assertRaises(CPGError):
-                _matching_dot(Path(directory), "foo")
 
 
 class SemanticTests(unittest.TestCase):

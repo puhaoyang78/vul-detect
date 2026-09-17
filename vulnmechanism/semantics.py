@@ -183,6 +183,9 @@ def render_semantic_items(
         category = str(raw.get("category") or "")
         kind = str(raw.get("kind") or "")
         detail = str(raw.get("detail") or "")
+        if kind == "CONTROL_CONDITION":
+            # Native Joern IDs are run-local evidence, not a model feature.
+            detail = re.sub(r"^node=\S+\s+", "", detail)
         group = CATEGORY_TO_GROUP.get(category)
         if not category or not kind or group is None or group in excluded:
             continue
@@ -205,7 +208,7 @@ def render_semantic_items(
         if not rows:
             continue
         sections.append(f"[{category}]")
-        sections.extend(_round_robin_by_kind(rows, max_per_category))
+        sections.extend(_round_robin_by_kind(sorted(set(rows)), max_per_category))
     return "\n".join(sections)
 
 
@@ -317,6 +320,11 @@ def _is_arithmetic_node(node: GraphNode) -> bool:
 
 
 def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
+    # Container CODE contains descendants; treating it as an operation invents
+    # duplicate memory accesses and attaches them to the wrong CFG/DDG node.
+    if node.label in {"METHOD", "METHOD_RETURN", "BLOCK", "LOCAL", "PARAM",
+                      "IDENTIFIER", "FIELD_IDENTIFIER", "LITERAL", "TYPE_REF", "UNKNOWN", "CONTROL_STRUCTURE"}:
+        return ()
     code = node.code
     operations: list[_Operation] = []
     name, args = _call_name_and_args(code)

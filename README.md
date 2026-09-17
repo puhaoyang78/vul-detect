@@ -56,17 +56,18 @@ python -m vulnmechanism.cli build \
   --output data/function_dataset.jsonl \
   --joern-dir /home/phy/joern \
   --java-home /home/phy/jdk21 \
-  --timeout 300
+  --timeout 300 \
+  --batch-size 8
 ```
 
 输出：
 
 ```text
 data/function_dataset.jsonl
-  仅包含 build 成功样本；dataset schema = 7
+  仅包含 build 成功样本；dataset schema = 8
 
 data/function_dataset.errors.jsonl
-  当前仍失败的样本及失败阶段
+  当前仍失败的样本及失败阶段；逐条 flush/fsync，中断后仍可审计
 
 data/function_dataset.audit.json
   build 成功率、按 dataset/split/label 的覆盖率、失败类型、CPG 结构质量、pattern 覆盖
@@ -74,7 +75,7 @@ data/function_dataset.audit.json
 
 ### C/C++ resolution
 
-PrimeVul 中无法从上游元数据确定 C 或 C++ 的函数保留 `language=c_cpp`。build 优先使用明确扩展名；否则分别用 C/C++ parser 解析，并把确定性的解析选择记录为 `resolved_language`。这只是构建 CPG 所需的 parser 选择，不被宣称为数据集的真实语言标签。
+PrimeVul 中无法从上游元数据确定 C 或 C++ 的函数保留 `language=c_cpp`。build 优先使用明确扩展名；否则分别用 C/C++ parser 解析，并把确定性的解析选择记录为 `resolved_language`。这只是构建 CPG 所需的 parser 选择，不被宣称为数据集的真实语言标签。Tree-sitter 的函数名只作为诊断提示，解析失败或名称不一致不会阻止 Joern。
 
 ## 3. Joern 成功与实验公平性
 
@@ -97,8 +98,15 @@ CLI 在每次 train/eval 前输出 `benchmark_dataset_view=...`，该行就是�
 Joern build 成功只意味着：
 
 1. 能定位到目标函数；
-2. AST/CFG/CDG/DDG export 与同一 method index 对齐；
-3. AST 与 CFG 至少包含结构关系。
+2. 通过 Joern 文件内容、物理行列范围和原始函数体核验目标 METHOD，排除 external stub、`<global>`、嵌套函数和歧义匹配；
+3. 从该 METHOD 的 AST 子树提取 AST/CFG/CDG/REACHING_DEF，关系端点全部限制在目标内；
+4. AST/CFG 非空、函数体存在、没有 UNKNOWN AST 节点，非容器节点的截断代码必须能核验恢复。
+
+语义 JSON 保留节点 ID 供审计，但模型文本会移除运行时 ID，并按固定顺序组织同类条目；改变批次不应改变模型的语义输入。
+
+每批只启动一次 parse 和一次 Neo4j CSV export（Joern 内置流式格式，不需要 Neo4j 服务），默认 8 条，最多 32 条；批次不跨 dataset/split。没有超时后换解析器、伪造声明或模糊名称兜底。批失败明确记录，不自动重试。容器 BLOCK/CONTROL_STRUCTURE 的 1000 字符截断单独计数，不拿容器全文重复提取内存操作。CDG/DDG 可合法为空，短函数和零语义项不直接判失败。schema 8 不复用旧 schema 7 的成功记录。
+
+100 条有原始完整文件的固定样本可通过 `python -m vulnmechanism.audit_cpg --full-file` 重跑上下文对照；它要求原始函数在指定文件/行处精确出现，且只导出目标子图。对照输入与输出位于 `results/cpg_debug/`，`python -m vulnmechanism.audit_cpg` 汇总既有旧/新结果。此实验没有把完整文件模式自动应用到正式 manifest。
 
 这 **不等于** 静态规则恢复出的 `POTENTIAL_PATTERN` 就是真实漏洞根因。
 
@@ -110,7 +118,7 @@ Joern build 成功只意味着：
 - 没有任何 `POTENTIAL_PATTERN` 的成功样本数量；
 - pattern 数量分布。
 
-当前 DOT 表示不保留控制分支 true/false polarity，因此 `UPPER_BOUND_RELATED_CONDITION`、`NONNULL_RELATED_CONDITION` 只表示“存在相应形式的控制条件”，不能表述为已证明安全的 guard。
+当前模型使用的关系表示不编码控制分支 true/false polarity，因此 `UPPER_BOUND_RELATED_CONDITION`、`NONNULL_RELATED_CONDITION` 只表示“存在相应形式的控制条件”，不能表述为已证明安全的 guard。
 
 因此，CPG-derived semantics 是 **静态候选机制**，而不是 ground-truth vulnerability mechanism。正式方法实验前应基于 CleanVul/SVEN pair 和人工抽样进一步验证 semantic fidelity。
 

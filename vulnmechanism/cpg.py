@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import csv
+import sys
+import json
+from collections import Counter, defaultdict
 import os
 import re
 import tempfile
-from html import unescape
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,67 +36,7 @@ class FunctionGraph:
     function: str
     nodes: dict[str, GraphNode]
     edges: tuple[GraphEdge, ...]
-
-
-_NODE = re.compile(r'^\s*"?(\d+)"?\s*\[label\s*=\s*(.+?)\]\s*;?\s*$')
-_EDGE = re.compile(r'^\s*"?(\d+)"?\s*->\s*"?(\d+)"?')
-_GRAPH = re.compile(r'^\s*digraph\s+"?([^"{]+)"?')
-
-
-def _clean_dot_label(raw: str) -> str:
-    value = raw.strip()
-    if value.startswith('<') and value.endswith('>'):
-        parts = re.split(r'<BR\s*/?>', value[1:-1], maxsplit=1, flags=re.I)
-        kind = unescape(parts[0].split(',', 1)[0].strip())
-        code = parts[1] if len(parts) == 2 else kind
-        return '(' + kind + ',' + unescape(code) + ')'
-    if value.startswith('"') and value.endswith('"'):
-        value = value[1:-1]
-    value = value.replace('\\"', '"').replace('\\n', ' ')
-    return ' '.join(value.split())
-
-
-def _node_parts(label: str) -> tuple[str, str]:
-    value = label[1:-1] if label.startswith('(') and label.endswith(')') else label
-    parts = [part.strip() for part in value.split(',', 1)]
-    kind = parts[0] if parts else ''
-    code = parts[-1] if len(parts) >= 2 else kind
-    return kind, code
-
-
-def parse_dot_graph(text: str, edge_kind: str, function: str | None = None) -> FunctionGraph:
-    graph_name = function or ''
-    nodes: dict[str, GraphNode] = {}
-    edges: list[GraphEdge] = []
-    for line in text.splitlines():
-        if not graph_name:
-            match = _GRAPH.match(line)
-            if match:
-                graph_name = unescape(match.group(1).strip())
-        edge = _EDGE.match(line)
-        if edge:
-            edges.append(GraphEdge(edge_kind.upper(), edge.group(1), edge.group(2)))
-            continue
-        node = _NODE.match(line)
-        if node:
-            label = _clean_dot_label(node.group(2))
-            kind, code = _node_parts(label)
-            nodes[node.group(1)] = GraphNode(node.group(1), kind, code)
-    return FunctionGraph(graph_name, nodes, tuple(edges))
-
-
-def merge_graphs(function: str, graphs: list[FunctionGraph]) -> FunctionGraph:
-    nodes: dict[str, GraphNode] = {}
-    edges: list[GraphEdge] = []
-    seen: set[tuple[str, str, str]] = set()
-    for graph in graphs:
-        nodes.update(graph.nodes)
-        for edge in graph.edges:
-            key = (edge.kind, edge.source, edge.target)
-            if key not in seen:
-                seen.add(key)
-                edges.append(edge)
-    return FunctionGraph(function, nodes, tuple(edges))
+    quality: dict | None = None
 
 
 def _find_executable(root: Path, names: tuple[str, ...]) -> Path:
@@ -116,96 +59,276 @@ def _environment(java_home: str | Path) -> dict[str, str]:
     return env
 
 
-def _matching_dot(directory: Path, function: str, method_index: str | None = None) -> Path:
-    """Select a source-defined method, then keep its export index across layers."""
-    # Joern omits "operator" for overloads and conversions ([], bool, ...).
-    operator = re.fullmatch(r'operator\s+(.+)|operator\s*([+\-*/%<>=!&|^~\[\](),]+)', function)
-    exported_name = (operator.group(1) or operator.group(2)) if operator else function
-    matches: list[Path] = []
-    available: list[str] = []
-    for path in sorted(directory.rglob('*.dot')):
-        try:
-            contents = path.read_text(errors='replace')
-            first = contents.splitlines()[0]
-        except (OSError, IndexError):
+class TargetMethodError(CPGError):
+    pass
+
+
+class CPGQualityError(CPGError):
+    pass
+
+
+def read_neo4jcsv(directory: Path):
+    """Read Joern's streaming export, preserving typed source coordinates."""
+    csv.field_size_limit(sys.maxsize)
+    nodes, edges = {}, []
+    for header_path in sorted(directory.glob('nodes_*_header.csv')):
+        with header_path.open(encoding='utf-8', newline='') as handle:
+            columns = next(csv.reader(handle))
+        if columns[:2] != [':ID', ':LABEL']:
+            raise CPGError(f'unexpected Joern node CSV header: {header_path.name}')
+        with header_path.with_name(header_path.name.replace('_header.csv', '_data.csv')).open(encoding='utf-8', newline='') as handle:
+            for values in csv.reader(handle):
+                if len(values) != len(columns):
+                    raise CPGError(f'malformed node row in {header_path.name}')
+                node = dict(kind=values[1])
+                for field, value in zip(columns[2:], values[2:]):
+                    if not value:
+                        continue
+                    name, _, kind = field.partition(':')
+                    if kind in {'int', 'long'} or name in {'LINE_NUMBER', 'LINE_NUMBER_END', 'COLUMN_NUMBER', 'COLUMN_NUMBER_END', 'OFFSET', 'OFFSET_END', 'ORDER'}:
+                        node[name] = int(value)
+                    elif kind == 'boolean' or name == 'IS_EXTERNAL':
+                        if value not in {'true', 'false'}:
+                            raise CPGError(f'invalid boolean {value!r} in {header_path.name}')
+                        node[name] = value == 'true'
+                    else:
+                        # Flatgraph 0.1.27 escapeSpecialCharacters doubles every
+                        # backslash before CSV quoting; csv.reader undoes only
+                        # the quoting. Undo the exporter escape exactly once.
+                        node[name] = value.replace('\\\\', '\\')
+                nodes[values[0]] = node
+    for kind in ('AST', 'CFG', 'CDG', 'REACHING_DEF'):
+        header_path = directory / f'edges_{kind}_header.csv'
+        if not header_path.exists():
             continue
-        match = _GRAPH.match(first)
-        if match:
-            name = unescape(match.group(1).strip())
-            available.append(name)
-            if name == exported_name:
-                if method_index is not None:
-                    if path.name == f'{method_index}-{directory.name}.dot':
-                        matches.append(path)
-                else:
-                    # External call stubs also have METHOD/BLOCK nodes, but
-                    # only source definitions carry a METHOD source line.
-                    for line in contents.splitlines():
-                        node = _NODE.match(line)
-                        if node and re.match(r'<METHOD,\s*\d+<BR\s*/?>', node.group(2), re.I):
-                            matches.append(path)
-                            break
-    if len(matches) != 1:
-        raise CPGError(f'expected one {directory.name} graph for {function}, '
-                       f'found {len(matches)}; exported methods: {available}')
-    return matches[0]
+        with header_path.open(encoding='utf-8', newline='') as handle:
+            columns = next(csv.reader(handle))
+        if columns[:3] != [':START_ID', ':END_ID', ':TYPE']:
+            raise CPGError(f'unexpected Joern edge CSV header: {header_path.name}')
+        with directory.joinpath(f'edges_{kind}_data.csv').open(encoding='utf-8', newline='') as handle:
+            for row in csv.reader(handle):
+                if len(row) != len(columns) or row[2] != kind:
+                    raise CPGError(f'malformed edge row in {header_path.name}')
+                edges.append((kind, row[0], row[1]))
+    if not nodes:
+        raise CPGError('Joern export contains no nodes')
+    return nodes, edges
 
 
-def extract_function_cpg(
-    source: str,
-    function: str,
-    *,
-    language: str = 'c',
-    joern_dir: str | Path = '/home/phy/joern',
-    java_home: str | Path = '/home/phy/jdk21',
-    timeout: int = 300,
-) -> FunctionGraph:
-    """Build AST/CFG/CDG/DDG from one standalone C/C++ function snippet."""
-    if language not in {'c', 'cpp'}:
-        raise ValueError('language must be c or cpp')
+def resolve_target_graph(nodes, edges, *, filename: str, source: str,
+                         start_line: int = 1, function_hint: str = '') -> FunctionGraph:
+    from .syntax import source_tokens
+    tokens = source_tokens(source)
+    if not tokens or '{' not in tokens or '}' not in tokens:
+        raise TargetMethodError('source has no complete function body')
+    end_line = start_line + len(source.rstrip().splitlines()) - 1
+    contents = next((str(n['CONTENT']) for n in nodes.values()
+                     if n['kind'] == 'FILE' and n.get('NAME') == filename), '')
+    encoded = contents.encode('utf-16-le')
+
+    line_starts = [0]
+    for line in contents.splitlines(keepends=True):
+        line_starts.append(line_starts[-1] + len(line.encode('utf-16-le')) // 2)
+
+    def physical_span(node):
+        # CDT OFFSET_END uses preprocessed signature lengths for macro-rich
+        # functions. Physical line/column endpoints remain source coordinates.
+        line, last = node.get('LINE_NUMBER'), node.get('LINE_NUMBER_END')
+        column, end_column = node.get('COLUMN_NUMBER'), node.get('COLUMN_NUMBER_END')
+        if all(isinstance(v, int) for v in (line, last, column, end_column)):
+            if 1 <= line <= last < len(line_starts) and column >= 1 and end_column >= 1:
+                start = line_starts[line - 1] + column - 1
+                # End columns can also be based on the preprocessed length.
+                # When outside the reported physical line, use that line's end;
+                # exact whole-definition token matching below still must pass.
+                end = min(line_starts[last - 1] + end_column, line_starts[last])
+                if 0 <= start < end <= len(encoded) // 2:
+                    return start, end
+        if node['kind'] == 'METHOD':
+            return None
+        start, end = node.get('OFFSET'), node.get('OFFSET_END')
+        if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(encoded) // 2:
+            return start, end
+        return None
+
+    def physical_code(node):
+        span = physical_span(node)
+        if span is None:
+            return None
+        return encoded[2 * span[0]:2 * span[1]].decode('utf-16-le')
+
+    occurrences = [m.start() for m in re.finditer(re.escape(source), contents)]
+    occurrences = [p for p in occurrences if contents[:p].count('\n') + 1 == start_line]
+    if len(occurrences) != 1:
+        raise TargetMethodError('target source occurrence is not unique at requested line')
+    target_start = len(contents[:occurrences[0]].encode('utf-16-le')) // 2
+    target_end = target_start + len(source.rstrip().encode('utf-16-le')) // 2
+    candidates = []
+    available = []
+    for key, node in nodes.items():
+        if node['kind'] != 'METHOD' or node.get('IS_EXTERNAL') or node.get('NAME') in {'<global>', 'if', 'for', 'while', 'switch', 'catch', 'sizeof', 'do'}:
+            continue
+        if Path(str(node.get('FILENAME', ''))).as_posix() != filename:
+            continue
+        available.append((node.get('NAME'), node.get('LINE_NUMBER'), node.get('LINE_NUMBER_END')))
+        code = physical_code(node)
+        first, last = node.get('LINE_NUMBER'), node.get('LINE_NUMBER_END')
+        # A full-file definition may include a return type/modifier omitted by
+        # the upstream function extractor. Admit only a declaration prefix, with
+        # the exact requested body and endpoint; never a containing class/method.
+        span = physical_span(node)
+        if span is None or code is None:
+            continue
+        offset, stop = span
+        if stop < target_end:
+            continue
+        if offset > target_start and source_tokens(encoded[2 * target_start:2 * offset].decode('utf-16-le')):
+            continue
+        prefix = encoded[2 * offset:2 * target_start].decode('utf-16-le') if offset <= target_start else ''
+        suffix = encoded[2 * target_end:2 * stop].decode('utf-16-le') if stop >= target_end else ''
+        if set(source_tokens(prefix)).intersection({'{', '}', ';', '=', '#'}) or source_tokens(suffix):
+            continue
+        if source_tokens(code) != source_tokens(prefix) + tokens:
+            continue
+        if isinstance(first, int) and isinstance(last, int) and first <= end_line and last <= end_line:
+            candidates.append((key, node))
+    if len(candidates) != 1:
+        raise TargetMethodError(f'expected one source-aligned target method; found {len(candidates)}; '
+                                f'hint={function_hint!r}; methods={available[:30]}')
+    method_id, method = candidates[0]
+    ast = defaultdict(list)
+    for kind, a, b in edges:
+        if kind == 'AST':
+            ast[a].append(b)
+    owned, pending = set(), [method_id]
+    while pending:
+        key = pending.pop()
+        if key in owned:
+            continue
+        # Nested lambdas/methods belong to separate functions, not this target.
+        if key != method_id and nodes[key]['kind'] == 'METHOD':
+            continue
+        owned.add(key)
+        pending.extend(ast[key])
+    graph_nodes = {}
+    for key in sorted(owned, key=int):
+        n = nodes[key]
+        label = n.get('NAME', 'CALL') if n['kind'] == 'CALL' else {'METHOD_PARAMETER_IN': 'PARAM'}.get(n['kind'], n['kind'])
+        code = str(n.get('CODE', ''))
+        if n['kind'] not in {'METHOD', 'BLOCK', 'CONTROL_STRUCTURE'} and len(code) == 1000 and code.endswith('...'):
+            restored = physical_code(n)
+            if restored is None or not restored.startswith(code[:-3]):
+                raise CPGQualityError(f"truncated {n['kind']} node code without verified source coordinates")
+            code = restored
+        if n['kind'] == 'METHOD':
+            code = str(n['NAME'])
+        graph_nodes[key] = GraphNode(key, str(label), code)
+    kinds = {'AST': 'AST', 'CFG': 'CFG', 'CDG': 'CDG', 'REACHING_DEF': 'DDG'}
+    graph_edges = tuple(GraphEdge(kinds[k], a, b) for k, a, b in edges
+                        if k in kinds and a in owned and b in owned)
+    counts = Counter(e.kind for e in graph_edges)
+    unknown = [k for k in owned if nodes[k]['kind'] == 'UNKNOWN']
+    executable = [k for k in owned if nodes[k]['kind'] in {'CALL', 'RETURN', 'CONTROL_STRUCTURE', 'JUMP_TARGET'}]
+    body_node = next((nodes[k] for k in ast[method_id] if nodes[k]['kind'] == 'BLOCK'), {})
+    body_tokens = source_tokens(str(body_node.get('CODE', '')))
+    body_line, body_column = body_node.get('LINE_NUMBER'), body_node.get('COLUMN_NUMBER')
+    expected_body = ()
+    if isinstance(body_line, int) and isinstance(body_column, int) and 1 <= body_line < len(line_starts):
+        body_start = line_starts[body_line - 1] + body_column - 1
+        expected_body = source_tokens(encoded[2 * body_start:2 * physical_span(method)[1]].decode('utf-16-le'))
+    reasons = []
+    if not counts['AST'] or not counts['CFG']:
+        reasons.append('missing_ast_or_cfg')
+    if unknown:
+        reasons.append('unknown_ast_nodes')
+    header = source.split('{', 1)[0]
+    native_name = str(method['NAME'])
+    if re.fullmatch(r'[A-Z][A-Z_0-9]*', native_name):
+        sole_macro = re.match(r'\s*' + re.escape(native_name) + r'\s*\(', header)
+        name_macro = re.search(r'\b' + re.escape(native_name) + r'\s*\([^()]*\)\s*\(', header)
+        if sole_macro or name_macro:
+            reasons.append('unresolved_macro_signature')
+    if body_tokens == ('{', '}') and len(expected_body) > 2:
+        reasons.append('body_content_missing')
+    if len(body_tokens) > 2 and not executable:
+        # A body containing only local declarations can legitimately have no CALL.
+        if not any(nodes[k]['kind'] == 'LOCAL' for k in owned):
+            reasons.append('nonempty_body_without_executable_nodes')
+    if not body_tokens or body_tokens in {('<', 'empty', '>'), ()}:
+        reasons.append('missing_body')
+    quality = dict(target_method_id=method_id, target_name=method['NAME'],
+                   target_full_name=method.get('FULL_NAME'), filename=filename,
+                   start_line=method.get('LINE_NUMBER'), end_line=method.get('LINE_NUMBER_END'),
+                   source_alignment='file_content_physical_line_columns_exact_body_with_declaration_prefix',
+                   method_offset_disagreement=physical_span(method) != (method.get('OFFSET'), method.get('OFFSET_END')),
+                   hint_mismatch=bool(function_hint and function_hint.rsplit('::', 1)[-1] != method['NAME']),
+                   unknown_nodes=len(unknown), executable_nodes=len(executable),
+                   executable_nodes_without_cfg=len(set(executable) - {v for e in graph_edges if e.kind == 'CFG' for v in (e.source, e.target)}),
+                   truncated_container_nodes=sum(nodes[k]['kind'] in {'BLOCK', 'CONTROL_STRUCTURE'} and len(str(nodes[k].get('CODE', ''))) == 1000 and str(nodes[k].get('CODE', '')).endswith('...') for k in owned),
+                   node_count=len(owned), edge_count=len(graph_edges),
+                   edge_counts={k: counts[k] for k in ('AST', 'CFG', 'CDG', 'DDG')},
+                   missing_relation_kinds=[k for k in ('AST', 'CFG', 'CDG', 'DDG') if not counts[k]],
+                   status='rejected' if reasons else 'accepted', reasons=reasons)
+    if reasons:
+        raise CPGQualityError(json.dumps(quality, sort_keys=True))
+    return FunctionGraph(str(method['NAME']), graph_nodes, graph_edges, quality)
+
+
+def extract_function_cpg_batch(requests: list[dict], *, joern_dir='/home/phy/joern',
+                               java_home='/home/phy/jdk21', timeout=300) -> list[FunctionGraph | CPGError]:
+    """One parser and one lossless graph export per bounded batch; no retries."""
+    if not requests:
+        return []
     root = Path(os.environ.get('JOERN_HOME', str(joern_dir))).expanduser()
-    parser = _find_executable(root, (
-        'joern-parse', 'joern-cli/joern-parse', 'joern-cli/bin/joern-parse'
-    ))
-    exporter = _find_executable(root, (
-        'joern-export', 'joern-cli/joern-export', 'joern-cli/bin/joern-export'
-    ))
+    parser = _find_executable(root, ('joern-parse', 'joern-cli/joern-parse', 'joern-cli/bin/joern-parse'))
+    exporter = _find_executable(root, ('joern-export', 'joern-cli/joern-export', 'joern-cli/bin/joern-export'))
     env = _environment(java_home)
-
     with tempfile.TemporaryDirectory(prefix='vulnmechanism-cpg-') as directory:
         work = Path(directory)
         src = work / 'src'
         src.mkdir()
-        suffix = '.cpp' if language == 'cpp' else '.c'
-        (src / f'input{suffix}').write_text(source)
+        filenames = []
+        for index, request in enumerate(requests):
+            if request['language'] not in {'c', 'cpp'}:
+                raise ValueError('language must be c or cpp')
+            filename = f'sample_{index:04d}.' + ('cpp' if request['language'] == 'cpp' else 'c')
+            contents = request.get('full_source', request['source'])
+            start = request.get('start_line', 1)
+            if 'full_source' in request:
+                positions = [m.start() for m in re.finditer(re.escape(request['source']), contents)]
+                if len(positions) != 1 or contents[:positions[0]].count('\n') + 1 != start:
+                    raise ValueError('full-file target must have one exact source occurrence at start_line')
+            (src / filename).write_text(contents, encoding='utf-8')
+            filenames.append(filename)
         cpg = work / 'cpg.bin'
-        parsed = run_process([
-            str(parser), str(src), '--output', str(cpg),
-        ], timeout=timeout, env=env)
-        if parsed.returncode != 0 or not cpg.is_file():
-            raise CPGError('joern-parse failed: ' + (parsed.stderr.strip() or parsed.stdout.strip()))
+        result = run_process([str(parser), str(src), '--output', str(cpg), '--frontend-args', '--enable-file-content'], timeout=timeout, env=env)
+        if result.returncode or not cpg.is_file():
+            raise CPGError('joern-parse failed: ' + (result.stderr or result.stdout)[-4000:])
+        output = work / 'graph'
+        result = run_process([str(exporter), '--repr', 'all', '--format', 'neo4jcsv',
+                              '--out', str(output), str(cpg)], timeout=timeout, env=env)
+        if result.returncode:
+            raise CPGError('joern-export failed: ' + (result.stderr or result.stdout)[-4000:])
+        nodes, edges = read_neo4jcsv(output)
+        results = []
+        for filename, request in zip(filenames, requests):
+            try:
+                results.append(resolve_target_graph(nodes, edges, filename=filename,
+                    source=request['source'], start_line=request.get('start_line', 1),
+                    function_hint=request.get('function', '')))
+            except (TargetMethodError, CPGQualityError) as error:
+                results.append(error)
+        return results
 
-        graphs: list[FunctionGraph] = []
-        method_index: str | None = None
-        for representation in ('ast', 'cfg', 'cdg', 'ddg'):
-            output = work / representation
-            exported = run_process([
-                str(exporter), '--repr', representation, '--format', 'dot',
-                '--out', str(output), str(cpg),
-            ], timeout=timeout, env=env)
-            if exported.returncode != 0:
-                raise CPGError(
-                    f'joern-export {representation} failed: '
-                    + (exported.stderr.strip() or exported.stdout.strip())
-                )
-            path = _matching_dot(output, function, method_index)
-            if representation == 'ast':
-                index_match = re.fullmatch(r'(\d+)-ast\.dot', path.name)
-                if index_match is None:
-                    raise CPGError(f'unexpected Joern export filename: {path.name}')
-                method_index = index_match.group(1)
-            graph = parse_dot_graph(path.read_text(errors='replace'), representation, function)
-            if representation in {'ast', 'cfg'} and (not graph.nodes or not graph.edges):
-                raise CPGError(f'{function}: empty {representation} graph')
-            graphs.append(graph)
-        return merge_graphs(function, graphs)
+
+def extract_function_cpg(source: str, function: str, *, language='c',
+                         joern_dir='/home/phy/joern', java_home='/home/phy/jdk21', timeout=300,
+                         full_source: str | None = None, start_line: int = 1) -> FunctionGraph:
+    request = dict(source=source, function=function, language=language, start_line=start_line)
+    if full_source is not None:
+        request['full_source'] = full_source
+    result = extract_function_cpg_batch([request], joern_dir=joern_dir,
+                                       java_home=java_home, timeout=timeout)[0]
+    if isinstance(result, CPGError):
+        raise result
+    return result

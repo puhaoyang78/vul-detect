@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,7 +107,7 @@ def parse_function(
         functions = [
             node
             for node in functions
-            if identifier(node.child_by_field_name("declarator"), source) == function_name
+            if identifier(node.child_by_field_name("declarator"), source) in {function_name, function_name.rsplit("::", 1)[-1]}
         ]
     if len(functions) != 1:
         label = f" named {function_name}" if function_name else ""
@@ -197,3 +198,40 @@ def local_identifiers(
             if name and name not in names:
                 names.append(name)
     return tuple(names)
+
+
+# Tokens preserve literals and punctuation; comment/whitespace removal cannot turn
+# a nested method or a call into the complete source definition.
+_SOURCE_TOKEN = re.compile(r'R"(?P<delimiter>[^ ()\\\t\r\n]{0,16})\(.*?\)(?P=delimiter)"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*.*?\*/|[A-Za-z_]\w*|\d+(?:\.\d+)?|[^\s]', re.S)
+
+
+def source_tokens(source: str) -> tuple[str, ...]:
+    return tuple(m.group() for m in _SOURCE_TOKEN.finditer(source)
+                 if not m.group().startswith(('//', '/*')))
+
+
+def resolve_language(source: str, language: str, file_name: str = '') -> str:
+    suffix = Path(file_name).suffix
+    if suffix == '.c':
+        return 'c'
+    if suffix == '.C' or suffix.lower() in {'.cc', '.cpp', '.cxx', '.c++', '.hpp', '.hh', '.hxx', '.h++'}:
+        return 'cpp'
+    if language in {'c', 'cpp'}:
+        return language
+    encoded = source.encode()
+    return min(('c', 'cpp'), key=lambda lang: (
+        sum(n.is_error or n.is_missing for n in walk(parser_for(lang).parse(encoded).root_node)), lang))
+
+
+def target_hint(source: str, language: str, supplied_name: str | None = None) -> ParsedFunction:
+    """Advisory syntax only. Joern must independently prove the complete span."""
+    try:
+        parsed = parse_function(source, language, supplied_name)
+    except ValueError:
+        try:
+            parsed = parse_function(source, language)
+        except ValueError:
+            return ParsedFunction(name='', parameters=())
+    if parsed.name in {'if', 'for', 'while', 'switch', 'catch', 'sizeof'}:
+        return ParsedFunction(name='', parameters=())
+    return parsed

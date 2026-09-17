@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from vulnmechanism.benchmark_view import record_split
-from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode
+from vulnmechanism.cpg import CPGError, TargetMethodError, FunctionGraph, GraphEdge, GraphNode
 from vulnmechanism.dataset import build_function_dataset
 
 
@@ -96,7 +96,7 @@ class BuildResumeTests(unittest.TestCase):
         self._write_rows()
         with patch(
             "vulnmechanism.dataset.extract_function_cpg",
-            side_effect=[subprocess.TimeoutExpired("joern", 1), self.graph],
+            side_effect=[TargetMethodError("source has no complete body"), subprocess.TimeoutExpired("joern", 1), self.graph],
         ):
             records = build_function_dataset(self.samples, self.output)
         self.assertEqual([row["sample_key"] for row in records], ["primevul:2"])
@@ -104,7 +104,7 @@ class BuildResumeTests(unittest.TestCase):
             json.loads(line)
             for line in self.output.with_suffix(".errors.jsonl").read_text().splitlines()
         ]
-        self.assertEqual([row["stage"] for row in failures], ["syntax", "joern"])
+        self.assertEqual([row["stage"] for row in failures], ["target_method", "joern"])
         audit = json.loads(self.output.with_suffix(".audit.json").read_text())
         self.assertEqual(audit["success"], 1)
         self.assertEqual(audit["failed"], 2)
@@ -174,6 +174,35 @@ class BuildResumeTests(unittest.TestCase):
         self.assertEqual(records[0]["pair_id"], "sven:p")
         self.assertEqual(records[0]["resolved_language"], "cpp")
         self.assertEqual(record_split(records[0]), "external_test")
+
+    def test_batch_does_not_cross_dataset_split(self):
+        from vulnmechanism.dataset import _build_graphs, _sample_fields
+        self.rows[1]['split'] = 'valid'
+        samples = [_sample_fields(row, i + 1) for i, row in enumerate(self.rows)]
+        calls = []
+        def extract(requests, **kwargs):
+            calls.append([r['source'] for r in requests])
+            return [self.graph] * len(requests)
+        with patch('vulnmechanism.dataset.extract_function_cpg_batch', side_effect=extract):
+            result = list(_build_graphs(samples, batch_size=8, joern_dir='unused',
+                                        java_home='unused', timeout=1))
+        self.assertEqual(len(result), 3)
+        self.assertEqual([len(call) for call in calls], [1, 1, 1])
+
+    def test_failure_is_durable_before_interruption(self):
+        with patch('vulnmechanism.dataset.extract_function_cpg',
+                   side_effect=[TargetMethodError('no target'), KeyboardInterrupt]):
+            with self.assertRaises(KeyboardInterrupt):
+                build_function_dataset(self.samples, self.output)
+        failure = json.loads(self.output.with_suffix('.errors.jsonl').read_text())
+        self.assertEqual(failure['sample_key'], 'primevul:0')
+        self.assertEqual(failure['stage'], 'target_method')
+
+    def test_incomplete_input_pair_is_rejected(self):
+        self.rows[0].update(dataset='cleanvul', pair_id='p', sample_key='cleanvul:p:before')
+        self._write_rows()
+        with self.assertRaisesRegex(ValueError, 'both labels in one split'):
+            build_function_dataset(self.samples, self.output)
 
 
 if __name__ == "__main__":

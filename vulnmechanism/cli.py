@@ -70,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--joern-dir", default="/home/phy/joern")
     build.add_argument("--java-home", default="/home/phy/jdk21")
     build.add_argument("--timeout", type=int, default=300)
+    build.add_argument("--batch-size", type=int, default=8)
     build.set_defaults(
         func=lambda args: build_function_dataset(
             args.samples,
@@ -77,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
             joern_dir=args.joern_dir,
             java_home=args.java_home,
             timeout=args.timeout,
+            batch_size=args.batch_size,
         )
     )
 

@@ -4,16 +4,18 @@ from collections import Counter, defaultdict
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
-from itertools import zip_longest
+from itertools import groupby, zip_longest
 from pathlib import Path
 
-from .cpg import CPGError, FunctionGraph, extract_function_cpg
+from .cpg import (CPGError, CPGQualityError, TargetMethodError, FunctionGraph,
+                  extract_function_cpg, extract_function_cpg_batch)
 from .semantics import extract_vulnerability_semantics
-from .syntax import parse_function, parser_for, walk
+from .syntax import resolve_language, target_hint
 
 
-DATASET_SCHEMA_VERSION = 7
+DATASET_SCHEMA_VERSION = 8
 _VALID_DATASETS = {"primevul", "cleanvul", "sven"}
 _VALID_SPLITS = {"train", "valid", "test", "external_test"}
 _PAIRED_DATASETS = {"cleanvul", "sven"}
@@ -156,6 +158,13 @@ def _read_samples(samples_path: str | Path) -> list[FunctionSample]:
             samples.append(sample)
     if not samples:
         raise ValueError("formal manifest is empty")
+    pairs = defaultdict(list)
+    for sample in samples:
+        if sample.pair_id:
+            pairs[(sample.dataset, sample.pair_id)].append(sample)
+    for (_, pair_id), pair in pairs.items():
+        if len(pair) != 2 or {s.label for s in pair} != {0, 1} or len({s.split for s in pair}) != 1:
+            raise ValueError(f"pair {pair_id!r} must contain both labels in one split")
     return samples
 
 
@@ -170,35 +179,39 @@ def _valid_semantic_items(value: object) -> bool:
 
 
 def _resolve_sample(sample: FunctionSample):
-    if sample.language != "c_cpp":
-        return sample.language, parse_function(sample.source, sample.language, sample.function_name)
-    suffix = Path(sample.file_name).suffix
-    language = (
-        "cpp"
-        if suffix == ".C"
-        or suffix.lower() in {".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++"}
-        else "c" if suffix == ".c" else None
-    )
-    if language:
-        return language, parse_function(sample.source, language, sample.function_name)
+    language = resolve_language(sample.source, sample.language, sample.file_name)
+    return language, target_hint(sample.source, language, sample.function_name)
 
-    candidates, failures = [], []
-    for candidate in ("c", "cpp"):
+
+def _build_graphs(samples, *, batch_size, joern_dir, java_home, timeout):
+    batches = []
+    for _, partition in groupby(samples, key=lambda s: (s.dataset, s.split)):
+        partition = list(partition)
+        batches.extend(partition[i:i + batch_size] for i in range(0, len(partition), batch_size))
+    for batch in batches:
+        resolved = [_resolve_sample(sample) for sample in batch]
+        started = time.monotonic()
         try:
-            parsed = parse_function(sample.source, candidate, sample.function_name)
-        except ValueError as error:
-            failures.append(f"{candidate}: {error}")
-            continue
-        tree = parser_for(candidate).parse(sample.source.encode())
-        errors = sum(node.is_error or node.is_missing for node in walk(tree.root_node))
-        candidates.append((errors, candidate, parsed))
-    if not candidates:
-        raise ValueError("C/C++ resolution failed; " + "; ".join(failures))
-    _, language, parsed = min(candidates, key=lambda item: (item[0], item[1]))
-    return language, parsed
+            if batch_size == 1:
+                sample = batch[0]
+                language, hint = resolved[0]
+                results = [extract_function_cpg(sample.source, hint.name, language=language,
+                           joern_dir=joern_dir, java_home=java_home, timeout=timeout)]
+            else:
+                requests = [dict(source=sample.source, function=hint.name, language=language)
+                            for sample, (language, hint) in zip(batch, resolved)]
+                results = extract_function_cpg_batch(requests, joern_dir=joern_dir,
+                                                    java_home=java_home, timeout=timeout)
+        except (CPGError, subprocess.TimeoutExpired, OSError) as error:
+            results = [error] * len(batch)
+        seconds = time.monotonic() - started
+        for sample, (language, hint), result in zip(batch, resolved, results):
+            yield sample, language, hint, result, seconds / len(batch)
 
 
 def _cpg_quality(graph: FunctionGraph) -> dict[str, object]:
+    if graph.quality is not None:
+        return graph.quality
     edge_counts = Counter(edge.kind for edge in graph.edges)
     missing = [kind for kind in _GRAPH_KINDS if edge_counts[kind] == 0]
     # AST and CFG are structural requirements; CDG/DDG may legitimately be empty.
@@ -225,7 +238,8 @@ def _record_matches_sample(record: dict[str, object], sample: FunctionSample) ->
         and record.get("label") == sample.label
         and record.get("language") == sample.language
         and record.get("resolved_language") == resolved_language
-        and record.get("function_name") == parsed.name
+        and isinstance(record.get("function_name"), str)
+        and bool(record.get("function_name"))
         and record.get("split") == sample.split
         and isinstance(record.get("cpg_relations"), str)
         and bool(str(record.get("cpg_relations")).strip())
@@ -312,6 +326,9 @@ def _build_audit(
         else:
             groups[key]["failed"] += 1
 
+    for failure in failures:
+        group = f"{failure['dataset']}/{failure['split']}/label_{failure['label']}"
+        groups[group]["failed_" + str(failure["stage"])] += 1
     quality = Counter()
     pattern_count = Counter()
     for record in records:
@@ -323,6 +340,8 @@ def _build_audit(
                 if int(edge_counts.get(kind, 0)) == 0:
                     quality[f"success_without_{kind.lower()}"] += 1
         items = record.get("semantic_items", [])
+        if not items:
+            quality["success_without_semantic_items"] += 1
         patterns = sum(
             isinstance(item, dict) and item.get("category") == "POTENTIAL_PATTERN"
             for item in items
@@ -331,15 +350,32 @@ def _build_audit(
         if patterns == 0:
             quality["success_without_potential_pattern"] += 1
 
+    pairs = defaultdict(list)
+    for sample in samples:
+        if sample.pair_id:
+            pairs[(sample.dataset, sample.pair_id)].append(sample)
+    pair_status = Counter()
+    for (dataset, _), pair in pairs.items():
+        count = sum(sample.sample_key in success for sample in pair)
+        pair_status[f"{dataset}/" + ("complete" if count == 2 else "incomplete" if count else "both_failed")] += 1
     failure_stage = Counter(str(row.get("stage")) for row in failures)
     failure_type = Counter(str(row.get("error_type")) for row in failures)
+    group_report = {}
+    for name, counts in sorted(groups.items()):
+        entry = dict(sorted(counts.items()))
+        entry['success_rate'] = counts['success'] / counts['input']
+        for stage in ('syntax', 'joern', 'target_method', 'low_quality_cpg'):
+            entry['failed_' + stage] = counts['failed_' + stage]
+            entry['failure_rate_' + stage] = counts['failed_' + stage] / counts['input']
+        group_report[name] = entry
     return {
         "schema_version": DATASET_SCHEMA_VERSION,
         "total": len(samples),
         "success": len(records),
         "failed": len(samples) - len(records),
         "success_rate": len(records) / len(samples) if samples else 0.0,
-        "groups": {name: dict(sorted(counts.items())) for name, counts in sorted(groups.items())},
+        "groups": group_report,
+        "pair_build_status": dict(sorted(pair_status.items())),
         "failure_stage": dict(sorted(failure_stage.items())),
         "failure_type": dict(sorted(failure_type.items())),
         "quality_flags": dict(sorted(quality.items())),
@@ -359,7 +395,11 @@ def build_function_dataset(
     joern_dir: str | Path = "/home/phy/joern",
     java_home: str | Path = "/home/phy/jdk21",
     timeout: int = 300,
+    batch_size: int = 1,
 ) -> list[dict[str, object]]:
+    build_started = time.monotonic()
+    if batch_size < 1 or batch_size > 32:
+        raise ValueError("batch_size must be between 1 and 32")
     samples_file = Path(samples_path)
     target = Path(output_path)
     errors_path = target.with_suffix(".errors.jsonl")
@@ -385,23 +425,21 @@ def build_function_dataset(
 
     records_by_key = dict(reusable)
     current_failures: list[dict[str, object]] = []
-    with target.open("a", encoding="utf-8") as output:
-        for sample in samples:
-            if sample.sample_key in completed:
-                continue
-            stage = "syntax"
-            resolved_language = None
+    pending = [sample for sample in samples if sample.sample_key not in completed]
+    with target.open("a", encoding="utf-8") as output, errors_path.open("w", encoding="utf-8") as error_output:
+        for sample, resolved_language, parsed, result, seconds in _build_graphs(
+                pending, batch_size=batch_size, joern_dir=joern_dir, java_home=java_home, timeout=timeout):
+            postprocessing_started = time.monotonic()
+            stage = "joern"
             try:
-                resolved_language, parsed = _resolve_sample(sample)
-                stage = "joern"
-                graph = extract_function_cpg(
-                    sample.source,
-                    parsed.name,
-                    language=resolved_language,
-                    joern_dir=joern_dir,
-                    java_home=java_home,
-                    timeout=timeout,
-                )
+                if isinstance(result, TargetMethodError):
+                    stage = "target_method"
+                elif isinstance(result, CPGQualityError):
+                    stage = "low_quality_cpg"
+                if isinstance(result, BaseException):
+                    raise result
+                graph = result
+                stage = "low_quality_cpg"
                 quality = _cpg_quality(graph)
             except (ValueError, CPGError, subprocess.TimeoutExpired, OSError) as error:
                 failure = {
@@ -413,11 +451,14 @@ def build_function_dataset(
                     "split": sample.split,
                     "language": sample.language,
                     "resolved_language": resolved_language,
+                    "seconds": seconds,
+                    "syntax_hint": parsed.name,
                     "stage": stage,
                     "error_type": type(error).__name__,
                     "error": str(error),
                 }
                 current_failures.append(failure)
+                _write_jsonl_line(error_output, failure)
                 print(
                     f"function_sample_failed={sample.sample_key} stage={stage} error={error}",
                     flush=True,
@@ -434,7 +475,9 @@ def build_function_dataset(
                 "label": sample.label,
                 "language": sample.language,
                 "resolved_language": resolved_language,
-                "function_name": parsed.name,
+                "function_name": graph.function,
+                "syntax_hint": parsed.name,
+                "seconds": seconds + time.monotonic() - postprocessing_started,
                 "raw_source": sample.source,
                 "cpg_relations": render_cpg_relations(graph),
                 "vulnerability_semantics": semantics.render(),
@@ -475,11 +518,14 @@ def build_function_dataset(
                         "resolved_language": None,
                         "stage": "unknown",
                         "error_type": "UnresolvedFailure",
-                        "error": "sample did not produce a reusable schema-v7 record",
+                        "error": "sample did not produce a reusable current-schema record",
                     }
                 _write_jsonl_line(errors, row)
 
     audit = _build_audit(samples, records, errors_path)
+    audit["build_wall_seconds"] = time.monotonic() - build_started
+    audit["resumed_records"] = len(reusable)
+    audit["batch_size"] = batch_size
     audit_path.write_text(
         json.dumps(audit, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
