@@ -1,206 +1,139 @@
-"""Bounded CPG diagnostics on fixed, provenance-preserving sample rows."""
+"""Audit current schema-9 CPG build outputs and mechanism evidence."""
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 import json
 from pathlib import Path
-import subprocess
-import time
 
-from .cpg import CPGError, CPGQualityError, TargetMethodError, extract_function_cpg_batch
-from .dataset import _read_samples, _resolve_sample, _load_reusable_records, extract_cpg_relations
-from .benchmark_view import select_source_records
-from .semantics import extract_vulnerability_semantics, render_semantic_items
+from .dataset import DATASET_SCHEMA_VERSION
+from .semantics import render_mechanism_items
 
 
-def _unpack(value):
-    if isinstance(value, dict) and '@value' in value:
-        return _unpack(value['@value'])
-    if isinstance(value, list):
-        values = [_unpack(item) for item in value]
-        return values[0] if len(values) == 1 else values
-    return value
+def _rows(path: Path) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    rows = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise ValueError(f"{path}:{line_number}: expected JSON object")
+            rows.append(value)
+    return rows
 
 
-def read_graphson(path: Path):
-    data = json.loads(path.read_text())['@value']
-    nodes = {str(_unpack(n['id'])): dict(kind=n['label'], **{
-        key: _unpack(value) for key, value in n['properties'].items()}) for n in data['vertices']}
-    edges = [(e['label'], str(_unpack(e['outV'])), str(_unpack(e['inV']))) for e in data['edges']]
-    return nodes, edges
+def refresh_mechanism_context(folder: Path) -> None:
+    path = folder / "function_only.jsonl"
+    rows = _rows(path)
+    for row in rows:
+        items = row.get("mechanism_items")
+        if not isinstance(items, list):
+            raise ValueError(f"{row.get('sample_key')}: mechanism_items missing")
+        row["mechanism_context"] = render_mechanism_items(items)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
-def read_rows(path):
-    with Path(path).open() as handle:
-        return [json.loads(line) for line in handle if line.strip()]
+def summarize(folder: Path) -> dict[str, object]:
+    built_path = folder / "function_only.jsonl"
+    errors_path = folder / "function_only.errors.jsonl"
+    audit_path = folder / "function_only.audit.json"
+    built = _rows(built_path)
+    errors = _rows(errors_path)
+    build_audit = json.loads(audit_path.read_text()) if audit_path.is_file() else {}
 
+    candidate_counts = Counter()
+    candidate_kinds = Counter()
+    relation_kinds = Counter()
+    operation_kinds = Counter()
+    states = Counter()
+    warning_counts = Counter()
+    no_candidate = 0
 
-def full_file_comparison(samples_path: Path, contexts_path: Path, output: Path, batch_size=2):
-    samples = _read_samples(samples_path)
-    if not 100 <= len(samples) <= 500:
-        raise ValueError('diagnostic input must contain 100–500 samples')
-    contexts = json.loads(contexts_path.read_text())
-    targets = [sample for sample in samples if sample.sample_key in contexts]
-    if not 100 <= len(targets) <= 200:
-        raise ValueError('full-file comparison requires 100–200 verified contexts')
-    with output.open('w') as handle:
-        for offset in range(0, len(targets), batch_size):
-            batch = targets[offset:offset + batch_size]
-            requests = []
-            for sample in batch:
-                context = contexts[sample.sample_key]
-                language, hint = _resolve_sample(sample)
-                requests.append(dict(source=sample.source, function=hint.name, language=language,
-                                     full_source=Path(context['path']).read_text(errors='replace'),
-                                     start_line=context['start_line']))
-            started = time.monotonic()
-            try:
-                graphs = extract_function_cpg_batch(requests, timeout=180)
-            except (CPGError, OSError, subprocess.TimeoutExpired) as error:
-                graphs = [error] * len(batch)
-            seconds = (time.monotonic() - started) / len(batch)
-            for sample, graph in zip(batch, graphs):
-                row = dict(sample_key=sample.sample_key, dataset=sample.dataset, label=sample.label,
-                           split=sample.split, seconds=seconds)
-                if isinstance(graph, BaseException):
-                    stage = ('low_quality_cpg' if isinstance(graph, CPGQualityError) else
-                             'target_method' if isinstance(graph, TargetMethodError) else 'joern')
-                    row.update(status='failed', stage=stage, error=str(graph))
-                else:
-                    row.update(status='done', quality=graph.quality,
-                               relations=len(extract_cpg_relations(graph)),
-                               semantic_items=len(extract_vulnerability_semantics(graph).items))
-                handle.write(json.dumps(row, sort_keys=True) + '\n')
-                handle.flush()
-                print(sample.sample_key, row['status'], seconds, flush=True)
+    for row in built:
+        if row.get("schema_version") != DATASET_SCHEMA_VERSION:
+            raise ValueError(
+                f"{row.get('sample_key')}: expected schema {DATASET_SCHEMA_VERSION}, "
+                f"got {row.get('schema_version')}"
+            )
+        items = row.get("mechanism_items")
+        if not isinstance(items, list):
+            raise ValueError(f"{row.get('sample_key')}: mechanism_items missing")
+        rendered = render_mechanism_items(items)
+        if row.get("mechanism_context") != rendered:
+            raise ValueError(f"{row.get('sample_key')}: mechanism_context is stale")
 
+        candidates = [
+            item for item in items
+            if isinstance(item, dict) and item.get("category") == "MECHANISM_CANDIDATE"
+        ]
+        candidate_counts[str(len(candidates))] += 1
+        no_candidate += not candidates
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            category = item.get("category")
+            kind = str(item.get("kind") or "")
+            state = str(item.get("state") or "")
+            if category == "MECHANISM_CANDIDATE":
+                candidate_kinds[kind] += 1
+                if state:
+                    states[f"{kind}:{state}"] += 1
+            elif category == "MECHANISM_RELATION":
+                relation_kinds[kind] += 1
+            elif category == "SECURITY_OPERATION":
+                operation_kinds[kind] += 1
 
-def refresh_semantic_text(folder: Path):
-    """Replay only the public renderer on persisted diagnostic semantic evidence."""
-    for name in ('function_only.jsonl', 'macro.jsonl'):
-        path = folder / name
-        rows = read_rows(path)
-        for row in rows:
-            row['vulnerability_semantics'] = render_semantic_items(row['semantic_items'])
-        path.write_text(''.join(json.dumps(r, ensure_ascii=False, sort_keys=True) + '\n' for r in rows))
+        quality = row.get("cpg_quality")
+        if isinstance(quality, dict):
+            for warning in quality.get("warnings", ()):
+                warning_counts[str(warning)] += 1
 
-
-def summarize(folder: Path):
-    samples = read_rows(folder / 'samples.jsonl')
-    manifest = {r['sample_key']: r for r in read_rows(Path('data/benchmark/manifest.jsonl'))}
-    assert len(samples) == len({r['sample_key'] for r in samples})
-    assert all(r == manifest[r['sample_key']] for r in samples)
-    baseline = read_rows(folder / 'baseline.jsonl')
-    built = read_rows(folder / 'function_only.jsonl')
-    errors = read_rows(folder / 'function_only.errors.jsonl')
-    reusable, incomplete_tail = _load_reusable_records(folder / 'function_only.jsonl', _read_samples(folder / 'samples.jsonl'))
-    assert len(reusable) == len(built) and not incomplete_tail
-    assert all(r['vulnerability_semantics'] == render_semantic_items(r['semantic_items']) for r in built)
-    integrity = dict(reusable_success_records=len(reusable),
-                     source_label_split_pair_exactly_preserved=True,
-                     semantic_text_replayed_and_verified=True,
-                     pair_views={d: select_source_records(built, d)[1] for d in ('cleanvul', 'sven')})
-    (folder / 'integrity_checks.json').write_text(json.dumps(integrity, indent=2) + '\n')
-    equivalence = []
-    errors_by_key = {r['sample_key']: r for r in errors}
-    for single in read_rows(folder / 'single_sample_check.jsonl'):
-        current = reusable.get(single['sample_key'])
-        equivalent = (current is not None and single['status'] == 'done'
-                      and single['quality']['edge_counts'] == current['cpg_quality']['edge_counts']
-                      and single['relations'] == current['cpg_relation_count']
-                      and render_semantic_items(single['semantic_items']) == current['vulnerability_semantics'])
-        if single['status'] == 'failed':
-            failure = errors_by_key.get(single['sample_key'])
-            equivalent = current is None and failure is not None and failure['error_type'] == single['error_type']
-        assert equivalent, single['sample_key']
-        equivalence.append(dict(sample_key=single['sample_key'], equivalent=equivalent))
-    (folder / 'batch_equivalence.json').write_text(json.dumps(equivalence, indent=2) + '\n')
-    full = read_rows(folder / 'full_file.jsonl')
-    new = [dict(sample_key=r['sample_key'], dataset=r['dataset'], label=r['label'], split=r['split'],
-                status='done', seconds=r['seconds'], quality=r['cpg_quality'],
-                relations=r['cpg_relation_count'], semantic_items=r['semantic_item_count']) for r in built]
-    new.extend(dict(r, status='failed') for r in errors)
-    keys = {r['sample_key'] for r in samples}
-    assert {r['sample_key'] for r in baseline} == keys and len(baseline) == len(keys)
-    assert {r['sample_key'] for r in new} == keys and len(new) == len(keys)
-    assert len(full) == 100 and len({r['sample_key'] for r in full}) == 100
-
-    def stats(rows):
-        groups = defaultdict(Counter)
-        for r in rows:
-            g = groups[f"{r['dataset']}/label_{r['label']}"]
-            g['total'] += 1
-            g[r['status']] += 1
-            if r['status'] == 'failed':
-                stage = r.get('stage')
-                if not stage:
-                    stage = 'syntax' if 'stage=syntax' in r.get('detail', '') else 'joern'
-                g['failed_' + stage] += 1
-        done = [r for r in rows if r['status'] == 'done']
-        group_report = {}
-        for key, counts in sorted(groups.items()):
-            group_report[key] = dict(counts)
-            for stage in ('syntax', 'joern', 'target_method', 'low_quality_cpg'):
-                group_report[key]['failure_rate_' + stage] = counts['failed_' + stage] / counts['total']
-        return dict(total=len(rows), success=len(done), success_rate=len(done) / len(rows),
-                    groups=group_report,
-                    success_without_semantic_items=sum(r.get('semantic_items') == 0 for r in done),
-                    success_at_most_10_relations=sum(r.get('relations', 0) <= 10 for r in done))
-    full_keys = {r['sample_key'] for r in full}
-    new_by_key = {r['sample_key']: r for r in new}
-    measured = [r for r in baseline if r.get('seconds') is not None]
-    report = dict(baseline=stats(baseline), function_only=stats(new),
-                  full_file=stats(full), function_only_matched_full_file=stats([new_by_key[k] for k in sorted(full_keys)]),
-                  timing=dict(baseline_measured_samples=len(measured),
-                              baseline_measured_seconds=sum(r['seconds'] for r in measured),
-                              new_same_samples_amortized_seconds=sum(new_by_key[r['sample_key']]['seconds'] for r in measured),
-                              new_total_seconds=sum(r['seconds'] for r in new),
-                              full_file_total_seconds=sum(r['seconds'] for r in full),
-                              note='Batch wall time amortized across samples; baseline reuses logged outcomes where available. Concurrent local diagnostic jobs; not an isolated throughput benchmark.'),
-                  full_file_transitions=dict(Counter(f"{new_by_key[r['sample_key']]['status']}->{r['status']}" for r in full)),
-                  provenance=dict(sample_rows_match_manifest=True, labels_and_splits_unchanged=True,
-                                  input_pairs='Both sides retained; output pair completeness in function_only.audit.json',
-                                  sampling='Targeted failures, low-relation successes and ordinary successes; not a population success-rate estimate'))
-    rechecked = read_rows(folder / 'full_file_csv_recheck.jsonl')
-    replacements = {r['sample_key']: r for r in rechecked}
-    assert set(replacements) == {r['sample_key'] for r in full if r.get('stage') == 'joern'}
-    corrected_full = [replacements.get(r['sample_key'], r) for r in full]
-    report['full_file_after_csv_recheck'] = stats(corrected_full)
-    report['full_file_after_csv_transitions'] = dict(Counter(
-        f"{new_by_key[r['sample_key']]['status']}->{r['status']}" for r in corrected_full))
-    report['export_memory_recheck'] = dict(samples=len(rechecked),
-        seconds=sum(r['seconds'] for r in rechecked),
-        remaining_backend_failures=sum(r.get('stage') == 'joern' for r in rechecked),
-        accepted=sum(r['status'] == 'done' for r in rechecked),
-        note='Only the four original GraphSON heap failures were rerun with CSV at the same 2 GB heap; original 100-run results retained.')
-    report['export_format_equivalence'] = json.loads((folder / 'export_format_equivalence.json').read_text())
-    report['old_to_new_transitions'] = dict(Counter(f"{r['status']}->{new_by_key[r['sample_key']]['status']}" for r in baseline))
-    report['batch_equivalence'] = json.loads((folder / 'batch_equivalence.json').read_text())
-    report['new_build_audit'] = json.loads((folder / 'function_only.audit.json').read_text())
-    report['macro_probe_audit'] = json.loads((folder / 'macro.audit.json').read_text())
-    report['fname_full_file_probe'] = json.loads((folder / 'fname_full_file.json').read_text())
-    report.update(json.loads((folder / 'run_metadata.json').read_text()))
-    (folder / 'comparison.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
-    print(json.dumps(report, indent=2, sort_keys=True))
+    failure_stage = Counter(str(row.get("stage")) for row in errors)
+    report = {
+        "schema_version": DATASET_SCHEMA_VERSION,
+        "built_samples": len(built),
+        "failed_samples": len(errors),
+        "failure_stage": dict(sorted(failure_stage.items())),
+        "samples_without_mechanism_candidate": no_candidate,
+        "mechanism_candidate_count_distribution": dict(
+            sorted(candidate_counts.items(), key=lambda pair: int(pair[0]))
+        ),
+        "mechanism_candidate_kind_counts": dict(sorted(candidate_kinds.items())),
+        "mechanism_candidate_states": dict(sorted(states.items())),
+        "mechanism_relation_kind_counts": dict(sorted(relation_kinds.items())),
+        "security_operation_kind_counts": dict(sorted(operation_kinds.items())),
+        "cpg_warning_counts": dict(sorted(warning_counts.items())),
+        "build_audit": build_audit,
+        "interpretation": (
+            "Security operations are facts, mechanism relations are CPG-supported relations, and mechanism "
+            "candidates are aggregated relation-level hypotheses. Candidate absence is not a benign label, and "
+            "candidate presence is not causal ground truth."
+        ),
+    }
+    (folder / "mechanism_summary.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return report
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--folder', type=Path, default=Path('results/cpg_debug'))
-    modes = parser.add_mutually_exclusive_group()
-    modes.add_argument('--full-file', action='store_true')
-    modes.add_argument('--refresh-semantic-text', action='store_true')
+    parser.add_argument("--folder", type=Path, default=Path("results/cpg_debug"))
+    parser.add_argument("--refresh-mechanism-context", action="store_true")
     args = parser.parse_args()
-    if args.refresh_semantic_text:
-        refresh_semantic_text(args.folder)
-    elif args.full_file:
-        full_file_comparison(args.folder / 'samples.jsonl', args.folder / 'full_file_contexts.json',
-                             args.folder / 'full_file.jsonl')
+    if args.refresh_mechanism_context:
+        refresh_mechanism_context(args.folder)
     else:
         summarize(args.folder)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
