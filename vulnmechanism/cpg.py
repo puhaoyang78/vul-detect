@@ -125,12 +125,15 @@ def read_neo4jcsv(directory: Path):
 
 
 def _method_candidates(nodes, edges, filename: str):
-    """Return source-defined, top-level METHOD nodes belonging to one input file."""
-    ast_parent: dict[str, str] = {}
-    for kind, source, target in edges:
-        if kind == "AST":
-            ast_parent[target] = source
+    """Return source-defined METHOD nodes belonging to one input file.
 
+    Joern may represent ordinary source methods underneath synthetic METHOD
+    containers such as <global>. Function-level datasets already bind samples to
+    one source file, so AST ancestry is not a valid reason to discard a method.
+    Lambdas or helper methods remain candidates only for later deterministic
+    disambiguation by the supplied function hint or line range.
+    """
+    del edges  # file ownership, not AST ancestry, defines the candidate set
     candidates = []
     for key, node in nodes.items():
         if node.get("kind") != "METHOD":
@@ -139,18 +142,7 @@ def _method_candidates(nodes, edges, filename: str):
             continue
         if Path(str(node.get("FILENAME", ""))).name != filename:
             continue
-        parent = ast_parent.get(key)
-        nested = False
-        seen = set()
-        while parent is not None and parent not in seen:
-            seen.add(parent)
-            ancestor = nodes.get(parent)
-            if ancestor is not None and ancestor.get("kind") == "METHOD":
-                nested = True
-                break
-            parent = ast_parent.get(parent)
-        if not nested:
-            candidates.append((key, node))
+        candidates.append((key, node))
     return candidates
 
 
