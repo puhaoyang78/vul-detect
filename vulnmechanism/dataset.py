@@ -9,17 +9,24 @@ from dataclasses import dataclass
 from itertools import groupby, zip_longest
 from pathlib import Path
 
-from .cpg import (CPGError, CPGQualityError, TargetMethodError, FunctionGraph,
-                  extract_function_cpg, extract_function_cpg_batch)
-from .semantics import extract_vulnerability_semantics
+from .cpg import (
+    CPGError,
+    CPGQualityError,
+    TargetMethodError,
+    FunctionGraph,
+    extract_function_cpg,
+    extract_function_cpg_batch,
+)
+from .semantics import MECHANISM_FEATURES, extract_mechanism_semantics
 from .syntax import resolve_language, target_hint
 
 
-DATASET_SCHEMA_VERSION = 8
+DATASET_SCHEMA_VERSION = 9
 _VALID_DATASETS = {"primevul", "cleanvul", "sven"}
 _VALID_SPLITS = {"train", "valid", "test", "external_test"}
 _PAIRED_DATASETS = {"cleanvul", "sven"}
 _GRAPH_KINDS = ("AST", "CFG", "CDG", "DDG")
+_MECHANISM_CATEGORIES = {"SECURITY_OPERATION", "MECHANISM_RELATION", "MECHANISM_CANDIDATE"}
 
 
 @dataclass(frozen=True)
@@ -47,8 +54,7 @@ class FunctionSample:
 
 
 def _node_text(node) -> str:
-    code = " ".join(node.code.split())
-    return f"{node.label}:{code}"
+    return f"{node.label}:{' '.join(node.code.split())}"
 
 
 def extract_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, ...]:
@@ -60,9 +66,8 @@ def extract_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, ...]:
         if source is None or target is None:
             continue
         relation = CPGRelation(edge.kind, _node_text(source), _node_text(target))
-        text = relation.as_text()
-        if text not in seen:
-            seen.add(text)
+        if relation.as_text() not in seen:
+            seen.add(relation.as_text())
             relations.append(relation)
     return tuple(relations)
 
@@ -70,15 +75,10 @@ def extract_cpg_relations(graph: FunctionGraph) -> tuple[CPGRelation, ...]:
 def render_cpg_relations(graph: FunctionGraph, max_relations: int = 160) -> str:
     if max_relations <= 0:
         raise ValueError("max_relations must be positive")
-    relations = extract_cpg_relations(graph)
     groups: dict[str, list[CPGRelation]] = {}
-    for relation in relations:
+    for relation in extract_cpg_relations(graph):
         groups.setdefault(relation.kind, []).append(relation)
-    selected = (
-        [item for row in zip_longest(*groups.values()) for item in row if item is not None]
-        if groups
-        else []
-    )
+    selected = [item for row in zip_longest(*groups.values()) for item in row if item is not None] if groups else []
     return "\n".join(item.as_text() for item in selected[:max_relations]) or "NO_CPG_RELATIONS"
 
 
@@ -111,11 +111,11 @@ def _sample_fields(record: dict[str, object], line_number: int) -> FunctionSampl
         raise ValueError(f"{sample_key}: only SVEN may use external_test")
 
     pair_value = record.get("pair_id")
-    pair_id = str(pair_value) if isinstance(pair_value, str) and pair_value else None
+    pair_id = pair_value if isinstance(pair_value, str) and pair_value else None
     if dataset in _PAIRED_DATASETS and pair_id is None:
         raise ValueError(f"{sample_key}: {dataset} requires pair_id")
     if dataset == "primevul" and pair_id is not None:
-        raise ValueError(f"{sample_key}: PrimeVul formal classification rows must not use pair_id")
+        raise ValueError(f"{sample_key}: PrimeVul formal rows must not use pair_id")
 
     function_name = record.get("function_name")
     if function_name is not None and not isinstance(function_name, str):
@@ -123,18 +123,9 @@ def _sample_fields(record: dict[str, object], line_number: int) -> FunctionSampl
     file_name = record.get("file_name")
     if file_name is not None and not isinstance(file_name, str):
         raise ValueError(f"{sample_key}: file_name must be a string when present")
-
     return FunctionSample(
-        line_number=line_number,
-        sample_key=sample_key,
-        dataset=dataset,
-        source=source,
-        label=label,
-        language=language,
-        function_name=function_name or None,
-        split=split,
-        pair_id=pair_id,
-        file_name=file_name or "",
+        line_number, sample_key, dataset, source, label, language,
+        function_name or None, split, pair_id, file_name or "",
     )
 
 
@@ -168,12 +159,14 @@ def _read_samples(samples_path: str | Path) -> list[FunctionSample]:
     return samples
 
 
-def _valid_semantic_items(value: object) -> bool:
+def _valid_mechanism_items(value: object) -> bool:
     return isinstance(value, list) and all(
         isinstance(item, dict)
-        and isinstance(item.get("category"), str)
+        and item.get("category") in _MECHANISM_CATEGORIES
         and isinstance(item.get("kind"), str)
         and isinstance(item.get("detail"), str)
+        and (item.get("key") is None or isinstance(item.get("key"), str))
+        and (item.get("state") is None or isinstance(item.get("state"), str))
         for item in value
     )
 
@@ -195,13 +188,18 @@ def _build_graphs(samples, *, batch_size, joern_dir, java_home, timeout):
             if batch_size == 1:
                 sample = batch[0]
                 language, hint = resolved[0]
-                results = [extract_function_cpg(sample.source, hint.name, language=language,
-                           joern_dir=joern_dir, java_home=java_home, timeout=timeout)]
+                results = [extract_function_cpg(
+                    sample.source, hint.name, language=language,
+                    joern_dir=joern_dir, java_home=java_home, timeout=timeout,
+                )]
             else:
-                requests = [dict(source=sample.source, function=hint.name, language=language)
-                            for sample, (language, hint) in zip(batch, resolved)]
-                results = extract_function_cpg_batch(requests, joern_dir=joern_dir,
-                                                    java_home=java_home, timeout=timeout)
+                requests = [
+                    dict(source=sample.source, function=hint.name, language=language)
+                    for sample, (language, hint) in zip(batch, resolved)
+                ]
+                results = extract_function_cpg_batch(
+                    requests, joern_dir=joern_dir, java_home=java_home, timeout=timeout
+                )
         except (CPGError, subprocess.TimeoutExpired, OSError) as error:
             results = [error] * len(batch)
         seconds = time.monotonic() - started
@@ -213,8 +211,6 @@ def _cpg_quality(graph: FunctionGraph) -> dict[str, object]:
     if graph.quality is not None:
         return graph.quality
     edge_counts = Counter(edge.kind for edge in graph.edges)
-    missing = [kind for kind in _GRAPH_KINDS if edge_counts[kind] == 0]
-    # AST and CFG are structural requirements; CDG/DDG may legitimately be empty.
     if edge_counts["AST"] == 0 or edge_counts["CFG"] == 0:
         raise CPGError(
             f"{graph.function}: structurally incomplete CPG "
@@ -224,12 +220,13 @@ def _cpg_quality(graph: FunctionGraph) -> dict[str, object]:
         "node_count": len(graph.nodes),
         "edge_count": len(graph.edges),
         "edge_counts": {kind: edge_counts[kind] for kind in _GRAPH_KINDS},
-        "missing_relation_kinds": missing,
+        "missing_relation_kinds": [kind for kind in _GRAPH_KINDS if edge_counts[kind] == 0],
     }
 
 
 def _record_matches_sample(record: dict[str, object], sample: FunctionSample) -> bool:
-    resolved_language, parsed = _resolve_sample(sample)
+    resolved_language, _ = _resolve_sample(sample)
+    features = record.get("mechanism_features")
     return (
         record.get("dataset") == sample.dataset
         and record.get("pair_id") == sample.pair_id
@@ -243,19 +240,18 @@ def _record_matches_sample(record: dict[str, object], sample: FunctionSample) ->
         and record.get("split") == sample.split
         and isinstance(record.get("cpg_relations"), str)
         and bool(str(record.get("cpg_relations")).strip())
-        and isinstance(record.get("vulnerability_semantics"), str)
-        and _valid_semantic_items(record.get("semantic_items"))
-        and isinstance(record.get("vulnerability_features"), list)
-        and all(isinstance(value, str) for value in record.get("vulnerability_features", []))
+        and isinstance(record.get("mechanism_context"), str)
+        and _valid_mechanism_items(record.get("mechanism_items"))
+        and isinstance(features, list)
+        and all(isinstance(value, str) and value in MECHANISM_FEATURES for value in features)
         and isinstance(record.get("cpg_quality"), dict)
         and type(record.get("cpg_relation_count")) is int
-        and type(record.get("semantic_item_count")) is int
+        and type(record.get("mechanism_item_count")) is int
+        and type(record.get("mechanism_candidate_count")) is int
     )
 
 
-def _load_reusable_records(
-    path: Path, samples: list[FunctionSample]
-) -> tuple[dict[str, dict[str, object]], bool]:
+def _load_reusable_records(path: Path, samples: list[FunctionSample]) -> tuple[dict[str, dict[str, object]], bool]:
     if not path.is_file():
         return {}, False
     sample_by_key = {sample.sample_key: sample for sample in samples}
@@ -293,62 +289,40 @@ def _write_jsonl_line(handle, value: dict[str, object]) -> None:
     os.fsync(handle.fileno())
 
 
-def _rewrite_in_sample_order(
-    target: Path,
-    samples: list[FunctionSample],
-    records_by_key: dict[str, dict[str, object]],
-) -> list[dict[str, object]]:
-    ordered = [
-        records_by_key[sample.sample_key]
-        for sample in samples
-        if sample.sample_key in records_by_key
-    ]
+def _rewrite_in_sample_order(target: Path, samples: list[FunctionSample], records_by_key: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+    ordered = [records_by_key[s.sample_key] for s in samples if s.sample_key in records_by_key]
     with target.open("w", encoding="utf-8") as output:
         for record in ordered:
             _write_jsonl_line(output, record)
     return ordered
 
 
-def _build_audit(
-    samples: list[FunctionSample], records: list[dict[str, object]], errors_path: Path
-) -> dict[str, object]:
+def _build_audit(samples: list[FunctionSample], records: list[dict[str, object]], errors_path: Path) -> dict[str, object]:
     success = {str(record["sample_key"]): record for record in records}
-    failures = []
-    if errors_path.is_file():
-        failures = [json.loads(line) for line in errors_path.read_text().splitlines() if line.strip()]
-
+    failures = [json.loads(line) for line in errors_path.read_text().splitlines() if line.strip()] if errors_path.is_file() else []
     groups: dict[str, Counter] = defaultdict(Counter)
     for sample in samples:
         key = f"{sample.dataset}/{sample.split}/label_{sample.label}"
         groups[key]["input"] += 1
-        if sample.sample_key in success:
-            groups[key]["success"] += 1
-        else:
-            groups[key]["failed"] += 1
-
+        groups[key]["success" if sample.sample_key in success else "failed"] += 1
     for failure in failures:
-        group = f"{failure['dataset']}/{failure['split']}/label_{failure['label']}"
-        groups[group]["failed_" + str(failure["stage"])] += 1
+        key = f"{failure['dataset']}/{failure['split']}/label_{failure['label']}"
+        groups[key]["failed_" + str(failure["stage"])] += 1
+
     quality = Counter()
-    pattern_count = Counter()
+    candidate_distribution = Counter()
+    candidate_kinds = Counter()
     for record in records:
-        q = record["cpg_quality"]
-        assert isinstance(q, dict)
-        edge_counts = q.get("edge_counts", {})
-        if isinstance(edge_counts, dict):
-            for kind in _GRAPH_KINDS:
-                if int(edge_counts.get(kind, 0)) == 0:
-                    quality[f"success_without_{kind.lower()}"] += 1
-        items = record.get("semantic_items", [])
-        if not items:
-            quality["success_without_semantic_items"] += 1
-        patterns = sum(
-            isinstance(item, dict) and item.get("category") == "POTENTIAL_PATTERN"
-            for item in items
-        )
-        pattern_count[str(patterns)] += 1
-        if patterns == 0:
-            quality["success_without_potential_pattern"] += 1
+        edge_counts = record["cpg_quality"].get("edge_counts", {})
+        for kind in _GRAPH_KINDS:
+            if int(edge_counts.get(kind, 0)) == 0:
+                quality[f"success_without_{kind.lower()}"] += 1
+        items = record.get("mechanism_items", [])
+        candidates = [item for item in items if item.get("category") == "MECHANISM_CANDIDATE"]
+        candidate_distribution[str(len(candidates))] += 1
+        candidate_kinds.update(str(item.get("kind")) for item in candidates)
+        if not candidates:
+            quality["success_without_mechanism_candidate"] += 1
 
     pairs = defaultdict(list)
     for sample in samples:
@@ -358,16 +332,16 @@ def _build_audit(
     for (dataset, _), pair in pairs.items():
         count = sum(sample.sample_key in success for sample in pair)
         pair_status[f"{dataset}/" + ("complete" if count == 2 else "incomplete" if count else "both_failed")] += 1
-    failure_stage = Counter(str(row.get("stage")) for row in failures)
-    failure_type = Counter(str(row.get("error_type")) for row in failures)
+
     group_report = {}
     for name, counts in sorted(groups.items()):
         entry = dict(sorted(counts.items()))
-        entry['success_rate'] = counts['success'] / counts['input']
-        for stage in ('syntax', 'joern', 'target_method', 'low_quality_cpg'):
-            entry['failed_' + stage] = counts['failed_' + stage]
-            entry['failure_rate_' + stage] = counts['failed_' + stage] / counts['input']
+        entry["success_rate"] = counts["success"] / counts["input"]
+        for stage in ("syntax", "joern", "target_method", "low_quality_cpg"):
+            entry["failed_" + stage] = counts["failed_" + stage]
+            entry["failure_rate_" + stage] = counts["failed_" + stage] / counts["input"]
         group_report[name] = entry
+
     return {
         "schema_version": DATASET_SCHEMA_VERSION,
         "total": len(samples),
@@ -376,14 +350,15 @@ def _build_audit(
         "success_rate": len(records) / len(samples) if samples else 0.0,
         "groups": group_report,
         "pair_build_status": dict(sorted(pair_status.items())),
-        "failure_stage": dict(sorted(failure_stage.items())),
-        "failure_type": dict(sorted(failure_type.items())),
+        "failure_stage": dict(sorted(Counter(str(row.get("stage")) for row in failures).items())),
+        "failure_type": dict(sorted(Counter(str(row.get("error_type")) for row in failures).items())),
         "quality_flags": dict(sorted(quality.items())),
-        "potential_pattern_count_distribution": dict(sorted(pattern_count.items(), key=lambda x: int(x[0]))),
+        "mechanism_candidate_count_distribution": dict(sorted(candidate_distribution.items(), key=lambda x: int(x[0]))),
+        "mechanism_candidate_kinds": dict(sorted(candidate_kinds.items())),
         "quality_note": (
-            "AST and CFG presence plus target-method alignment are enforced. Empty CDG/DDG or absence "
-            "of a potential pattern is reported, not treated as failure; these facts do not by themselves "
-            "prove or disprove the true vulnerability mechanism."
+            "AST and CFG are structural requirements. CDG/DDG may legitimately be empty. "
+            "MECHANISM_CANDIDATE records are CPG-supported vulnerability-mechanism hypotheses, "
+            "not causal ground truth; absence of a candidate does not imply benign code."
         ),
     }
 
@@ -404,13 +379,7 @@ def build_function_dataset(
     target = Path(output_path)
     errors_path = target.with_suffix(".errors.jsonl")
     audit_path = target.with_suffix(".audit.json")
-    resolved_paths = {
-        samples_file.resolve(),
-        target.resolve(),
-        errors_path.resolve(),
-        audit_path.resolve(),
-    }
-    if len(resolved_paths) != 4:
+    if len({samples_file.resolve(), target.resolve(), errors_path.resolve(), audit_path.resolve()}) != 4:
         raise ValueError("samples, output, error log, and audit file must be different files")
 
     samples = _read_samples(samples_file)
@@ -418,17 +387,16 @@ def build_function_dataset(
     reusable, incomplete_tail = _load_reusable_records(target, samples)
     if incomplete_tail:
         print(f"discard_incomplete_output_tail={target}", flush=True)
-
     _rewrite_in_sample_order(target, samples, reusable)
-    completed = set(reusable)
-    print(f"function_samples_total={len(samples)} resumed={len(completed)}", flush=True)
-
     records_by_key = dict(reusable)
+    print(f"function_samples_total={len(samples)} resumed={len(records_by_key)}", flush=True)
+
     current_failures: list[dict[str, object]] = []
-    pending = [sample for sample in samples if sample.sample_key not in completed]
+    pending = [sample for sample in samples if sample.sample_key not in records_by_key]
     with target.open("a", encoding="utf-8") as output, errors_path.open("w", encoding="utf-8") as error_output:
         for sample, resolved_language, parsed, result, seconds in _build_graphs(
-                pending, batch_size=batch_size, joern_dir=joern_dir, java_home=java_home, timeout=timeout):
+            pending, batch_size=batch_size, joern_dir=joern_dir, java_home=java_home, timeout=timeout
+        ):
             postprocessing_started = time.monotonic()
             stage = "joern"
             try:
@@ -459,13 +427,10 @@ def build_function_dataset(
                 }
                 current_failures.append(failure)
                 _write_jsonl_line(error_output, failure)
-                print(
-                    f"function_sample_failed={sample.sample_key} stage={stage} error={error}",
-                    flush=True,
-                )
+                print(f"function_sample_failed={sample.sample_key} stage={stage} error={error}", flush=True)
                 continue
 
-            semantics = extract_vulnerability_semantics(graph)
+            mechanisms = extract_mechanism_semantics(graph)
             relations = extract_cpg_relations(graph)
             record: dict[str, object] = {
                 "schema_version": DATASET_SCHEMA_VERSION,
@@ -480,56 +445,53 @@ def build_function_dataset(
                 "seconds": seconds + time.monotonic() - postprocessing_started,
                 "raw_source": sample.source,
                 "cpg_relations": render_cpg_relations(graph),
-                "vulnerability_semantics": semantics.render(),
-                "semantic_items": semantics.as_json(),
-                "vulnerability_features": list(semantics.feature_names),
+                "mechanism_context": mechanisms.render(),
+                "mechanism_items": mechanisms.as_json(),
+                "mechanism_features": list(mechanisms.feature_names),
                 "cpg_quality": quality,
                 "cpg_relation_count": len(relations),
-                "semantic_item_count": len(semantics.items),
+                "mechanism_item_count": len(mechanisms.items),
+                "mechanism_candidate_count": mechanisms.candidate_count,
                 "split": sample.split,
             }
             _write_jsonl_line(output, record)
             records_by_key[sample.sample_key] = record
-            completed.add(sample.sample_key)
             print(
                 f"function_sample_done={sample.sample_key} label={sample.label} "
-                f"cpg_relations={len(relations)} semantic_items={len(semantics.items)} "
-                f"features={len(semantics.feature_names)}",
+                f"cpg_relations={len(relations)} mechanism_candidates={mechanisms.candidate_count} "
+                f"mechanism_items={len(mechanisms.items)}",
                 flush=True,
             )
 
     records = _rewrite_in_sample_order(target, samples, records_by_key)
     failed_keys = {sample.sample_key for sample in samples} - set(records_by_key)
-    # Recreate the error log for every currently failed sample. Reusable successes never remain here.
     failure_by_key = {str(row["sample_key"]): row for row in current_failures}
     with errors_path.open("w", encoding="utf-8") as errors:
         for sample in samples:
-            if sample.sample_key in failed_keys:
-                row = failure_by_key.get(sample.sample_key)
-                if row is None:
-                    row = {
-                        "sample_key": sample.sample_key,
-                        "dataset": sample.dataset,
-                        "pair_id": sample.pair_id,
-                        "line": sample.line_number,
-                        "label": sample.label,
-                        "split": sample.split,
-                        "language": sample.language,
-                        "resolved_language": None,
-                        "stage": "unknown",
-                        "error_type": "UnresolvedFailure",
-                        "error": "sample did not produce a reusable current-schema record",
-                    }
-                _write_jsonl_line(errors, row)
+            if sample.sample_key not in failed_keys:
+                continue
+            row = failure_by_key.get(sample.sample_key) or {
+                "sample_key": sample.sample_key,
+                "dataset": sample.dataset,
+                "pair_id": sample.pair_id,
+                "line": sample.line_number,
+                "label": sample.label,
+                "split": sample.split,
+                "language": sample.language,
+                "resolved_language": None,
+                "stage": "unknown",
+                "error_type": "UnresolvedFailure",
+                "error": "sample did not produce a reusable current-schema record",
+            }
+            _write_jsonl_line(errors, row)
 
     audit = _build_audit(samples, records, errors_path)
-    audit["build_wall_seconds"] = time.monotonic() - build_started
-    audit["resumed_records"] = len(reusable)
-    audit["batch_size"] = batch_size
-    audit_path.write_text(
-        json.dumps(audit, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    audit.update(
+        build_wall_seconds=time.monotonic() - build_started,
+        resumed_records=len(reusable),
+        batch_size=batch_size,
     )
+    audit_path.write_text(json.dumps(audit, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
         f"function_build_summary total={audit['total']} success={audit['success']} "
         f"failed={audit['failed']} success_rate={audit['success_rate']:.2%} "
