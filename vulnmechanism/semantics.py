@@ -18,6 +18,17 @@ CATEGORY_TO_GROUP = {
     for category in categories
 }
 
+# These are descriptive mechanism-level metadata only. They are not used as an
+# auxiliary training loss. Generic facts such as "has array access" are excluded.
+MECHANISM_FEATURES = (
+    "bounds_flow",
+    "null_dereference_flow",
+    "use_after_free_flow",
+    "double_free_flow",
+    "size_arithmetic_flow",
+    "known_bounds_violation",
+)
+
 _WRITE_APIS = {
     "memcpy": (0, 2), "memmove": (0, 2), "mempcpy": (0, 2), "memset": (0, 2),
     "strncpy": (0, 2), "strncat": (0, 2), "strlcpy": (0, 2), "strlcat": (0, 2),
@@ -83,6 +94,10 @@ class MechanismSemantics:
     @property
     def candidate_count(self) -> int:
         return sum(item.category == "MECHANISM_CANDIDATE" for item in self.items)
+
+    @property
+    def feature_names(self) -> tuple[str, ...]:
+        return mechanism_features_from_items(item.as_json() for item in self.items)
 
     def render(self, excluded_groups: tuple[str, ...] = (), max_per_category: int = 24) -> str:
         return render_mechanism_items(
@@ -170,6 +185,28 @@ def render_mechanism_items(
     return "\n".join(sections)
 
 
+def mechanism_features_from_items(items) -> tuple[str, ...]:
+    features: set[str] = set()
+    for raw in items:
+        if raw.get("category") != "MECHANISM_CANDIDATE":
+            continue
+        kind = str(raw.get("kind") or "")
+        state = str(raw.get("state") or "")
+        if kind == "BOUNDS_FLOW":
+            features.add("bounds_flow")
+            if "static_violation=yes" in state:
+                features.add("known_bounds_violation")
+        elif kind == "NULL_DEREFERENCE_FLOW":
+            features.add("null_dereference_flow")
+        elif kind == "USE_AFTER_FREE_FLOW":
+            features.add("use_after_free_flow")
+        elif kind == "DOUBLE_FREE_FLOW":
+            features.add("double_free_flow")
+        elif kind == "SIZE_ARITHMETIC_FLOW":
+            features.add("size_arithmetic_flow")
+    return tuple(feature for feature in MECHANISM_FEATURES if feature in features)
+
+
 def _compact(text: str, limit: int = 140) -> str:
     value = " ".join(text.split())
     return value if len(value) <= limit else value[: limit - 3] + "..."
@@ -249,8 +286,6 @@ def _is_arithmetic_node(node: GraphNode) -> bool:
 
 
 def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
-    # Container nodes contain descendant source text and must not be interpreted
-    # as separate operations. Only native operation/CALL nodes become facts.
     if node.label in {
         "METHOD", "METHOD_RETURN", "BLOCK", "LOCAL", "PARAM", "IDENTIFIER",
         "FIELD_IDENTIFIER", "LITERAL", "TYPE_REF", "UNKNOWN", "CONTROL_STRUCTURE",
@@ -352,9 +387,6 @@ def _related_conditions(
     parents: dict[str, list[str]],
     direct: dict[str, list[str]],
 ) -> tuple[str, ...]:
-    # Joern commonly attaches CDG to a containing statement while an array or
-    # dereference operator is an AST descendant. Inherit such conditions through
-    # AST ancestry only. Branch polarity is deliberately not inferred.
     result: list[str] = []
     queue: deque[tuple[str, int]] = deque([(node_id, 0)])
     seen = {node_id}
@@ -485,8 +517,6 @@ def _parameter_sources(graph: FunctionGraph, sink_id: str, expression: str | Non
     if parameters:
         return tuple(sorted(parameters))
 
-    # For a local alias/derived value, first find upstream nodes mentioning the
-    # sink expression and then continue to parameter definitions.
     reverse = _ddg_reverse(graph)
     for intermediate in upstream:
         if not (names & _identifiers(intermediate.code)):
@@ -737,9 +767,6 @@ def _mechanism_items(
         if edge.kind == "CFG":
             cfg.setdefault(edge.source, []).append(edge.target)
 
-    # Lifetime relations are path candidates: a free is followed by another free
-    # or use of the same syntactic object on a CFG path with no observed pointer
-    # redefinition on that path. This remains an approximation, not alias proof.
     for first_free in (op for op in operations if op.kind == "DEALLOCATION" and op.object_name):
         obj = first_free.object_name or ""
         queue: deque[str] = deque(cfg.get(first_free.node_id, ()))
