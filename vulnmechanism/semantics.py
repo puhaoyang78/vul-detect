@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
 
 from .cpg import FunctionGraph, GraphNode
 
 
-# Only mechanism candidates and their supporting relations are model-facing.
-# SECURITY_OPERATION is persisted for audit, but deliberately excluded here.
 MECHANISM_GROUPS: dict[str, tuple[str, ...]] = {
     "relation": ("MECHANISM_RELATION",),
     "mechanism": ("MECHANISM_CANDIDATE",),
@@ -19,7 +17,6 @@ CATEGORY_TO_GROUP = {
     for category in categories
 }
 
-# Descriptive mechanism-level metadata only; not an auxiliary training target.
 MECHANISM_FEATURES = (
     "bounds_flow",
     "null_dereference_flow",
@@ -43,32 +40,31 @@ _READ_APIS = {
 }
 _ALLOC_APIS = {"malloc", "calloc", "realloc", "kmalloc", "kzalloc", "vmalloc"}
 _FREE_APIS = {"free", "kfree", "vfree"}
-# For these APIs, the size argument is itself a destination bound, not a
-# direct measurement of bytes definitely written. It becomes a bounds
-# mechanism only when an independent destination capacity is known.
 _DESTINATION_BOUND_APIS = {"snprintf", "vsnprintf", "strlcpy", "strlcat"}
 
 _IDENTIFIER = re.compile(r"\b[A-Za-z_]\w*\b")
 _SIMPLE_IDENTIFIER = re.compile(r"^[A-Za-z_]\w*$")
 _ARRAY_ACCESS = re.compile(r"\b([A-Za-z_]\w*(?:->\w+|\.\w+)*)\s*\[\s*([^\]]+?)\s*\]")
 _ARRAY_DECL = re.compile(r"\b([A-Za-z_]\w*)\s*\[\s*([A-Za-z_0-9()+\-*/<>&| ]+)\s*\]")
-_ASSIGNMENT = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*(?=[A-Za-z_]\w*\s*\()")
+_ASSIGN_CALL = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*(?=[A-Za-z_]\w*\s*\()")
 _NEW_ASSIGNMENT = re.compile(r"\b([A-Za-z_]\w*)\s*=\s*new\b")
 _DEREF = re.compile(r"(?<![\w)])\*\s*([A-Za-z_]\w*)")
-# Capture the full base expression of the final arrow. For
-# tree->cdr->car->cdr this yields tree->cdr->car, never field names cdr/car.
 _ARROW_BASE = re.compile(
     r"\b([A-Za-z_]\w*(?:\s*->\s*[A-Za-z_]\w*)*)\s*->\s*[A-Za-z_]\w*"
 )
 _DELETE = re.compile(r"\bdelete(?:\s*\[\s*\])?\s+([A-Za-z_]\w*)")
 _NEW_EXTENT = re.compile(r"\bnew\b[^;\[]*\[\s*([^\]]+)\s*\]")
 _INTEGER = re.compile(r"^(?:0[xX][0-9A-Fa-f]+|\d+)[uUlL]*$")
-_BINARY_ARITHMETIC = re.compile(
-    r"(?:[A-Za-z_0-9)\]]\s*(?:\+|-|\*|/|%|<<|>>)\s*[A-Za-z_0-9(\[])"
+_SIZEOF = re.compile(r"\bsizeof\s*(?:\([^()]*\)|[A-Za-z_]\w*)")
+_SIMPLE_BINARY_ARITH = re.compile(
+    r"\b([A-Za-z_]\w*(?:->\w+|\.\w+)*)\s*(<<|>>|\+|-|\*)\s*"
+    r"([A-Za-z_]\w*(?:->\w+|\.\w+)*)\b"
 )
 _ARITHMETIC_LABEL_PARTS = (
-    "addition", "subtraction", "multiplication", "division", "modulo",
-    "shiftleft", "shiftright",
+    "<operator>.addition", "<operator>.subtraction", "<operator>.multiplication",
+    "<operator>.division", "<operator>.modulo", "<operator>.shiftleft",
+    "<operator>.shiftright", "<operator>.assignmentplus",
+    "<operator>.assignmentminus", "<operator>.assignmentmultiplication",
 )
 _CONTROL_PREFIXES = ("if ", "if(", "while ", "while(", "for ", "for(", "switch ", "switch(")
 _TYPE_WORDS = {
@@ -88,12 +84,12 @@ class SemanticItem:
     state: str | None = None
 
     def as_json(self) -> dict[str, str]:
-        result = {"category": self.category, "kind": self.kind, "detail": self.detail}
+        value = {"category": self.category, "kind": self.kind, "detail": self.detail}
         if self.key:
-            result["key"] = self.key
+            value["key"] = self.key
         if self.state:
-            result["state"] = self.state
-        return result
+            value["state"] = self.state
+        return value
 
 
 @dataclass(frozen=True)
@@ -126,6 +122,7 @@ class _Operation:
     object_name: str | None
     extent: str | None
     code: str
+    api_name: str | None = None
 
 
 def validate_mechanism_groups(groups: tuple[str, ...]) -> tuple[str, ...]:
@@ -144,18 +141,17 @@ def validate_mechanism_groups(groups: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _round_robin_by_kind(rows: list[tuple[str, str]], limit: int) -> list[str]:
-    groups: dict[str, list[str]] = {}
+    grouped: dict[str, list[str]] = {}
     for kind, text in rows:
-        values = groups.setdefault(kind, [])
+        values = grouped.setdefault(kind, [])
         if text not in values:
             values.append(text)
     selected: list[str] = []
     while len(selected) < limit:
         added = False
-        for kind in sorted(groups):
-            values = groups[kind]
-            if values and len(selected) < limit:
-                selected.append(values.pop(0))
+        for kind in sorted(grouped):
+            if grouped[kind] and len(selected) < limit:
+                selected.append(grouped[kind].pop(0))
                 added = True
         if not added:
             break
@@ -168,31 +164,24 @@ def render_mechanism_items(
     excluded_groups: tuple[str, ...] = (),
     max_per_category: int = 24,
 ) -> str:
-    """Render only candidate mechanisms and the relations supporting them.
-
-    SECURITY_OPERATION records are intentionally audit-only. This prevents the
-    model branch from learning shortcuts such as "many pointer dereferences"
-    instead of the CPG relations that make an operation security-relevant.
-    """
     if max_per_category <= 0:
         raise ValueError("max_per_category must be positive")
     excluded = set(validate_mechanism_groups(excluded_groups))
-
     candidate_keys = {
-        str(raw.get("key"))
-        for raw in items
-        if raw.get("category") == "MECHANISM_CANDIDATE" and raw.get("key")
+        str(item.get("key"))
+        for item in items
+        if item.get("category") == "MECHANISM_CANDIDATE" and item.get("key")
     }
     grouped: dict[str, list[tuple[str, str]]] = {}
-    for raw in items:
-        category = str(raw.get("category") or "")
-        kind = str(raw.get("kind") or "")
-        detail = str(raw.get("detail") or "")
+    for item in items:
+        category = str(item.get("category") or "")
+        kind = str(item.get("kind") or "")
+        detail = str(item.get("detail") or "")
         group = CATEGORY_TO_GROUP.get(category)
         if not category or not kind or group is None or group in excluded:
             continue
         if category == "MECHANISM_RELATION":
-            key = raw.get("key")
+            key = item.get("key")
             if not isinstance(key, str) or key not in candidate_keys:
                 continue
         grouped.setdefault(category, []).append((kind, f"{kind} {detail}".strip()))
@@ -200,23 +189,23 @@ def render_mechanism_items(
     if not grouped:
         return "[VULNERABILITY_MECHANISM_CONTEXT]\nNO_CPG_DERIVED_MECHANISM_EVIDENCE"
 
-    sections: list[str] = []
+    rows: list[str] = []
     for category in ("MECHANISM_CANDIDATE", "MECHANISM_RELATION"):
-        rows = grouped.get(category)
-        if not rows:
+        values = grouped.get(category)
+        if not values:
             continue
-        sections.append(f"[{category}]")
-        sections.extend(_round_robin_by_kind(sorted(set(rows)), max_per_category))
-    return "\n".join(sections)
+        rows.append(f"[{category}]")
+        rows.extend(_round_robin_by_kind(sorted(set(values)), max_per_category))
+    return "\n".join(rows)
 
 
 def mechanism_features_from_items(items) -> tuple[str, ...]:
     features: set[str] = set()
-    for raw in items:
-        if raw.get("category") != "MECHANISM_CANDIDATE":
+    for item in items:
+        if item.get("category") != "MECHANISM_CANDIDATE":
             continue
-        kind = str(raw.get("kind") or "")
-        state = str(raw.get("state") or "")
+        kind = str(item.get("kind") or "")
+        state = str(item.get("state") or "")
         if kind == "BOUNDS_FLOW":
             features.add("bounds_flow")
             if "static_violation=yes" in state:
@@ -237,12 +226,19 @@ def _compact(text: str, limit: int = 140) -> str:
     return value if len(value) <= limit else value[: limit - 3] + "..."
 
 
-def _normalize(text: str | None) -> str:
-    return " ".join((text or "").split())
+def _canonical(text: str | None) -> str:
+    return re.sub(r"\s+", "", text or "")
 
 
-def _identifiers(expression: str | None) -> set[str]:
-    return set(_IDENTIFIER.findall(expression)) if expression else set()
+def _runtime_identifiers(expression: str | None) -> set[str]:
+    if not expression:
+        return set()
+    stripped = _SIZEOF.sub("", expression)
+    return {
+        identifier
+        for identifier in _IDENTIFIER.findall(stripped)
+        if identifier not in _TYPE_WORDS and identifier != "sizeof"
+    }
 
 
 def _parameter_name(code: str) -> str | None:
@@ -251,6 +247,22 @@ def _parameter_name(code: str) -> str | None:
         if identifier not in _TYPE_WORDS:
             return identifier
     return identifiers[-1] if identifiers else None
+
+
+def _declared_types(graph: FunctionGraph) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for node in graph.nodes.values():
+        if node.label.upper() not in {"PARAM", "LOCAL"}:
+            continue
+        name = _parameter_name(node.code)
+        if not name:
+            continue
+        match = re.search(rf"^(.*?)\b{re.escape(name)}\b(?:\s*\[.*\])?\s*$", node.code.strip())
+        if match:
+            type_text = " ".join(match.group(1).split()).strip()
+            if type_text:
+                result.setdefault(name, type_text)
+    return result
 
 
 def _call_name_and_args(code: str) -> tuple[str | None, tuple[str, ...]]:
@@ -303,18 +315,9 @@ def _allocation_extent(name: str, args: tuple[str, ...]) -> str | None:
     return _argument(args, 0)
 
 
-def _is_arithmetic_node(node: GraphNode) -> bool:
-    lower = node.label.lower()
-    return any(part in lower for part in _ARITHMETIC_LABEL_PARTS) or bool(
-        _BINARY_ARITHMETIC.search(node.code)
-    )
-
-
 def _arrow_base(code: str) -> str | None:
     match = _ARROW_BASE.search(code)
-    if not match:
-        return None
-    return re.sub(r"\s*->\s*", "->", match.group(1))
+    return re.sub(r"\s*->\s*", "->", match.group(1)) if match else None
 
 
 def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
@@ -325,8 +328,7 @@ def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
         return ()
 
     operations: list[_Operation] = []
-    code = node.code
-    name, args = _call_name_and_args(code)
+    name, args = _call_name_and_args(node.code)
     if name in _WRITE_APIS:
         object_index, extent_index = _WRITE_APIS[name]
         extent = (
@@ -334,9 +336,9 @@ def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
             if name == "fread" and len(args) >= 3
             else _argument(args, extent_index)
         )
-        operations.append(
-            _Operation(node.node_id, "MEMORY_WRITE", _argument(args, object_index), extent, code)
-        )
+        operations.append(_Operation(
+            node.node_id, "MEMORY_WRITE", _argument(args, object_index), extent, node.code, name
+        ))
     if name in _READ_APIS:
         object_index, extent_index = _READ_APIS[name]
         extent = (
@@ -344,65 +346,225 @@ def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
             if name == "fwrite" and len(args) >= 3
             else _argument(args, extent_index)
         )
-        operations.append(
-            _Operation(node.node_id, "MEMORY_READ", _argument(args, object_index), extent, code)
-        )
+        operations.append(_Operation(
+            node.node_id, "MEMORY_READ", _argument(args, object_index), extent, node.code, name
+        ))
     if name in _ALLOC_APIS:
-        assigned = _ASSIGNMENT.search(code)
+        assigned = _ASSIGN_CALL.search(node.code)
         operations.append(_Operation(
             node.node_id,
             "ALLOCATION",
             assigned.group(1) if assigned else None,
             _allocation_extent(name, args),
-            code,
+            node.code,
+            name,
         ))
     if name in _FREE_APIS:
-        operations.append(
-            _Operation(node.node_id, "DEALLOCATION", _argument(args, 0), None, code)
-        )
+        operations.append(_Operation(
+            node.node_id, "DEALLOCATION", _argument(args, 0), None, node.code, name
+        ))
 
     lower = node.label.lower()
     if "<operator>.new" in lower or lower.endswith(".new"):
-        extent = _NEW_EXTENT.search(code)
-        assigned = _NEW_ASSIGNMENT.search(code)
+        extent = _NEW_EXTENT.search(node.code)
+        assigned = _NEW_ASSIGNMENT.search(node.code)
         operations.append(_Operation(
             node.node_id,
             "ALLOCATION",
             assigned.group(1) if assigned else None,
             extent.group(1).strip() if extent else None,
-            code,
+            node.code,
+            "new",
         ))
     if "<operator>.delete" in lower or lower.endswith(".delete"):
-        deleted = _DELETE.search(code)
+        deleted = _DELETE.search(node.code)
         operations.append(_Operation(
             node.node_id,
             "DEALLOCATION",
             deleted.group(1) if deleted else None,
             None,
-            code,
+            node.code,
+            "delete",
         ))
-
     if "indexaccess" in lower:
-        for base, index in _ARRAY_ACCESS.findall(code):
-            operations.append(
-                _Operation(node.node_id, "ARRAY_ACCESS", base, index.strip(), code)
-            )
+        for base, index in _ARRAY_ACCESS.findall(node.code):
+            operations.append(_Operation(
+                node.node_id, "ARRAY_ACCESS", base, index.strip(), node.code
+            ))
     if "indirection" in lower:
-        for pointer in sorted(set(_DEREF.findall(code))):
-            operations.append(
-                _Operation(node.node_id, "POINTER_DEREFERENCE", pointer, None, code)
-            )
+        for pointer in sorted(set(_DEREF.findall(node.code))):
+            operations.append(_Operation(
+                node.node_id, "POINTER_DEREFERENCE", pointer, None, node.code
+            ))
     if "fieldaccess" in lower:
-        pointer = _arrow_base(code)
+        pointer = _arrow_base(node.code)
         if pointer:
-            operations.append(
-                _Operation(node.node_id, "POINTER_DEREFERENCE", pointer, None, code)
-            )
+            operations.append(_Operation(
+                node.node_id, "POINTER_DEREFERENCE", pointer, None, node.code
+            ))
 
-    deduplicated: dict[tuple[str, str | None, str | None], _Operation] = {}
+    dedup: dict[tuple[str, str | None, str | None], _Operation] = {}
     for operation in operations:
-        deduplicated[(operation.kind, operation.object_name, operation.extent)] = operation
-    return tuple(deduplicated.values())
+        dedup[(operation.kind, operation.object_name, operation.extent)] = operation
+    return tuple(dedup.values())
+
+
+def _ast_children(graph: FunctionGraph) -> dict[str, list[str]]:
+    children: dict[str, list[str]] = {}
+    for edge in graph.edges:
+        if edge.kind == "AST":
+            children.setdefault(edge.source, []).append(edge.target)
+    return children
+
+
+def _ast_parents(graph: FunctionGraph) -> dict[str, list[str]]:
+    parents: dict[str, list[str]] = {}
+    for edge in graph.edges:
+        if edge.kind == "AST":
+            parents.setdefault(edge.target, []).append(edge.source)
+    return parents
+
+
+def _ast_descendants(graph: FunctionGraph, root_id: str, max_depth: int = 8) -> tuple[GraphNode, ...]:
+    children = _ast_children(graph)
+    queue: deque[tuple[str, int]] = deque([(root_id, 0)])
+    seen = {root_id}
+    result: list[GraphNode] = []
+    while queue:
+        current, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        for child_id in children.get(current, ()):
+            if child_id in seen:
+                continue
+            seen.add(child_id)
+            child = graph.nodes.get(child_id)
+            if child:
+                result.append(child)
+            queue.append((child_id, depth + 1))
+    return tuple(result)
+
+
+def _expression_nodes(
+    graph: FunctionGraph,
+    operation_node_id: str,
+    expression: str | None,
+) -> tuple[GraphNode, ...]:
+    wanted = _canonical(expression)
+    if not wanted:
+        return ()
+    candidates: list[GraphNode] = []
+    root = graph.nodes.get(operation_node_id)
+    if root:
+        candidates.append(root)
+    candidates.extend(_ast_descendants(graph, operation_node_id))
+    exact = [node for node in candidates if _canonical(node.code) == wanted]
+    if exact:
+        return tuple(exact)
+    if _SIMPLE_IDENTIFIER.fullmatch(expression or ""):
+        return tuple(
+            node for node in candidates
+            if node.label.upper() == "IDENTIFIER" and node.code.strip() == expression.strip()
+        )
+    return ()
+
+
+def _ddg_reverse(graph: FunctionGraph) -> dict[str, list[str]]:
+    reverse: dict[str, list[str]] = {}
+    for edge in graph.edges:
+        if edge.kind == "DDG":
+            reverse.setdefault(edge.target, []).append(edge.source)
+    return reverse
+
+
+def _ddg_upstream_from_ids(
+    graph: FunctionGraph,
+    root_ids: tuple[str, ...] | list[str],
+    *,
+    max_depth: int = 6,
+    max_nodes: int = 96,
+) -> tuple[GraphNode, ...]:
+    reverse = _ddg_reverse(graph)
+    queue: deque[tuple[str, int]] = deque((root_id, 0) for root_id in root_ids)
+    seen = set(root_ids)
+    result: list[GraphNode] = []
+    while queue and len(result) < max_nodes:
+        current, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        for source_id in reverse.get(current, ()):
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            source = graph.nodes.get(source_id)
+            if source:
+                result.append(source)
+            queue.append((source_id, depth + 1))
+    return tuple(result)
+
+
+def _parameter_names(graph: FunctionGraph) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for node in graph.nodes.values():
+        if node.label.upper() != "PARAM":
+            continue
+        name = _parameter_name(node.code)
+        if name:
+            result[name] = node.node_id
+    return result
+
+
+def _parameter_sources(
+    graph: FunctionGraph,
+    operation_node_id: str,
+    expression: str | None,
+) -> tuple[str, ...]:
+    runtime_names = _runtime_identifiers(expression)
+    if not runtime_names:
+        return ()
+    parameters = _parameter_names(graph)
+    sources = set(runtime_names & parameters.keys())
+    roots = _expression_nodes(graph, operation_node_id, expression)
+    if not roots:
+        return tuple(sorted(sources))
+    upstream = _ddg_upstream_from_ids(graph, [node.node_id for node in roots])
+    for node in upstream:
+        if node.label.upper() == "PARAM":
+            name = _parameter_name(node.code)
+            if name:
+                sources.add(name)
+    return tuple(sorted(sources))
+
+
+def _is_arithmetic_node(node: GraphNode) -> bool:
+    lower = node.label.lower()
+    return any(part.lower() in lower for part in _ARITHMETIC_LABEL_PARTS)
+
+
+def _arithmetic_sources(
+    graph: FunctionGraph,
+    operation_node_id: str,
+    expression: str | None,
+) -> tuple[GraphNode, ...]:
+    if not _runtime_identifiers(expression):
+        return ()
+    roots = _expression_nodes(graph, operation_node_id, expression)
+    if not roots:
+        return ()
+    nodes: list[GraphNode] = []
+    for root in roots:
+        nodes.append(root)
+        nodes.extend(_ast_descendants(graph, root.node_id, max_depth=5))
+    nodes.extend(_ddg_upstream_from_ids(graph, [root.node_id for root in roots]))
+    result: list[GraphNode] = []
+    seen: set[str] = set()
+    for node in nodes:
+        if node.node_id in seen or not _is_arithmetic_node(node):
+            continue
+        seen.add(node.node_id)
+        if _runtime_identifiers(node.code):
+            result.append(node)
+    return tuple(result[:6])
 
 
 def _control_expression(node: GraphNode) -> str | None:
@@ -427,32 +589,26 @@ def _control_expression(node: GraphNode) -> str | None:
     return code if any(operator in code for operator in ("<=", ">=", "==", "!=", "<", ">")) else None
 
 
-def _ast_parents(graph: FunctionGraph) -> dict[str, list[str]]:
-    parents: dict[str, list[str]] = {}
-    for edge in graph.edges:
-        if edge.kind == "AST":
-            parents.setdefault(edge.target, []).append(edge.source)
-    return parents
-
-
-def _direct_conditions(graph: FunctionGraph) -> dict[str, list[str]]:
-    conditions: dict[str, list[str]] = {}
+def _direct_conditions(graph: FunctionGraph) -> dict[str, list[tuple[str, str]]]:
+    result: dict[str, list[tuple[str, str]]] = {}
     for edge in graph.edges:
         if edge.kind != "CDG":
             continue
         source = graph.nodes.get(edge.source)
         expression = _control_expression(source) if source else None
-        if expression and expression not in conditions.setdefault(edge.target, []):
-            conditions[edge.target].append(expression)
-    return conditions
+        if expression:
+            value = (edge.source, expression)
+            if value not in result.setdefault(edge.target, []):
+                result[edge.target].append(value)
+    return result
 
 
 def _related_conditions(
     node_id: str,
     parents: dict[str, list[str]],
-    direct: dict[str, list[str]],
-) -> tuple[str, ...]:
-    result: list[str] = []
+    direct: dict[str, list[tuple[str, str]]],
+) -> tuple[tuple[str, str], ...]:
+    result: list[tuple[str, str]] = []
     queue: deque[tuple[str, int]] = deque([(node_id, 0)])
     seen = {node_id}
     while queue:
@@ -467,18 +623,6 @@ def _related_conditions(
                 seen.add(parent)
                 queue.append((parent, depth + 1))
     return tuple(result)
-
-
-def _condition_state(
-    graph: FunctionGraph,
-    conditions: tuple[str, ...],
-    predicate,
-) -> str:
-    if any(predicate(condition) for condition in conditions):
-        return "present"
-    if not any(edge.kind == "CDG" for edge in graph.edges):
-        return "unknown_no_cdg"
-    return "not_observed"
 
 
 def _static_integer(expression: str | None) -> int | None:
@@ -511,18 +655,60 @@ def _split_comparison(condition: str) -> tuple[str, str, str] | None:
 
 def _upper_bound_condition(condition: str, expression: str) -> bool:
     comparison = _split_comparison(condition)
-    names = _identifiers(expression)
+    names = _runtime_identifiers(expression)
     if comparison is None or not names:
         return False
     left, operator, right = comparison
-    left_names, right_names = _identifiers(left), _identifiers(right)
+    left_names = _runtime_identifiers(left)
+    right_names = _runtime_identifiers(right)
     if operator in {"<", "<="}:
-        return bool(names & left_names) and bool(
-            right_names or _static_integer(right) is not None
-        )
-    return bool(names & right_names) and bool(
-        left_names or _static_integer(left) is not None
-    )
+        return bool(names & left_names) and bool(right_names or _static_integer(right) is not None)
+    return bool(names & right_names) and bool(left_names or _static_integer(left) is not None)
+
+
+def _condition_state(
+    graph: FunctionGraph,
+    conditions: tuple[tuple[str, str], ...],
+    predicate,
+) -> str:
+    if any(predicate(expression) for _, expression in conditions):
+        return "present"
+    if not any(edge.kind == "CDG" for edge in graph.edges):
+        return "unknown_no_cdg"
+    return "not_observed"
+
+
+def _all_control_conditions(graph: FunctionGraph) -> tuple[tuple[str, str], ...]:
+    result: list[tuple[str, str]] = []
+    for node in graph.nodes.values():
+        expression = _control_expression(node)
+        if expression:
+            value = (node.node_id, expression)
+            if value not in result:
+                result.append(value)
+    return tuple(result)
+
+
+def _operand_guard_present(
+    graph: FunctionGraph,
+    operand_names: set[str],
+    *,
+    exclude_node_id: str,
+    arithmetic_expression: str,
+) -> bool:
+    if len(operand_names) < 2:
+        return False
+    arithmetic_canonical = _canonical(arithmetic_expression)
+    for node_id, condition in _all_control_conditions(graph):
+        if node_id == exclude_node_id or arithmetic_canonical in _canonical(condition):
+            continue
+        comparison = _split_comparison(condition)
+        if comparison is None:
+            continue
+        mentioned = _runtime_identifiers(condition)
+        if len(operand_names & mentioned) >= 2:
+            return True
+    return False
 
 
 def _null_related_condition(condition: str, pointer: str) -> bool:
@@ -536,118 +722,19 @@ def _null_related_condition(condition: str, pointer: str) -> bool:
     )
 
 
-def _ddg_reverse(graph: FunctionGraph) -> dict[str, list[str]]:
-    reverse: dict[str, list[str]] = {}
-    for edge in graph.edges:
-        if edge.kind == "DDG":
-            reverse.setdefault(edge.target, []).append(edge.source)
-    return reverse
-
-
-def _ddg_upstream(
-    graph: FunctionGraph,
-    sink_id: str,
-    *,
-    max_depth: int = 5,
-    max_nodes: int = 64,
-) -> tuple[GraphNode, ...]:
-    reverse = _ddg_reverse(graph)
-    queue: deque[tuple[str, int]] = deque([(sink_id, 0)])
-    seen = {sink_id}
-    result: list[GraphNode] = []
-    while queue and len(result) < max_nodes:
-        current, depth = queue.popleft()
-        if depth >= max_depth:
-            continue
-        for source_id in reverse.get(current, ()):
-            if source_id in seen:
-                continue
-            seen.add(source_id)
-            source = graph.nodes.get(source_id)
-            if source:
-                result.append(source)
-            queue.append((source_id, depth + 1))
-    return tuple(result)
-
-
-def _parameter_sources(
-    graph: FunctionGraph,
-    sink_id: str,
-    expression: str | None,
-) -> tuple[str, ...]:
-    names = _identifiers(expression)
-    if not names:
-        return ()
-    upstream = _ddg_upstream(graph, sink_id)
-    parameters: set[str] = set()
-
-    for node in upstream:
-        if node.label.upper() != "PARAM":
-            continue
-        name = _parameter_name(node.code)
-        if name and name in names:
-            parameters.add(name)
-    if parameters:
-        return tuple(sorted(parameters))
-
-    reverse = _ddg_reverse(graph)
-    for intermediate in upstream:
-        if not (names & _identifiers(intermediate.code)):
-            continue
-        queue: deque[tuple[str, int]] = deque([(intermediate.node_id, 0)])
-        seen = {intermediate.node_id}
-        while queue:
-            current, depth = queue.popleft()
-            if depth >= 4:
-                continue
-            for source_id in reverse.get(current, ()):
-                if source_id in seen:
-                    continue
-                seen.add(source_id)
-                source = graph.nodes.get(source_id)
-                if not source:
-                    continue
-                if source.label.upper() == "PARAM":
-                    name = _parameter_name(source.code)
-                    if name:
-                        parameters.add(name)
-                queue.append((source_id, depth + 1))
-    return tuple(sorted(parameters))
-
-
-def _arithmetic_sources(
-    graph: FunctionGraph,
-    sink_id: str,
-    expression: str | None,
-) -> tuple[GraphNode, ...]:
-    names = _identifiers(expression)
-    result = []
-    for node in _ddg_upstream(graph, sink_id):
-        if not _is_arithmetic_node(node):
-            continue
-        if names and not (names & _identifiers(node.code)):
-            continue
-        result.append(node)
-        if len(result) == 4:
-            break
-    return tuple(result)
-
-
 def _capacities(operations: list[_Operation], graph: FunctionGraph) -> dict[str, str]:
     result: dict[str, str] = {}
     for node in graph.nodes.values():
-        if "LOCAL" not in node.label.upper():
+        if node.label.upper() != "LOCAL":
             continue
         for name, capacity in _ARRAY_DECL.findall(node.code):
-            value = _normalize(capacity)
-            if value and name not in result:
-                result[name] = value
+            value = _compact(capacity, 80)
+            if value:
+                result.setdefault(name, value)
     dynamic: dict[str, set[str]] = {}
     for operation in operations:
         if operation.kind == "ALLOCATION" and operation.object_name and operation.extent:
-            dynamic.setdefault(operation.object_name, set()).add(
-                _compact(operation.extent, 100)
-            )
+            dynamic.setdefault(operation.object_name, set()).add(_compact(operation.extent, 80))
     for name, values in dynamic.items():
         if name not in result and len(values) == 1:
             result[name] = next(iter(values))
@@ -655,7 +742,7 @@ def _capacities(operations: list[_Operation], graph: FunctionGraph) -> dict[str,
 
 
 def _candidate_key(kind: str, *parts: str | None) -> str:
-    return "|".join([kind, *(_normalize(part) or "?" for part in parts)])
+    return "|".join([kind, *(_compact(part or "?", 80) for part in parts)])
 
 
 def _redefines_name(code: str, name: str) -> bool:
@@ -665,12 +752,7 @@ def _redefines_name(code: str, name: str) -> bool:
 
 def _null_assignment(code: str, pointer: str) -> bool:
     escaped = re.escape(pointer)
-    return bool(
-        re.search(
-            rf"\b{escaped}\b\s*=\s*(?:NULL|nullptr|0)\b",
-            code,
-        )
-    )
+    return bool(re.search(rf"\b{escaped}\b\s*=\s*(?:NULL|nullptr|0)\b", code))
 
 
 def _nullable_origins(
@@ -679,53 +761,45 @@ def _nullable_origins(
     pointer: str,
     operations: list[_Operation],
 ) -> tuple[str, ...]:
-    """Return explicit CPG-observed origins that can yield a null pointer.
-
-    A function parameter alone is intentionally not nullable evidence: its
-    contract may require non-null. This avoids turning ordinary pointer-heavy
-    functions into null-dereference candidates.
-    """
     if not _SIMPLE_IDENTIFIER.fullmatch(pointer):
         return ()
-
-    upstream = _ddg_upstream(graph, sink_id)
+    roots = _expression_nodes(graph, sink_id, pointer)
+    if not roots:
+        return ()
+    upstream = _ddg_upstream_from_ids(graph, [node.node_id for node in roots])
     upstream_ids = {node.node_id for node in upstream}
     origins: set[str] = set()
-
     for operation in operations:
         if (
             operation.node_id in upstream_ids
             and operation.kind == "ALLOCATION"
             and operation.object_name == pointer
+            and operation.api_name in _ALLOC_APIS
         ):
-            api, _ = _call_name_and_args(operation.code)
-            if api in _ALLOC_APIS:
-                origins.add(f"nullable_allocation:{api}")
-
+            origins.add(f"nullable_allocation:{operation.api_name}")
     for node in upstream:
         if _null_assignment(node.code, pointer):
             origins.add("explicit_null_assignment")
-        assigned = _ASSIGNMENT.search(node.code)
+        assigned = _ASSIGN_CALL.search(node.code)
         api, _ = _call_name_and_args(node.code)
         if assigned and assigned.group(1) == pointer and api in _ALLOC_APIS:
             origins.add(f"nullable_allocation:{api}")
-
     return tuple(sorted(origins))
 
 
 def _security_operation_items(operations: list[_Operation]) -> list[SemanticItem]:
-    items: list[SemanticItem] = []
+    result: list[SemanticItem] = []
     for operation in operations:
         fields = [f"sink={operation.kind}", f"code={_compact(operation.code, 100)}"]
         if operation.object_name:
             fields.append(f"object={_compact(operation.object_name, 60)}")
         if operation.extent:
-            label = "index" if operation.kind == "ARRAY_ACCESS" else "extent"
-            fields.append(f"{label}={_compact(operation.extent, 60)}")
-        items.append(
-            SemanticItem("SECURITY_OPERATION", operation.kind, " ".join(fields))
-        )
-    return items
+            fields.append(
+                f"{'index' if operation.kind == 'ARRAY_ACCESS' else 'extent'}="
+                f"{_compact(operation.extent, 60)}"
+            )
+        result.append(SemanticItem("SECURITY_OPERATION", operation.kind, " ".join(fields)))
+    return result
 
 
 def _mechanism_items(
@@ -736,7 +810,8 @@ def _mechanism_items(
     parents = _ast_parents(graph)
     direct_conditions = _direct_conditions(graph)
     capacities = _capacities(operations, graph)
-    candidate_rows: dict[tuple[str, str], dict[str, object]] = {}
+    declared_types = _declared_types(graph)
+    candidates: dict[tuple[str, str], dict[str, object]] = {}
     relations: list[SemanticItem] = []
 
     def add_candidate(
@@ -748,218 +823,218 @@ def _mechanism_items(
         obj: str,
         expression: str = "",
         condition: str = "unknown",
-        violation: bool = False,
         capacity: str = "",
+        value_type: str = "",
+        violation: bool = False,
     ) -> None:
-        row = candidate_rows.setdefault((kind, key), {
-            "sources": set(),
-            "sinks": set(),
-            "objects": set(),
-            "expressions": set(),
-            "conditions": set(),
-            "capacities": set(),
-            "violation": False,
-            "occurrences": 0,
+        row = candidates.setdefault((kind, key), {
+            "sources": set(), "sinks": set(), "objects": set(), "expressions": set(),
+            "conditions": set(), "capacities": set(), "types": set(),
+            "violation": False, "occurrences": 0,
         })
         row["sources"].add(source or "unknown")
         row["sinks"].add(sink)
         row["objects"].add(obj or "?")
         if expression:
-            row["expressions"].add(_compact(expression, 60))
+            row["expressions"].add(_compact(expression, 70))
         if capacity:
-            row["capacities"].add(_compact(capacity, 60))
+            row["capacities"].add(_compact(capacity, 70))
+        if value_type:
+            row["types"].add(_compact(value_type, 50))
         row["conditions"].add(condition)
         row["violation"] = bool(row["violation"]) or violation
         row["occurrences"] = int(row["occurrences"]) + 1
 
     for operation in operations:
-        conditions = _related_conditions(
-            operation.node_id, parents, direct_conditions
-        )
+        conditions = _related_conditions(operation.node_id, parents, direct_conditions)
 
         if operation.kind in {"MEMORY_WRITE", "ARRAY_ACCESS"} and operation.extent:
             capacity = capacities.get(operation.object_name or "")
-            parameters = _parameter_sources(
-                graph, operation.node_id, operation.extent
-            )
-            api_name, _ = _call_name_and_args(operation.code)
+            parameters = _parameter_sources(graph, operation.node_id, operation.extent)
             source = "parameter:" + ",".join(parameters) if parameters else "unknown"
-
-            # The size argument of snprintf/strlcpy-style calls is itself a
-            # destination bound. Without an independent capacity, it is not
-            # evidence of excessive writing.
+            value_type = (
+                declared_types.get(operation.extent.strip(), "")
+                if _SIMPLE_IDENTIFIER.fullmatch(operation.extent.strip())
+                else ""
+            )
             relation_evidence = bool(parameters or capacity)
-            if api_name in _DESTINATION_BOUND_APIS and not capacity:
+            if operation.api_name in _DESTINATION_BOUND_APIS and not capacity:
                 relation_evidence = False
 
             if relation_evidence:
                 condition_state = _condition_state(
                     graph,
                     conditions,
-                    lambda condition: _upper_bound_condition(
-                        condition, operation.extent or ""
-                    ),
+                    lambda condition: _upper_bound_condition(condition, operation.extent or ""),
                 )
                 value = _static_integer(operation.extent)
                 cap = _static_integer(capacity)
                 violation = bool(
                     value is not None
                     and cap is not None
-                    and (
-                        value >= cap
-                        if operation.kind == "ARRAY_ACCESS"
-                        else value > cap
-                    )
+                    and (value >= cap if operation.kind == "ARRAY_ACCESS" else value > cap)
                 )
-                statically_safe = bool(
-                    value is not None and cap is not None and not violation
+                key = _candidate_key(
+                    "BOUNDS_FLOW", operation.object_name, source, operation.kind
                 )
-                if not statically_safe:
-                    key = _candidate_key(
-                        "BOUNDS_FLOW",
-                        operation.object_name,
-                        source,
-                        operation.kind,
-                    )
+                relation_detail = (
+                    f"evidence={'DDG' if parameters else 'CAPACITY'} source={source} "
+                    f"sink={operation.kind} object={operation.object_name or '?'} "
+                    f"expression={_compact(operation.extent, 60)} capacity={capacity or '?'} "
+                    f"bound_related_condition={condition_state}"
+                )
+                if value_type:
+                    relation_detail += f" value_type={value_type}"
+                relations.append(SemanticItem(
+                    "MECHANISM_RELATION", "BOUND_RELATION", relation_detail,
+                    key=key,
+                    state=(
+                        f"bound_condition={condition_state}|"
+                        f"static_violation={'yes' if violation else 'no'}"
+                    ),
+                ))
+                if violation or condition_state == "not_observed":
                     add_candidate(
-                        "BOUNDS_FLOW",
-                        key,
-                        source=source,
-                        sink=operation.kind,
-                        obj=operation.object_name or "?",
-                        expression=operation.extent,
-                        condition=condition_state,
-                        violation=violation,
-                        capacity=capacity or "",
+                        "BOUNDS_FLOW", key,
+                        source=source, sink=operation.kind, obj=operation.object_name or "?",
+                        expression=operation.extent, condition=condition_state,
+                        capacity=capacity or "", value_type=value_type, violation=violation,
                     )
-                    relations.append(SemanticItem(
-                        "MECHANISM_RELATION",
-                        "BOUND_RELATION",
-                        f"evidence={'DDG' if parameters else 'CAPACITY'} "
-                        f"source={source} sink={operation.kind} "
-                        f"object={operation.object_name or '?'} "
-                        f"expression={_compact(operation.extent, 60)} "
-                        f"capacity={capacity or '?'} "
-                        f"bound_related_condition={condition_state}",
-                        key=key,
-                        state=(
-                            f"bound_condition={condition_state}|"
-                            f"static_violation={'yes' if violation else 'no'}"
-                        ),
-                    ))
 
-            arithmetic = _arithmetic_sources(
-                graph, operation.node_id, operation.extent
-            )
-            if arithmetic and parameters:
-                expression = arithmetic[0].code
-                condition_state = _condition_state(
+            arithmetic = _arithmetic_sources(graph, operation.node_id, operation.extent)
+            for arithmetic_node in arithmetic:
+                arithmetic_parameters = _parameter_sources(
+                    graph, arithmetic_node.node_id, arithmetic_node.code
+                )
+                if not arithmetic_parameters:
+                    continue
+                arithmetic_state = _condition_state(
                     graph,
                     conditions,
-                    lambda condition: _upper_bound_condition(
-                        condition, expression
-                    ),
+                    lambda condition: _upper_bound_condition(condition, arithmetic_node.code),
                 )
-                source = "parameter:" + ",".join(parameters)
+                arithmetic_source = "parameter:" + ",".join(arithmetic_parameters)
                 key = _candidate_key(
-                    "SIZE_ARITHMETIC_FLOW",
-                    source,
-                    operation.kind,
-                    operation.object_name,
-                )
-                add_candidate(
-                    "SIZE_ARITHMETIC_FLOW",
-                    key,
-                    source=source,
-                    sink=operation.kind,
-                    obj=operation.object_name or "?",
-                    expression=expression,
-                    condition=condition_state,
+                    "SIZE_ARITHMETIC_FLOW", "data", arithmetic_source,
+                    operation.kind, operation.object_name, arithmetic_node.code,
                 )
                 relations.append(SemanticItem(
-                    "MECHANISM_RELATION",
-                    "ARITHMETIC_TO_MEMORY_SINK",
-                    f"evidence=DDG source={source} "
-                    f"expr={_compact(expression, 80)} sink={operation.kind}",
+                    "MECHANISM_RELATION", "ARITHMETIC_TO_MEMORY_SINK",
+                    f"evidence=DDG source={arithmetic_source} "
+                    f"expr={_compact(arithmetic_node.code, 80)} sink={operation.kind} "
+                    f"range_related_condition={arithmetic_state}",
                     key=key,
-                    state=f"range_condition={condition_state}",
+                    state=f"range_condition={arithmetic_state}",
                 ))
+                if arithmetic_state == "not_observed":
+                    add_candidate(
+                        "SIZE_ARITHMETIC_FLOW", key,
+                        source=arithmetic_source, sink=operation.kind,
+                        obj=operation.object_name or "?", expression=arithmetic_node.code,
+                        condition=arithmetic_state,
+                    )
+
+            if operation.kind == "ARRAY_ACCESS":
+                for condition_node_id, condition in conditions:
+                    for match in _SIMPLE_BINARY_ARITH.finditer(condition):
+                        expression = match.group(0)
+                        operands = {match.group(1).split("->", 1)[0].split(".", 1)[0],
+                                    match.group(3).split("->", 1)[0].split(".", 1)[0]}
+                        control_sources = _parameter_sources(
+                            graph, condition_node_id, expression
+                        )
+                        if not control_sources:
+                            control_sources = tuple(sorted(
+                                operands & _parameter_names(graph).keys()
+                            ))
+                        if not control_sources:
+                            continue
+                        guard_present = _operand_guard_present(
+                            graph,
+                            operands,
+                            exclude_node_id=condition_node_id,
+                            arithmetic_expression=expression,
+                        )
+                        range_state = "present" if guard_present else "not_observed"
+                        control_source = "parameter:" + ",".join(control_sources)
+                        key = _candidate_key(
+                            "SIZE_ARITHMETIC_FLOW", "control", control_source,
+                            operation.object_name, expression,
+                        )
+                        relations.append(SemanticItem(
+                            "MECHANISM_RELATION", "ARITHMETIC_CONTROL_TO_MEMORY_SINK",
+                            f"evidence=CDG source={control_source} "
+                            f"expr={_compact(expression, 80)} sink=ARRAY_ACCESS "
+                            f"object={operation.object_name or '?'} "
+                            f"operand_range_condition={range_state}",
+                            key=key,
+                            state=f"range_condition={range_state}",
+                        ))
+                        if range_state == "not_observed":
+                            add_candidate(
+                                "SIZE_ARITHMETIC_FLOW", key,
+                                source=control_source, sink="ARRAY_ACCESS",
+                                obj=operation.object_name or "?", expression=expression,
+                                condition=range_state,
+                            )
 
         elif operation.kind == "ALLOCATION" and operation.extent:
-            arithmetic = _arithmetic_sources(
-                graph, operation.node_id, operation.extent
-            )
-            parameters = _parameter_sources(
-                graph, operation.node_id, operation.extent
-            )
-            if arithmetic and parameters:
-                expression = arithmetic[0].code
-                condition_state = _condition_state(
+            arithmetic = _arithmetic_sources(graph, operation.node_id, operation.extent)
+            for arithmetic_node in arithmetic:
+                arithmetic_parameters = _parameter_sources(
+                    graph, arithmetic_node.node_id, arithmetic_node.code
+                )
+                if not arithmetic_parameters:
+                    continue
+                state = _condition_state(
                     graph,
                     conditions,
-                    lambda condition: _upper_bound_condition(
-                        condition, expression
-                    ),
+                    lambda condition: _upper_bound_condition(condition, arithmetic_node.code),
                 )
-                source = "parameter:" + ",".join(parameters)
+                source = "parameter:" + ",".join(arithmetic_parameters)
                 key = _candidate_key(
-                    "SIZE_ARITHMETIC_FLOW",
-                    source,
-                    "ALLOCATION",
-                    operation.object_name,
-                )
-                add_candidate(
-                    "SIZE_ARITHMETIC_FLOW",
-                    key,
-                    source=source,
-                    sink="ALLOCATION",
-                    obj=operation.object_name or "?",
-                    expression=expression,
-                    condition=condition_state,
+                    "SIZE_ARITHMETIC_FLOW", "allocation", source,
+                    operation.object_name, arithmetic_node.code,
                 )
                 relations.append(SemanticItem(
-                    "MECHANISM_RELATION",
-                    "ARITHMETIC_TO_ALLOCATION",
-                    f"evidence=DDG source={source} "
-                    f"expr={_compact(expression, 80)} "
-                    f"object={operation.object_name or '?'}",
+                    "MECHANISM_RELATION", "ARITHMETIC_TO_ALLOCATION",
+                    f"evidence=DDG source={source} expr={_compact(arithmetic_node.code, 80)} "
+                    f"object={operation.object_name or '?'} range_related_condition={state}",
                     key=key,
-                    state=f"range_condition={condition_state}",
+                    state=f"range_condition={state}",
                 ))
+                if state == "not_observed":
+                    add_candidate(
+                        "SIZE_ARITHMETIC_FLOW", key,
+                        source=source, sink="ALLOCATION", obj=operation.object_name or "?",
+                        expression=arithmetic_node.code, condition=state,
+                    )
 
         elif operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-            pointer = operation.object_name
-            origins = _nullable_origins(
-                graph, operation.node_id, pointer, operations
-            )
+            origins = _nullable_origins(graph, operation.node_id, operation.object_name, operations)
             if origins:
                 source = ",".join(origins)
-                condition_state = _condition_state(
+                state = _condition_state(
                     graph,
                     conditions,
-                    lambda condition: _null_related_condition(
-                        condition, pointer
-                    ),
+                    lambda condition: _null_related_condition(condition, operation.object_name or ""),
                 )
                 key = _candidate_key(
-                    "NULL_DEREFERENCE_FLOW", pointer, source
-                )
-                add_candidate(
-                    "NULL_DEREFERENCE_FLOW",
-                    key,
-                    source=source,
-                    sink="POINTER_DEREFERENCE",
-                    obj=pointer,
-                    condition=condition_state,
+                    "NULL_DEREFERENCE_FLOW", operation.object_name, source
                 )
                 relations.append(SemanticItem(
-                    "MECHANISM_RELATION",
-                    "NULLABLE_SOURCE_TO_DEREFERENCE",
-                    f"evidence=DDG source={source} pointer={pointer} "
-                    f"null_related_condition={condition_state}",
+                    "MECHANISM_RELATION", "NULLABLE_SOURCE_TO_DEREFERENCE",
+                    f"evidence=DDG source={source} pointer={operation.object_name} "
+                    f"null_related_condition={state}",
                     key=key,
-                    state=f"null_condition={condition_state}",
+                    state=f"null_condition={state}",
                 ))
+                if state == "not_observed":
+                    add_candidate(
+                        "NULL_DEREFERENCE_FLOW", key,
+                        source=source, sink="POINTER_DEREFERENCE",
+                        obj=operation.object_name, condition=state,
+                    )
 
     cfg: dict[str, list[str]] = {}
     for edge in graph.edges:
@@ -967,8 +1042,8 @@ def _mechanism_items(
             cfg.setdefault(edge.source, []).append(edge.target)
 
     for first_free in (
-        op for op in operations
-        if op.kind == "DEALLOCATION" and op.object_name
+        operation for operation in operations
+        if operation.kind == "DEALLOCATION" and operation.object_name
     ):
         obj = first_free.object_name or ""
         queue: deque[str] = deque(cfg.get(first_free.node_id, ()))
@@ -985,45 +1060,32 @@ def _mechanism_items(
                 if operation.object_name != obj:
                     continue
                 if operation.kind == "DEALLOCATION":
-                    kind = "DOUBLE_FREE_FLOW"
-                    relation = "FREE_TO_FREE"
-                    sink = "DEALLOCATION"
+                    kind, relation, sink = "DOUBLE_FREE_FLOW", "FREE_TO_FREE", "DEALLOCATION"
                 elif operation.kind in {
-                    "MEMORY_READ",
-                    "MEMORY_WRITE",
-                    "ARRAY_ACCESS",
-                    "POINTER_DEREFERENCE",
+                    "MEMORY_READ", "MEMORY_WRITE", "ARRAY_ACCESS", "POINTER_DEREFERENCE"
                 }:
-                    kind = "USE_AFTER_FREE_FLOW"
-                    relation = "FREE_TO_USE"
-                    sink = operation.kind
+                    kind, relation, sink = "USE_AFTER_FREE_FLOW", "FREE_TO_USE", operation.kind
                 else:
                     continue
                 key = _candidate_key(kind, obj)
-                add_candidate(
-                    kind,
-                    key,
-                    source="deallocation",
-                    sink=sink,
-                    obj=obj,
-                    condition="not_applicable",
-                )
                 relations.append(SemanticItem(
-                    "MECHANISM_RELATION",
-                    relation,
+                    "MECHANISM_RELATION", relation,
                     f"evidence=CFG object={obj} transition=DEALLOCATION->{sink} "
                     "path_without_redefinition=present",
                     key=key,
                     state="path_without_redefinition=present",
                 ))
+                add_candidate(
+                    kind, key, source="deallocation", sink=sink, obj=obj,
+                    condition="not_applicable",
+                )
             queue.extend(cfg.get(node_id, ()))
 
-    candidates: list[SemanticItem] = []
-    for (kind, key), row in sorted(candidate_rows.items()):
+    candidate_items: list[SemanticItem] = []
+    for (kind, key), row in sorted(candidates.items()):
         conditions = set(row["conditions"])
         condition = (
-            next(iter(conditions))
-            if len(conditions) == 1
+            next(iter(conditions)) if len(conditions) == 1
             else ("mixed" if conditions else "unknown")
         )
         source = ",".join(sorted(row["sources"])) or "unknown"
@@ -1031,6 +1093,7 @@ def _mechanism_items(
         obj = ",".join(sorted(row["objects"])) or "?"
         expression = ";".join(sorted(row["expressions"])) or "?"
         capacity = ";".join(sorted(row["capacities"])) or "?"
+        value_type = ";".join(sorted(row["types"])) or "?"
         violation = bool(row["violation"])
 
         fields = [f"source={source}", f"sink={sink}", f"object={obj}"]
@@ -1038,6 +1101,8 @@ def _mechanism_items(
             fields.append(f"expression={expression}")
         if capacity != "?":
             fields.append(f"capacity={capacity}")
+        if value_type != "?":
+            fields.append(f"value_type={value_type}")
         if kind == "BOUNDS_FLOW":
             fields.append(f"bound_related_condition={condition}")
             state = (
@@ -1056,50 +1121,26 @@ def _mechanism_items(
         fields.append(f"occurrences={row['occurrences']}")
         if violation:
             fields.append("static_violation=yes")
-
-        candidates.append(SemanticItem(
-            "MECHANISM_CANDIDATE",
-            kind,
-            " ".join(fields),
-            key=key,
-            state=state,
+        candidate_items.append(SemanticItem(
+            "MECHANISM_CANDIDATE", kind, " ".join(fields), key=key, state=state
         ))
-    return candidates, relations
+    return candidate_items, relations
 
 
 def extract_mechanism_semantics(graph: FunctionGraph) -> MechanismSemantics:
-    operations_by_node = {
+    by_node = {
         node_id: operations
         for node_id, node in graph.nodes.items()
         if (operations := _node_operations(node))
     }
-    operations = [
-        operation
-        for values in operations_by_node.values()
-        for operation in values
-    ]
-    candidates, relations = _mechanism_items(
-        graph, operations, operations_by_node
-    )
-    # Security operations are persisted for audit only. The renderer excludes
-    # them from model input.
-    items = [
-        *candidates,
-        *relations,
-        *_security_operation_items(operations),
-    ]
-
-    deduplicated: list[SemanticItem] = []
+    operations = [operation for values in by_node.values() for operation in values]
+    candidates, relations = _mechanism_items(graph, operations, by_node)
+    items = [*candidates, *relations, *_security_operation_items(operations)]
+    dedup: list[SemanticItem] = []
     seen: set[tuple[str, str, str, str | None, str | None]] = set()
     for item in items:
-        identity = (
-            item.category,
-            item.kind,
-            item.detail,
-            item.key,
-            item.state,
-        )
+        identity = (item.category, item.kind, item.detail, item.key, item.state)
         if identity not in seen:
             seen.add(identity)
-            deduplicated.append(item)
-    return MechanismSemantics(tuple(deduplicated))
+            dedup.append(item)
+    return MechanismSemantics(tuple(dedup))
