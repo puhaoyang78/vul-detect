@@ -1,57 +1,34 @@
 from __future__ import annotations
 
 import re
-from collections import deque
-from dataclasses import asdict, dataclass
+from collections import defaultdict, deque
+from dataclasses import dataclass
 
 from .cpg import FunctionGraph, GraphNode
 
 
-SEMANTIC_GROUPS: dict[str, tuple[str, ...]] = {
-    "memory": ("MEMORY_OPERATION", "MEMORY_OBJECT"),
-    "dependence": ("DATA_DEPENDENCE",),
-    "constraint": ("CONTROL_CONSTRAINT",),
-    "lifetime": ("LIFETIME",),
-    "pattern": ("POTENTIAL_PATTERN",),
+MECHANISM_GROUPS: dict[str, tuple[str, ...]] = {
+    "operation": ("SECURITY_OPERATION",),
+    "relation": ("MECHANISM_RELATION",),
+    "mechanism": ("MECHANISM_CANDIDATE",),
 }
 CATEGORY_TO_GROUP = {
     category: group
-    for group, categories in SEMANTIC_GROUPS.items()
+    for group, categories in MECHANISM_GROUPS.items()
     for category in categories
 }
 
-VULNERABILITY_FEATURES = (
-    "memory_write",
-    "memory_read",
-    "array_access",
-    "pointer_dereference",
-    "allocation",
-    "deallocation",
-    "known_capacity",
-    "data_dependence",
-    "parameter_dependence",
-    "size_arithmetic",
-    "control_constraint",
-    "bounds_constraint",
-    "null_constraint",
-    "lifetime_relation",
+# Optional auxiliary supervision is restricted to mechanism-level signals.
+# Generic facts such as "contains an array access" are deliberately excluded.
+MECHANISM_FEATURES = (
+    "bounds_flow",
+    "null_dereference_flow",
+    "use_after_free_flow",
+    "double_free_flow",
+    "size_arithmetic_flow",
+    "known_bounds_violation",
 )
-FEATURE_TO_GROUP = {
-    "memory_write": "memory",
-    "memory_read": "memory",
-    "array_access": "memory",
-    "pointer_dereference": "memory",
-    "allocation": "memory",
-    "known_capacity": "memory",
-    "deallocation": "lifetime",
-    "data_dependence": "dependence",
-    "parameter_dependence": "dependence",
-    "size_arithmetic": "dependence",
-    "control_constraint": "constraint",
-    "bounds_constraint": "constraint",
-    "null_constraint": "constraint",
-    "lifetime_relation": "lifetime",
-}
+FEATURE_TO_GROUP = {feature: "mechanism" for feature in MECHANISM_FEATURES}
 
 _WRITE_APIS = {
     "memcpy": (0, 2), "memmove": (0, 2), "mempcpy": (0, 2), "memset": (0, 2),
@@ -67,8 +44,6 @@ _READ_APIS = {
 }
 _ALLOC_APIS = {"malloc", "calloc", "realloc", "kmalloc", "kzalloc", "vmalloc"}
 _FREE_APIS = {"free", "kfree", "vfree"}
-_UNBOUNDED_WRITE_APIS = {"strcpy", "strcat", "sprintf", "vsprintf", "gets"}
-_CONTROL_PREFIXES = ("if ", "if(", "while ", "while(", "for ", "for(", "switch ", "switch(")
 
 _IDENTIFIER = re.compile(r"\b[A-Za-z_]\w*\b")
 _ARRAY_ACCESS = re.compile(r"\b([A-Za-z_]\w*(?:->\w+|\.\w+)*)\s*\[\s*([^\]]+?)\s*\]")
@@ -83,11 +58,11 @@ _INTEGER = re.compile(r"^(?:0[xX][0-9A-Fa-f]+|\d+)[uUlL]*$")
 _BINARY_ARITHMETIC = re.compile(
     r"(?:[A-Za-z_0-9)\]]\s*(?:\+|-|\*|/|%|<<|>>)\s*[A-Za-z_0-9(\[])"
 )
-_COMPARISON_PARTS = ("<=", ">=", "==", "!=", "<", ">")
 _ARITHMETIC_LABEL_PARTS = (
     "addition", "subtraction", "multiplication", "division", "modulo",
     "shiftleft", "shiftright",
 )
+_CONTROL_PREFIXES = ("if ", "if(", "while ", "while(", "for ", "for(", "switch ", "switch(")
 
 
 @dataclass(frozen=True)
@@ -95,24 +70,32 @@ class SemanticItem:
     category: str
     kind: str
     detail: str
-
-    def as_text(self) -> str:
-        return f"{self.kind} {self.detail}".strip()
+    key: str | None = None
+    state: str | None = None
 
     def as_json(self) -> dict[str, str]:
-        return asdict(self)
+        value = {"category": self.category, "kind": self.kind, "detail": self.detail}
+        if self.key:
+            value["key"] = self.key
+        if self.state:
+            value["state"] = self.state
+        return value
 
 
 @dataclass(frozen=True)
-class VulnerabilitySemantics:
+class MechanismSemantics:
     items: tuple[SemanticItem, ...]
 
     @property
     def feature_names(self) -> tuple[str, ...]:
-        return feature_names_from_items(item.as_json() for item in self.items)
+        return mechanism_features_from_items(item.as_json() for item in self.items)
 
-    def render(self, excluded_groups: tuple[str, ...] = (), max_per_category: int = 32) -> str:
-        return render_semantic_items(
+    @property
+    def candidate_count(self) -> int:
+        return sum(item.category == "MECHANISM_CANDIDATE" for item in self.items)
+
+    def render(self, excluded_groups: tuple[str, ...] = (), max_per_category: int = 24) -> str:
+        return render_mechanism_items(
             [item.as_json() for item in self.items],
             excluded_groups=excluded_groups,
             max_per_category=max_per_category,
@@ -131,15 +114,15 @@ class _Operation:
     code: str
 
 
-def validate_semantic_groups(groups: tuple[str, ...]) -> tuple[str, ...]:
+def validate_mechanism_groups(groups: tuple[str, ...]) -> tuple[str, ...]:
     normalized: list[str] = []
     for group in groups:
         value = group.strip().lower()
         if not value:
             continue
-        if value not in SEMANTIC_GROUPS:
+        if value not in MECHANISM_GROUPS:
             raise ValueError(
-                f"unknown semantic group {group!r}; expected one of {', '.join(SEMANTIC_GROUPS)}"
+                f"unknown mechanism group {group!r}; expected one of {', '.join(MECHANISM_GROUPS)}"
             )
         if value not in normalized:
             normalized.append(value)
@@ -155,55 +138,39 @@ def _round_robin_by_kind(rows: list[tuple[str, str]], limit: int) -> list[str]:
     selected: list[str] = []
     while len(selected) < limit:
         added = False
-        for values in groups.values():
-            if values and len(selected) < limit:
-                selected.append(values.pop(0))
+        for kind in sorted(groups):
+            if groups[kind] and len(selected) < limit:
+                selected.append(groups[kind].pop(0))
                 added = True
         if not added:
             break
     return selected
 
 
-def render_semantic_items(
+def render_mechanism_items(
     items: list[dict[str, object]] | tuple[dict[str, object], ...],
     *,
     excluded_groups: tuple[str, ...] = (),
-    max_per_category: int = 32,
+    max_per_category: int = 24,
 ) -> str:
-    """Render compact semantics with high-risk patterns first.
-
-    Rows inside a category are interleaved by kind so repeated operations of one
-    type cannot consume the whole fixed token budget before other pattern types.
-    """
     if max_per_category <= 0:
         raise ValueError("max_per_category must be positive")
-    excluded = set(validate_semantic_groups(excluded_groups))
+    excluded = set(validate_mechanism_groups(excluded_groups))
     grouped: dict[str, list[tuple[str, str]]] = {}
     for raw in items:
         category = str(raw.get("category") or "")
         kind = str(raw.get("kind") or "")
         detail = str(raw.get("detail") or "")
-        if kind == "CONTROL_CONDITION":
-            # Native Joern IDs are run-local evidence, not a model feature.
-            detail = re.sub(r"^node=\S+\s+", "", detail)
         group = CATEGORY_TO_GROUP.get(category)
         if not category or not kind or group is None or group in excluded:
             continue
         grouped.setdefault(category, []).append((kind, f"{kind} {detail}".strip()))
 
     if not grouped:
-        return "[VULNERABILITY_SEMANTICS]\nNO_VULNERABILITY_RELATED_PROGRAM_SEMANTICS"
+        return "[VULNERABILITY_MECHANISM_CONTEXT]\nNO_CPG_DERIVED_MECHANISM_EVIDENCE"
 
-    ordered_categories = (
-        "POTENTIAL_PATTERN",
-        "MEMORY_OPERATION",
-        "MEMORY_OBJECT",
-        "DATA_DEPENDENCE",
-        "CONTROL_CONSTRAINT",
-        "LIFETIME",
-    )
     sections: list[str] = []
-    for category in ordered_categories:
+    for category in ("MECHANISM_CANDIDATE", "MECHANISM_RELATION", "SECURITY_OPERATION"):
         rows = grouped.get(category)
         if not rows:
             continue
@@ -212,39 +179,25 @@ def render_semantic_items(
     return "\n".join(sections)
 
 
-def feature_names_from_items(items) -> tuple[str, ...]:
+def mechanism_features_from_items(items) -> tuple[str, ...]:
     features: set[str] = set()
     for raw in items:
+        if raw.get("category") != "MECHANISM_CANDIDATE":
+            continue
         kind = str(raw.get("kind") or "")
-        if kind == "MEMORY_WRITE":
-            features.add("memory_write")
-        elif kind == "MEMORY_READ":
-            features.add("memory_read")
-        elif kind == "ARRAY_ACCESS":
-            features.add("array_access")
-        elif kind == "POINTER_DEREFERENCE":
-            features.add("pointer_dereference")
-        elif kind == "ALLOCATION":
-            features.add("allocation")
-        elif kind == "DEALLOCATION":
-            features.add("deallocation")
-        elif kind in {"STATIC_CAPACITY", "DYNAMIC_CAPACITY"}:
-            features.add("known_capacity")
-        elif kind == "DATA_DEPENDENCE":
-            features.add("data_dependence")
-        elif kind == "PARAMETER_DEPENDENCE":
-            features.update(("data_dependence", "parameter_dependence"))
-        elif kind == "SIZE_ARITHMETIC":
-            features.add("size_arithmetic")
-        elif kind in {"CONTROL_CONDITION", "CONDITION_CONTROLS"}:
-            features.add("control_constraint")
-        elif kind == "UPPER_BOUND_RELATED_CONDITION":
-            features.update(("control_constraint", "bounds_constraint"))
-        elif kind in {"NULL_RELATED_CONDITION", "NONNULL_RELATED_CONDITION"}:
-            features.update(("control_constraint", "null_constraint"))
-        elif kind in {"FREE_THEN_FREE", "FREE_THEN_USE"}:
-            features.add("lifetime_relation")
-    return tuple(feature for feature in VULNERABILITY_FEATURES if feature in features)
+        if kind == "BOUNDS_FLOW":
+            features.add("bounds_flow")
+        elif kind == "NULL_DEREFERENCE_FLOW":
+            features.add("null_dereference_flow")
+        elif kind == "USE_AFTER_FREE_FLOW":
+            features.add("use_after_free_flow")
+        elif kind == "DOUBLE_FREE_FLOW":
+            features.add("double_free_flow")
+        elif kind == "SIZE_ARITHMETIC_FLOW":
+            features.add("size_arithmetic_flow")
+        if "static_violation=yes" in str(raw.get("state") or ""):
+            features.add("known_bounds_violation")
+    return tuple(feature for feature in MECHANISM_FEATURES if feature in features)
 
 
 def _compact(text: str, limit: int = 140) -> str:
@@ -252,8 +205,17 @@ def _compact(text: str, limit: int = 140) -> str:
     return value if len(value) <= limit else value[: limit - 3] + "..."
 
 
+def _normalize(text: str | None) -> str:
+    return " ".join((text or "").split())
+
+
 def _identifiers(expression: str | None) -> set[str]:
     return set(_IDENTIFIER.findall(expression)) if expression else set()
+
+
+def _first_identifier(expression: str | None) -> str | None:
+    match = _IDENTIFIER.search(expression or "")
+    return match.group() if match else None
 
 
 def _call_name_and_args(code: str) -> tuple[str | None, tuple[str, ...]]:
@@ -265,24 +227,21 @@ def _call_name_and_args(code: str) -> tuple[str | None, tuple[str, ...]]:
     depth = 1
     index = start
     while index < len(code) and depth:
-        char = code[index]
-        if char == "(":
+        if code[index] == "(":
             depth += 1
-        elif char == ")":
+        elif code[index] == ")":
             depth -= 1
         index += 1
-    if depth != 0:
+    if depth:
         return name, ()
-    body = code[start : index - 1]
-    args: list[str] = []
-    current: list[str] = []
-    depth = 0
+    body = code[start:index - 1]
+    args, current, nested = [], [], 0
     for char in body:
         if char in "([{":
-            depth += 1
-        elif char in ")]}" :
-            depth = max(0, depth - 1)
-        if char == "," and depth == 0:
+            nested += 1
+        elif char in ")]}":
+            nested = max(0, nested - 1)
+        if char == "," and nested == 0:
             args.append("".join(current).strip())
             current = []
         else:
@@ -290,11 +249,6 @@ def _call_name_and_args(code: str) -> tuple[str | None, tuple[str, ...]]:
     if current or body.strip():
         args.append("".join(current).strip())
     return name, tuple(args)
-
-
-def _assigned_name(code: str) -> str | None:
-    match = _ASSIGNMENT.search(code)
-    return match.group(1) if match else None
 
 
 def _argument(args: tuple[str, ...], index: int | None) -> str | None:
@@ -320,13 +274,16 @@ def _is_arithmetic_node(node: GraphNode) -> bool:
 
 
 def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
-    # Container CODE contains descendants; treating it as an operation invents
-    # duplicate memory accesses and attaches them to the wrong CFG/DDG node.
-    if node.label in {"METHOD", "METHOD_RETURN", "BLOCK", "LOCAL", "PARAM",
-                      "IDENTIFIER", "FIELD_IDENTIFIER", "LITERAL", "TYPE_REF", "UNKNOWN", "CONTROL_STRUCTURE"}:
+    # Container code contains descendant text. Treating it as an operation creates
+    # duplicate pseudo-sinks and was the main source of the previous pattern explosion.
+    if node.label in {
+        "METHOD", "METHOD_RETURN", "BLOCK", "LOCAL", "PARAM", "IDENTIFIER",
+        "FIELD_IDENTIFIER", "LITERAL", "TYPE_REF", "UNKNOWN", "CONTROL_STRUCTURE",
+    }:
         return ()
-    code = node.code
+
     operations: list[_Operation] = []
+    code = node.code
     name, args = _call_name_and_args(code)
     if name in _WRITE_APIS:
         object_index, extent_index = _WRITE_APIS[name]
@@ -337,37 +294,29 @@ def _node_operations(node: GraphNode) -> tuple[_Operation, ...]:
         extent = f"({args[1]})*({args[2]})" if name == "fwrite" and len(args) >= 3 else _argument(args, extent_index)
         operations.append(_Operation(node.node_id, "MEMORY_READ", _argument(args, object_index), extent, code))
     if name in _ALLOC_APIS:
-        operations.append(_Operation(node.node_id, "ALLOCATION", _assigned_name(code), _allocation_extent(name, args), code))
+        assigned = _ASSIGNMENT.search(code)
+        operations.append(_Operation(node.node_id, "ALLOCATION", assigned.group(1) if assigned else None, _allocation_extent(name, args), code))
     if name in _FREE_APIS:
         operations.append(_Operation(node.node_id, "DEALLOCATION", _argument(args, 0), None, code))
 
-    label_lower = node.label.lower()
-    if "<operator>.new" in label_lower or label_lower.endswith(".new"):
-        extent_match = _NEW_EXTENT.search(code)
-        new_assignment = _NEW_ASSIGNMENT.search(code)
-        operations.append(
-            _Operation(node.node_id, "ALLOCATION",
-                       new_assignment.group(1) if new_assignment else None,
-                       extent_match.group(1).strip() if extent_match else None, code)
-        )
-    if "<operator>.delete" in label_lower or label_lower.endswith(".delete"):
-        delete_match = _DELETE.search(code)
-        operations.append(
-            _Operation(node.node_id, "DEALLOCATION",
-                       delete_match.group(1) if delete_match else None, None, code)
-        )
+    lower = node.label.lower()
+    if "<operator>.new" in lower or lower.endswith(".new"):
+        extent = _NEW_EXTENT.search(code)
+        assigned = _NEW_ASSIGNMENT.search(code)
+        operations.append(_Operation(node.node_id, "ALLOCATION", assigned.group(1) if assigned else None, extent.group(1).strip() if extent else None, code))
+    if "<operator>.delete" in lower or lower.endswith(".delete"):
+        deleted = _DELETE.search(code)
+        operations.append(_Operation(node.node_id, "DEALLOCATION", deleted.group(1) if deleted else None, None, code))
 
-    for base, index in _ARRAY_ACCESS.findall(code):
-        operations.append(_Operation(node.node_id, "ARRAY_ACCESS", base, index.strip(), code))
-
-    pointer_names: set[str] = set()
-    if "indirection" in label_lower or "fieldaccess" in label_lower:
-        pointer_names.update(_DEREF.findall(code))
-        pointer_names.update(_ARROW.findall(code))
-    elif "->" in code:
-        pointer_names.update(_ARROW.findall(code))
-    for pointer in sorted(pointer_names):
-        operations.append(_Operation(node.node_id, "POINTER_DEREFERENCE", pointer, None, code))
+    # Array/pointer facts are emitted only by their operator nodes, not every
+    # parent CALL whose code happens to contain the same expression.
+    if "indexaccess" in lower:
+        for base, index in _ARRAY_ACCESS.findall(code):
+            operations.append(_Operation(node.node_id, "ARRAY_ACCESS", base, index.strip(), code))
+    if "indirection" in lower or "fieldaccess" in lower:
+        pointers = set(_DEREF.findall(code)) | set(_ARROW.findall(code))
+        for pointer in sorted(pointers):
+            operations.append(_Operation(node.node_id, "POINTER_DEREFERENCE", pointer, None, code))
 
     dedup: dict[tuple[str, str | None, str | None], _Operation] = {}
     for operation in operations:
@@ -391,55 +340,57 @@ def _control_expression(node: GraphNode) -> str | None:
             elif code[index] == ")":
                 depth -= 1
                 if depth == 0:
-                    return code[start + 1 : index].strip()
+                    return code[start + 1:index].strip()
     if any(part in node.label.lower() for part in ("lessthan", "greaterthan", "equals", "notequals")):
         return code
-    return code if any(op in code for op in _COMPARISON_PARTS) else None
+    return code if any(operator in code for operator in ("<=", ">=", "==", "!=", "<", ">")) else None
 
 
-def _controlling_conditions(graph: FunctionGraph) -> dict[str, list[tuple[str, str]]]:
-    conditions: dict[str, list[tuple[str, str]]] = {}
+def _ast_parents(graph: FunctionGraph) -> dict[str, list[str]]:
+    parents: dict[str, list[str]] = {}
+    for edge in graph.edges:
+        if edge.kind == "AST":
+            parents.setdefault(edge.target, []).append(edge.source)
+    return parents
+
+
+def _direct_conditions(graph: FunctionGraph) -> dict[str, list[str]]:
+    conditions: dict[str, list[str]] = {}
     for edge in graph.edges:
         if edge.kind != "CDG":
             continue
         source = graph.nodes.get(edge.source)
-        if source is None:
-            continue
-        condition = _control_expression(source)
-        if condition:
-            conditions.setdefault(edge.target, []).append((edge.source, condition))
+        expression = _control_expression(source) if source else None
+        if expression and expression not in conditions.setdefault(edge.target, []):
+            conditions[edge.target].append(expression)
     return conditions
 
 
-def _cfg_adjacency(graph: FunctionGraph) -> dict[str, list[str]]:
-    adjacency: dict[str, list[str]] = {}
-    for edge in graph.edges:
-        if edge.kind == "CFG":
-            adjacency.setdefault(edge.source, []).append(edge.target)
-    return adjacency
-
-
-def _reachable(adjacency: dict[str, list[str]], start: str) -> set[str]:
-    seen = {start}
-    reachable: set[str] = set()
-    queue: deque[str] = deque(adjacency.get(start, ()))
+def _related_conditions(node_id: str, parents: dict[str, list[str]], direct: dict[str, list[str]]) -> tuple[str, ...]:
+    # Joern may attach CDG to a statement/block while the security operation is
+    # a descendant AST node. Propagate only through AST ancestry; do not infer
+    # branch polarity or claim that a condition is a proven safe guard.
+    result: list[str] = []
+    queue: deque[tuple[str, int]] = deque([(node_id, 0)])
+    seen = {node_id}
     while queue:
-        node = queue.popleft()
-        if node in seen:
+        current, depth = queue.popleft()
+        for condition in direct.get(current, ()):
+            if condition not in result:
+                result.append(condition)
+        if depth >= 12:
             continue
-        seen.add(node)
-        reachable.add(node)
-        queue.extend(adjacency.get(node, ()))
-    return reachable
+        for parent in parents.get(current, ()):
+            if parent not in seen:
+                seen.add(parent)
+                queue.append((parent, depth + 1))
+    return tuple(result)
 
 
 def _static_integer(expression: str | None) -> int | None:
-    if not expression:
+    if not expression or not _INTEGER.match(expression.strip()):
         return None
-    value = expression.strip()
-    if not _INTEGER.match(value):
-        return None
-    value = re.sub(r"[uUlL]+$", "", value)
+    value = re.sub(r"[uUlL]+$", "", expression.strip())
     try:
         return int(value, 0)
     except ValueError:
@@ -451,7 +402,7 @@ def _split_comparison(condition: str) -> tuple[str, str, str] | None:
     for index, char in enumerate(condition):
         if char in "([{":
             depth += 1
-        elif char in ")]}" :
+        elif char in ")]}":
             depth = max(0, depth - 1)
         if depth:
             continue
@@ -465,35 +416,15 @@ def _split_comparison(condition: str) -> tuple[str, str, str] | None:
 
 
 def _upper_bound_condition(condition: str, expression: str) -> bool:
-    """Return whether condition text compares expression against an upper bound.
-
-    This only checks the comparison form. It does not claim that the condition is
-    a proven safe guard because exported CDG edges do not preserve branch polarity.
-    """
     comparison = _split_comparison(condition)
-    if comparison is None:
+    names = _identifiers(expression)
+    if comparison is None or not names:
         return False
     left, operator, right = comparison
-    expression_names = _identifiers(expression)
-    if not expression_names:
-        return False
-    left_names = _identifiers(left)
-    right_names = _identifiers(right)
+    left_names, right_names = _identifiers(left), _identifiers(right)
     if operator in {"<", "<="}:
-        return bool(expression_names & left_names) and bool(right_names or _static_integer(right) is not None)
-    if operator in {">", ">="}:
-        return bool(expression_names & right_names) and bool(left_names or _static_integer(left) is not None)
-    return False
-
-
-def _nonnull_condition(condition: str, pointer: str) -> bool:
-    escaped = re.escape(pointer)
-    return bool(
-        re.search(rf"\b{escaped}\b\s*!=\s*(?:NULL|nullptr|0)\b", condition)
-        or re.search(rf"(?:NULL|nullptr|0)\s*!=\s*\b{escaped}\b", condition)
-        or re.fullmatch(rf"\s*\b{escaped}\b\s*", condition)
-        or re.fullmatch(rf"\s*!!\s*\b{escaped}\b\s*", condition)
-    )
+        return bool(names & left_names) and bool(right_names or _static_integer(right) is not None)
+    return bool(names & right_names) and bool(left_names or _static_integer(left) is not None)
 
 
 def _null_related_condition(condition: str, pointer: str) -> bool:
@@ -502,386 +433,309 @@ def _null_related_condition(condition: str, pointer: str) -> bool:
         re.search(rf"\b{escaped}\b\s*(?:!=|==)\s*(?:NULL|nullptr|0)\b", condition)
         or re.search(rf"(?:NULL|nullptr|0)\s*(?:!=|==)\s*\b{escaped}\b", condition)
         or re.search(rf"!\s*\b{escaped}\b", condition)
+        or re.fullmatch(rf"\s*!!?\s*\b{escaped}\b\s*", condition)
         or re.fullmatch(rf"\s*\b{escaped}\b\s*", condition)
     )
 
 
-def _matching_condition(
-    conditions: dict[str, list[tuple[str, str]]],
-    node_id: str,
-    predicate,
-) -> str | None:
-    for _, condition in conditions.get(node_id, ()):
-        if predicate(condition):
-            return condition
-    return None
-
-
-def _capacity_facts(operations: list[_Operation], graph: FunctionGraph) -> dict[str, str]:
-    capacities: dict[str, str] = {}
-    for node in graph.nodes.values():
-        if "LOCAL" not in node.label.upper():
-            continue
-        for name, capacity in _ARRAY_DECL.findall(node.code):
-            value = " ".join(capacity.split())
-            if name not in capacities and value:
-                capacities[name] = value
-
-    dynamic: dict[str, set[str]] = {}
-    for operation in operations:
-        if operation.kind == "ALLOCATION" and operation.object_name and operation.extent:
-            dynamic.setdefault(operation.object_name, set()).add(_compact(operation.extent, 100))
-    for name, extents in dynamic.items():
-        if name not in capacities and len(extents) == 1:
-            capacities[name] = next(iter(extents))
-    return capacities
-
-
-def _ddg_sources(
-    graph: FunctionGraph,
-    sink_id: str,
-    *,
-    max_depth: int = 3,
-    max_sources: int = 3,
-) -> tuple[GraphNode, ...]:
+def _ddg_reverse(graph: FunctionGraph) -> dict[str, list[str]]:
     reverse: dict[str, list[str]] = {}
     for edge in graph.edges:
         if edge.kind == "DDG":
             reverse.setdefault(edge.target, []).append(edge.source)
+    return reverse
+
+
+def _ddg_upstream(graph: FunctionGraph, sink_id: str, max_depth: int = 5, max_nodes: int = 64) -> tuple[GraphNode, ...]:
+    reverse = _ddg_reverse(graph)
     queue: deque[tuple[str, int]] = deque([(sink_id, 0)])
-    visited = {sink_id}
-    sources: list[GraphNode] = []
-    while queue and len(sources) < max_sources:
+    seen = {sink_id}
+    result: list[GraphNode] = []
+    while queue and len(result) < max_nodes:
         current, depth = queue.popleft()
         if depth >= max_depth:
             continue
         for source_id in reverse.get(current, ()):
-            if source_id in visited:
+            if source_id in seen:
                 continue
-            visited.add(source_id)
+            seen.add(source_id)
             source = graph.nodes.get(source_id)
-            if source is not None:
-                sources.append(source)
-                if len(sources) >= max_sources:
-                    break
+            if source:
+                result.append(source)
             queue.append((source_id, depth + 1))
-    return tuple(sources)
+    return tuple(result)
 
 
-def _operation_detail(
-    operation: _Operation,
-    *,
-    graph: FunctionGraph,
-    conditions: dict[str, list[tuple[str, str]]],
-    capacities: dict[str, str],
-) -> str:
-    fields = [f"operation={_compact(operation.code, 100)}"]
-    if operation.object_name:
-        label = "pointer" if operation.kind == "POINTER_DEREFERENCE" else "object"
-        fields.append(f"{label}={operation.object_name}")
-    if operation.extent:
-        field = "index" if operation.kind == "ARRAY_ACCESS" else "extent"
-        fields.append(f"{field}={_compact(operation.extent, 60)}")
-    capacity = capacities.get(operation.object_name or "")
-    if capacity:
-        fields.append(f"capacity={capacity}")
+def _parameter_sources(graph: FunctionGraph, sink_id: str, expression: str | None) -> tuple[str, ...]:
+    names = _identifiers(expression)
+    if not names:
+        return ()
+    upstream = _ddg_upstream(graph, sink_id)
+    parameters: set[str] = set()
+    for node in upstream:
+        if node.label.upper() == "PARAM" and names & _identifiers(node.code):
+            name = _first_identifier(node.code)
+            if name:
+                parameters.add(name)
+    if parameters:
+        return tuple(sorted(parameters))
 
-    if operation.extent and operation.kind in {"MEMORY_WRITE", "ARRAY_ACCESS"}:
-        upper = _matching_condition(
-            conditions, operation.node_id,
-            lambda condition: _upper_bound_condition(condition, operation.extent or ""),
-        )
-        fields.append(f"upper_bound_condition={_compact(upper, 80) if upper else 'none'}")
-    if operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-        nonnull = _matching_condition(
-            conditions, operation.node_id,
-            lambda condition: _nonnull_condition(condition, operation.object_name or ""),
-        )
-        fields.append(f"nonnull_condition={_compact(nonnull, 80) if nonnull else 'none'}")
-
-    sources = _ddg_sources(graph, operation.node_id)
-    if sources:
-        fields.append("data_from=" + "; ".join(_compact(source.code, 55) for source in sources))
-    return " ".join(fields)
-
-
-def _operation_items(
-    operations: list[_Operation],
-    *,
-    graph: FunctionGraph,
-    conditions: dict[str, list[tuple[str, str]]],
-    capacities: dict[str, str],
-) -> list[SemanticItem]:
-    items: list[SemanticItem] = []
-    for operation in operations:
-        if operation.kind in {"MEMORY_WRITE", "MEMORY_READ", "ARRAY_ACCESS", "POINTER_DEREFERENCE"}:
-            items.append(
-                SemanticItem(
-                    "MEMORY_OPERATION",
-                    operation.kind,
-                    _operation_detail(operation, graph=graph, conditions=conditions, capacities=capacities),
-                )
-            )
-        elif operation.kind == "ALLOCATION":
-            detail = f"operation={_compact(operation.code, 100)} object={operation.object_name or '?'} extent={operation.extent or '?'}"
-            items.append(SemanticItem("MEMORY_OBJECT", "ALLOCATION", detail))
-        elif operation.kind == "DEALLOCATION":
-            items.append(
-                SemanticItem(
-                    "LIFETIME", "DEALLOCATION",
-                    f"operation={_compact(operation.code, 100)} object={operation.object_name or '?'}",
-                )
-            )
-    return items
-
-
-def _dependence_items(graph: FunctionGraph, operations_by_node: dict[str, tuple[_Operation, ...]]) -> list[SemanticItem]:
-    items: list[SemanticItem] = []
-    for sink_id, operations in operations_by_node.items():
-        for source in _ddg_sources(graph, sink_id):
-            for operation in operations:
-                detail = (
-                    f"from={_compact(source.code, 90)} operation={operation.kind} "
-                    f"object={operation.object_name or '?'} extent={operation.extent or '?'}"
-                )
-                items.append(SemanticItem("DATA_DEPENDENCE", "DATA_DEPENDENCE", detail))
-                if "PARAMETER" in source.label.upper():
-                    items.append(
-                        SemanticItem(
-                            "DATA_DEPENDENCE", "PARAMETER_DEPENDENCE",
-                            f"parameter={_compact(source.code, 70)} operation={operation.kind}",
-                        )
-                    )
-                if _is_arithmetic_node(source):
-                    items.append(
-                        SemanticItem(
-                            "DATA_DEPENDENCE", "SIZE_ARITHMETIC",
-                            f"expr={_compact(source.code, 90)} operation={operation.kind}",
-                        )
-                    )
-    return items
-
-
-def _constraint_items(
-    conditions: dict[str, list[tuple[str, str]]],
-    operations_by_node: dict[str, tuple[_Operation, ...]],
-) -> list[SemanticItem]:
-    items: list[SemanticItem] = []
-    seen_conditions: set[tuple[str, str]] = set()
-    for node_id, controlling in conditions.items():
-        for source_id, condition in controlling:
-            key = (source_id, condition)
-            if key not in seen_conditions:
-                seen_conditions.add(key)
-                items.append(
-                    SemanticItem(
-                        "CONTROL_CONSTRAINT", "CONTROL_CONDITION",
-                        f"node={source_id} expr={_compact(condition, 100)}",
-                    )
-                )
-            for operation in operations_by_node.get(node_id, ()):
-                detail = (
-                    f"expr={_compact(condition, 90)} operation={operation.kind} "
-                    f"object={operation.object_name or '?'} extent={operation.extent or '?'}"
-                )
-                items.append(SemanticItem("CONTROL_CONSTRAINT", "CONDITION_CONTROLS", detail))
-                if (
-                    operation.kind in {"MEMORY_WRITE", "ARRAY_ACCESS"}
-                    and operation.extent
-                    and _upper_bound_condition(condition, operation.extent)
-                ):
-                    items.append(
-                        SemanticItem("CONTROL_CONSTRAINT", "UPPER_BOUND_RELATED_CONDITION", detail)
-                    )
-                if operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-                    if _nonnull_condition(condition, operation.object_name):
-                        items.append(
-                            SemanticItem("CONTROL_CONSTRAINT", "NONNULL_RELATED_CONDITION", detail)
-                        )
-                    elif _null_related_condition(condition, operation.object_name):
-                        items.append(
-                            SemanticItem("CONTROL_CONSTRAINT", "NULL_RELATED_CONDITION", detail)
-                        )
-    return items
-
-
-def _lifetime_items(
-    graph: FunctionGraph,
-    operations: list[_Operation],
-    operations_by_node: dict[str, tuple[_Operation, ...]],
-) -> list[SemanticItem]:
-    items: list[SemanticItem] = []
-    adjacency = _cfg_adjacency(graph)
-    for deallocation in (
-        operation for operation in operations
-        if operation.kind == "DEALLOCATION" and operation.object_name
-    ):
-        for node_id in _reachable(adjacency, deallocation.node_id):
-            for operation in operations_by_node.get(node_id, ()):
-                if operation.object_name != deallocation.object_name:
+    # Alias-aware fallback: if an upstream expression mentions the sink
+    # expression, walk backward from that expression to parameters.
+    reverse = _ddg_reverse(graph)
+    for intermediate in upstream:
+        if not (names & _identifiers(intermediate.code)):
+            continue
+        queue: deque[tuple[str, int]] = deque([(intermediate.node_id, 0)])
+        seen = {intermediate.node_id}
+        while queue:
+            current, depth = queue.popleft()
+            if depth >= 4:
+                continue
+            for source_id in reverse.get(current, ()):
+                if source_id in seen:
                     continue
-                if operation.kind == "DEALLOCATION":
-                    detail = (
-                        f"object={deallocation.object_name} "
-                        f"first={_compact(deallocation.code, 70)} second={_compact(operation.code, 70)}"
-                    )
-                    items.append(SemanticItem("LIFETIME", "FREE_THEN_FREE", detail))
-                    items.append(SemanticItem("POTENTIAL_PATTERN", "FREE_THEN_FREE", detail))
-                elif operation.kind in {
-                    "MEMORY_READ", "MEMORY_WRITE", "ARRAY_ACCESS", "POINTER_DEREFERENCE"
-                }:
-                    detail = (
-                        f"object={deallocation.object_name} "
-                        f"free={_compact(deallocation.code, 70)} later_use={_compact(operation.code, 70)}"
-                    )
-                    items.append(SemanticItem("LIFETIME", "FREE_THEN_USE", detail))
-                    items.append(SemanticItem("POTENTIAL_PATTERN", "FREE_THEN_USE", detail))
+                seen.add(source_id)
+                source = graph.nodes.get(source_id)
+                if not source:
+                    continue
+                if source.label.upper() == "PARAM":
+                    name = _first_identifier(source.code)
+                    if name:
+                        parameters.add(name)
+                queue.append((source_id, depth + 1))
+    return tuple(sorted(parameters))
+
+
+def _arithmetic_sources(graph: FunctionGraph, sink_id: str, expression: str | None) -> tuple[GraphNode, ...]:
+    names = _identifiers(expression)
+    return tuple(
+        node for node in _ddg_upstream(graph, sink_id)
+        if _is_arithmetic_node(node) and (not names or names & _identifiers(node.code))
+    )[:4]
+
+
+def _capacities(operations: list[_Operation], graph: FunctionGraph) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for node in graph.nodes.values():
+        if "LOCAL" not in node.label.upper():
+            continue
+        for name, capacity in _ARRAY_DECL.findall(node.code):
+            value = _normalize(capacity)
+            if value and name not in result:
+                result[name] = value
+    dynamic: dict[str, set[str]] = {}
+    for operation in operations:
+        if operation.kind == "ALLOCATION" and operation.object_name and operation.extent:
+            dynamic.setdefault(operation.object_name, set()).add(_compact(operation.extent, 100))
+    for name, values in dynamic.items():
+        if name not in result and len(values) == 1:
+            result[name] = next(iter(values))
+    return result
+
+
+def _candidate_key(kind: str, *parts: str | None) -> str:
+    return "|".join([kind, *(_normalize(part) or "?" for part in parts)])
+
+
+def _security_operation_items(operations: list[_Operation]) -> list[SemanticItem]:
+    items: list[SemanticItem] = []
+    for operation in operations:
+        fields = [f"sink={operation.kind}", f"code={_compact(operation.code, 100)}"]
+        if operation.object_name:
+            fields.append(f"object={_compact(operation.object_name, 60)}")
+        if operation.extent:
+            fields.append(f"{'index' if operation.kind == 'ARRAY_ACCESS' else 'extent'}={_compact(operation.extent, 60)}")
+        items.append(SemanticItem("SECURITY_OPERATION", operation.kind, " ".join(fields)))
     return items
 
 
-def _potential_pattern_items(
-    graph: FunctionGraph,
-    operations: list[_Operation],
-    conditions: dict[str, list[tuple[str, str]]],
-    capacities: dict[str, str],
-) -> list[SemanticItem]:
-    items: list[SemanticItem] = []
-    for operation in operations:
-        detail = _operation_detail(
-            operation, graph=graph, conditions=conditions, capacities=capacities
-        )
-        if operation.kind == "MEMORY_WRITE":
-            api_name, _ = _call_name_and_args(operation.code)
-            if api_name in _UNBOUNDED_WRITE_APIS:
-                items.append(SemanticItem("POTENTIAL_PATTERN", "UNBOUNDED_WRITE", detail))
-            if operation.extent and _identifiers(operation.extent):
-                upper = _matching_condition(
-                    conditions, operation.node_id,
-                    lambda condition: _upper_bound_condition(condition, operation.extent or ""),
-                )
-                if upper is None:
-                    items.append(
-                        SemanticItem(
-                            "POTENTIAL_PATTERN",
-                            "WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION",
-                            detail,
-                        )
-                    )
-            capacity = capacities.get(operation.object_name or "")
-            extent_value = _static_integer(operation.extent)
-            capacity_value = _static_integer(capacity)
-            if (
-                extent_value is not None
-                and capacity_value is not None
-                and extent_value > capacity_value
-            ):
-                items.append(
-                    SemanticItem("POTENTIAL_PATTERN", "WRITE_EXCEEDS_KNOWN_CAPACITY", detail)
-                )
+def _mechanism_items(graph: FunctionGraph, operations: list[_Operation], by_node: dict[str, tuple[_Operation, ...]]) -> tuple[list[SemanticItem], list[SemanticItem]]:
+    parents, direct = _ast_parents(graph), _direct_conditions(graph)
+    capacities = _capacities(operations, graph)
+    candidate_rows: dict[tuple[str, str], dict[str, object]] = {}
+    relations: list[SemanticItem] = []
 
-        elif operation.kind == "ARRAY_ACCESS" and operation.extent:
-            upper = _matching_condition(
-                conditions, operation.node_id,
-                lambda condition: _upper_bound_condition(condition, operation.extent or ""),
-            )
-            if upper is None:
-                items.append(
-                    SemanticItem(
-                        "POTENTIAL_PATTERN",
-                        "ARRAY_INDEX_WITHOUT_UPPER_BOUND_CONDITION",
-                        detail,
-                    )
-                )
+    def add(kind: str, key: str, *, source: str, sink: str, obj: str, expression: str = "", condition: str = "unknown", violation: bool = False, capacity: str = "", example: str) -> None:
+        row = candidate_rows.setdefault((kind, key), {
+            "sources": set(), "sinks": set(), "objects": set(), "expressions": set(),
+            "conditions": set(), "capacities": set(), "violation": False,
+            "examples": [], "occurrences": 0,
+        })
+        row["sources"].add(source)
+        row["sinks"].add(sink)
+        row["objects"].add(obj or "?")
+        if expression:
+            row["expressions"].add(_compact(expression, 60))
+        if capacity:
+            row["capacities"].add(_compact(capacity, 60))
+        row["conditions"].add(condition)
+        row["violation"] = bool(row["violation"]) or violation
+        compact = _compact(example, 100)
+        if compact not in row["examples"] and len(row["examples"]) < 2:
+            row["examples"].append(compact)
+        row["occurrences"] = int(row["occurrences"]) + 1
+
+    for operation in operations:
+        conditions = _related_conditions(operation.node_id, parents, direct)
+
+        if operation.kind in {"MEMORY_WRITE", "ARRAY_ACCESS"} and operation.extent:
             capacity = capacities.get(operation.object_name or "")
-            index_value = _static_integer(operation.extent)
-            capacity_value = _static_integer(capacity)
-            if (
-                index_value is not None
-                and capacity_value is not None
-                and index_value >= capacity_value
-            ):
-                items.append(
-                    SemanticItem("POTENTIAL_PATTERN", "ARRAY_INDEX_EXCEEDS_KNOWN_CAPACITY", detail)
-                )
+            parameters = _parameter_sources(graph, operation.node_id, operation.extent)
+            source = "parameter:" + ",".join(parameters) if parameters else ("known_capacity" if capacity else "")
+            if parameters or capacity:
+                matched = any(_upper_bound_condition(condition, operation.extent) for condition in conditions)
+                condition_state = "present" if matched else "absent"
+                value, cap = _static_integer(operation.extent), _static_integer(capacity)
+                violation = bool(value is not None and cap is not None and (value >= cap if operation.kind == "ARRAY_ACCESS" else value > cap))
+                if not (value is not None and cap is not None and not violation):
+                    key = _candidate_key("BOUNDS_FLOW", operation.object_name, source, operation.kind)
+                    add("BOUNDS_FLOW", key, source=source, sink=operation.kind, obj=operation.object_name or "?", expression=operation.extent, condition=condition_state, violation=violation, capacity=capacity or "", example=operation.code)
+                    relations.append(SemanticItem(
+                        "MECHANISM_RELATION", "BOUND_RELATION",
+                        f"source={source} sink={operation.kind} object={operation.object_name or '?'} expression={_compact(operation.extent, 60)} capacity={capacity or '?'} bound_related_condition={condition_state}",
+                        key=key,
+                        state=f"bound_condition={condition_state}|static_violation={'yes' if violation else 'no'}",
+                    ))
+                    if violation:
+                        relations.append(SemanticItem(
+                            "MECHANISM_RELATION", "STATIC_BOUNDS_VIOLATION",
+                            f"object={operation.object_name or '?'} expression={operation.extent} capacity={capacity}",
+                            key=key, state="present",
+                        ))
+
+            arithmetic = _arithmetic_sources(graph, operation.node_id, operation.extent)
+            if arithmetic and parameters:
+                expr = arithmetic[0].code
+                condition_state = "present" if any(_upper_bound_condition(condition, expr) for condition in conditions) else "absent"
+                source = "parameter:" + ",".join(parameters)
+                key = _candidate_key("SIZE_ARITHMETIC_FLOW", source, operation.kind, operation.object_name)
+                add("SIZE_ARITHMETIC_FLOW", key, source=source, sink=operation.kind, obj=operation.object_name or "?", expression=expr, condition=condition_state, example=operation.code)
+                relations.append(SemanticItem(
+                    "MECHANISM_RELATION", "ARITHMETIC_TO_MEMORY_SINK",
+                    f"source={source} expr={_compact(expr, 80)} sink={operation.kind}",
+                    key=key, state=f"range_condition={condition_state}",
+                ))
+
+        elif operation.kind == "ALLOCATION" and operation.extent:
+            arithmetic = _arithmetic_sources(graph, operation.node_id, operation.extent)
+            parameters = _parameter_sources(graph, operation.node_id, operation.extent)
+            if arithmetic and parameters:
+                expr = arithmetic[0].code
+                condition_state = "present" if any(_upper_bound_condition(condition, expr) for condition in conditions) else "absent"
+                source = "parameter:" + ",".join(parameters)
+                key = _candidate_key("SIZE_ARITHMETIC_FLOW", source, "ALLOCATION", operation.object_name)
+                add("SIZE_ARITHMETIC_FLOW", key, source=source, sink="ALLOCATION", obj=operation.object_name or "?", expression=expr, condition=condition_state, example=operation.code)
+                relations.append(SemanticItem(
+                    "MECHANISM_RELATION", "ARITHMETIC_TO_ALLOCATION",
+                    f"source={source} expr={_compact(expr, 80)} object={operation.object_name or '?'}",
+                    key=key, state=f"range_condition={condition_state}",
+                ))
 
         elif operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-            nonnull = _matching_condition(
-                conditions, operation.node_id,
-                lambda condition: _nonnull_condition(condition, operation.object_name or ""),
-            )
-            if nonnull is None:
-                items.append(
-                    SemanticItem(
-                        "POTENTIAL_PATTERN",
-                        "DEREFERENCE_WITHOUT_NONNULL_CONDITION",
-                        detail,
-                    )
-                )
+            pointer = operation.object_name
+            parameters = _parameter_sources(graph, operation.node_id, pointer)
+            upstream_ids = {node.node_id for node in _ddg_upstream(graph, operation.node_id)}
+            allocation = any(op.kind == "ALLOCATION" and op.object_name == pointer and op.node_id in upstream_ids for op in operations)
+            if parameters or allocation:
+                source = "parameter:" + ",".join(parameters) if parameters else "allocation_result"
+                condition_state = "present" if any(_null_related_condition(condition, pointer) for condition in conditions) else "absent"
+                key = _candidate_key("NULL_DEREFERENCE_FLOW", pointer, source)
+                add("NULL_DEREFERENCE_FLOW", key, source=source, sink="POINTER_DEREFERENCE", obj=pointer, condition=condition_state, example=operation.code)
+                relations.append(SemanticItem(
+                    "MECHANISM_RELATION", "NULL_RELATION",
+                    f"source={source} pointer={pointer} null_related_condition={condition_state}",
+                    key=key, state=f"null_condition={condition_state}",
+                ))
 
+    # Lifetime candidates require a path from free to use/free with no observed
+    # assignment to the same pointer on that path.
+    cfg: dict[str, list[str]] = {}
     for edge in graph.edges:
-        if edge.kind != "DDG":
-            continue
-        source = graph.nodes.get(edge.source)
-        target = graph.nodes.get(edge.target)
-        if source is None or target is None or not _is_arithmetic_node(source):
-            continue
-        for operation in _node_operations(target):
-            if operation.kind not in {"MEMORY_WRITE", "ALLOCATION", "ARRAY_ACCESS"}:
+        if edge.kind == "CFG":
+            cfg.setdefault(edge.source, []).append(edge.target)
+
+    for first_free in (op for op in operations if op.kind == "DEALLOCATION" and op.object_name):
+        obj = first_free.object_name or ""
+        queue: deque[str] = deque(cfg.get(first_free.node_id, ()))
+        seen = {first_free.node_id}
+        while queue:
+            node_id = queue.popleft()
+            if node_id in seen:
                 continue
-            upper = _matching_condition(
-                conditions, target.node_id,
-                lambda condition: _upper_bound_condition(condition, source.code),
-            )
-            if upper is None:
-                detail = (
-                    f"expr={_compact(source.code, 90)} "
-                    f"sink={_compact(target.code, 100)} data_from={_compact(source.code, 70)}"
-                )
-                items.append(
-                    SemanticItem(
-                        "POTENTIAL_PATTERN",
-                        "SIZE_ARITHMETIC_WITHOUT_UPPER_BOUND_CONDITION",
-                        detail,
-                    )
-                )
-    return items
+            seen.add(node_id)
+            node = graph.nodes.get(node_id)
+            if node and re.search(rf"\b{re.escape(obj)}\b\s*=", node.code):
+                continue
+            for operation in by_node.get(node_id, ()):
+                if operation.object_name != obj:
+                    continue
+                if operation.kind == "DEALLOCATION":
+                    kind, relation, sink = "DOUBLE_FREE_FLOW", "FREE_TO_FREE", "DEALLOCATION"
+                elif operation.kind in {"MEMORY_READ", "MEMORY_WRITE", "ARRAY_ACCESS", "POINTER_DEREFERENCE"}:
+                    kind, relation, sink = "USE_AFTER_FREE_FLOW", "FREE_TO_USE", operation.kind
+                else:
+                    continue
+                key = _candidate_key(kind, obj)
+                add(kind, key, source="deallocation", sink=sink, obj=obj, condition="not_applicable", example=operation.code)
+                relations.append(SemanticItem(
+                    "MECHANISM_RELATION", relation,
+                    f"object={obj} first={_compact(first_free.code, 70)} later={_compact(operation.code, 70)}",
+                    key=key, state="path_without_redefinition=present",
+                ))
+            queue.extend(cfg.get(node_id, ()))
+
+    candidates: list[SemanticItem] = []
+    for (kind, key), row in sorted(candidate_rows.items()):
+        conditions = set(row["conditions"])
+        condition = next(iter(conditions)) if len(conditions) == 1 else ("mixed" if conditions else "unknown")
+        source = ",".join(sorted(row["sources"])) or "?"
+        sink = ",".join(sorted(row["sinks"])) or "?"
+        obj = ",".join(sorted(row["objects"])) or "?"
+        expression = ";".join(sorted(row["expressions"])) or "?"
+        capacity = ";".join(sorted(row["capacities"])) or "?"
+        violation = bool(row["violation"])
+        fields = [f"source={source}", f"sink={sink}", f"object={obj}"]
+        if expression != "?":
+            fields.append(f"expression={expression}")
+        if capacity != "?":
+            fields.append(f"capacity={capacity}")
+        if kind == "BOUNDS_FLOW":
+            fields.append(f"bound_related_condition={condition}")
+            state = f"bound_condition={condition}|static_violation={'yes' if violation else 'no'}"
+        elif kind == "SIZE_ARITHMETIC_FLOW":
+            fields.append(f"range_related_condition={condition}")
+            state = f"range_condition={condition}"
+        elif kind == "NULL_DEREFERENCE_FLOW":
+            fields.append(f"null_related_condition={condition}")
+            state = f"null_condition={condition}"
+        else:
+            fields.append("redefinition_on_path=none_observed")
+            state = "path_without_redefinition=present"
+        fields.append(f"occurrences={row['occurrences']}")
+        if violation:
+            fields.append("static_violation=yes")
+        if row["examples"]:
+            fields.append("examples=" + "; ".join(row["examples"]))
+        candidates.append(SemanticItem("MECHANISM_CANDIDATE", kind, " ".join(fields), key=key, state=state))
+    return candidates, relations
 
 
-def extract_vulnerability_semantics(graph: FunctionGraph) -> VulnerabilitySemantics:
-    operations_by_node = {
+def extract_mechanism_semantics(graph: FunctionGraph) -> MechanismSemantics:
+    by_node = {
         node_id: operations
         for node_id, node in graph.nodes.items()
         if (operations := _node_operations(node))
     }
-    operations = [operation for values in operations_by_node.values() for operation in values]
-    conditions = _controlling_conditions(graph)
-    capacities = _capacity_facts(operations, graph)
+    operations = [operation for values in by_node.values() for operation in values]
+    candidates, relations = _mechanism_items(graph, operations, by_node)
 
-    items: list[SemanticItem] = []
-    items.extend(_operation_items(
-        operations, graph=graph, conditions=conditions, capacities=capacities
-    ))
-
-    static_names: set[str] = set()
-    for node in graph.nodes.values():
-        if "LOCAL" in node.label.upper():
-            static_names.update(name for name, _ in _ARRAY_DECL.findall(node.code))
-    for name, capacity in capacities.items():
-        kind = "STATIC_CAPACITY" if name in static_names else "DYNAMIC_CAPACITY"
-        items.append(
-            SemanticItem("MEMORY_OBJECT", kind, f"object={name} capacity={_compact(capacity, 90)}")
-        )
-
-    items.extend(_dependence_items(graph, operations_by_node))
-    items.extend(_constraint_items(conditions, operations_by_node))
-    items.extend(_lifetime_items(graph, operations, operations_by_node))
-    items.extend(_potential_pattern_items(graph, operations, conditions, capacities))
-
+    items = [*candidates, *relations, *_security_operation_items(operations)]
     deduplicated: list[SemanticItem] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str | None, str | None]] = set()
     for item in items:
-        key = (item.category, item.kind, item.detail)
-        if key not in seen:
-            seen.add(key)
+        identity = (item.category, item.kind, item.detail, item.key, item.state)
+        if identity not in seen:
+            seen.add(identity)
             deduplicated.append(item)
-    return VulnerabilitySemantics(tuple(deduplicated))
+    return MechanismSemantics(tuple(deduplicated))
