@@ -17,6 +17,7 @@ CATEGORY_TO_GROUP = {
     for category in categories
 }
 
+# Descriptive metadata only. These values are not auxiliary supervision labels.
 MECHANISM_FEATURES = (
     "bounds_flow",
     "null_dereference_flow",
@@ -40,6 +41,9 @@ _READ_APIS = {
 }
 _ALLOC_APIS = {"malloc", "calloc", "realloc", "kmalloc", "kzalloc", "vmalloc"}
 _FREE_APIS = {"free", "kfree", "vfree"}
+# For these APIs the size argument is a destination-bound contract, not a
+# direct byte-count claim. Without an independent capacity it is not a bounds
+# mechanism by itself.
 _DESTINATION_BOUND_APIS = {"snprintf", "vsnprintf", "strlcpy", "strlcat"}
 
 _IDENTIFIER = re.compile(r"\b[A-Za-z_]\w*\b")
@@ -164,14 +168,15 @@ def render_mechanism_items(
     excluded_groups: tuple[str, ...] = (),
     max_per_category: int = 24,
 ) -> str:
+    """Render CPG-supported mechanism candidates and high-level relations.
+
+    SECURITY_OPERATION remains audit-only. Relations are model-facing even when
+    they do not justify a candidate; this preserves useful type/data/control
+    semantics without pretending that every relation is itself a vulnerability.
+    """
     if max_per_category <= 0:
         raise ValueError("max_per_category must be positive")
     excluded = set(validate_mechanism_groups(excluded_groups))
-    candidate_keys = {
-        str(item.get("key"))
-        for item in items
-        if item.get("category") == "MECHANISM_CANDIDATE" and item.get("key")
-    }
     grouped: dict[str, list[tuple[str, str]]] = {}
     for item in items:
         category = str(item.get("category") or "")
@@ -180,10 +185,6 @@ def render_mechanism_items(
         group = CATEGORY_TO_GROUP.get(category)
         if not category or not kind or group is None or group in excluded:
             continue
-        if category == "MECHANISM_RELATION":
-            key = item.get("key")
-            if not isinstance(key, str) or key not in candidate_keys:
-                continue
         grouped.setdefault(category, []).append((kind, f"{kind} {detail}".strip()))
 
     if not grouped:
@@ -453,17 +454,17 @@ def _expression_nodes(
     wanted = _canonical(expression)
     if not wanted:
         return ()
-    candidates: list[GraphNode] = []
+    nodes: list[GraphNode] = []
     root = graph.nodes.get(operation_node_id)
     if root:
-        candidates.append(root)
-    candidates.extend(_ast_descendants(graph, operation_node_id))
-    exact = [node for node in candidates if _canonical(node.code) == wanted]
+        nodes.append(root)
+    nodes.extend(_ast_descendants(graph, operation_node_id))
+    exact = [node for node in nodes if _canonical(node.code) == wanted]
     if exact:
         return tuple(exact)
     if _SIMPLE_IDENTIFIER.fullmatch(expression or ""):
         return tuple(
-            node for node in candidates
+            node for node in nodes
             if node.label.upper() == "IDENTIFIER" and node.code.strip() == expression.strip()
         )
     return ()
@@ -702,8 +703,7 @@ def _operand_guard_present(
     for node_id, condition in _all_control_conditions(graph):
         if node_id == exclude_node_id or arithmetic_canonical in _canonical(condition):
             continue
-        comparison = _split_comparison(condition)
-        if comparison is None:
+        if _split_comparison(condition) is None:
             continue
         mentioned = _runtime_identifiers(condition)
         if len(operand_names & mentioned) >= 2:
@@ -811,7 +811,7 @@ def _mechanism_items(
     direct_conditions = _direct_conditions(graph)
     capacities = _capacities(operations, graph)
     declared_types = _declared_types(graph)
-    candidates: dict[tuple[str, str], dict[str, object]] = {}
+    candidate_rows: dict[tuple[str, str], dict[str, object]] = {}
     relations: list[SemanticItem] = []
 
     def add_candidate(
@@ -827,7 +827,7 @@ def _mechanism_items(
         value_type: str = "",
         violation: bool = False,
     ) -> None:
-        row = candidates.setdefault((kind, key), {
+        row = candidate_rows.setdefault((kind, key), {
             "sources": set(), "sinks": set(), "objects": set(), "expressions": set(),
             "conditions": set(), "capacities": set(), "types": set(),
             "violation": False, "occurrences": 0,
@@ -874,9 +874,18 @@ def _mechanism_items(
                     and cap is not None
                     and (value >= cap if operation.kind == "ARRAY_ACCESS" else value > cap)
                 )
+                statically_safe = bool(
+                    value is not None and cap is not None and not violation
+                )
                 key = _candidate_key(
                     "BOUNDS_FLOW", operation.object_name, source, operation.kind
                 )
+                if capacity:
+                    relation_kind = "BOUND_RELATION"
+                elif operation.kind == "ARRAY_ACCESS":
+                    relation_kind = "INDEX_FLOW_TO_MEMORY_SINK"
+                else:
+                    relation_kind = "EXTENT_FLOW_TO_MEMORY_SINK"
                 relation_detail = (
                     f"evidence={'DDG' if parameters else 'CAPACITY'} source={source} "
                     f"sink={operation.kind} object={operation.object_name or '?'} "
@@ -886,23 +895,26 @@ def _mechanism_items(
                 if value_type:
                     relation_detail += f" value_type={value_type}"
                 relations.append(SemanticItem(
-                    "MECHANISM_RELATION", "BOUND_RELATION", relation_detail,
+                    "MECHANISM_RELATION", relation_kind, relation_detail,
                     key=key,
                     state=(
                         f"bound_condition={condition_state}|"
                         f"static_violation={'yes' if violation else 'no'}"
                     ),
                 ))
-                if violation or condition_state == "not_observed":
+                # A bounds candidate requires an actual object-capacity relation.
+                # Missing a check alone is never enough to create the candidate.
+                if capacity and not statically_safe:
                     add_candidate(
                         "BOUNDS_FLOW", key,
                         source=source, sink=operation.kind, obj=operation.object_name or "?",
                         expression=operation.extent, condition=condition_state,
-                        capacity=capacity or "", value_type=value_type, violation=violation,
+                        capacity=capacity, value_type=value_type, violation=violation,
                     )
 
-            arithmetic = _arithmetic_sources(graph, operation.node_id, operation.extent)
-            for arithmetic_node in arithmetic:
+            for arithmetic_node in _arithmetic_sources(
+                graph, operation.node_id, operation.extent
+            ):
                 arithmetic_parameters = _parameter_sources(
                     graph, arithmetic_node.node_id, arithmetic_node.code
                 )
@@ -926,20 +938,23 @@ def _mechanism_items(
                     key=key,
                     state=f"range_condition={arithmetic_state}",
                 ))
-                if arithmetic_state == "not_observed":
-                    add_candidate(
-                        "SIZE_ARITHMETIC_FLOW", key,
-                        source=arithmetic_source, sink=operation.kind,
-                        obj=operation.object_name or "?", expression=arithmetic_node.code,
-                        condition=arithmetic_state,
-                    )
+                # The arithmetic-to-sink relation itself defines this mechanism;
+                # the observed constraint is an annotation, not the trigger.
+                add_candidate(
+                    "SIZE_ARITHMETIC_FLOW", key,
+                    source=arithmetic_source, sink=operation.kind,
+                    obj=operation.object_name or "?", expression=arithmetic_node.code,
+                    condition=arithmetic_state,
+                )
 
             if operation.kind == "ARRAY_ACCESS":
                 for condition_node_id, condition in conditions:
                     for match in _SIMPLE_BINARY_ARITH.finditer(condition):
                         expression = match.group(0)
-                        operands = {match.group(1).split("->", 1)[0].split(".", 1)[0],
-                                    match.group(3).split("->", 1)[0].split(".", 1)[0]}
+                        operands = {
+                            match.group(1).split("->", 1)[0].split(".", 1)[0],
+                            match.group(3).split("->", 1)[0].split(".", 1)[0],
+                        }
                         control_sources = _parameter_sources(
                             graph, condition_node_id, expression
                         )
@@ -970,17 +985,17 @@ def _mechanism_items(
                             key=key,
                             state=f"range_condition={range_state}",
                         ))
-                        if range_state == "not_observed":
-                            add_candidate(
-                                "SIZE_ARITHMETIC_FLOW", key,
-                                source=control_source, sink="ARRAY_ACCESS",
-                                obj=operation.object_name or "?", expression=expression,
-                                condition=range_state,
-                            )
+                        add_candidate(
+                            "SIZE_ARITHMETIC_FLOW", key,
+                            source=control_source, sink="ARRAY_ACCESS",
+                            obj=operation.object_name or "?", expression=expression,
+                            condition=range_state,
+                        )
 
         elif operation.kind == "ALLOCATION" and operation.extent:
-            arithmetic = _arithmetic_sources(graph, operation.node_id, operation.extent)
-            for arithmetic_node in arithmetic:
+            for arithmetic_node in _arithmetic_sources(
+                graph, operation.node_id, operation.extent
+            ):
                 arithmetic_parameters = _parameter_sources(
                     graph, arithmetic_node.node_id, arithmetic_node.code
                 )
@@ -1003,21 +1018,24 @@ def _mechanism_items(
                     key=key,
                     state=f"range_condition={state}",
                 ))
-                if state == "not_observed":
-                    add_candidate(
-                        "SIZE_ARITHMETIC_FLOW", key,
-                        source=source, sink="ALLOCATION", obj=operation.object_name or "?",
-                        expression=arithmetic_node.code, condition=state,
-                    )
+                add_candidate(
+                    "SIZE_ARITHMETIC_FLOW", key,
+                    source=source, sink="ALLOCATION", obj=operation.object_name or "?",
+                    expression=arithmetic_node.code, condition=state,
+                )
 
         elif operation.kind == "POINTER_DEREFERENCE" and operation.object_name:
-            origins = _nullable_origins(graph, operation.node_id, operation.object_name, operations)
+            origins = _nullable_origins(
+                graph, operation.node_id, operation.object_name, operations
+            )
             if origins:
                 source = ",".join(origins)
                 state = _condition_state(
                     graph,
                     conditions,
-                    lambda condition: _null_related_condition(condition, operation.object_name or ""),
+                    lambda condition: _null_related_condition(
+                        condition, operation.object_name or ""
+                    ),
                 )
                 key = _candidate_key(
                     "NULL_DEREFERENCE_FLOW", operation.object_name, source
@@ -1029,12 +1047,13 @@ def _mechanism_items(
                     key=key,
                     state=f"null_condition={state}",
                 ))
-                if state == "not_observed":
-                    add_candidate(
-                        "NULL_DEREFERENCE_FLOW", key,
-                        source=source, sink="POINTER_DEREFERENCE",
-                        obj=operation.object_name, condition=state,
-                    )
+                # Explicit nullable provenance plus a dereference is the
+                # mechanism. The null-related condition only annotates it.
+                add_candidate(
+                    "NULL_DEREFERENCE_FLOW", key,
+                    source=source, sink="POINTER_DEREFERENCE",
+                    obj=operation.object_name, condition=state,
+                )
 
     cfg: dict[str, list[str]] = {}
     for edge in graph.edges:
@@ -1056,15 +1075,15 @@ def _mechanism_items(
             node = graph.nodes.get(node_id)
             if node and _redefines_name(node.code, obj):
                 continue
-            for operation in by_node.get(node_id, ()):
-                if operation.object_name != obj:
+            for later in by_node.get(node_id, ()):
+                if later.object_name != obj:
                     continue
-                if operation.kind == "DEALLOCATION":
+                if later.kind == "DEALLOCATION":
                     kind, relation, sink = "DOUBLE_FREE_FLOW", "FREE_TO_FREE", "DEALLOCATION"
-                elif operation.kind in {
+                elif later.kind in {
                     "MEMORY_READ", "MEMORY_WRITE", "ARRAY_ACCESS", "POINTER_DEREFERENCE"
                 }:
-                    kind, relation, sink = "USE_AFTER_FREE_FLOW", "FREE_TO_USE", operation.kind
+                    kind, relation, sink = "USE_AFTER_FREE_FLOW", "FREE_TO_USE", later.kind
                 else:
                     continue
                 key = _candidate_key(kind, obj)
@@ -1081,8 +1100,8 @@ def _mechanism_items(
                 )
             queue.extend(cfg.get(node_id, ()))
 
-    candidate_items: list[SemanticItem] = []
-    for (kind, key), row in sorted(candidates.items()):
+    candidates: list[SemanticItem] = []
+    for (kind, key), row in sorted(candidate_rows.items()):
         conditions = set(row["conditions"])
         condition = (
             next(iter(conditions)) if len(conditions) == 1
@@ -1121,10 +1140,10 @@ def _mechanism_items(
         fields.append(f"occurrences={row['occurrences']}")
         if violation:
             fields.append("static_violation=yes")
-        candidate_items.append(SemanticItem(
+        candidates.append(SemanticItem(
             "MECHANISM_CANDIDATE", kind, " ".join(fields), key=key, state=state
         ))
-    return candidate_items, relations
+    return candidates, relations
 
 
 def extract_mechanism_semantics(graph: FunctionGraph) -> MechanismSemantics:
@@ -1135,6 +1154,8 @@ def extract_mechanism_semantics(graph: FunctionGraph) -> MechanismSemantics:
     }
     operations = [operation for values in by_node.values() for operation in values]
     candidates, relations = _mechanism_items(graph, operations, by_node)
+    # Raw operations are retained only for audit. They are not rendered into
+    # the model-facing mechanism context.
     items = [*candidates, *relations, *_security_operation_items(operations)]
     dedup: list[SemanticItem] = []
     seen: set[tuple[str, str, str, str | None, str | None]] = set()
