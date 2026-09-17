@@ -3,7 +3,9 @@ import unittest
 from vulnmechanism.cpg import FunctionGraph, GraphEdge, GraphNode
 from vulnmechanism.dataset import extract_cpg_relations, render_cpg_relations
 from vulnmechanism.semantics import (
+    _is_arithmetic_node,
     _node_operations,
+    _parameter_sources,
     extract_mechanism_semantics,
     render_mechanism_items,
     validate_mechanism_groups,
@@ -49,26 +51,61 @@ class CPGTests(unittest.TestCase):
 
 
 class MechanismTests(unittest.TestCase):
-    def test_bounds_flow_requires_relation_evidence(self):
+    def _candidate_kinds(self, semantics):
+        return {
+            item.kind for item in semantics.items
+            if item.category == "MECHANISM_CANDIDATE"
+        }
+
+    def _relations(self, semantics, kind=None):
+        return [
+            item for item in semantics.items
+            if item.category == "MECHANISM_RELATION"
+            and (kind is None or item.kind == kind)
+        ]
+
+    def test_protected_bounds_relation_is_not_vulnerability_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
                 "1": GraphNode("1", "PARAM", "int len"),
                 "2": GraphNode("2", "<operator>.lessEqualsThan", "len <= 64"),
                 "3": GraphNode("3", "memcpy", "memcpy(buf, src, len)"),
+                "4": GraphNode("4", "IDENTIFIER", "len"),
             },
             (
-                GraphEdge("DDG", "1", "3"),
+                GraphEdge("AST", "3", "4"),
+                GraphEdge("DDG", "1", "4"),
                 GraphEdge("CDG", "2", "3"),
                 GraphEdge("CFG", "2", "3"),
             ),
         )
         semantics = extract_mechanism_semantics(graph)
-        rendered = semantics.render()
-        self.assertIn("BOUNDS_FLOW", rendered)
-        self.assertIn("source=parameter:len", rendered)
-        self.assertIn("bound_related_condition=present", rendered)
-        self.assertEqual(semantics.candidate_count, 1)
+        relations = self._relations(semantics, "BOUND_RELATION")
+        self.assertTrue(relations)
+        self.assertIn("bound_related_condition=present", relations[0].detail)
+        self.assertEqual(semantics.candidate_count, 0)
+        self.assertIn("NO_CPG_DERIVED_MECHANISM_EVIDENCE", semantics.render())
+
+    def test_unprotected_bounds_relation_becomes_candidate(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "PARAM", "int len"),
+                "2": GraphNode("2", "<operator>.greaterThan", "flag > 0"),
+                "3": GraphNode("3", "memcpy", "memcpy(buf, src, len)"),
+                "4": GraphNode("4", "IDENTIFIER", "len"),
+            },
+            (
+                GraphEdge("AST", "3", "4"),
+                GraphEdge("DDG", "1", "4"),
+                GraphEdge("CDG", "2", "3"),
+            ),
+        )
+        semantics = extract_mechanism_semantics(graph)
+        self.assertIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
+        self.assertIn("source=parameter:len", semantics.render())
+        self.assertIn("bound_related_condition=not_observed", semantics.render())
 
     def test_generic_array_access_is_audit_only(self):
         graph = FunctionGraph(
@@ -83,9 +120,8 @@ class MechanismTests(unittest.TestCase):
             for item in semantics.items
         ))
         self.assertNotIn("ARRAY_ACCESS", semantics.render())
-        self.assertIn("NO_CPG_DERIVED_MECHANISM_EVIDENCE", semantics.render())
 
-    def test_ast_descendant_inherits_related_control_condition(self):
+    def test_ast_descendant_inherits_protective_condition_without_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -93,75 +129,116 @@ class MechanismTests(unittest.TestCase):
                 "2": GraphNode("2", "<operator>.lessThan", "i < 8"),
                 "3": GraphNode("3", "CALL", "x = a[i]"),
                 "4": GraphNode("4", "<operator>.indexAccess", "a[i]"),
-                "5": GraphNode("5", "LOCAL", "int a[8]"),
+                "5": GraphNode("5", "IDENTIFIER", "i"),
+                "6": GraphNode("6", "LOCAL", "int a[8]"),
             },
             (
-                GraphEdge("DDG", "1", "4"),
-                GraphEdge("CDG", "2", "3"),
                 GraphEdge("AST", "3", "4"),
-                GraphEdge("AST", "3", "5"),
+                GraphEdge("AST", "4", "5"),
+                GraphEdge("AST", "3", "6"),
+                GraphEdge("DDG", "1", "5"),
+                GraphEdge("CDG", "2", "3"),
                 GraphEdge("CFG", "2", "3"),
             ),
         )
-        rendered = extract_mechanism_semantics(graph).render()
-        self.assertIn("BOUNDS_FLOW", rendered)
-        self.assertIn("bound_related_condition=present", rendered)
+        semantics = extract_mechanism_semantics(graph)
+        relations = self._relations(semantics, "BOUND_RELATION")
+        self.assertTrue(relations)
+        self.assertTrue(any("bound_related_condition=present" in item.detail for item in relations))
+        self.assertEqual(semantics.candidate_count, 0)
 
-    def test_missing_cdg_is_unknown_not_absent(self):
+    def test_missing_cdg_is_unknown_and_not_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
                 "1": GraphNode("1", "PARAM", "int len"),
                 "2": GraphNode("2", "memcpy", "memcpy(buf, src, len)"),
+                "3": GraphNode("3", "IDENTIFIER", "len"),
             },
-            (GraphEdge("DDG", "1", "2"),),
+            (
+                GraphEdge("AST", "2", "3"),
+                GraphEdge("DDG", "1", "3"),
+            ),
         )
-        rendered = extract_mechanism_semantics(graph).render()
-        self.assertIn("bound_related_condition=unknown_no_cdg", rendered)
+        semantics = extract_mechanism_semantics(graph)
+        relations = self._relations(semantics, "BOUND_RELATION")
+        self.assertTrue(relations)
+        self.assertTrue(any("unknown_no_cdg" in item.state for item in relations))
+        self.assertEqual(semantics.candidate_count, 0)
 
     def test_pointer_parameter_alone_is_not_null_mechanism(self):
         graph = FunctionGraph(
             "foo",
             {
                 "1": GraphNode("1", "PARAM", "char *p"),
-                "2": GraphNode("2", "<operator>.notEquals", "p != NULL"),
-                "3": GraphNode("3", "<operator>.indirection", "*p"),
+                "2": GraphNode("2", "<operator>.indirection", "*p"),
+                "3": GraphNode("3", "IDENTIFIER", "p"),
             },
             (
+                GraphEdge("AST", "2", "3"),
                 GraphEdge("DDG", "1", "3"),
-                GraphEdge("CDG", "2", "3"),
             ),
         )
         semantics = extract_mechanism_semantics(graph)
-        self.assertNotIn("NULL_DEREFERENCE_FLOW", semantics.render())
-        self.assertEqual(semantics.candidate_count, 0)
+        self.assertNotIn("NULL_DEREFERENCE_FLOW", self._candidate_kinds(semantics))
 
-    def test_nullable_allocation_to_dereference_is_null_mechanism(self):
+    def test_nullable_allocation_without_cdg_is_audit_relation_only(self):
         graph = FunctionGraph(
             "foo",
             {
                 "1": GraphNode("1", "malloc", "p = malloc(n)"),
                 "2": GraphNode("2", "<operator>.indirection", "*p"),
+                "3": GraphNode("3", "IDENTIFIER", "p"),
             },
-            (GraphEdge("DDG", "1", "2"),),
+            (
+                GraphEdge("AST", "2", "3"),
+                GraphEdge("DDG", "1", "3"),
+            ),
         )
-        rendered = extract_mechanism_semantics(graph).render()
-        self.assertIn("NULL_DEREFERENCE_FLOW", rendered)
-        self.assertIn("source=nullable_allocation:malloc", rendered)
-        self.assertIn("null_related_condition=unknown_no_cdg", rendered)
+        semantics = extract_mechanism_semantics(graph)
+        relations = self._relations(semantics, "NULLABLE_SOURCE_TO_DEREFERENCE")
+        self.assertTrue(relations)
+        self.assertTrue(any("nullable_allocation:malloc" in item.detail for item in relations))
+        self.assertTrue(any("unknown_no_cdg" in item.state for item in relations))
+        self.assertEqual(semantics.candidate_count, 0)
 
-    def test_explicit_null_origin_to_dereference_is_null_mechanism(self):
+    def test_nullable_allocation_without_observed_null_check_is_candidate(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "malloc", "p = malloc(n)"),
+                "2": GraphNode("2", "<operator>.greaterThan", "flag > 0"),
+                "3": GraphNode("3", "<operator>.indirection", "*p"),
+                "4": GraphNode("4", "IDENTIFIER", "p"),
+            },
+            (
+                GraphEdge("AST", "3", "4"),
+                GraphEdge("DDG", "1", "4"),
+                GraphEdge("CDG", "2", "3"),
+            ),
+        )
+        semantics = extract_mechanism_semantics(graph)
+        self.assertIn("NULL_DEREFERENCE_FLOW", self._candidate_kinds(semantics))
+        self.assertIn("nullable_allocation:malloc", semantics.render())
+
+    def test_explicit_null_origin_without_cdg_is_audit_relation_only(self):
         graph = FunctionGraph(
             "foo",
             {
                 "1": GraphNode("1", "<operator>.assignment", "p = NULL"),
                 "2": GraphNode("2", "<operator>.indirection", "*p"),
+                "3": GraphNode("3", "IDENTIFIER", "p"),
             },
-            (GraphEdge("DDG", "1", "2"),),
+            (
+                GraphEdge("AST", "2", "3"),
+                GraphEdge("DDG", "1", "3"),
+            ),
         )
-        rendered = extract_mechanism_semantics(graph).render()
-        self.assertIn("NULL_DEREFERENCE_FLOW", rendered)
-        self.assertIn("source=explicit_null_assignment", rendered)
+        semantics = extract_mechanism_semantics(graph)
+        relations = self._relations(semantics, "NULLABLE_SOURCE_TO_DEREFERENCE")
+        self.assertTrue(relations)
+        self.assertTrue(any("explicit_null_assignment" in item.detail for item in relations))
+        self.assertEqual(semantics.candidate_count, 0)
 
     def test_chained_field_access_keeps_full_pointer_base(self):
         operations = _node_operations(
@@ -173,8 +250,6 @@ class MechanismTests(unittest.TestCase):
             if operation.kind == "POINTER_DEREFERENCE"
         }
         self.assertEqual(pointers, {"tree->cdr->car"})
-        self.assertNotIn("car", pointers)
-        self.assertNotIn("cdr", pointers)
 
     def test_destination_bound_api_needs_independent_capacity(self):
         graph = FunctionGraph(
@@ -182,13 +257,101 @@ class MechanismTests(unittest.TestCase):
             {
                 "1": GraphNode("1", "PARAM", "size_t n"),
                 "2": GraphNode("2", "snprintf", "snprintf(buf, n, \"%s\", src)"),
+                "3": GraphNode("3", "IDENTIFIER", "n"),
             },
-            (GraphEdge("DDG", "1", "2"),),
+            (
+                GraphEdge("AST", "2", "3"),
+                GraphEdge("DDG", "1", "3"),
+            ),
         )
-        self.assertNotIn(
-            "BOUNDS_FLOW",
-            extract_mechanism_semantics(graph).render(),
+        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(extract_mechanism_semantics(graph)))
+
+    def test_sizeof_expression_does_not_inherit_unrelated_parameter_source(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "PARAM", "struct sockaddr_storage *ss"),
+                "2": GraphNode("2", "memcpy", "memcpy(ss, src, sizeof(local))"),
+                "3": GraphNode("3", "<operator>.sizeOf", "sizeof(local)"),
+            },
+            (
+                GraphEdge("AST", "2", "3"),
+                GraphEdge("DDG", "1", "2"),
+            ),
         )
+        self.assertEqual(_parameter_sources(graph, "2", "sizeof(local)"), ())
+        semantics = extract_mechanism_semantics(graph)
+        self.assertFalse(self._relations(semantics, "BOUND_RELATION"))
+
+    def test_pointer_declaration_is_not_arithmetic_node(self):
+        self.assertFalse(_is_arithmetic_node(GraphNode(
+            "1", "<operator>.indirection", "char *buf"
+        )))
+
+    def test_expression_local_ddg_does_not_mix_call_arguments(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "PARAM", "char *dst"),
+                "2": GraphNode("2", "PARAM", "char *src"),
+                "3": GraphNode("3", "PARAM", "size_t n"),
+                "4": GraphNode("4", "memcpy", "memcpy(dst, src, n)"),
+                "5": GraphNode("5", "IDENTIFIER", "dst"),
+                "6": GraphNode("6", "IDENTIFIER", "src"),
+                "7": GraphNode("7", "IDENTIFIER", "n"),
+            },
+            (
+                GraphEdge("AST", "4", "5"),
+                GraphEdge("AST", "4", "6"),
+                GraphEdge("AST", "4", "7"),
+                GraphEdge("DDG", "1", "5"),
+                GraphEdge("DDG", "2", "6"),
+                GraphEdge("DDG", "3", "7"),
+            ),
+        )
+        self.assertEqual(_parameter_sources(graph, "4", "n"), ("n",))
+
+    def test_control_arithmetic_without_operand_guard_is_candidate(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "PARAM", "long data_size"),
+                "2": GraphNode("2", "PARAM", "long header_size"),
+                "3": GraphNode("3", "<operator>.lessThan", "i < data_size - header_size"),
+                "4": GraphNode("4", "<operator>.indexAccess", "data[i]"),
+                "5": GraphNode("5", "IDENTIFIER", "i"),
+            },
+            (
+                GraphEdge("AST", "4", "5"),
+                GraphEdge("CDG", "3", "4"),
+            ),
+        )
+        semantics = extract_mechanism_semantics(graph)
+        self.assertIn("SIZE_ARITHMETIC_FLOW", self._candidate_kinds(semantics))
+        self.assertIn("data_size - header_size", semantics.render())
+        self.assertIn("range_related_condition=not_observed", semantics.render())
+
+    def test_control_arithmetic_with_operand_guard_is_not_candidate(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "PARAM", "long data_size"),
+                "2": GraphNode("2", "PARAM", "long header_size"),
+                "3": GraphNode("3", "<operator>.lessThan", "data_size < header_size"),
+                "4": GraphNode("4", "<operator>.lessThan", "i < data_size - header_size"),
+                "5": GraphNode("5", "<operator>.indexAccess", "data[i]"),
+                "6": GraphNode("6", "IDENTIFIER", "i"),
+            },
+            (
+                GraphEdge("AST", "5", "6"),
+                GraphEdge("CDG", "4", "5"),
+            ),
+        )
+        semantics = extract_mechanism_semantics(graph)
+        self.assertNotIn("SIZE_ARITHMETIC_FLOW", self._candidate_kinds(semantics))
+        relations = self._relations(semantics, "ARITHMETIC_CONTROL_TO_MEMORY_SINK")
+        self.assertTrue(relations)
+        self.assertTrue(any("operand_range_condition=present" in item.detail for item in relations))
 
     def test_lifetime_path_stops_at_redefinition(self):
         unsafe = FunctionGraph(
@@ -199,7 +362,7 @@ class MechanismTests(unittest.TestCase):
             },
             (GraphEdge("CFG", "1", "2"),),
         )
-        self.assertIn("USE_AFTER_FREE_FLOW", extract_mechanism_semantics(unsafe).render())
+        self.assertIn("USE_AFTER_FREE_FLOW", self._candidate_kinds(extract_mechanism_semantics(unsafe)))
 
         redefined = FunctionGraph(
             "foo",
@@ -210,33 +373,14 @@ class MechanismTests(unittest.TestCase):
             },
             (GraphEdge("CFG", "1", "2"), GraphEdge("CFG", "2", "3")),
         )
-        self.assertNotIn("USE_AFTER_FREE_FLOW", extract_mechanism_semantics(redefined).render())
+        self.assertNotIn("USE_AFTER_FREE_FLOW", self._candidate_kinds(extract_mechanism_semantics(redefined)))
 
     def test_renderer_excludes_audit_operations_and_unlinked_relations(self):
         items = [
-            {
-                "category": "SECURITY_OPERATION",
-                "kind": "MEMORY_WRITE",
-                "detail": "code=memcpy(buf,src,n)",
-            },
-            {
-                "category": "MECHANISM_RELATION",
-                "kind": "BOUND_RELATION",
-                "detail": "source=parameter:n",
-                "key": "bounds-1",
-            },
-            {
-                "category": "MECHANISM_CANDIDATE",
-                "kind": "BOUNDS_FLOW",
-                "detail": "source=parameter:n sink=MEMORY_WRITE object=buf",
-                "key": "bounds-1",
-            },
-            {
-                "category": "MECHANISM_RELATION",
-                "kind": "UNLINKED",
-                "detail": "should_not_render",
-                "key": "missing",
-            },
+            {"category": "SECURITY_OPERATION", "kind": "MEMORY_WRITE", "detail": "code=memcpy(buf,src,n)"},
+            {"category": "MECHANISM_RELATION", "kind": "BOUND_RELATION", "detail": "source=parameter:n", "key": "bounds-1"},
+            {"category": "MECHANISM_CANDIDATE", "kind": "BOUNDS_FLOW", "detail": "source=parameter:n sink=MEMORY_WRITE object=buf", "key": "bounds-1"},
+            {"category": "MECHANISM_RELATION", "kind": "UNLINKED", "detail": "should_not_render", "key": "missing"},
         ]
         text = render_mechanism_items(items)
         self.assertIn("[MECHANISM_CANDIDATE]", text)
