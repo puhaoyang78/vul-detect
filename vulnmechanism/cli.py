@@ -5,13 +5,13 @@ import argparse
 from .benchmark_view import FORMAL_DATASETS, dataset_view
 from .dataset import build_function_dataset
 from .model import MODEL_VARIANTS, evaluate_model, train_model
-from .semantics import SEMANTIC_GROUPS, validate_semantic_groups
+from .semantics import MECHANISM_GROUPS, validate_mechanism_groups
 
 
-def _semantic_groups(value: str) -> tuple[str, ...]:
+def _mechanism_groups(value: str) -> tuple[str, ...]:
     if not value.strip():
         return ()
-    return validate_semantic_groups(tuple(part.strip() for part in value.split(",")))
+    return validate_mechanism_groups(tuple(part.strip() for part in value.split(",")))
 
 
 def _train(args):
@@ -35,7 +35,6 @@ def _train(args):
             lora_dropout=args.lora_dropout,
             fusion_dim=args.fusion_dim,
             fusion_heads=args.fusion_heads,
-            feature_loss_weight=args.feature_loss_weight,
             excluded_groups=args.exclude_groups,
             seed=args.seed,
             device=args.device,
@@ -60,7 +59,7 @@ def _evaluate(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Function-level C/C++ vulnerability-semantic learning"
+        description="Function-level C/C++ CPG-guided vulnerability-mechanism learning"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -88,9 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-dataset",
         choices=("primevul", "cleanvul"),
         required=True,
-        help="formal benchmark source used for training",
     )
-    train.add_argument("--variant", choices=MODEL_VARIANTS, default="full")
+    train.add_argument("--variant", choices=MODEL_VARIANTS, default="mechanism_fusion")
     train.add_argument("--output")
     train.add_argument("--model", default="/home/phy/models/Qwen2.5-Coder-7B-Instruct")
     train.add_argument("--source-max-length", type=int, default=1536)
@@ -105,13 +103,12 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--lora-dropout", type=float, default=0.05)
     train.add_argument("--fusion-dim", type=int, default=256)
     train.add_argument("--fusion-heads", type=int, default=8)
-    train.add_argument("--feature-loss-weight", type=float, default=0.2)
     train.add_argument(
         "--exclude-groups",
-        type=_semantic_groups,
+        type=_mechanism_groups,
         default=(),
         metavar="GROUPS",
-        help="comma-separated semantic ablation groups: " + ",".join(SEMANTIC_GROUPS),
+        help="comma-separated mechanism ablation groups: " + ",".join(MECHANISM_GROUPS),
     )
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--device", default="auto")
@@ -120,12 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("eval")
     evaluate.add_argument("--dataset", default="data/function_dataset.jsonl")
     evaluate.add_argument("--checkpoint", required=True)
-    evaluate.add_argument(
-        "--source-dataset",
-        choices=FORMAL_DATASETS,
-        required=True,
-        help="formal benchmark source to evaluate",
-    )
+    evaluate.add_argument("--source-dataset", choices=FORMAL_DATASETS, required=True)
     evaluate.add_argument(
         "--split",
         choices=("train", "valid", "test", "external_test"),
