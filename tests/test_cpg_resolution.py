@@ -8,7 +8,7 @@ from vulnmechanism.cpg import (
     _isolate_batch,
     resolve_target_graph,
 )
-from vulnmechanism.semantics import _node_operations
+from vulnmechanism.semantics import _node_operations, render_mechanism_items
 from vulnmechanism.syntax import parse_function, source_tokens, target_hint
 
 
@@ -36,7 +36,7 @@ class TargetResolutionTests(unittest.TestCase):
         n,e=fixture()
         g=resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'],function_hint='wrong')
         self.assertEqual(g.function,'f')
-        self.assertTrue(g.quality['hint_mismatch'])
+        self.assertIn('hint_mismatch', g.quality['warnings'])
         self.assertEqual(g.quality['resolution_mode'], 'standalone_file_unique_method')
 
     def test_wrong_file_and_ambiguous_nested_method_require_hint(self):
@@ -70,7 +70,7 @@ class TargetResolutionTests(unittest.TestCase):
         g=resolve_target_graph(n,e,filename='input.cpp',source=source,function_hint='wrong')
         self.assertEqual(g.function,'f')
         self.assertTrue(g.quality['source_occurrence_exact'])
-        self.assertTrue(g.quality['hint_mismatch'])
+        self.assertIn('hint_mismatch', g.quality['warnings'])
 
     def test_full_file_uses_line_range_then_hint(self):
         snippet='int f() { return 1; }'
@@ -134,13 +134,13 @@ class TargetResolutionTests(unittest.TestCase):
         self.assertEqual(result[2:], ['ok-3','ok-4'])
         self.assertIn([2], calls)
 
-    def test_model_semantics_ignore_joern_ids_and_input_order(self):
-        from vulnmechanism.semantics import render_semantic_items
-        items=[dict(category='CONTROL_CONSTRAINT',kind='CONTROL_CONDITION',detail='node=12 expr=n < 4'),
-               dict(category='CONTROL_CONSTRAINT',kind='CONTROL_CONDITION',detail='node=13 expr=p != 0')]
-        changed=[dict(r,detail=r['detail'].replace('12','900').replace('13','901')) for r in reversed(items)]
-        self.assertEqual(render_semantic_items(items), render_semantic_items(changed))
-        self.assertNotIn('node=',render_semantic_items(items))
+    def test_mechanism_renderer_is_deterministic(self):
+        items=[
+            dict(category='MECHANISM_CANDIDATE',kind='BOUNDS_FLOW',detail='source=n'),
+            dict(category='SECURITY_OPERATION',kind='ARRAY_ACCESS',detail='object=a'),
+        ]
+        changed=list(reversed(items))
+        self.assertEqual(render_mechanism_items(items), render_mechanism_items(changed))
 
     def test_streaming_csv_restores_source_literals_and_typed_coordinates(self):
         import csv
