@@ -1,7 +1,15 @@
 import unittest
-from vulnmechanism.cpg import resolve_target_graph, TargetMethodError, CPGQualityError, GraphNode
-from vulnmechanism.syntax import parse_function, target_hint, source_tokens
+
+from vulnmechanism.cpg import (
+    CPGError,
+    CPGQualityError,
+    GraphNode,
+    TargetMethodError,
+    _isolate_batch,
+    resolve_target_graph,
+)
 from vulnmechanism.semantics import _node_operations
+from vulnmechanism.syntax import parse_function, source_tokens, target_hint
 
 
 def fixture(source='int C::f() { return 1; }'):
@@ -29,33 +37,57 @@ class TargetResolutionTests(unittest.TestCase):
         g=resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'],function_hint='wrong')
         self.assertEqual(g.function,'f')
         self.assertTrue(g.quality['hint_mismatch'])
+        self.assertEqual(g.quality['resolution_mode'], 'standalone_file_unique_method')
 
-    def test_nested_function_or_wrong_file_is_not_a_target(self):
+    def test_wrong_file_and_nested_method_are_not_targets(self):
         n,e=fixture()
         with self.assertRaises(TargetMethodError):
             resolve_target_graph(n,e,filename='other.cpp',source=n['0']['CONTENT'])
-        n['1']['OFFSET']=n['0']['CONTENT'].index('{')
-        n['1']['COLUMN_NUMBER']=n['1']['OFFSET']+1
-        with self.assertRaises(TargetMethodError):
-            resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
-
-    def test_external_global_and_ambiguous_methods_are_rejected(self):
-        for field,value in [('IS_EXTERNAL',True),('NAME','<global>'),('NAME','if')]:
-            n,e=fixture();n['1'][field]=value
-            with self.assertRaises(TargetMethodError):
-                resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
-        n,e=fixture();n['5']=dict(n['1'])
-        with self.assertRaises(TargetMethodError):
-            resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
-
-    def test_truncated_method_uses_verified_utf16_offsets(self):
-        source='int f() { /* 😀 '+ 'x'*1200 +' */ return 1; }'
-        n,e=fixture(source)
-        g=resolve_target_graph(n,e,filename='input.cpp',source=source)
+        n,e=fixture()
+        n['5'] = dict(kind='METHOD', NAME='inner', FILENAME='input.cpp', FULL_NAME='f.inner:void()',
+                      LINE_NUMBER=1, LINE_NUMBER_END=1, IS_EXTERNAL=False, CODE='inner')
+        n['6'] = dict(kind='BLOCK', CODE='{ return; }')
+        e += [('AST','1','5'),('AST','5','6')]
+        g=resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
         self.assertEqual(g.function,'f')
 
+    def test_external_global_and_ambiguous_top_level_methods_are_rejected(self):
+        for field,value in [('IS_EXTERNAL',True),('NAME','<global>'),('NAME','if')]:
+            n,e=fixture(); n['1'][field]=value
+            with self.assertRaises(TargetMethodError):
+                resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
+        n,e=fixture(); n['5']=dict(n['1']); n['5']['NAME']='g'
+        with self.assertRaises(TargetMethodError):
+            resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
+
+    def test_filename_is_primary_for_standalone_function(self):
+        source='int f() { return 1; }'
+        n,e=fixture(source)
+        n['1']['CODE']='int f(){return 1;}'
+        g=resolve_target_graph(n,e,filename='input.cpp',source=source,function_hint='wrong')
+        self.assertEqual(g.function,'f')
+        self.assertTrue(g.quality['source_occurrence_exact'])
+        self.assertTrue(g.quality['hint_mismatch'])
+
+    def test_full_file_uses_line_range_then_hint(self):
+        snippet='int f() { return 1; }'
+        full='static int helper() { return 0; }\n'+snippet
+        n,e=fixture(full)
+        n['1'].update(NAME='helper', FULL_NAME='helper:int()', LINE_NUMBER=1, LINE_NUMBER_END=1,
+                      CODE='static int helper() { return 0; }')
+        n['2']['CODE']='{ return 0; }'
+        n['5']=dict(kind='METHOD', NAME='f', FILENAME='input.cpp', FULL_NAME='f:int()',
+                    LINE_NUMBER=2, LINE_NUMBER_END=2, IS_EXTERNAL=False, CODE=snippet)
+        n['6']=dict(kind='BLOCK', CODE='{ return 1; }')
+        n['7']=dict(kind='RETURN', CODE='return 1;')
+        n['8']=dict(kind='METHOD_RETURN', CODE='int')
+        e += [('AST','5','6'),('AST','6','7'),('AST','5','8'),('CFG','5','7'),('CFG','7','8')]
+        g=resolve_target_graph(n,e,filename='input.cpp',source=snippet,start_line=2,function_hint='f')
+        self.assertEqual(g.function,'f')
+        self.assertTrue(g.quality['resolution_mode'].startswith('full_file_line_range'))
+
     def test_unknown_or_missing_cfg_fails_quality(self):
-        n,e=fixture();n['3']['kind']='UNKNOWN'
+        n,e=fixture(); n['3']['kind']='UNKNOWN'
         with self.assertRaises(CPGQualityError):
             resolve_target_graph(n,e,filename='input.cpp',source=n['0']['CONTENT'])
         n,e=fixture()
@@ -71,42 +103,33 @@ class TargetResolutionTests(unittest.TestCase):
         self.assertNotEqual(source_tokens('"a b"'),source_tokens('"ab"'))
         self.assertEqual(source_tokens('x /* c */ + y'),source_tokens('x+y'))
 
-    def test_full_file_allows_real_return_type_prefix_only(self):
-        source='static\nint C::f() { return 1; }'
-        n,e=fixture(source)
-        snippet=source.split('\n',1)[1]
-        g=resolve_target_graph(n,e,filename='input.cpp',source=snippet,start_line=2)
-        self.assertEqual(g.function,'f')
-        n['0']['CONTENT']='void outer() {\n'+snippet
-        n['1']['OFFSET_END']=len(n['0']['CONTENT'])
-        with self.assertRaises(TargetMethodError):
-            resolve_target_graph(n,e,filename='input.cpp',source=snippet,start_line=2)
-
     def test_source_indentation_and_trailing_newline(self):
         source='  int C::f() { return 1; }\n'
         n,e=fixture(source)
-        n['1']['OFFSET']=2
-        n['1']['COLUMN_NUMBER']=3
-        n['1']['OFFSET_END']=len(source.rstrip())
         self.assertEqual(resolve_target_graph(n,e,filename='input.cpp',source=source).function,'f')
-
-    def test_preprocessor_offset_length_does_not_truncate_target(self):
-        source='int f() {\n#define LIMIT 10\nreturn LIMIT;\n}'
-        n,e=fixture(source)
-        n['1']['OFFSET_END']=12
-        n['1']['COLUMN_NUMBER_END']=20
-        graph=resolve_target_graph(n,e,filename='input.cpp',source=source)
-        self.assertTrue(graph.quality['method_offset_disagreement'])
 
     def test_unexpanded_function_macro_is_not_a_resolved_definition(self):
         source='HANDLER(handler_name) { return 1; }'
-        n,e=fixture(source);n['1']['NAME']='HANDLER'
+        n,e=fixture(source); n['1']['NAME']='HANDLER'
         with self.assertRaisesRegex(CPGQualityError, 'unresolved_macro_signature'):
             resolve_target_graph(n,e,filename='input.cpp',source=source)
-        # A real expansion gives the native method its defined name, while the
-        # physical source still points at the original macro invocation.
         n['1']['NAME']='handler_name'
         self.assertEqual(resolve_target_graph(n,e,filename='input.cpp',source=source).function,'handler_name')
+
+    def test_batch_level_failure_is_isolated(self):
+        calls=[]
+        def runner(requests):
+            calls.append([r['id'] for r in requests])
+            if any(r['id']==2 for r in requests):
+                if len(requests)==1:
+                    raise CPGError('bad sample')
+                raise CPGError('batch failed')
+            return [f'ok-{r["id"]}' for r in requests]
+        result=_isolate_batch([{'id':1},{'id':2},{'id':3},{'id':4}], runner)
+        self.assertEqual(result[0], 'ok-1')
+        self.assertIsInstance(result[1], CPGError)
+        self.assertEqual(result[2:], ['ok-3','ok-4'])
+        self.assertIn([2], calls)
 
     def test_model_semantics_ignore_joern_ids_and_input_order(self):
         from vulnmechanism.semantics import render_semantic_items
@@ -141,3 +164,7 @@ class TargetResolutionTests(unittest.TestCase):
             self.assertEqual(nodes['1']['OFFSET'],0)
             self.assertIs(nodes['1']['IS_EXTERNAL'],False)
             self.assertEqual(edges,[('AST','1','2')])
+
+
+if __name__ == '__main__':
+    unittest.main()
