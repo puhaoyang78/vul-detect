@@ -4,9 +4,11 @@ import argparse
 from collections import Counter, defaultdict
 import json
 from pathlib import Path
+import re
 
 
 PAIRED_DATASETS = {"cleanvul", "sven"}
+_OCCURRENCES = re.compile(r"\s+occurrences=\d+")
 
 
 def _records(path: Path) -> list[dict[str, object]]:
@@ -25,24 +27,48 @@ def _records(path: Path) -> list[dict[str, object]]:
     return rows
 
 
-def _candidates(record: dict[str, object]) -> dict[str, tuple[str, str]]:
+def _mechanism_detail(detail: str) -> str:
+    """Normalize a candidate for semantic comparison.
+
+    Occurrence count is intentionally excluded: repeated uses of the same
+    mechanism are useful audit metadata but do not constitute a different
+    source/relation/sink mechanism.
+    """
+    return " ".join(_OCCURRENCES.sub("", detail).split())
+
+
+def _model_context(record: dict[str, object]) -> str:
+    context = record.get("mechanism_context")
+    if not isinstance(context, str):
+        raise ValueError(f"{record.get('sample_key')}: mechanism_context is missing or malformed")
+    return "\n".join(
+        _OCCURRENCES.sub("", line).strip()
+        for line in context.splitlines()
+        if line.strip()
+    )
+
+
+def _candidates(record: dict[str, object]) -> dict[str, tuple[str, str, str]]:
     items = record.get("mechanism_items")
     if not isinstance(items, list):
         raise ValueError(f"{record.get('sample_key')}: mechanism_items is missing or malformed")
-    result: dict[str, tuple[str, str]] = {}
+    result: dict[str, tuple[str, str, str]] = {}
     for item in items:
         if not isinstance(item, dict) or item.get("category") != "MECHANISM_CANDIDATE":
             continue
         kind = item.get("kind")
         key = item.get("key")
         state = item.get("state", "")
+        detail = item.get("detail", "")
         if not isinstance(kind, str) or not kind:
             raise ValueError(f"{record.get('sample_key')}: candidate kind is malformed")
         if not isinstance(key, str) or not key:
             raise ValueError(f"{record.get('sample_key')}: candidate key is malformed")
         if not isinstance(state, str):
             raise ValueError(f"{record.get('sample_key')}: candidate state is malformed")
-        result[key] = (kind, state)
+        if not isinstance(detail, str):
+            raise ValueError(f"{record.get('sample_key')}: candidate detail is malformed")
+        result[key] = (kind, state, _mechanism_detail(detail))
     return result
 
 
@@ -68,14 +94,19 @@ def audit_mechanism_fidelity(
     any_removed = 0
     any_added = 0
     any_state_changed = 0
+    any_detail_changed = 0
+    any_model_context_changed = 0
+    any_source_changed = 0
     unchanged = 0
     removed_kinds = Counter()
     added_kinds = Counter()
     state_changes = Counter()
+    detail_change_kinds = Counter()
     persisted_kinds = Counter()
     candidate_count_before = Counter()
     candidate_count_after = Counter()
     by_split = Counter()
+    detail_changes: list[dict[str, str]] = []
 
     for pair_id, pair_rows in sorted(groups.items()):
         if len(pair_rows) != 2 or {row.get("label") for row in pair_rows} != {0, 1}:
@@ -100,15 +131,25 @@ def audit_mechanism_fidelity(
         removed = before_keys - after_keys
         added = after_keys - before_keys
         persisted = before_keys & after_keys
-        changed = {
+        state_changed = {
             key for key in persisted
             if before[key][1] != after[key][1]
         }
+        detail_changed = {
+            key for key in persisted
+            if before[key][2] != after[key][2]
+        }
+
+        source_changed = vulnerable.get("raw_source") != fixed.get("raw_source")
+        model_context_changed = _model_context(vulnerable) != _model_context(fixed)
 
         any_removed += bool(removed)
         any_added += bool(added)
-        any_state_changed += bool(changed)
-        unchanged += not removed and not added and not changed
+        any_state_changed += bool(state_changed)
+        any_detail_changed += bool(detail_changed)
+        any_source_changed += bool(source_changed)
+        any_model_context_changed += bool(model_context_changed)
+        unchanged += not removed and not added and not state_changed and not detail_changed
 
         for key in removed:
             removed_kinds[before[key][0]] += 1
@@ -116,9 +157,20 @@ def audit_mechanism_fidelity(
             added_kinds[after[key][0]] += 1
         for key in persisted:
             persisted_kinds[before[key][0]] += 1
-        for key in changed:
+        for key in state_changed:
             kind = before[key][0]
             state_changes[f"{kind}:{before[key][1]}->{after[key][1]}"] += 1
+        for key in detail_changed:
+            kind = before[key][0]
+            detail_change_kinds[kind] += 1
+            if len(detail_changes) < 100:
+                detail_changes.append({
+                    "pair_id": pair_id,
+                    "key": key,
+                    "kind": kind,
+                    "before": before[key][2],
+                    "after": after[key][2],
+                })
 
     def rate(value: int) -> float | None:
         return value / complete if complete else None
@@ -128,6 +180,8 @@ def audit_mechanism_fidelity(
         "complete_build_pairs": complete,
         "incomplete_build_pairs": incomplete,
         "pairs_by_split": dict(sorted(by_split.items())),
+        "pairs_with_source_change": any_source_changed,
+        "source_change_rate": rate(any_source_changed),
         "before_with_mechanism_candidate": before_with_candidate,
         "after_with_mechanism_candidate": after_with_candidate,
         "before_candidate_coverage": rate(before_with_candidate),
@@ -138,24 +192,32 @@ def audit_mechanism_fidelity(
         "candidate_addition_rate": rate(any_added),
         "pairs_with_candidate_state_changed": any_state_changed,
         "candidate_state_change_rate": rate(any_state_changed),
+        "pairs_with_candidate_detail_changed": any_detail_changed,
+        "candidate_detail_change_rate": rate(any_detail_changed),
+        "pairs_with_model_context_changed": any_model_context_changed,
+        "model_context_change_rate": rate(any_model_context_changed),
         "pairs_with_unchanged_mechanism_candidates": unchanged,
         "unchanged_mechanism_rate": rate(unchanged),
         "candidate_removed_by_kind": dict(sorted(removed_kinds.items())),
         "candidate_added_by_kind": dict(sorted(added_kinds.items())),
         "candidate_persisted_by_kind": dict(sorted(persisted_kinds.items())),
         "candidate_state_changes": dict(sorted(state_changes.items())),
-        "candidate_count_distribution_before": dict(sorted(candidate_count_before.items(), key=lambda x: int(x[0]))),
-        "candidate_count_distribution_after": dict(sorted(candidate_count_after.items(), key=lambda x: int(x[0]))),
+        "candidate_detail_changed_by_kind": dict(sorted(detail_change_kinds.items())),
+        "candidate_detail_changes": detail_changes,
+        "candidate_count_distribution_before": dict(
+            sorted(candidate_count_before.items(), key=lambda x: int(x[0]))
+        ),
+        "candidate_count_distribution_after": dict(
+            sorted(candidate_count_after.items(), key=lambda x: int(x[0]))
+        ),
         "interpretation": (
-            "This diagnostic compares concrete mechanism keys and their states across real vulnerable/fixed pairs. "
-            "Removal or a state change after a fix supports relevance but is not causal ground truth; persistence can "
-            "be legitimate when the patch addresses another mechanism or when function-only CPG evidence is incomplete."
+            "This diagnostic separates candidate addition/removal, constraint-state changes, and concrete "
+            "mechanism-detail changes. The model-context metric compares the actual mechanism text given to "
+            "the Code LLM while ignoring occurrence counts. These are fidelity diagnostics, not causal ground truth."
         ),
     }
 
 
-# Kept only as the public function name used by existing scripts; its semantics are
-# now mechanism-level rather than old pattern-kind comparison.
 def audit_semantic_fidelity(dataset_path: str | Path, *, dataset: str) -> dict[str, object]:
     return audit_mechanism_fidelity(dataset_path, dataset=dataset)
 
