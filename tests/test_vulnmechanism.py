@@ -64,7 +64,7 @@ class MechanismTests(unittest.TestCase):
             and (kind is None or item.kind == kind)
         ]
 
-    def test_protected_bounds_relation_is_not_vulnerability_candidate(self):
+    def test_extent_flow_without_capacity_is_relation_not_bounds_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -81,13 +81,13 @@ class MechanismTests(unittest.TestCase):
             ),
         )
         semantics = extract_mechanism_semantics(graph)
-        relations = self._relations(semantics, "BOUND_RELATION")
+        relations = self._relations(semantics, "EXTENT_FLOW_TO_MEMORY_SINK")
         self.assertTrue(relations)
         self.assertIn("bound_related_condition=present", relations[0].detail)
-        self.assertEqual(semantics.candidate_count, 0)
-        self.assertIn("NO_CPG_DERIVED_MECHANISM_EVIDENCE", semantics.render())
+        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
+        self.assertIn("EXTENT_FLOW_TO_MEMORY_SINK", semantics.render())
 
-    def test_unprotected_bounds_relation_becomes_candidate(self):
+    def test_missing_bound_does_not_create_bounds_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -103,9 +103,10 @@ class MechanismTests(unittest.TestCase):
             ),
         )
         semantics = extract_mechanism_semantics(graph)
-        self.assertIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
-        self.assertIn("source=parameter:len", semantics.render())
-        self.assertIn("bound_related_condition=not_observed", semantics.render())
+        relations = self._relations(semantics, "EXTENT_FLOW_TO_MEMORY_SINK")
+        self.assertTrue(relations)
+        self.assertIn("bound_related_condition=not_observed", relations[0].detail)
+        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
 
     def test_generic_array_access_is_audit_only(self):
         graph = FunctionGraph(
@@ -121,7 +122,7 @@ class MechanismTests(unittest.TestCase):
         ))
         self.assertNotIn("ARRAY_ACCESS", semantics.render())
 
-    def test_ast_descendant_inherits_protective_condition_without_candidate(self):
+    def test_capacity_relation_is_candidate_and_condition_is_annotation(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -145,9 +146,27 @@ class MechanismTests(unittest.TestCase):
         relations = self._relations(semantics, "BOUND_RELATION")
         self.assertTrue(relations)
         self.assertTrue(any("bound_related_condition=present" in item.detail for item in relations))
-        self.assertEqual(semantics.candidate_count, 0)
+        self.assertIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
+        candidate = next(
+            item for item in semantics.items
+            if item.category == "MECHANISM_CANDIDATE" and item.kind == "BOUNDS_FLOW"
+        )
+        self.assertIn("bound_condition=present", candidate.state)
 
-    def test_missing_cdg_is_unknown_and_not_candidate(self):
+    def test_static_in_bounds_access_is_not_candidate(self):
+        graph = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "LOCAL", "int a[8]"),
+                "2": GraphNode("2", "<operator>.indexAccess", "a[2]"),
+            },
+            (),
+        )
+        semantics = extract_mechanism_semantics(graph)
+        self.assertTrue(self._relations(semantics, "BOUND_RELATION"))
+        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
+
+    def test_missing_cdg_is_unknown_relation_not_bounds_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -161,10 +180,10 @@ class MechanismTests(unittest.TestCase):
             ),
         )
         semantics = extract_mechanism_semantics(graph)
-        relations = self._relations(semantics, "BOUND_RELATION")
+        relations = self._relations(semantics, "EXTENT_FLOW_TO_MEMORY_SINK")
         self.assertTrue(relations)
         self.assertTrue(any("unknown_no_cdg" in item.state for item in relations))
-        self.assertEqual(semantics.candidate_count, 0)
+        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
 
     def test_pointer_parameter_alone_is_not_null_mechanism(self):
         graph = FunctionGraph(
@@ -182,7 +201,7 @@ class MechanismTests(unittest.TestCase):
         semantics = extract_mechanism_semantics(graph)
         self.assertNotIn("NULL_DEREFERENCE_FLOW", self._candidate_kinds(semantics))
 
-    def test_nullable_allocation_without_cdg_is_audit_relation_only(self):
+    def test_nullable_allocation_without_cdg_is_candidate_with_unknown_state(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -200,9 +219,14 @@ class MechanismTests(unittest.TestCase):
         self.assertTrue(relations)
         self.assertTrue(any("nullable_allocation:malloc" in item.detail for item in relations))
         self.assertTrue(any("unknown_no_cdg" in item.state for item in relations))
-        self.assertEqual(semantics.candidate_count, 0)
+        self.assertIn("NULL_DEREFERENCE_FLOW", self._candidate_kinds(semantics))
+        candidate = next(
+            item for item in semantics.items
+            if item.category == "MECHANISM_CANDIDATE" and item.kind == "NULL_DEREFERENCE_FLOW"
+        )
+        self.assertEqual(candidate.state, "null_condition=unknown_no_cdg")
 
-    def test_nullable_allocation_without_observed_null_check_is_candidate(self):
+    def test_nullable_allocation_condition_is_annotation_not_trigger(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -220,8 +244,9 @@ class MechanismTests(unittest.TestCase):
         semantics = extract_mechanism_semantics(graph)
         self.assertIn("NULL_DEREFERENCE_FLOW", self._candidate_kinds(semantics))
         self.assertIn("nullable_allocation:malloc", semantics.render())
+        self.assertIn("null_related_condition=not_observed", semantics.render())
 
-    def test_explicit_null_origin_without_cdg_is_audit_relation_only(self):
+    def test_explicit_null_origin_without_cdg_is_candidate(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -238,7 +263,7 @@ class MechanismTests(unittest.TestCase):
         relations = self._relations(semantics, "NULLABLE_SOURCE_TO_DEREFERENCE")
         self.assertTrue(relations)
         self.assertTrue(any("explicit_null_assignment" in item.detail for item in relations))
-        self.assertEqual(semantics.candidate_count, 0)
+        self.assertIn("NULL_DEREFERENCE_FLOW", self._candidate_kinds(semantics))
 
     def test_chained_field_access_keeps_full_pointer_base(self):
         operations = _node_operations(
@@ -264,7 +289,9 @@ class MechanismTests(unittest.TestCase):
                 GraphEdge("DDG", "1", "3"),
             ),
         )
-        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(extract_mechanism_semantics(graph)))
+        semantics = extract_mechanism_semantics(graph)
+        self.assertNotIn("BOUNDS_FLOW", self._candidate_kinds(semantics))
+        self.assertFalse(self._relations(semantics, "EXTENT_FLOW_TO_MEMORY_SINK"))
 
     def test_sizeof_expression_does_not_inherit_unrelated_parameter_source(self):
         graph = FunctionGraph(
@@ -282,6 +309,7 @@ class MechanismTests(unittest.TestCase):
         self.assertEqual(_parameter_sources(graph, "2", "sizeof(local)"), ())
         semantics = extract_mechanism_semantics(graph)
         self.assertFalse(self._relations(semantics, "BOUND_RELATION"))
+        self.assertFalse(self._relations(semantics, "EXTENT_FLOW_TO_MEMORY_SINK"))
 
     def test_pointer_declaration_is_not_arithmetic_node(self):
         self.assertFalse(_is_arithmetic_node(GraphNode(
@@ -331,7 +359,7 @@ class MechanismTests(unittest.TestCase):
         self.assertIn("data_size - header_size", semantics.render())
         self.assertIn("range_related_condition=not_observed", semantics.render())
 
-    def test_control_arithmetic_with_operand_guard_is_not_candidate(self):
+    def test_control_arithmetic_with_operand_guard_keeps_candidate_and_marks_state(self):
         graph = FunctionGraph(
             "foo",
             {
@@ -348,10 +376,17 @@ class MechanismTests(unittest.TestCase):
             ),
         )
         semantics = extract_mechanism_semantics(graph)
-        self.assertNotIn("SIZE_ARITHMETIC_FLOW", self._candidate_kinds(semantics))
+        self.assertIn("SIZE_ARITHMETIC_FLOW", self._candidate_kinds(semantics))
         relations = self._relations(semantics, "ARITHMETIC_CONTROL_TO_MEMORY_SINK")
         self.assertTrue(relations)
         self.assertTrue(any("operand_range_condition=present" in item.detail for item in relations))
+        candidate = next(
+            item for item in semantics.items
+            if item.category == "MECHANISM_CANDIDATE"
+            and item.kind == "SIZE_ARITHMETIC_FLOW"
+            and "data_size - header_size" in item.detail
+        )
+        self.assertEqual(candidate.state, "range_condition=present")
 
     def test_lifetime_path_stops_at_redefinition(self):
         unsafe = FunctionGraph(
@@ -375,19 +410,20 @@ class MechanismTests(unittest.TestCase):
         )
         self.assertNotIn("USE_AFTER_FREE_FLOW", self._candidate_kinds(extract_mechanism_semantics(redefined)))
 
-    def test_renderer_excludes_audit_operations_and_unlinked_relations(self):
+    def test_renderer_excludes_raw_operations_but_keeps_high_level_relations(self):
         items = [
             {"category": "SECURITY_OPERATION", "kind": "MEMORY_WRITE", "detail": "code=memcpy(buf,src,n)"},
-            {"category": "MECHANISM_RELATION", "kind": "BOUND_RELATION", "detail": "source=parameter:n", "key": "bounds-1"},
+            {"category": "MECHANISM_RELATION", "kind": "EXTENT_FLOW_TO_MEMORY_SINK", "detail": "source=parameter:n", "key": "flow-1"},
             {"category": "MECHANISM_CANDIDATE", "kind": "BOUNDS_FLOW", "detail": "source=parameter:n sink=MEMORY_WRITE object=buf", "key": "bounds-1"},
-            {"category": "MECHANISM_RELATION", "kind": "UNLINKED", "detail": "should_not_render", "key": "missing"},
+            {"category": "MECHANISM_RELATION", "kind": "TYPE_RELATION", "detail": "value_type=size_t", "key": "type-1"},
         ]
         text = render_mechanism_items(items)
         self.assertIn("[MECHANISM_CANDIDATE]", text)
         self.assertIn("[MECHANISM_RELATION]", text)
         self.assertNotIn("SECURITY_OPERATION", text)
         self.assertNotIn("memcpy(buf,src,n)", text)
-        self.assertNotIn("should_not_render", text)
+        self.assertIn("EXTENT_FLOW_TO_MEMORY_SINK", text)
+        self.assertIn("value_type=size_t", text)
         self.assertEqual(
             validate_mechanism_groups(("Mechanism", "mechanism", "relation")),
             ("mechanism", "relation"),
