@@ -49,7 +49,7 @@ class FunctionGraph:
     quality: dict | None = None
 
 
-_INVALID_METHOD_NAMES = {"if", "for", "while", "switch", "catch", "sizeof", "do"}
+_INVALID_METHOD_NAMES = {"<global>", "if", "for", "while", "switch", "catch", "sizeof", "do"}
 
 
 def _find_executable(root: Path, names: tuple[str, ...]) -> Path:
@@ -73,7 +73,6 @@ def _environment(java_home: str | Path) -> dict[str, str]:
 
 
 def read_neo4jcsv(directory: Path):
-    """Read Joern's streaming Neo4j CSV export."""
     csv.field_size_limit(sys.maxsize)
     nodes, edges = {}, []
     for header_path in sorted(directory.glob("nodes_*_header.csv")):
@@ -103,7 +102,6 @@ def read_neo4jcsv(directory: Path):
                     else:
                         node[name] = value.replace("\\\\", "\\")
                 nodes[values[0]] = node
-
     for kind in ("AST", "CFG", "CDG", "REACHING_DEF"):
         header_path = directory / f"edges_{kind}_header.csv"
         if not header_path.exists():
@@ -122,22 +120,15 @@ def read_neo4jcsv(directory: Path):
     return nodes, edges
 
 
-def _methods_for_file(nodes, filename: str, *, include_global: bool = False):
-    result = []
-    for key, node in nodes.items():
-        if node.get("kind") != "METHOD" or node.get("IS_EXTERNAL"):
-            continue
-        name = str(node.get("NAME", ""))
-        if name in _INVALID_METHOD_NAMES:
-            continue
-        if not include_global and name == "<global>":
-            continue
-        if include_global and name != "<global>":
-            continue
-        if Path(str(node.get("FILENAME", ""))).name != filename:
-            continue
-        result.append((key, node))
-    return result
+def _methods_for_file(nodes, filename: str):
+    return [
+        (key, node)
+        for key, node in nodes.items()
+        if node.get("kind") == "METHOD"
+        and not node.get("IS_EXTERNAL")
+        and str(node.get("NAME", "")) not in _INVALID_METHOD_NAMES
+        and Path(str(node.get("FILENAME", ""))).name == filename
+    ]
 
 
 def _unqualified(name: str) -> str:
@@ -153,12 +144,12 @@ def resolve_target_graph(
     start_line: int = 1,
     function_hint: str = "",
 ) -> FunctionGraph:
-    """Resolve a function-level CPG using the input file as the primary sample identity.
+    """Resolve the source METHOD for one function file and enforce structural quality.
 
-    For standalone function files, a unique source METHOD is preferred. If Joern
-    keeps the parsed code under one or more synthetic <global> METHOD roots, the
-    whole file graph is accepted when structural checks pass. This mirrors common
-    function-level CPG pipelines while retaining explicit quality auditing.
+    File identity is primary. A unique METHOD is accepted directly; a supplied
+    function name is used only for deterministic disambiguation. Missing BLOCK
+    code is an audit warning, not a build failure. Synthetic <global> graphs are
+    not promoted to source functions.
     """
     from .syntax import source_tokens
 
@@ -175,11 +166,9 @@ def resolve_target_graph(
     end_line = start_line + len(source.rstrip().splitlines()) - 1
     hint = _unqualified(function_hint) if function_hint else ""
 
-    methods = _methods_for_file(nodes, filename)
-    available = [(n.get("NAME"), n.get("LINE_NUMBER"), n.get("LINE_NUMBER_END")) for _, n in methods]
-    selected = methods
+    selected = _methods_for_file(nodes, filename)
+    available = [(node.get("NAME"), node.get("LINE_NUMBER"), node.get("LINE_NUMBER_END")) for _, node in selected]
     resolution_mode = "standalone_file_unique_method" if standalone else "full_file_line_range"
-
     if not standalone:
         selected = [
             (key, node)
@@ -189,7 +178,6 @@ def resolve_target_graph(
             and node["LINE_NUMBER"] <= start_line <= node["LINE_NUMBER_END"]
             and node["LINE_NUMBER_END"] >= end_line
         ]
-
     if len(selected) != 1 and hint:
         by_hint = [
             (key, node) for key, node in selected
@@ -198,35 +186,18 @@ def resolve_target_graph(
         if len(by_hint) == 1:
             selected = by_hint
             resolution_mode += "+name_hint"
-
-    whole_file_fallback = False
-    if len(selected) == 0 and standalone:
-        globals_ = _methods_for_file(nodes, filename, include_global=True)
-        if globals_:
-            root_ids = [key for key, _ in globals_]
-            method = globals_[0][1]
-            whole_file_fallback = True
-            resolution_mode = "standalone_global_file_graph"
-        else:
-            raise TargetMethodError(
-                f"no source METHOD or <global> graph for {filename}; hint={function_hint!r}; methods={available[:30]}"
-            )
-    elif len(selected) == 1:
-        root_ids = [selected[0][0]]
-        method = selected[0][1]
-    else:
+    if len(selected) != 1:
         raise TargetMethodError(
             f"expected one source-defined target method in {filename}; found {len(selected)}; "
             f"hint={function_hint!r}; methods={available[:30]}"
         )
 
+    method_id, method = selected[0]
     ast = defaultdict(list)
     for kind, source_id, target_id in edges:
         if kind == "AST":
             ast[source_id].append(target_id)
-
-    owned, pending = set(), list(root_ids)
-    root_set = set(root_ids)
+    owned, pending = set(), [method_id]
     while pending:
         key = pending.pop()
         if key in owned:
@@ -234,7 +205,7 @@ def resolve_target_graph(
         node = nodes.get(key)
         if node is None:
             continue
-        if not whole_file_fallback and key not in root_set and node.get("kind") == "METHOD":
+        if key != method_id and node.get("kind") == "METHOD":
             continue
         owned.add(key)
         pending.extend(ast.get(key, ()))
@@ -262,10 +233,10 @@ def resolve_target_graph(
         span = physical_span(node)
         if span is None:
             return None
-        return encoded[2 * span[0] : 2 * span[1]].decode("utf-16-le")
+        return encoded[2 * span[0]:2 * span[1]].decode("utf-16-le")
 
     graph_nodes = {}
-    for key in sorted(owned, key=lambda v: (0, int(v)) if str(v).isdigit() else (1, str(v))):
+    for key in sorted(owned, key=lambda value: (0, int(value)) if str(value).isdigit() else (1, str(value))):
         node = nodes[key]
         label = node.get("NAME", "CALL") if node.get("kind") == "CALL" else {
             "METHOD_PARAMETER_IN": "PARAM"
@@ -290,50 +261,43 @@ def resolve_target_graph(
     )
     counts = Counter(edge.kind for edge in graph_edges)
     unknown = [key for key in owned if nodes[key].get("kind") == "UNKNOWN"]
-
-    reasons = []
-    warnings = []
+    reasons: list[str] = []
+    warnings: list[str] = []
     if not counts["AST"] or not counts["CFG"]:
         reasons.append("missing_ast_or_cfg")
     if unknown:
         reasons.append("unknown_ast_nodes")
 
-    native_name = str(method.get("NAME", ""))
-    if not whole_file_fallback:
-        body_node = next(
-            (nodes[key] for key in ast.get(root_ids[0], ()) if nodes[key].get("kind") == "BLOCK"),
-            None,
-        )
-        body_tokens = source_tokens(str(body_node.get("CODE", ""))) if body_node else ()
-        source_body_tokens = tokens[tokens.index("{") :] if "{" in tokens else ()
-        if not body_tokens or body_tokens == ("<", "empty", ">"):
-            warnings.append("missing_body")
-        elif body_tokens == ("{", "}") and len(source_body_tokens) > 2:
-            warnings.append("body_content_missing")
+    body_node = next(
+        (nodes[key] for key in ast.get(method_id, ()) if nodes[key].get("kind") == "BLOCK"),
+        None,
+    )
+    body_tokens = source_tokens(str(body_node.get("CODE", ""))) if body_node else ()
+    source_body_tokens = tokens[tokens.index("{"):] if "{" in tokens else ()
+    if not body_tokens or body_tokens == ("<", "empty", ">"):
+        warnings.append("missing_body")
+    elif body_tokens == ("{", "}") and len(source_body_tokens) > 2:
+        warnings.append("body_content_missing")
 
-        header = source.split("{", 1)[0]
-        if re.fullmatch(r"[A-Z][A-Z_0-9]*", native_name):
-            sole_macro = re.match(r"\s*" + re.escape(native_name) + r"\s*\(", header)
-            name_macro = re.search(r"\b" + re.escape(native_name) + r"\s*\([^()]*\)\s*\(", header)
-            if sole_macro or name_macro:
-                reasons.append("unresolved_macro_signature")
-    else:
-        warnings.append("no_source_method_global_file_graph")
+    native_name = str(method.get("NAME", ""))
+    header = source.split("{", 1)[0]
+    if re.fullmatch(r"[A-Z][A-Z_0-9]*", native_name):
+        sole_macro = re.match(r"\s*" + re.escape(native_name) + r"\s*\(", header)
+        name_macro = re.search(r"\b" + re.escape(native_name) + r"\s*\([^()]*\)\s*\(", header)
+        if sole_macro or name_macro:
+            reasons.append("unresolved_macro_signature")
 
     exact_occurrences = [m.start() for m in re.finditer(re.escape(source), contents)] if contents else []
-    source_occurrence_exact = any(contents[:p].count("\n") + 1 == start_line for p in exact_occurrences)
-    method_tokens = source_tokens(str(method.get("CODE", "")))
-    source_token_match = bool(method_tokens) and method_tokens == tokens
+    source_occurrence_exact = any(contents[:position].count("\n") + 1 == start_line for position in exact_occurrences)
+    source_token_match = source_tokens(str(method.get("CODE", ""))) == tokens
     if not source_token_match:
         warnings.append("source_token_mismatch")
-    if hint and not whole_file_fallback and hint != _unqualified(native_name):
+    if hint and hint != _unqualified(native_name):
         warnings.append("hint_mismatch")
 
-    graph_name = hint or (native_name if native_name != "<global>" else "<global>")
     quality = {
-        "target_method_id": str(root_ids[0]),
-        "target_method_ids": [str(value) for value in root_ids],
-        "target_name": graph_name,
+        "target_method_id": str(method_id),
+        "target_name": native_name,
         "target_full_name": method.get("FULL_NAME"),
         "filename": filename,
         "resolution_mode": resolution_mode,
@@ -350,14 +314,13 @@ def resolve_target_graph(
     }
     if reasons:
         raise CPGQualityError(json.dumps(quality, sort_keys=True))
-    return FunctionGraph(graph_name, graph_nodes, graph_edges, quality)
+    return FunctionGraph(native_name, graph_nodes, graph_edges, quality)
 
 
 def _isolate_batch(
     requests: list[dict],
     runner: Callable[[list[dict]], list[FunctionGraph | CPGError]],
 ) -> list[FunctionGraph | CPGError]:
-    """Deterministically isolate batch-level Joern failures by recursive bisection."""
     try:
         return runner(requests)
     except (CPGError, subprocess.TimeoutExpired, OSError) as error:
@@ -374,7 +337,6 @@ def extract_function_cpg_batch(
     java_home: str | Path = "/home/phy/jdk21",
     timeout: int = 300,
 ) -> list[FunctionGraph | CPGError]:
-    """Build function CPGs in bounded batches, isolating batch-level failures."""
     if not requests:
         return []
     root = Path(os.environ.get("JOERN_HOME", str(joern_dir))).expanduser()
@@ -403,7 +365,6 @@ def extract_function_cpg_batch(
             )
             if result.returncode or not cpg.is_file():
                 raise CPGError("joern-parse failed: " + (result.stderr or result.stdout)[-4000:])
-
             output = work / "graph"
             result = run_process(
                 [str(exporter), "--repr", "all", "--format", "neo4jcsv", "--out", str(output), str(cpg)],
@@ -412,21 +373,18 @@ def extract_function_cpg_batch(
             )
             if result.returncode:
                 raise CPGError("joern-export failed: " + (result.stderr or result.stdout)[-4000:])
-
             nodes, edges = read_neo4jcsv(output)
             resolved = []
             for filename, request in zip(filenames, batch):
                 try:
-                    resolved.append(
-                        resolve_target_graph(
-                            nodes,
-                            edges,
-                            filename=filename,
-                            source=request["source"],
-                            start_line=request.get("start_line", 1),
-                            function_hint=request.get("function", ""),
-                        )
-                    )
+                    resolved.append(resolve_target_graph(
+                        nodes,
+                        edges,
+                        filename=filename,
+                        source=request["source"],
+                        start_line=request.get("start_line", 1),
+                        function_hint=request.get("function", ""),
+                    ))
                 except (TargetMethodError, CPGQualityError) as error:
                     resolved.append(error)
             return resolved
