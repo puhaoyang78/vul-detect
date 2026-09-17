@@ -1,12 +1,11 @@
 import unittest
 
-from vulnmechanism.cpg import CPGError, FunctionGraph, GraphEdge, GraphNode
+from vulnmechanism.cpg import FunctionGraph, GraphEdge, GraphNode
 from vulnmechanism.dataset import extract_cpg_relations, render_cpg_relations
 from vulnmechanism.semantics import (
-    VULNERABILITY_FEATURES,
-    extract_vulnerability_semantics,
-    render_semantic_items,
-    validate_semantic_groups,
+    extract_mechanism_semantics,
+    render_mechanism_items,
+    validate_mechanism_groups,
 )
 from vulnmechanism.syntax import parse_function, single_function_language
 
@@ -45,15 +44,14 @@ class CPGTests(unittest.TestCase):
         self.assertEqual(len(extract_cpg_relations(graph)), len(edges))
 
 
-
-class SemanticTests(unittest.TestCase):
-    def test_upper_bound_condition_controls_write(self):
+class MechanismTests(unittest.TestCase):
+    def test_bounds_flow_requires_relation_evidence(self):
         graph = FunctionGraph(
             "foo",
             {
-                "1": GraphNode("1", "METHOD_PARAMETER_IN", "len"),
+                "1": GraphNode("1", "PARAM", "int len"),
                 "2": GraphNode("2", "<operator>.lessEqualsThan", "len <= 64"),
-                "3": GraphNode("3", "CALL", "memcpy(buf, src, len)"),
+                "3": GraphNode("3", "memcpy", "memcpy(buf, src, len)"),
             },
             (
                 GraphEdge("DDG", "1", "3"),
@@ -61,64 +59,101 @@ class SemanticTests(unittest.TestCase):
                 GraphEdge("CFG", "2", "3"),
             ),
         )
-        semantics = extract_vulnerability_semantics(graph)
+        semantics = extract_mechanism_semantics(graph)
         rendered = semantics.render()
-        self.assertIn("MEMORY_WRITE", rendered)
-        self.assertIn("UPPER_BOUND_RELATED_CONDITION", rendered)
-        self.assertNotIn("WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION", rendered)
-        self.assertTrue(set(semantics.feature_names) <= set(VULNERABILITY_FEATURES))
+        self.assertIn("BOUNDS_FLOW", rendered)
+        self.assertIn("source=parameter:len", rendered)
+        self.assertIn("bound_related_condition=present", rendered)
+        self.assertEqual(semantics.candidate_count, 1)
 
-    def test_positive_length_is_not_upper_bound(self):
+    def test_generic_array_access_is_not_a_mechanism(self):
         graph = FunctionGraph(
             "foo",
-            {
-                "1": GraphNode("1", "<operator>.greaterThan", "len > 0"),
-                "2": GraphNode("2", "CALL", "memcpy(buf, src, len)"),
-            },
-            (GraphEdge("CDG", "1", "2"),),
+            {"1": GraphNode("1", "<operator>.indexAccess", "a[i]")},
+            (),
         )
-        rendered = extract_vulnerability_semantics(graph).render()
-        self.assertIn("WRITE_EXTENT_WITHOUT_UPPER_BOUND_CONDITION", rendered)
-        self.assertNotIn("UPPER_BOUND_RELATED_CONDITION", rendered)
+        semantics = extract_mechanism_semantics(graph)
+        self.assertEqual(semantics.candidate_count, 0)
+        self.assertIn("ARRAY_ACCESS", semantics.render())
 
-    def test_null_branch_is_not_nonnull_protection(self):
+    def test_ast_descendant_inherits_related_control_condition(self):
         graph = FunctionGraph(
             "foo",
             {
-                "1": GraphNode("1", "<operator>.equals", "p == NULL"),
-                "2": GraphNode("2", "<operator>.indirection", "*p"),
+                "1": GraphNode("1", "PARAM", "int i"),
+                "2": GraphNode("2", "<operator>.lessThan", "i < 8"),
+                "3": GraphNode("3", "CALL", "x = a[i]"),
+                "4": GraphNode("4", "<operator>.indexAccess", "a[i]"),
+                "5": GraphNode("5", "LOCAL", "int a[8]"),
             },
-            (GraphEdge("CDG", "1", "2"),),
+            (
+                GraphEdge("DDG", "1", "4"),
+                GraphEdge("CDG", "2", "3"),
+                GraphEdge("AST", "3", "4"),
+                GraphEdge("AST", "3", "5"),
+                GraphEdge("CFG", "2", "3"),
+            ),
         )
-        rendered = extract_vulnerability_semantics(graph).render()
-        self.assertIn("NULL_RELATED_CONDITION", rendered)
-        self.assertIn("DEREFERENCE_WITHOUT_NONNULL_CONDITION", rendered)
+        rendered = extract_mechanism_semantics(graph).render()
+        self.assertIn("BOUNDS_FLOW", rendered)
+        self.assertIn("bound_related_condition=present", rendered)
 
-    def test_free_then_use_is_lifetime_pattern(self):
+    def test_null_flow_needs_data_source(self):
         graph = FunctionGraph(
             "foo",
             {
-                "1": GraphNode("1", "CALL", "free(p)"),
+                "1": GraphNode("1", "PARAM", "char *p"),
+                "2": GraphNode("2", "<operator>.notEquals", "p != NULL"),
+                "3": GraphNode("3", "<operator>.indirection", "*p"),
+            },
+            (
+                GraphEdge("DDG", "1", "3"),
+                GraphEdge("CDG", "2", "3"),
+                GraphEdge("CFG", "2", "3"),
+            ),
+        )
+        rendered = extract_mechanism_semantics(graph).render()
+        self.assertIn("NULL_DEREFERENCE_FLOW", rendered)
+        self.assertIn("null_related_condition=present", rendered)
+
+    def test_lifetime_path_stops_at_redefinition(self):
+        unsafe = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "free", "free(p)"),
                 "2": GraphNode("2", "<operator>.indirection", "*p"),
             },
             (GraphEdge("CFG", "1", "2"),),
         )
-        rendered = extract_vulnerability_semantics(graph).render()
-        self.assertIn("FREE_THEN_USE", rendered)
+        self.assertIn("USE_AFTER_FREE_FLOW", extract_mechanism_semantics(unsafe).render())
 
-    def test_patterns_render_first_and_ablation_is_explicit(self):
+        redefined = FunctionGraph(
+            "foo",
+            {
+                "1": GraphNode("1", "free", "free(p)"),
+                "2": GraphNode("2", "<operator>.assignment", "p = q"),
+                "3": GraphNode("3", "<operator>.indirection", "*p"),
+            },
+            (GraphEdge("CFG", "1", "2"), GraphEdge("CFG", "2", "3")),
+        )
+        self.assertNotIn("USE_AFTER_FREE_FLOW", extract_mechanism_semantics(redefined).render())
+
+    def test_rendering_and_ablation_are_mechanism_specific(self):
         items = [
-            {"category": "MEMORY_OPERATION", "kind": "MEMORY_WRITE", "detail": "object=buf"},
-            {"category": "POTENTIAL_PATTERN", "kind": "UNBOUNDED_WRITE", "detail": "object=buf"},
-            {"category": "DATA_DEPENDENCE", "kind": "PARAMETER_DEPENDENCE", "detail": "parameter=len"},
+            {"category": "SECURITY_OPERATION", "kind": "MEMORY_WRITE", "detail": "object=buf"},
+            {"category": "MECHANISM_RELATION", "kind": "BOUND_RELATION", "detail": "source=parameter:n"},
+            {"category": "MECHANISM_CANDIDATE", "kind": "BOUNDS_FLOW", "detail": "source=parameter:n"},
         ]
-        text = render_semantic_items(items)
-        self.assertLess(text.index("[POTENTIAL_PATTERN]"), text.index("[MEMORY_OPERATION]"))
-        filtered = render_semantic_items(items, excluded_groups=("dependence",))
-        self.assertNotIn("PARAMETER_DEPENDENCE", filtered)
-        self.assertEqual(validate_semantic_groups(("Memory", "memory", "constraint")), ("memory", "constraint"))
+        text = render_mechanism_items(items)
+        self.assertLess(text.index("[MECHANISM_CANDIDATE]"), text.index("[SECURITY_OPERATION]"))
+        filtered = render_mechanism_items(items, excluded_groups=("operation",))
+        self.assertNotIn("MEMORY_WRITE", filtered)
+        self.assertEqual(
+            validate_mechanism_groups(("Mechanism", "mechanism", "relation")),
+            ("mechanism", "relation"),
+        )
         with self.assertRaises(ValueError):
-            validate_semantic_groups(("unknown",))
+            validate_mechanism_groups(("unknown",))
 
 
 if __name__ == "__main__":
