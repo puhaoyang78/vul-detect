@@ -87,7 +87,10 @@ def _complete_pairs(
 
 def _primevul_balance_key(record: dict[str, object]) -> tuple[str, str]:
     key = str(record["sample_key"])
-    return hashlib.sha256(("build-success-benign-v1:" + key).encode()).hexdigest(), key
+    label = int(record["label"])
+    return hashlib.sha256(
+        (f"build-success-balanced-v2:{label}:" + key).encode()
+    ).hexdigest(), key
 
 
 def _balance_primevul(
@@ -99,16 +102,16 @@ def _balance_primevul(
         rows = [record for record in records if record_split(record) == split]
         vulnerable = [record for record in rows if record.get("label") == 1]
         benign = [record for record in rows if record.get("label") == 0]
-        if not vulnerable:
-            raise ValueError(f"PrimeVul {split} has no build-success vulnerable records")
-        if len(benign) < len(vulnerable):
+        if not vulnerable or not benign:
             raise ValueError(
-                f"PrimeVul {split} has fewer build-success benign than vulnerable records: "
-                f"{len(benign)} < {len(vulnerable)}"
+                f"PrimeVul {split} requires build-success records from both labels: "
+                f"benign={len(benign)}, vulnerable={len(vulnerable)}"
             )
-        kept_benign = sorted(benign, key=_primevul_balance_key)[: len(vulnerable)]
-        dropped += len(benign) - len(kept_benign)
-        selected.extend(vulnerable)
+        keep_per_label = min(len(vulnerable), len(benign))
+        kept_vulnerable = sorted(vulnerable, key=_primevul_balance_key)[:keep_per_label]
+        kept_benign = sorted(benign, key=_primevul_balance_key)[:keep_per_label]
+        dropped += len(rows) - 2 * keep_per_label
+        selected.extend(kept_vulnerable)
         selected.extend(kept_benign)
     selected.sort(
         key=lambda record: (
@@ -132,13 +135,13 @@ def select_source_records(
         raise ValueError(f"no records found for source dataset {source_dataset!r}")
 
     dropped_incomplete_pair_records = 0
-    dropped_primevul_benign_records = 0
+    dropped_primevul_balance_records = 0
     if source_dataset in PAIRED_DATASETS:
         selected, dropped_incomplete_pair_records = _complete_pairs(selected, source_dataset)
         if not selected:
             raise ValueError(f"no complete {source_dataset} pairs remain after build filtering")
     elif source_dataset == "primevul":
-        selected, dropped_primevul_benign_records = _balance_primevul(selected)
+        selected, dropped_primevul_balance_records = _balance_primevul(selected)
 
     split_counts = Counter(record_split(record) for record in selected)
     label_counts = Counter(int(record["label"]) for record in selected)
@@ -150,7 +153,7 @@ def select_source_records(
         "input_records": len(records),
         "selected_records": len(selected),
         "dropped_incomplete_pair_records": dropped_incomplete_pair_records,
-        "dropped_primevul_benign_records": dropped_primevul_benign_records,
+        "dropped_primevul_balance_records": dropped_primevul_balance_records,
         "detected_sources": dict(sorted(detected.items())),
         "split_counts": dict(sorted(split_counts.items())),
         "label_counts": {str(key): value for key, value in sorted(label_counts.items())},
