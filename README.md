@@ -179,7 +179,7 @@ python -m vulnmechanism.audit_semantics \
 
 正式 baseline 和所有 CPG/mechanism 方法必须使用相同 build-success cohort：
 
-- PrimeVul：每个官方 split 保留全部 build-success vulnerable，再确定性选择等量 build-success benign；
+- PrimeVul：每个官方 split 在 build-success 样本中取两类数量的最小值，并对超出的类别做确定性抽样，从而保持 split 内 1:1 平衡；
 - CleanVul/SVEN：任一侧 build 失败则整对排除。
 
 可以额外报告 full-source baseline 作为覆盖率参考，但不能与 CPG 方法直接计算主结果增益。
