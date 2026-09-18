@@ -21,12 +21,29 @@ class BenchmarkViewTests(unittest.TestCase):
             labels = [row["label"] for row in selected if record_split(row) == split]
             self.assertEqual(labels.count(1), 2)
             self.assertEqual(labels.count(0), 2)
-        self.assertEqual(summary["dropped_primevul_benign_records"], 3)
+        self.assertEqual(summary["dropped_primevul_balance_records"], 3)
         again, _ = select_source_records(list(reversed(records)), "primevul")
         self.assertEqual(
             {row["sample_key"] for row in selected},
             {row["sample_key"] for row in again},
         )
+
+    def test_primevul_balance_handles_fewer_benign_than_vulnerable(self):
+        records = []
+        for split in ("train", "valid", "test"):
+            records.extend([
+                dict(dataset="primevul", sample_key=f"primevul:{split}:v1", split=split, label=1),
+                dict(dataset="primevul", sample_key=f"primevul:{split}:v2", split=split, label=1),
+                dict(dataset="primevul", sample_key=f"primevul:{split}:v3", split=split, label=1),
+                dict(dataset="primevul", sample_key=f"primevul:{split}:b1", split=split, label=0),
+                dict(dataset="primevul", sample_key=f"primevul:{split}:b2", split=split, label=0),
+            ])
+        selected, summary = select_source_records(records, "primevul")
+        for split in ("train", "valid", "test"):
+            labels = [row["label"] for row in selected if record_split(row) == split]
+            self.assertEqual(labels.count(1), 2)
+            self.assertEqual(labels.count(0), 2)
+        self.assertEqual(summary["dropped_primevul_balance_records"], 3)
 
     def test_incomplete_pairs_are_removed_atomically(self):
         records = [
