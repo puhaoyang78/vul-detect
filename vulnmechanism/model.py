@@ -497,6 +497,60 @@ def _classification_metrics(
     return Metrics(accuracy, precision, recall, f1, mcc, _binary_auc(truth, probabilities))
 
 
+def _mechanism_presence(record: dict[str, object]) -> tuple[bool, bool]:
+    items = record.get("mechanism_items")
+    if not isinstance(items, list):
+        raise ValueError(f"{record.get('sample_key')}: mechanism_items is missing or malformed")
+    has_relation = any(
+        isinstance(item, dict) and item.get("category") == "MECHANISM_RELATION"
+        for item in items
+    )
+    has_candidate = any(
+        isinstance(item, dict) and item.get("category") == "MECHANISM_CANDIDATE"
+        for item in items
+    )
+    return has_relation, has_candidate
+
+
+def _stratified_metrics(
+    records: list[dict[str, object]],
+    probabilities: torch.Tensor,
+    *,
+    threshold: float,
+) -> dict[str, object]:
+    masks: dict[str, list[bool]] = {
+        "relation_present": [],
+        "relation_absent": [],
+        "candidate_present": [],
+        "relation_only": [],
+    }
+    for record in records:
+        has_relation, has_candidate = _mechanism_presence(record)
+        masks["relation_present"].append(has_relation)
+        masks["relation_absent"].append(not has_relation)
+        masks["candidate_present"].append(has_candidate)
+        masks["relation_only"].append(has_relation and not has_candidate)
+
+    result: dict[str, object] = {}
+    for name, mask_values in masks.items():
+        indices = [index for index, keep in enumerate(mask_values) if keep]
+        if not indices:
+            continue
+        subgroup_records = [records[index] for index in indices]
+        subgroup_probabilities = probabilities[indices]
+        result[name] = {
+            "samples": len(subgroup_records),
+            "positive": sum(int(record["label"]) == 1 for record in subgroup_records),
+            "negative": sum(int(record["label"]) == 0 for record in subgroup_records),
+            "metrics": _classification_metrics(
+                subgroup_records,
+                subgroup_probabilities,
+                threshold=threshold,
+            ).as_json(),
+        }
+    return result
+
+
 def _select_validation_threshold(
     records: list[dict[str, object]], probabilities: torch.Tensor
 ) -> tuple[float, Metrics]:
@@ -753,6 +807,11 @@ def evaluate_model(
         "positive": sum(int(record["label"]) == 1 for record in records),
         "negative": sum(int(record["label"]) == 0 for record in records),
         "metrics": metrics.as_json(),
+        "mechanism_subgroups": _stratified_metrics(
+            records,
+            probabilities,
+            threshold=threshold,
+        ),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return result
