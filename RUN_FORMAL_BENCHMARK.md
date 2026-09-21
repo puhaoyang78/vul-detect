@@ -132,3 +132,22 @@ CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli eval \
 ```
 
 The validation-selected threshold from the training dataset is reused unchanged.
+
+## 6. Incremental-information diagnostic (before residual training)
+
+```bash
+# Prepare only: no Qwen model training.
+python -m vulnmechanism.cli diagnose --stage prepare
+
+# Full run (12 independent baseline fits, fixed 3 epochs each).
+CUDA_VISIBLE_DEVICES=0 python -u -m vulnmechanism.cli diagnose --stage all --device cuda
+
+# Rerun probes only after OOF predictions are complete.
+python -m vulnmechanism.cli diagnose --stage probe
+```
+
+The same command resumes completed model/prediction jobs; an interrupted training job starts again.
+Keep configuration identical across stages. All folds, calibration and evaluation are within official
+PrimeVul train. Existing trained full-cohort adapters are never reused for OOF.
+See README section 10 for the exact nesting, probe features and controlled-shuffle scope.
+Training and probe progress appear continuously in the terminal; no HTML viewer is needed.

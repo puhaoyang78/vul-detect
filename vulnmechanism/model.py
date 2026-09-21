@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,9 +17,11 @@ from peft import (
 )
 from torch import nn
 from transformers import AutoModel, AutoTokenizer
+from tqdm.auto import tqdm
 
 from .benchmark_view import record_dataset, record_split
 from .dataset import DATASET_SCHEMA_VERSION
+from .progress import TrainingProgress
 from .semantics import (
     MECHANISM_GROUPS,
     render_mechanism_items,
@@ -28,11 +31,15 @@ from .semantics import (
 
 MODEL_VARIANTS = (
     "baseline",
+    "source_attention",
+    "source_bidirectional",
+    "source_bidirectional_attention",
     "raw_cpg",
     "mechanism_concat",
     "mechanism_fusion",
 )
-_SEQUENCE_VARIANTS = {"baseline", "raw_cpg", "mechanism_concat"}
+_SOURCE_VARIANTS = {"baseline", "source_attention", "source_bidirectional", "source_bidirectional_attention"}
+_SEQUENCE_VARIANTS = _SOURCE_VARIANTS | {"raw_cpg", "mechanism_concat"}
 _FUSION_VARIANTS = {"mechanism_fusion"}
 _CHECKPOINT_VERSION = 8
 
@@ -130,7 +137,7 @@ def _validate_variant(
     if variant not in MODEL_VARIANTS:
         raise ValueError(f"unknown variant {variant!r}; expected one of {', '.join(MODEL_VARIANTS)}")
     excluded = validate_mechanism_groups(excluded_groups)
-    if excluded and variant in {"baseline", "raw_cpg"}:
+    if excluded and variant in _SOURCE_VARIANTS | {"raw_cpg"}:
         raise ValueError("mechanism group ablation is only valid for mechanism variants")
     return variant, excluded
 
@@ -207,7 +214,7 @@ class InputBuilder:
                 self.mechanism_text(record, excluded_groups=excluded_groups),
                 self.context_max_length,
             ))
-        elif variant != "baseline":
+        elif variant not in _SOURCE_VARIANTS:
             raise ValueError(f"{variant} is not a sequence-input variant")
         return self._with_eos(ids)
 
@@ -298,9 +305,49 @@ def _masked_mean(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Te
     return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
 
 
+class BidirectionalSourceAdapter(nn.Module):
+    """One non-causal layer over contextual token states; Qwen stays causal."""
+
+    def __init__(self, hidden_size: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden_size)
+        self.down = nn.Linear(hidden_size, 256)
+        self.context = nn.TransformerEncoderLayer(
+            256, 4, dim_feedforward=512, dropout=0.0, activation="gelu",
+            batch_first=True, norm_first=True,
+        )
+        self.up = nn.Linear(256, hidden_size)
+        # Start from the original representation, rather than perturbing it at step zero.
+        nn.init.zeros_(self.up.weight)
+        nn.init.zeros_(self.up.bias)
+
+    def forward(self, hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        local = self.down(self.norm(hidden))
+        local = self.context(local, src_key_padding_mask=~mask.bool())
+        return hidden + self.up(local)
+
+
+class SourceAttentionPool(nn.Module):
+    """Four learned queries, with no predefined vulnerability categories."""
+
+    def __init__(self, hidden_size: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden_size)
+        self.keys = nn.Linear(hidden_size, 256)
+        self.queries = nn.Parameter(torch.empty(4, 256))
+        nn.init.normal_(self.queries, std=0.02)
+
+    def forward(self, hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        scores = torch.einsum("btd,qd->bqt", self.keys(self.norm(hidden)), self.queries) / 16.0
+        weights = scores.masked_fill(~mask.bool().unsqueeze(1), float("-inf")).softmax(dim=-1)
+        # Preserve the baseline representation width and linear classifier size.
+        return torch.einsum("bqt,bth->bqh", weights, hidden).mean(dim=1)
+
+
 class SequenceVulnerabilityClassifier(nn.Module):
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int,
-                 lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool) -> None:
+                 lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool,
+                 variant: str = "baseline") -> None:
         super().__init__()
         self.encoder, hidden_size = _build_lora_encoder(
             model_path,
@@ -312,14 +359,28 @@ class SequenceVulnerabilityClassifier(nn.Module):
             gradient_checkpointing=gradient_checkpointing,
         )
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
+        # Extra CPU initialization must not alter the encoder/classifier initialization
+        # or the subsequent training RNG stream of the baseline control.
+        with torch.random.fork_rng(devices=[]):
+            if variant in {"source_bidirectional", "source_bidirectional_attention"}:
+                self.task_modules["source_adapter"] = BidirectionalSourceAdapter(hidden_size)
+        with torch.random.fork_rng(devices=[]):
+            if variant in {"source_attention", "source_bidirectional_attention"}:
+                self.task_modules["source_pool"] = SourceAttentionPool(hidden_size)
         self.to(device)
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         hidden = self.encoder(
             input_ids=input_ids, attention_mask=attention_mask, use_cache=False
         ).last_hidden_state
+        if "source_adapter" in self.task_modules:
+            hidden = self.task_modules["source_adapter"](hidden.float(), attention_mask)
+        if "source_pool" in self.task_modules:
+            pooled = self.task_modules["source_pool"](hidden.float(), attention_mask)
+        else:
+            pooled = _masked_mean(hidden, attention_mask).float()
         return self.task_modules["classifier"](
-            _masked_mean(hidden, attention_mask).float()
+            pooled
         ).squeeze(-1)
 
 
@@ -398,7 +459,7 @@ def _build_model(
         gradient_checkpointing=gradient_checkpointing,
     )
     if variant in _SEQUENCE_VARIANTS:
-        return SequenceVulnerabilityClassifier(model_path, **common)
+        return SequenceVulnerabilityClassifier(model_path, variant=variant, **common)
     if variant == "mechanism_fusion":
         return MechanismFusionClassifier(
             model_path, fusion_dim=fusion_dim, fusion_heads=fusion_heads, **common
@@ -433,7 +494,7 @@ def _forward_batch(
 
 
 @torch.no_grad()
-def _predict(
+def _predict_logits(
     model,
     records: list[dict[str, object]],
     input_builder: InputBuilder,
@@ -444,8 +505,11 @@ def _predict(
     device: torch.device,
 ) -> torch.Tensor:
     model.eval()
-    probabilities: list[torch.Tensor] = []
-    for start in range(0, len(records), batch_size):
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    predictions: list[torch.Tensor] = []
+    for start in tqdm(range(0, len(records), batch_size), desc="Predict", unit="batch",
+                      dynamic_ncols=True, mininterval=1, file=sys.stdout, colour="cyan"):
         logits = _forward_batch(
             model,
             records[start:start + batch_size],
@@ -454,8 +518,14 @@ def _predict(
             excluded_groups=excluded_groups,
             device=device,
         )
-        probabilities.append(torch.sigmoid(logits).cpu())
-    return torch.cat(probabilities) if probabilities else torch.empty(0)
+        if not torch.isfinite(logits).all():
+            raise ValueError("non-finite prediction logits")
+        predictions.append(logits.float().cpu())
+    return torch.cat(predictions) if predictions else torch.empty(0)
+
+
+def _predict(model, records, input_builder, **kwargs) -> torch.Tensor:
+    return torch.sigmoid(_predict_logits(model, records, input_builder, **kwargs))
 
 
 def _binary_auc(truth: torch.Tensor, scores: torch.Tensor) -> float | None:
@@ -571,7 +641,7 @@ def _cpu_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
 
 
 def train_model(
-    dataset_path: str | Path,
+    dataset_path: str | Path | None,
     output_path: str | Path,
     *,
     variant: str,
@@ -591,12 +661,21 @@ def train_model(
     excluded_groups: tuple[str, ...] = (),
     seed: int = 42,
     device: str = "auto",
+    fixed_epochs: bool = False,
+    records: list[dict[str, object]] | None = None,
+    log_every: int = 10,
+    initial_checkpoint: str | Path | None = None,
+    sample_weights: dict[str, float] | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
     if batch_size <= 0 or gradient_accumulation <= 0 or epochs <= 0:
         raise ValueError("batch_size, gradient_accumulation, and epochs must be positive")
     resolved_device = _resolve_device(device)
-    records = _read_jsonl(dataset_path)
+    if log_every <= 0 or learning_rate <= 0 or weight_decay < 0:
+        raise ValueError("invalid log_every, learning_rate or weight_decay")
+    if (dataset_path is None) == (records is None):
+        raise ValueError("provide exactly one of dataset_path or records")
+    records = _read_jsonl(dataset_path) if records is None else records
     sources = {record_dataset(record) for record in records}
     if len(sources) != 1:
         raise ValueError(f"training dataset view must contain exactly one source, got {sorted(sources)}")
@@ -605,12 +684,36 @@ def train_model(
         raise ValueError("SVEN is external-test-only")
     train_records = [record for record in records if record_split(record) == "train"]
     valid_records = [record for record in records if record_split(record) == "valid"]
-    if not train_records or not valid_records:
+    if fixed_epochs and len(train_records) != len(records):
+        raise ValueError("fixed-epoch fitting accepts training records only")
+    if not train_records or (not fixed_epochs and not valid_records):
         raise ValueError("formal training requires non-empty train and valid splits")
     if {int(record["label"]) for record in train_records} != {0, 1}:
         raise ValueError("training split must contain both labels")
-    if {int(record["label"]) for record in valid_records} != {0, 1}:
+    if not fixed_epochs and {int(record["label"]) for record in valid_records} != {0, 1}:
         raise ValueError("validation split must contain both labels")
+
+    if sample_weights is not None:
+        keys = [r["sample_key"] for r in train_records]
+        if len(set(keys)) != len(keys) or set(sample_weights) != set(keys):
+            raise ValueError("sample_weights must cover unique training keys exactly")
+        if any(not math.isfinite(w) or w <= 0 for w in sample_weights.values()):
+            raise ValueError("sample weights must be finite and positive")
+    initial = None
+    if initial_checkpoint is not None:
+        if not fixed_epochs:
+            raise ValueError("checkpoint continuation requires fixed_epochs")
+        initial = torch.load(initial_checkpoint, map_location="cpu", weights_only=False)
+        expected = dict(checkpoint_version=_CHECKPOINT_VERSION, dataset_schema_version=DATASET_SCHEMA_VERSION,
+                        trained_on=source_dataset, variant=variant, model_path=model_path,
+                        source_max_length=source_max_length, context_max_length=context_max_length,
+                        lora_r=lora_r, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+                        excluded_groups=excluded_groups,
+                        target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+                        fusion_dim=fusion_dim, fusion_heads=fusion_heads)
+        for name, value in expected.items():
+            if initial.get(name) != value:
+                raise ValueError(f"initial checkpoint mismatch: {name}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
@@ -635,14 +738,20 @@ def train_model(
         fusion_heads=fusion_heads,
     )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    if initial is not None:
+        set_peft_model_state_dict(model.encoder, initial["adapter_state"])
+        model.task_modules.load_state_dict(initial["task_state"])
     optimizer = torch.optim.AdamW(trainable, lr=learning_rate, weight_decay=weight_decay)
-    loss_fn = nn.BCEWithLogitsLoss()
+    loss_fn = nn.BCEWithLogitsLoss(reduction="none")
 
     best_key = (float("-inf"),) * 4
     best_threshold = 0.5
     best_adapter = None
     best_task = None
     best_validation = None
+    selected_epoch = None
+    history = TrainingProgress(output_path)
+    global_step = 0
 
     for epoch in range(epochs):
         model.train()
@@ -653,50 +762,81 @@ def train_model(
         optimizer_steps = 0
         pending = 0
         num_batches = math.ceil(len(order) / batch_size)
-        for batch_index, start in enumerate(range(0, len(order), batch_size)):
+        window_loss, window_samples = 0.0, 0
+        bar = tqdm(range(0, len(order), batch_size), total=num_batches,
+                   desc=f"{variant} · epoch {epoch+1}/{epochs}", unit="batch",
+                   dynamic_ncols=True, mininterval=1, file=sys.stdout, colour="cyan")
+        for batch_index, start in enumerate(bar):
             batch = [train_records[index] for index in order[start:start + batch_size]]
             logits = _forward_batch(
                 model, batch, input_builder,
                 variant=variant, excluded_groups=excluded_groups, device=resolved_device,
             )
-            loss = loss_fn(logits, _labels(batch, resolved_device))
+            losses = loss_fn(logits, _labels(batch, resolved_device))
+            if sample_weights is not None:
+                weights = losses.new_tensor([sample_weights[r["sample_key"]] for r in batch])
+                losses = losses * weights
+            loss = losses.mean()
+            if not torch.isfinite(loss):
+                raise ValueError(f"non-finite loss in epoch {epoch+1}, batch {batch_index+1}")
             group_start = (batch_index // gradient_accumulation) * gradient_accumulation
-            group_size = min(gradient_accumulation, num_batches - group_start)
-            (loss / group_size).backward()
-            running_loss += float(loss.detach().cpu())
+            group_end = min(group_start + gradient_accumulation, num_batches)
+            group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
+            (loss * len(batch) / group_samples).backward()
+            value = float(loss.detach().cpu())
+            running_loss += value * len(batch)
+            window_loss += value * len(batch)
+            window_samples += len(batch)
+            bar.set_postfix(loss=f"{window_loss/window_samples:.4f}", step=global_step,
+                            lr=f"{learning_rate:.1e}", refresh=False)
             pending += 1
             if pending == gradient_accumulation or batch_index + 1 == num_batches:
                 torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 optimizer_steps += 1
+                global_step += 1
                 pending = 0
+                bar.set_postfix(loss=f"{window_loss/window_samples:.4f}", step=global_step,
+                                lr=f"{learning_rate:.1e}", refresh=False)
+                if global_step == 1 or global_step % log_every == 0 or batch_index+1 == num_batches:
+                    history.add(dict(event="step", epoch=epoch+1, step=global_step,
+                                     loss=window_loss/window_samples, learning_rate=learning_rate,
+                                     samples_seen=min(start+len(batch), len(order))))
+                    window_loss, window_samples = 0.0, 0
 
-        probabilities = _predict(
-            model, valid_records, input_builder,
-            variant=variant, excluded_groups=excluded_groups,
-            batch_size=batch_size, device=resolved_device,
-        )
-        threshold, validation = _select_validation_threshold(valid_records, probabilities)
-        print(json.dumps({
+        validation = None
+        threshold = 0.5
+        if not fixed_epochs:
+            probabilities = _predict(
+                model, valid_records, input_builder,
+                variant=variant, excluded_groups=excluded_groups,
+                batch_size=batch_size, device=resolved_device,
+            )
+            threshold, validation = _select_validation_threshold(valid_records, probabilities)
+        epoch_row = {
+            "event": "epoch",
             "variant": variant,
             "excluded_groups": list(excluded_groups),
             "epoch": epoch + 1,
-            "train_loss": running_loss / max(1, num_batches),
+            "train_loss": running_loss / len(train_records),
             "optimizer_steps": optimizer_steps,
             "validation_threshold": threshold,
-            "validation": validation.as_json(),
-        }, ensure_ascii=False), flush=True)
-        key = (validation.mcc, validation.f1, validation.accuracy,
-               validation.auc if validation.auc is not None else float("-inf"))
+            "validation": validation.as_json() if validation else None,
+        }
+        history.add(epoch_row)
+        key = ((epoch+1,) if fixed_epochs else
+               (validation.mcc, validation.f1, validation.accuracy,
+                validation.auc if validation.auc is not None else float("-inf")))
         if key > best_key:
             best_key = key
             best_threshold = threshold
             best_adapter = _cpu_state(get_peft_model_state_dict(model.encoder))
             best_task = _cpu_state(model.task_modules.state_dict())
             best_validation = validation
+            selected_epoch = epoch+1
 
-    if best_adapter is None or best_task is None or best_validation is None:
+    if best_adapter is None or best_task is None:
         raise RuntimeError("training did not produce a checkpoint")
     checkpoint = {
         "checkpoint_version": _CHECKPOINT_VERSION,
@@ -714,23 +854,51 @@ def train_model(
         "fusion_dim": fusion_dim,
         "fusion_heads": fusion_heads,
         "decision_threshold": best_threshold,
+        "selection": "fixed_epochs" if fixed_epochs else "validation_mcc",
+        "selected_epoch": selected_epoch,
+        "seed": seed,
+        "initial_checkpoint": str(initial_checkpoint) if initial_checkpoint is not None else None,
+        "sample_weights": sample_weights,
+        "training_config": dict(epochs=epochs, batch_size=batch_size,
+                                gradient_accumulation=gradient_accumulation,
+                                learning_rate=learning_rate, weight_decay=weight_decay),
         "adapter_state": best_adapter,
         "task_state": best_task,
-        "validation": best_validation.as_json(),
+        "validation": best_validation.as_json() if best_validation else None,
         "trainable_parameters": sum(parameter.numel() for parameter in trainable),
     }
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(checkpoint, target)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    torch.save(checkpoint, temporary)
+    temporary.replace(target)
     print(json.dumps({
         "checkpoint": str(target),
         "trained_on": source_dataset,
         "variant": variant,
         "decision_threshold": best_threshold,
-        "validation": best_validation.as_json(),
+        "validation": best_validation.as_json() if best_validation else None,
         "trainable_parameters": checkpoint["trainable_parameters"],
     }, ensure_ascii=False), flush=True)
     return checkpoint
+
+
+def predict_checkpoint(checkpoint_path: str | Path, records: list[dict], *,
+                       batch_size: int = 1, device: str = "auto") -> torch.Tensor:
+    """Raw logits for explicit records; fold ownership is enforced by the caller."""
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if checkpoint.get("checkpoint_version") != _CHECKPOINT_VERSION or checkpoint.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
+        raise ValueError("checkpoint is incompatible with current model/dataset")
+    resolved = _resolve_device(device)
+    tokenizer = AutoTokenizer.from_pretrained(str(checkpoint["model_path"]), trust_remote_code=True)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    builder = InputBuilder(tokenizer, source_max_length=int(checkpoint["source_max_length"]),
+                           context_max_length=int(checkpoint["context_max_length"]))
+    model = _load_model(checkpoint, device=resolved)
+    return _predict_logits(model, records, builder, variant=str(checkpoint["variant"]),
+                           excluded_groups=tuple(checkpoint["excluded_groups"]),
+                           batch_size=batch_size, device=resolved)
 
 
 def _load_model(checkpoint: dict[str, object], *, device: torch.device):

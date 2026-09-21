@@ -270,3 +270,144 @@ python -m unittest discover -s tests -v
 ```
 
 GitHub Actions运行同一套轻量测试。正式 Joern 构图仍需在本地服务器验证。
+
+## 10. Train-only incremental-information diagnosis
+
+先验证 relation 内容的增量信息，不训练 residual 网络。入口：
+
+```bash
+# CPU preparation only; preserves the formal 5,670-row training cohort.
+python -m vulnmechanism.cli diagnose --stage prepare
+
+# User-run full experiment: 3 outer folds × (3 inner fits + 1 outer fit) = 12 baselines.
+CUDA_VISIBLE_DEVICES=0 python -u -m vulnmechanism.cli diagnose --stage all --device cuda
+```
+
+默认每个 baseline 从本地 Qwen 基座重新训练 LoRA 和 classifier，固定 **3 epochs**。
+不加载正式 baseline checkpoint，不用任何留出数据选 epoch。`--stage oof` 仅训练并保存
+OOF 分数；`--stage probe` 仅运行廉价 probe；`--stage all` 顺序执行二者。
+已完整保存的预测任务会校验并跳过；有 checkpoint、尚无预测时只补预测。中断在训练中的
+单个模型会重新训练，**不宣称支持模型内优化器续训**。运行配置和输入文件元数据变化时
+拒绝复用该输出目录。改变参数请显式指定另一个 `--output`，各阶段使用相同参数。
+
+划分与信息边界：
+
+- 只在正式 build-success、split 内平衡后的 PrimeVul **train** 中划分；官方 valid/test
+  不参与模型拟合、词表、缩放、阈值选择或评价。加载正式 cohort 时仅复用既有选择规则。
+- 从现有 `--manifest` 回连 sample_key，核对源码、标签与 split。按完整 commit、
+  counterpart/pair、规范化源码的连通分量分组。完整 commit SHA 可跨 fork 关联，也允许
+  已知 SHA 但缺少 repo 的记录；无法确定分组来源时直接报错。
+- 每个外层训练分区再按组留出约 1/5 为 calibration；其余 develop 内做 inner OOF。
+  probe 在 develop 的 OOF logits 上拟合；另一个仅在 develop 上训练的 baseline 同时
+  预测 calibration 和外层 evaluation。calibration 只选阈值，evaluation 只评价。
+  不同内外层 baseline 的训练规模不同，比较的三个 probe 共享完全相同的分数来源。
+- `S` 是原始 logit；`U` 是 relation 存在性、总数量、各类型数量（数量 log1p）；
+  `R` 是当前所有 `MECHANISM_RELATION` 的 kind/detail/state，使用大小写敏感、保留
+  运算符的 unigram/bigram TF-IDF，最多 2,000 个训练词表特征。不加入 candidate。
+  不沿用 LLM 的 384-token 截断；这里诊断完整持久化关系内容，不等同于旧 concat 输入。
+- 三层均使用固定 C=1 的正则化 logistic regression；词表和 scaler 仅拟合 develop。
+  阈值仅在 calibration 的 0.05–0.95 网格上按 MCC/F1/Accuracy 选择。
+  不在 evaluation 上调 C、词表大小或阈值。
+- `R` 是现有抽取信息，**不代表已验证 branch polarity/dominance 的路径条件**。
+  内容收益也可能包含命名等信号，不能直接当成真实漏洞机理学习。
+
+Controlled shuffle 在 develop/calibration/evaluation **各自内部**，按相同类型及每类
+精确数量、相同 64 字符长度区间交换 R，不改变接收方的 S/U/标签。交换排除同一分组，
+不使用标签匹配；无法整体置换的桶保持不变并排除出 matched 评价。每折默认 5 次置换，
+报告可交换数、实际文本变化数以及 donor 对应。固定长度区间不保证所有“长度相近”的
+样本都能交换，这是明确的覆盖边界。
+
+同时运行两种对照：`shuffle_N` 重新拟合 shuffled train、在 shuffled calibration 选阈值；
+`intervention_N` 固定正常训练模型及其阈值，仅替换 evaluation 内容。主比较需看相同
+matched 子集上的 `S+U+R` 与 shuffle，并结合全体样本指标；不能将不同子集直接相减。
+
+**终端持续显示**训练 batch 进度条、loss、optimizer step、学习率、耗时和 ETA，
+每个 epoch 打印结果表；预测、外层任务、probe 和 shuffle 也显示进度。
+`--log-every 10` 控制持久打印训练摘要及写入 JSONL 的 optimizer-step 间隔；
+终端进度条在 batch 间持续刷新，不必等待 epoch。**不生成 HTML 可视化文件。**
+原有 `train` 命令也使用相同终端显示。
+
+输出位于 `results/primevul_incremental/`：
+
+- `run.json`、`folds.json`、`features.jsonl`：配置、准确样本分配和 probe 特征；
+- `outer_XX/inner_XX/` 与 `outer_XX/outer_model/`：任务成员、checkpoint、原始 logits；
+- `*.training.jsonl`：逐步 loss 与 epoch 指标，供复现，不替代终端显示；
+- `probe_predictions.jsonl`：外层逐样本概率、阈值、matched 标记；
+- `probe_results.json`：逐折全体/matched/relation-present 指标、相对 S 的正负类纠错与
+  破坏数量、shuffle 覆盖与 donor、配对折间增量均值和标准差。
+
+报告 AUC、MCC、Accuracy、Precision、Recall、F1、log loss、TP/FP/TN/FN。
+终端展示每折结果和相对 `S+U` 的增量；不混合不同 baseline 的跨折分数计算“总 AUC”，
+也不自动宣布显著性或通过。继续做 residual 的依据是内容在元信息之上有稳定样本外收益，
+并优于受控置换，不能只看 F1 或个别折。
+
+### Source-only 难例迁移小实验
+
+```bash
+python -m vulnmechanism.cli source-pilot --stage prepare
+CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli source-pilot --stage run --device cuda
+```
+
+读取 `source_error_review.jsonl` 中已有局部证据的训练样本。从 outer_01 的 source-only
+checkpoint 出发，以同一批 128 条训练样本、同一随机种子、1 epoch、学习率 2e-5，
+比较普通继续训练与难例权重 3 倍的继续训练；权重在正负类内分别归一化。
+初始模型、普通训练、加权训练均使用初始模型校准集选定的同一个阈值。
+终端持续显示 batch/step，并打印 check、valid 和训练难例的指标。
+
+检查集为 128 条原始 train 函数，排除初始模型训练成员、提交/归一化源码/配对关联组，
+与继续训练集隔离项目，并排除相对初始/继续训练源码字符 TF-IDF cosine >= 0.90 的样本。
+初始模型仍可能见过检查项目中的其他函数，因此不是完整的项目外泛化实验。
+检查集标签沿用 PrimeVul，并非独立核实的同机制标签；这是探索性函数分类迁移实验。
+正式 valid 仅报告、不用于调整本实验参数；test 不参与。比较对象是同一个 OOF
+checkpoint，不能将结果直接写作超过已发布的完整训练 baseline。
+
+`results/primevul_source_pilot/experiment.json` 保存成员和参数，逐组保存 checkpoint、
+预测与指标，可用相同 run 命令继续尚未完成的组；最终指标见 `results.json`。
+人工难例有效只支持可学习性，自动选择的有效性仍需独立对照。
+
+### Source-only 分类结构对照
+
+四组均只输入相同源码，使用同一正式 cohort、LoRA、BCE、优化器和 valid MCC
+选 epoch/阈值规则；不使用 CPG 文本、人工难例权重或辅助标签：
+
+| `--variant` | Qwen 输出之后的处理 |
+| --- | --- |
+| `baseline` | 原始 masked mean + linear |
+| `source_attention` | 4 个学习 query 的注意力汇聚 + 原尺寸 linear |
+| `source_bidirectional` | 双向残差层 + masked mean + 原尺寸 linear |
+| `source_bidirectional_attention` | 双向残差层 + 注意力汇聚 + 原尺寸 linear |
+
+双向残差层为 LayerNorm → 256 维投影 → 单层 Transformer（4 heads、FFN 512、
+dropout 0）→ 投影回 Qwen 维度，与原 token 表示相加。最后的投影初始化为零，
+起始表示不变；它的内部参数从后续优化步开始获得梯度。Qwen 自身仍是因果注意力。
+直接使用 Qwen 的上下文化 token 表示，不另加位置编码。注意力汇聚用 256 维 key，
+4 个 query 分别做 masked softmax，再对其汇聚结果求平均；分类器维度不变。
+query 不对应人工漏洞类别，注意力权重也不是经过验证的漏洞解释。
+新模块保存在共享 checkpoint 的 `task_state` 中，旧 baseline checkpoint 仍可读取。
+
+第一轮保持原固定学习率，先隔离结构贡献。以下命令**由用户执行全量训练**，
+重新训练同设置 baseline，不把历史不同长度的结果当作对照。显式统一为 2048 source
+tokens（源码之外的前缀/EOS 与现有 baseline 相同），每个优化步输出 loss，持续显示 batch
+进度；每个 epoch 显示 valid 指标。已有输出会跳过，避免重复训练：
+
+```bash
+conda activate vul-detect
+for variant in baseline source_attention source_bidirectional source_bidirectional_attention; do
+  output="results/source_architecture/seed42/${variant}.pt"
+  if [ -e "$output" ]; then
+    echo "Skip existing checkpoint: $output"
+    continue
+  fi
+  CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cli train \
+    --source-dataset primevul --dataset data/function_dataset.jsonl \
+    --variant "$variant" --output "$output" \
+    --source-max-length 2048 --epochs 3 --learning-rate 2e-4 \
+    --batch-size 1 --gradient-accumulation 8 \
+    --lora-r 16 --lora-alpha 32 --lora-dropout 0.05 \
+    --weight-decay 0.01 --seed 42 --device cuda --log-every 1 || break
+done
+```
+
+先比较 valid 的 AUC/MCC/Accuracy/F1 与逐 epoch 曲线；该命令不评估 test。
+单 seed 结果仅用于筛选，后续再对 baseline 和候选用相同多 seed 复验。
+小规模 smoke 只验证执行、梯度、保存和重载，不代表分类性能提升。
