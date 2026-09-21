@@ -179,30 +179,53 @@ class DataTests(unittest.TestCase):
         self.assertEqual(g.nodes["3"].properties["TYPE_FULL_NAME"], "int")
         self.assertEqual(g.nodes["2"].properties["COLUMN_NUMBER"], 9)
 
-    def test_standalone_cpp_member_specifiers_are_position_preserving(self):
-        source = (
-            "  void Compute(int override_value) const override final {\n"
-            "    int final_value = override_value;\n"
-            "  }\n"
-        )
-        prepared = _prepare_joern_source(source, language="cpp", standalone=True)
-        self.assertEqual(len(prepared), len(source))
-        self.assertEqual(
-            [i for i, ch in enumerate(prepared) if ch == "\n"],
-            [i for i, ch in enumerate(source) if ch == "\n"],
-        )
-        self.assertEqual(prepared.index("{"), source.index("{"))
-        self.assertIn("int override_value", prepared)
-        self.assertIn("int final_value = override_value;", prepared)
-        self.assertNotIn("override final", prepared[:prepared.index("{")])
-        self.assertEqual(
-            _prepare_joern_source(source, language="cpp", standalone=False),
-            source,
-        )
-        self.assertEqual(
-            _prepare_joern_source(source, language="c", standalone=True),
-            source,
-        )
+    def test_standalone_cpp_member_specifiers_are_syntax_aware_and_position_preserving(self):
+        cases = [
+            "void f(int x) override /* rule (1) */ { return; }\n",
+            "void f(int x) /* { */ override { return; }\n",
+            "void f(int x = int{}) override { return; }\n",
+            'void f(const char *s = "{") override { return; }\n',
+            "void f() const noexcept override final { return; }\n",
+            "void f() & override { return; }\n",
+        ]
+        for source in cases:
+            with self.subTest(source=source):
+                prepared = _prepare_joern_source(source, language="cpp", standalone=True)
+                self.assertNotEqual(prepared, source)
+                self.assertEqual(len(prepared.encode("utf-8")), len(source.encode("utf-8")))
+                self.assertEqual(
+                    [i for i, byte in enumerate(prepared.encode("utf-8")) if byte == 10],
+                    [i for i, byte in enumerate(source.encode("utf-8")) if byte == 10],
+                )
+                self.assertEqual(
+                    source[source.index("{", source.rfind(")")) + 1:],
+                    prepared[prepared.index("{", prepared.rfind(")")) + 1:],
+                )
+
+        parameter_name = "void f(int final) override { (void)final; }\n"
+        prepared = _prepare_joern_source(parameter_name, language="cpp", standalone=True)
+        self.assertIn("int final", prepared)
+        self.assertIn("(void)final", prepared)
+        self.assertNotIn(") override", prepared)
+
+        comment_words = "void f() override /* override final */ { return; }\n"
+        prepared = _prepare_joern_source(comment_words, language="cpp", standalone=True)
+        self.assertIn("/* override final */", prepared)
+        self.assertNotIn("f() override", prepared)
+
+        for source in (
+            "struct final {};\nauto make() -> final { return {}; }\n",
+            "auto make() -> Box<final> { return {}; }\n",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    _prepare_joern_source(source, language="cpp", standalone=True),
+                    source,
+                )
+
+        source = "void f() override { return; }\n"
+        self.assertEqual(_prepare_joern_source(source, language="cpp", standalone=False), source)
+        self.assertEqual(_prepare_joern_source(source, language="c", standalone=True), source)
 
     def test_build_resume_retries_failed_only_and_preserves_dataset(self):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
@@ -219,7 +242,21 @@ class DataTests(unittest.TestCase):
             report = data.build_graphs(str(src), str(out), batch_size=3, extractor=retry)
             self.assertTrue(report["complete"]); self.assertEqual(calls, [3, 1])
             self.assertEqual(src.read_bytes(), before)
+            exported = data.read_jsonl(out)
             self.assertEqual(len(data.load_graphs(out, rows)), 3)
+            self.assertTrue(all(
+                row["preprocessing_version"] == data.JOERN_SOURCE_PREPROCESSING_VERSION
+                for row in exported
+            ))
+            self.assertTrue(all(
+                row["original_source_sha256"] == row["parsed_source_sha256"]
+                and row["preprocessing_applied"] is False
+                for row in exported
+            ))
+            meta = json.loads(Path(str(out) + ".meta.json").read_text())
+            self.assertEqual(
+                meta["preprocessing_version"], data.JOERN_SOURCE_PREPROCESSING_VERSION
+            )
             data.build_graphs(str(src), str(out), extractor=lambda *a, **k: self.fail("no reparse"))
 
     def test_build_catches_raised_timeout_and_refuses_incomplete_training_cohort(self):
@@ -466,7 +503,15 @@ class IntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
             root=Path(tmp);src=root/"source.jsonl";graphs=root/"graphs.jsonl";run=root/"run"
             rows=fixture_rows();write_jsonl(src,rows)
-            exports=[dict(data.identity(r),graph_schema_version=1,graph=fixture_graph(str(i+4))) for i,r in enumerate(rows)]
+            exports=[
+                dict(data.identity(r), graph_schema_version=data.GRAPH_SCHEMA,
+                     preprocessing_version=data.JOERN_SOURCE_PREPROCESSING_VERSION,
+                     preprocessing_applied=False,
+                     original_source_sha256=data.source_hash(r["raw_source"]),
+                     parsed_source_sha256=data.source_hash(r["raw_source"]),
+                     graph=fixture_graph(str(i+4)))
+                for i, r in enumerate(rows)
+            ]
             write_jsonl(graphs,exports)
             api=fake_base();TinyInputBuilder.allow_test=False
             args=exp.parser().parse_args(["run","--dataset",str(src),"--graphs",str(graphs),"--output-dir",str(run),

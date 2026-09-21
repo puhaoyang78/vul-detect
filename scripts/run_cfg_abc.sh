@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ACTION="${1:-all}"
 DATASET="${DATASET:-data/function_dataset.jsonl}"
-GRAPHS="${GRAPHS:-data/graphs/primevul_cfg_v1.jsonl}"
+GRAPHS="${GRAPHS:-data/graphs/primevul_cfg.jsonl}"
 RUN_DIR="${RUN_DIR:-results/cfg_abc_seed42}"
 MODEL_PATH="${MODEL_PATH:-/home/phy/models/Qwen2.5-Coder-7B-Instruct}"
 JOERN_DIR="${JOERN_DIR:-/home/phy/joern}"

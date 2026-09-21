@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -52,6 +53,7 @@ class FunctionGraph:
 
 
 _INVALID_METHOD_NAMES = {"<global>", "if", "for", "while", "switch", "catch", "sizeof", "do"}
+JOERN_SOURCE_PREPROCESSING_VERSION = 1
 
 
 def _find_executable(root: Path, names: tuple[str, ...]) -> Path:
@@ -138,23 +140,36 @@ def _unqualified(name: str) -> str:
 
 
 def _prepare_joern_source(source: str, *, language: str, standalone: bool) -> str:
-    """Make standalone C++ member-function snippets parseable without moving source positions."""
+    """Mask only parsed C++ virtual-specifier tokens in standalone function snippets."""
     if language != "cpp" or not standalone:
         return source
-    body = source.find("{")
-    if body < 0:
+
+    from .syntax import parser_for, walk
+
+    encoded = source.encode("utf-8")
+    root = parser_for("cpp").parse(encoded).root_node
+    functions = [node for node in walk(root) if node.type == "function_definition"]
+    if len(functions) != 1:
         return source
-    header = source[:body]
-    parameters_end = header.rfind(")")
-    if parameters_end < 0:
+    declarator = functions[0].child_by_field_name("declarator")
+    if declarator is None:
         return source
-    suffix = header[parameters_end + 1:]
-    suffix = re.sub(
-        r"\b(?:override|final)\b",
-        lambda match: " " * len(match.group(0)),
-        suffix,
-    )
-    return header[:parameters_end + 1] + suffix + source[body:]
+
+    spans = []
+    for node in walk(declarator):
+        if node.type != "virtual_specifier":
+            continue
+        token = encoded[node.start_byte:node.end_byte]
+        if token not in {b"override", b"final"}:
+            return source
+        spans.append((node.start_byte, node.end_byte))
+    if not spans:
+        return source
+
+    prepared = bytearray(encoded)
+    for start, end in spans:
+        prepared[start:end] = b" " * (end - start)
+    return prepared.decode("utf-8")
 
 
 def resolve_target_graph(
@@ -373,18 +388,29 @@ def extract_function_cpg_batch(
             src.mkdir()
             filenames = []
             target_sources = []
+            preprocessing_audits = []
             for index, request in enumerate(batch):
                 if request["language"] not in {"c", "cpp"}:
                     raise ValueError("language must be c or cpp")
                 filename = f"sample_{index:04d}." + ("cpp" if request["language"] == "cpp" else "c")
                 standalone = "full_source" not in request
-                parse_source = request.get("full_source", request["source"])
+                original_parse_source = request.get("full_source", request["source"])
                 parse_source = _prepare_joern_source(
-                    parse_source, language=request["language"], standalone=standalone
+                    original_parse_source, language=request["language"], standalone=standalone
                 )
                 (src / filename).write_text(parse_source, encoding="utf-8")
                 filenames.append(filename)
                 target_sources.append(parse_source if standalone else request["source"])
+                preprocessing_audits.append({
+                    "preprocessing_version": JOERN_SOURCE_PREPROCESSING_VERSION,
+                    "preprocessing_applied": parse_source != original_parse_source,
+                    "original_source_sha256": hashlib.sha256(
+                        original_parse_source.encode("utf-8")
+                    ).hexdigest(),
+                    "parsed_source_sha256": hashlib.sha256(
+                        parse_source.encode("utf-8")
+                    ).hexdigest(),
+                })
 
             cpg = work / "cpg.bin"
             result = run_process(
@@ -404,16 +430,20 @@ def extract_function_cpg_batch(
                 raise CPGError("joern-export failed: " + (result.stderr or result.stdout)[-4000:])
             nodes, edges = read_neo4jcsv(output)
             resolved = []
-            for filename, request, target_source in zip(filenames, batch, target_sources):
+            for filename, request, target_source, preprocessing_audit in zip(
+                filenames, batch, target_sources, preprocessing_audits
+            ):
                 try:
-                    resolved.append(resolve_target_graph(
+                    graph = resolve_target_graph(
                         nodes,
                         edges,
                         filename=filename,
                         source=target_source,
                         start_line=request.get("start_line", 1),
                         function_hint=request.get("function", ""),
-                    ))
+                    )
+                    graph.quality.update(preprocessing_audit)
+                    resolved.append(graph)
                 except (TargetMethodError, CPGQualityError) as error:
                     resolved.append(error)
             return resolved

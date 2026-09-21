@@ -17,6 +17,8 @@ import subprocess
 import time
 from typing import Iterable
 
+from .cpg import JOERN_SOURCE_PREPROCESSING_VERSION, _prepare_joern_source
+
 GRAPH_SCHEMA = 1
 FEATURE_SCHEMA = 1
 FAMILIES = ("api", "datatype", "literal", "operator")
@@ -170,8 +172,19 @@ def load_graphs(path: str | Path, records: list[dict], *, require_complete: bool
             raise ValueError(f"unexpected/duplicate graph key {key!r}; use one sidecar per cohort")
         if row.get("graph_schema_version") != GRAPH_SCHEMA:
             raise ValueError(f"{key}: incompatible graph schema")
+        if row.get("preprocessing_version") != JOERN_SOURCE_PREPROCESSING_VERSION:
+            raise ValueError(f"{key}: stale Joern preprocessing version; rebuild the graph sidecar")
         if any(row.get(k) != v for k, v in expected[key].items()):
             raise ValueError(f"{key}: graph/source/label/split mismatch; do not mix datasets")
+        original_hash = row.get("original_source_sha256")
+        parsed_hash = row.get("parsed_source_sha256")
+        applied = row.get("preprocessing_applied")
+        if original_hash != expected[key]["source_sha256"]:
+            raise ValueError(f"{key}: preprocessing audit/source mismatch")
+        if (type(applied) is not bool or not isinstance(parsed_hash, str) or
+                re.fullmatch(r"[0-9a-f]{64}", parsed_hash) is None or
+                (parsed_hash != original_hash) != applied):
+            raise ValueError(f"{key}: invalid preprocessing audit metadata")
         validate_graph(row.get("graph"))
         result[key] = row["graph"]
     missing = sorted(set(expected) - set(result))
@@ -221,6 +234,7 @@ def build_graphs(dataset_path: str, output_path: str, *, source_dataset: str = "
     # Match the existing extractor's JOERN_HOME precedence in cache provenance.
     effective_joern_dir = os.environ.get("JOERN_HOME", str(joern_dir))
     expected_meta = dict(graph_schema_version=GRAPH_SCHEMA, cohort_sha256=cohort_hash(rows),
+                         preprocessing_version=JOERN_SOURCE_PREPROCESSING_VERSION,
                          source_dataset=source_dataset, samples=len(rows),
                          joern_dir=str(Path(effective_joern_dir).expanduser().resolve()),
                          java_home=str(Path(java_home).expanduser().resolve()))
@@ -231,7 +245,7 @@ def build_graphs(dataset_path: str, output_path: str, *, source_dataset: str = "
         meta_path = derived[1]
         if meta_path.exists():
             if json.loads(meta_path.read_text()) != expected_meta:
-                raise ValueError("graph cache metadata mismatch; choose a new output path")
+                raise ValueError("graph cache metadata mismatch; remove the stale graph sidecar and rebuild it")
         elif output.exists() and output.stat().st_size:
             raise ValueError("graph sidecar exists without ownership metadata; choose a new path")
         else:
@@ -246,11 +260,21 @@ def build_graphs(dataset_path: str, output_path: str, *, source_dataset: str = "
             for start in range(0, len(pending), batch_size):
                 batch = pending[start:start + batch_size]
                 requests = []
+                preprocessing_audits = []
                 for r in batch:
                     language = r.get("resolved_language") or r.get("language")
                     if language not in {"c", "cpp"}:
                         from .syntax import resolve_language
                         language = resolve_language(r["raw_source"], r.get("language", "c_cpp"), "")
+                    prepared_source = _prepare_joern_source(
+                        r["raw_source"], language=language, standalone=True
+                    )
+                    preprocessing_audits.append({
+                        "preprocessing_version": JOERN_SOURCE_PREPROCESSING_VERSION,
+                        "preprocessing_applied": prepared_source != r["raw_source"],
+                        "original_source_sha256": source_hash(r["raw_source"]),
+                        "parsed_source_sha256": source_hash(prepared_source),
+                    })
                     requests.append(dict(source=r["raw_source"], language=language,
                                          function=r.get("function_name") or r.get("syntax_hint") or ""))
                 started = time.monotonic()
@@ -260,7 +284,7 @@ def build_graphs(dataset_path: str, output_path: str, *, source_dataset: str = "
                     results = [exc] * len(batch)
                 if len(results) != len(batch):
                     raise RuntimeError("extractor returned the wrong batch size")
-                for r, raw in zip(batch, results):
+                for r, raw, preprocessing_audit in zip(batch, results, preprocessing_audits):
                     try:
                         if isinstance(raw, BaseException):
                             raise raw
@@ -273,8 +297,9 @@ def build_graphs(dataset_path: str, output_path: str, *, source_dataset: str = "
                         errout.flush()
                         print(f"graph_failed={r['sample_key']} error={exc}", flush=True)
                         continue
-                    row = dict(identity(r), graph_schema_version=GRAPH_SCHEMA, graph=graph,
-                               cpg_quality=raw.quality, seconds=(time.monotonic()-started)/len(batch))
+                    row = dict(identity(r), graph_schema_version=GRAPH_SCHEMA,
+                               **preprocessing_audit, graph=graph, cpg_quality=raw.quality,
+                               seconds=(time.monotonic()-started)/len(batch))
                     out.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
                     out.flush()
                     os.fsync(out.fileno())

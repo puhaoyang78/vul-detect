@@ -59,13 +59,14 @@ API 名、类型名和原始字面量是明确保留的程序属性，并不声�
 
 图旁文件：
 
-- `*.meta.json`：cohort 与工具路径；不允许混用不同数据。
+- `*.meta.json`：cohort、工具路径与 Joern 输入预处理版本；不允许混用不同数据或旧预处理缓存。
 - `*.errors.jsonl`：失败历史，追加记录；旧失败可能已在后续重试成功。
 - `*.audit.json`：当前完整性、按 split/label 的失败和无定义节点情况。
 - `*.lock`：Linux advisory lock 标识。锁文件存在不代表正在运行；不要为“解锁”直接删除它。
 
 构图可直接重跑同一命令：只重试未完成的样本，逐样本落盘；中断的最后一条不完整写入会恢复。
-工具版本或抽取逻辑改变后应选择新的图文件名，不能把相同工具路径当成相同二进制版本。
+缓存同时记录 Joern 输入预处理版本，以及每条样本的预处理是否触发、原始源码哈希和实际解析源码哈希。
+抽取或预处理逻辑改变后，删除旧 sidecar 后仍使用固定的 `primevul_cfg.jsonl` 重新全量构建，不再通过 `v1/v2` 文件名区分版本。
 
 ## 4. 命令
 
@@ -81,7 +82,7 @@ python -m unittest discover -s tests -p 'test_cfg*.py' -v
 python -m vulnmechanism.cfg_experiment build \
   --dataset data/function_dataset.jsonl \
   --source-dataset primevul \
-  --output data/graphs/primevul_cfg_v1.jsonl \
+  --output data/graphs/primevul_cfg.jsonl \
   --joern-dir /home/phy/joern \
   --java-home /home/phy/jdk21 \
   --batch-size 8 --timeout 300
@@ -89,7 +90,7 @@ python -m vulnmechanism.cfg_experiment build \
 # 按 A -> B -> C 顺序运行，单 seed，训练期间只评价 valid。
 CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cfg_experiment run \
   --dataset data/function_dataset.jsonl \
-  --graphs data/graphs/primevul_cfg_v1.jsonl \
+  --graphs data/graphs/primevul_cfg.jsonl \
   --source-dataset primevul \
   --model-path /home/phy/models/Qwen2.5-Coder-7B-Instruct \
   --output-dir results/cfg_abc_seed42 \
