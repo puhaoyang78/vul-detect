@@ -26,7 +26,9 @@ from vulnmechanism import cfg_experiment as exp
 from vulnmechanism import cfg_metrics as metric
 from vulnmechanism.cfg_network import (AttributeCFGEncoder, GraphBatch,
                                       SourceGraphClassifier, build_model, collate_graphs)
-from vulnmechanism.cpg import FunctionGraph, GraphEdge, GraphNode, resolve_target_graph
+from vulnmechanism.cpg import (
+    FunctionGraph, GraphEdge, GraphNode, _prepare_joern_source, resolve_target_graph,
+)
 
 
 def fixture_graph(literal="4"):
@@ -176,6 +178,31 @@ class DataTests(unittest.TestCase):
             g = resolve_target_graph(nodes, edges, filename="one.c", source=source)
         self.assertEqual(g.nodes["3"].properties["TYPE_FULL_NAME"], "int")
         self.assertEqual(g.nodes["2"].properties["COLUMN_NUMBER"], 9)
+
+    def test_standalone_cpp_member_specifiers_are_position_preserving(self):
+        source = (
+            "  void Compute(int override_value) const override final {\n"
+            "    int final_value = override_value;\n"
+            "  }\n"
+        )
+        prepared = _prepare_joern_source(source, language="cpp", standalone=True)
+        self.assertEqual(len(prepared), len(source))
+        self.assertEqual(
+            [i for i, ch in enumerate(prepared) if ch == "\n"],
+            [i for i, ch in enumerate(source) if ch == "\n"],
+        )
+        self.assertEqual(prepared.index("{"), source.index("{"))
+        self.assertIn("int override_value", prepared)
+        self.assertIn("int final_value = override_value;", prepared)
+        self.assertNotIn("override final", prepared[:prepared.index("{")])
+        self.assertEqual(
+            _prepare_joern_source(source, language="cpp", standalone=False),
+            source,
+        )
+        self.assertEqual(
+            _prepare_joern_source(source, language="c", standalone=True),
+            source,
+        )
 
     def test_build_resume_retries_failed_only_and_preserves_dataset(self):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):

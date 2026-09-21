@@ -137,6 +137,26 @@ def _unqualified(name: str) -> str:
     return name.rsplit("::", 1)[-1].strip()
 
 
+def _prepare_joern_source(source: str, *, language: str, standalone: bool) -> str:
+    """Make standalone C++ member-function snippets parseable without moving source positions."""
+    if language != "cpp" or not standalone:
+        return source
+    body = source.find("{")
+    if body < 0:
+        return source
+    header = source[:body]
+    parameters_end = header.rfind(")")
+    if parameters_end < 0:
+        return source
+    suffix = header[parameters_end + 1:]
+    suffix = re.sub(
+        r"\b(?:override|final)\b",
+        lambda match: " " * len(match.group(0)),
+        suffix,
+    )
+    return header[:parameters_end + 1] + suffix + source[body:]
+
+
 def resolve_target_graph(
     nodes,
     edges,
@@ -352,12 +372,19 @@ def extract_function_cpg_batch(
             src = work / "src"
             src.mkdir()
             filenames = []
+            target_sources = []
             for index, request in enumerate(batch):
                 if request["language"] not in {"c", "cpp"}:
                     raise ValueError("language must be c or cpp")
                 filename = f"sample_{index:04d}." + ("cpp" if request["language"] == "cpp" else "c")
-                (src / filename).write_text(request.get("full_source", request["source"]), encoding="utf-8")
+                standalone = "full_source" not in request
+                parse_source = request.get("full_source", request["source"])
+                parse_source = _prepare_joern_source(
+                    parse_source, language=request["language"], standalone=standalone
+                )
+                (src / filename).write_text(parse_source, encoding="utf-8")
                 filenames.append(filename)
+                target_sources.append(parse_source if standalone else request["source"])
 
             cpg = work / "cpg.bin"
             result = run_process(
@@ -377,13 +404,13 @@ def extract_function_cpg_batch(
                 raise CPGError("joern-export failed: " + (result.stderr or result.stdout)[-4000:])
             nodes, edges = read_neo4jcsv(output)
             resolved = []
-            for filename, request in zip(filenames, batch):
+            for filename, request, target_source in zip(filenames, batch, target_sources):
                 try:
                     resolved.append(resolve_target_graph(
                         nodes,
                         edges,
                         filename=filename,
-                        source=request["source"],
+                        source=target_source,
                         start_line=request.get("start_line", 1),
                         function_hint=request.get("function", ""),
                     ))
