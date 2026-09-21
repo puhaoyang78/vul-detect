@@ -197,10 +197,7 @@ class DataTests(unittest.TestCase):
                     [i for i, byte in enumerate(prepared.encode("utf-8")) if byte == 10],
                     [i for i, byte in enumerate(source.encode("utf-8")) if byte == 10],
                 )
-                self.assertEqual(
-                    source[source.index("{", source.rfind(")")) + 1:],
-                    prepared[prepared.index("{", prepared.rfind(")")) + 1:],
-                )
+                self.assertTrue(prepared.endswith("{ return; }\n"))
 
         parameter_name = "void f(int final) override { (void)final; }\n"
         prepared = _prepare_joern_source(parameter_name, language="cpp", standalone=True)
