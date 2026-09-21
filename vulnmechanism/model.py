@@ -37,10 +37,13 @@ MODEL_VARIANTS = (
     "raw_cpg",
     "mechanism_concat",
     "mechanism_fusion",
+    "graph_attributes",
+    "graph_cfg",
 )
 _SOURCE_VARIANTS = {"baseline", "source_attention", "source_bidirectional", "source_bidirectional_attention"}
 _SEQUENCE_VARIANTS = _SOURCE_VARIANTS | {"raw_cpg", "mechanism_concat"}
 _FUSION_VARIANTS = {"mechanism_fusion"}
+_GRAPH_VARIANTS = {"graph_attributes", "graph_cfg"}
 _CHECKPOINT_VERSION = 8
 
 
@@ -137,7 +140,7 @@ def _validate_variant(
     if variant not in MODEL_VARIANTS:
         raise ValueError(f"unknown variant {variant!r}; expected one of {', '.join(MODEL_VARIANTS)}")
     excluded = validate_mechanism_groups(excluded_groups)
-    if excluded and variant in _SOURCE_VARIANTS | {"raw_cpg"}:
+    if excluded and variant in _SOURCE_VARIANTS | _GRAPH_VARIANTS | {"raw_cpg"}:
         raise ValueError("mechanism group ablation is only valid for mechanism variants")
     return variant, excluded
 
@@ -384,6 +387,34 @@ class SequenceVulnerabilityClassifier(nn.Module):
         ).squeeze(-1)
 
 
+class GraphVulnerabilityClassifier(SequenceVulnerabilityClassifier):
+    """Uncompressed source representation plus a DeepDFA-style graph vector.
+
+    The two linear terms are exactly a linear classifier on concatenated
+    representations. Keeping the source term separate preserves its original
+    initialization. This is not an error router or a guarantee against regressions.
+    """
+
+    def __init__(self, model_path: str, *, graph_config: dict, variant: str, **kwargs) -> None:
+        from .graph_nn import StaticGraphEncoder
+        super().__init__(model_path, variant="baseline", **kwargs)
+        with torch.random.fork_rng(devices=[]):
+            graph_encoder = StaticGraphEncoder(graph_config, propagate=variant == "graph_cfg")
+            graph_classifier = nn.Linear(graph_encoder.out_dim, 1, bias=False)
+            # All three variants start with identical source logits. Joint
+            # training may still change both the source and the graph branch.
+            nn.init.zeros_(graph_classifier.weight)
+        self.task_modules["graph_encoder"] = graph_encoder
+        self.task_modules["graph_classifier"] = graph_classifier
+        self.to(kwargs["device"])
+
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
+                graphs: list[dict | None]) -> torch.Tensor:
+        source_logits = super().forward(input_ids, attention_mask)
+        graph_vector = self.task_modules["graph_encoder"](graphs)
+        return source_logits + self.task_modules["graph_classifier"](graph_vector).squeeze(-1)
+
+
 class MechanismFusionClassifier(nn.Module):
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int,
                  lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool,
@@ -449,6 +480,7 @@ def _build_model(
     gradient_checkpointing: bool,
     fusion_dim: int,
     fusion_heads: int,
+    graph_config: dict | None = None,
 ):
     common = dict(
         device=device,
@@ -458,6 +490,12 @@ def _build_model(
         target_modules=target_modules,
         gradient_checkpointing=gradient_checkpointing,
     )
+    if variant in _GRAPH_VARIANTS:
+        if graph_config is None:
+            raise ValueError("graph variants require a training-only feature vocabulary")
+        return GraphVulnerabilityClassifier(
+            model_path, variant=variant, graph_config=graph_config, **common
+        )
     if variant in _SEQUENCE_VARIANTS:
         return SequenceVulnerabilityClassifier(model_path, variant=variant, **common)
     if variant == "mechanism_fusion":
@@ -482,6 +520,13 @@ def _forward_batch(
     excluded_groups: tuple[str, ...],
     device: torch.device,
 ) -> torch.Tensor:
+    if variant in _GRAPH_VARIANTS:
+        input_ids, mask = input_builder.sequence_batch(
+            records, variant="baseline", excluded_groups=(), device=device
+        )
+        if any("static_graph" not in record for record in records):
+            raise ValueError("static_graph missing; run graph_experiment build first")
+        return model(input_ids, mask, [record["static_graph"] for record in records])
     if variant in _SEQUENCE_VARIANTS:
         input_ids, mask = input_builder.sequence_batch(
             records, variant=variant, excluded_groups=excluded_groups, device=device
@@ -666,6 +711,7 @@ def train_model(
     log_every: int = 10,
     initial_checkpoint: str | Path | None = None,
     sample_weights: dict[str, float] | None = None,
+    graph_options: dict | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
     if batch_size <= 0 or gradient_accumulation <= 0 or epochs <= 0:
@@ -692,6 +738,17 @@ def train_model(
         raise ValueError("training split must contain both labels")
     if not fixed_epochs and {int(record["label"]) for record in valid_records} != {0, 1}:
         raise ValueError("validation split must contain both labels")
+
+    graph_config = None
+    if variant in _GRAPH_VARIANTS:
+        from .graph_features import fit_graph_config, validate_record_graph
+        if initial_checkpoint is not None:
+            raise ValueError("graph checkpoint continuation is not supported; vocabulary must stay fixed")
+        for record in train_records + valid_records:
+            validate_record_graph(record)
+        graph_config = fit_graph_config(train_records, **(graph_options or {}))
+    elif graph_options:
+        raise ValueError("graph_options are only valid for graph variants")
 
     if sample_weights is not None:
         keys = [r["sample_key"] for r in train_records]
@@ -736,6 +793,7 @@ def train_model(
         gradient_checkpointing=resolved_device.type == "cuda",
         fusion_dim=fusion_dim,
         fusion_heads=fusion_heads,
+        **({"graph_config": graph_config} if graph_config is not None else {}),
     )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
     if initial is not None:
@@ -867,6 +925,8 @@ def train_model(
         "validation": best_validation.as_json() if best_validation else None,
         "trainable_parameters": sum(parameter.numel() for parameter in trainable),
     }
+    if graph_config is not None:
+        checkpoint["graph_config"] = graph_config
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".tmp")
@@ -913,6 +973,8 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
         gradient_checkpointing=False,
         fusion_dim=int(checkpoint["fusion_dim"]),
         fusion_heads=int(checkpoint["fusion_heads"]),
+        **({"graph_config": checkpoint.get("graph_config")}
+           if checkpoint["variant"] in _GRAPH_VARIANTS else {}),
     )
     set_peft_model_state_dict(model.encoder, checkpoint["adapter_state"])
     model.task_modules.load_state_dict(checkpoint["task_state"])

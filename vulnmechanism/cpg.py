@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -32,6 +32,8 @@ class GraphNode:
     node_id: str
     label: str
     code: str
+    # Preserve native Joern attributes without changing legacy node equality.
+    properties: dict[str, object] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -251,7 +253,7 @@ def resolve_target_graph(
             code = restored
         if node.get("kind") == "METHOD":
             code = str(node.get("NAME", ""))
-        graph_nodes[str(key)] = GraphNode(str(key), str(label), code)
+        graph_nodes[str(key)] = GraphNode(str(key), str(label), code, dict(node))
 
     edge_kinds = {"AST": "AST", "CFG": "CFG", "CDG": "CDG", "REACHING_DEF": "DDG"}
     graph_edges = tuple(
