@@ -166,3 +166,15 @@ run 的数据、图文件、词表、参数、checkpoint 和完成预测均有�
 checkpoint 恢复、A/B/C 编排与指标。测试使用小型源码编码器和模拟 Joern 输出，
 **没有在交付环境加载 7B Qwen、运行真实 Joern 或完成 GPU 实验**。
 单 seed 的小幅差异只是开发信号；已有反复使用的验证/测试数据不能被描述为新的独立确认。
+
+## 已完成实验（2026-09-22）
+
+`results/cfg_abc_seed42` 三组各 3 epochs 已完成，只有 valid 结果。此入口未进行旧 benchmark 的 split 内平衡：train 5,886，valid 741，不能与旧 valid 736 条的成绩混比。
+
+| 方法 | Accuracy | F1 | MCC | AUC |
+| --- | --- | --- | --- | --- |
+| baseline | 0.7517 | 0.7302 | 0.5116 | 0.8047 |
+| attributes | 0.7652 | 0.7661 | 0.5304 | 0.8134 |
+| cfg | 0.7463 | 0.7307 | 0.4972 | 0.8107 |
+
+节点属性组取得本轮综合指标增益，但有向 CFG 传播未取得额外收益。完整配置、逐 epoch 指标、固定阈值对照及边界见 [实验总结第 9 节](EXPERIMENT_HISTORY.md#9-2026-09-22节点属性与有向-cfg-传播-abc)，完整精度见 [数值摘录](experiment_results.json)。尚无 test 或多 seed 稳定性结论。

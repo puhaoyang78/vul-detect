@@ -1,6 +1,6 @@
-# 从 lora_v0 到源码分类结构对照：实验总结
+# 从 lora_v0 到 CFG 属性/传播消融：实验总结
 
-更新日期：2026-09-21。
+更新日期：2026-09-22。
 
 ## 1. 当前结论与记录范围
 
@@ -10,7 +10,8 @@
 - 正式 mechanism concat 主要提高 Recall/F1，Accuracy/MCC 未提高。
 - relation-only 与增量信息 probe 表明，问题不只是 candidate 的正类先验。
 - 少量已核查错误样本的加权继续训练没有产生净迁移收益。
-- 本轮源码结构改进中，attention pooling 的 AUC 略升，但其他核心指标未升；双向层及组合也未超过 baseline。
+- 2026-09-21 的源码结构改进中，attention pooling 的 AUC 略升，但其他核心指标未升；双向层及组合也未超过 baseline。
+- 最新 CFG A/B/C 实验中，节点属性组在本轮 741 条 valid 上的 Accuracy/F1/MCC/AUC 均提高；CFG 传播没有带来额外收益。数据口径、单 seed 和阈值对照详见第 9 节。
 
 本总结区分两种证据：**已核验记录**来自现有 Git 历史、训练日志、checkpoint 与结果 JSON；**历史回顾**来自项目讨论，未找到对应原始数值的部分不补写指标。旧 checkpoint 未保存的 seed、training_config 等字段在 JSON 中保留为 null，不按当前默认值反推。完整精度的可公开数值摘录、逐 epoch 结果、配置和本地来源路径见 [experiment_results.json](experiment_results.json)。来源路径标识原始本地文件，原始日志、数据和模型权重不包含在本次上传中。
 
@@ -118,7 +119,7 @@ Relation-only 排除 `MECHANISM_CANDIDATE`，保留 relation；两种模型仍�
 
 训练难例额外纠正 3 条，但 valid 纠正 8 条、同时损坏 24 条原本正确判断；两种继续训练的最终分类相同，分数并非完全相同。没有验证“提高这些错误的训练权重即可迁移涨点”。这只是 10 条核查样本、单 seed 的小实验，不能否定全部难例学习方法，也不支持将人工筛选难例确立为主方法。
 
-## 7. 本轮：source-only 分类结构对照
+## 7. 2026-09-21：source-only 分类结构对照
 
 ### 7.1 设计与控制
 
@@ -135,7 +136,7 @@ Adapter 为 LayerNorm、降维、4-head Transformer（FFN 512、dropout 0）和�
 
 本轮四组均为 Qwen2.5-Coder-7B-Instruct、源码 2,048 tokens、LoRA r=16/alpha=32/dropout=0.05、batch=1、gradient accumulation=8、学习率固定 2e-4、weight decay=0.01、seed=42、3 epochs。每 epoch 709 个优化步，四组全部完成。按 valid MCC 选 epoch 和阈值，不能分别挑每列最大值拼成一行。
 
-以下实现说明对应本地已测试代码。本次上传范围为实验总结和数值摘录，不包含尚未提交的训练代码修改；不能仅凭本次文档提交在远端直接复现新增变体。代码验证记录为 12 项相关测试通过，以及四组真实 Qwen 小规模 smoke（各 4 条 train、2 条 valid，覆盖 2,048-token 输入、反向传播、保存/重载）。这些 smoke 不计入性能证据。
+以下实现说明对应当时本地已测试代码。2026-09-21 的总结提交仅含文档和数值摘录，当时未同时上传训练代码；随后代码已随 `6890ba1` 纳入仓库。代码验证记录为 12 项相关测试通过，以及四组真实 Qwen 小规模 smoke（各 4 条 train、2 条 valid，覆盖 2,048-token 输入、反向传播、保存/重载）。这些 smoke 不计入性能证据。
 
 ### 7.2 所选 checkpoint 的 valid 结果
 
@@ -174,10 +175,90 @@ Adapter 为 LayerNorm、降维、4-head Transformer（FFN 512、dropout 0）和�
 
 本轮没有正式 test 结果；新 baseline 的 valid MCC=0.5088，与上一阶段正式 baseline 的 0.5024 是不同训练运行，不应混用。尚未完成多 seed 稳定性或显著性检验。
 
-## 8. 截至本次的研究状态
+## 8. 截至 2026-09-21 的研究状态
 
 目前不能把任何一条路线写成“已经稳定全面提升漏洞判别能力”：静态关系的抽取合理性、局部修复任务表现、训练难例拟合和模型容量增加，都不能替代最终函数分类证据。
 
 已获得的较稳妥认识是：候选/静态操作不能直接视为漏洞；完整内容相对元信息的价值需要样本外检验；Recall/F1 的提高必须结合误报、MCC 和 AUC 解读；新模块必须和同配置 source-only baseline 比较。保留负结果，避免将已经试过的 fusion、feature supervision、slice/patch 迁移或 pooling 改名重复。
 
 原始完整精度、各阶段的分开评价口径和逐折/逐 epoch 数值均在 [数值摘录](experiment_results.json) 中。当前缺失的早期数值、subgroup 细表、局部任务完整成绩，不用推测补齐。
+
+## 9. 2026-09-22：节点属性与有向 CFG 传播 A/B/C
+
+### 9.1 本轮问题与评价口径
+
+在上一轮 source-only 结构改进后，本轮重新检验传统静态分析启发的**节点属性**与**结构传播**各自能否产生增益。实现见 [CFG_ABLATION.md](CFG_ABLATION.md)；它是 DeepDFA-inspired adaptation，不是官方 DeepDFA 的逐项复现，也不是此前的 mechanism 文本模板或 cross-attention fusion。
+
+- A `baseline`：Qwen + LoRA，源码 mean pooling + linear。
+- B `attributes`：A 加 API、datatype、literal、operator 四类节点属性；训练集建立词表，每个节点只做自身状态更新。
+- C `cfg`：与 B 相同的参数量、初始化、更新次数和汇聚，额外聚合有向 CFG 前驱消息。
+
+B/C 图向量线性得分与源码得分相加，图头零初始化。训练时源码 LoRA 与图模块共同更新，**不是冻结 baseline 的 residual correction**。B/C hidden=128、更新 5 轮、词表每类最多 2,048 项；源码/LoRA 学习率 2e-4，图模块学习率 1e-3，源码长度 2,048，seed=42，3 epochs，batch=1、梯度累积=8。三组均正常完成，每 epoch 736 个优化步。
+
+**本轮样本口径不同于前文正式平衡 cohort。** `cfg_data.read_records` 直接读取 schema-9 中的全部 PrimeVul build-success 样本，没有调用 `benchmark_view` 的 split 内 1:1 平衡。运行配置中既有 cohort 标识已与当前输入复核一致。
+
+| Split | 本轮总数 | 负例 | 正例 | 前文平衡 cohort 总数 |
+| --- | --- | --- | --- | --- |
+| train | 5,886 | 3,051 | 2,835 | 5,670 |
+| valid | 741 | 368 | 373 | 736 |
+| test（仅统计，未评价） | 761 | 386 | 375 | 750 |
+
+三组内部使用完全相同的样本、标签和源码，逐样本身份已核对；不能与此前 736 条 valid 或 750 条 test 直接计算跨轮增益。下述结果全部是 valid；没有新增 test 或多 seed 结果。
+
+### 9.2 按 valid MCC 选择的 checkpoint
+
+| 方法 | 所选 epoch | 阈值 | Accuracy | Precision | Recall | F1 | MCC | AUC |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | 3 | 0.31 | 0.7517 | 0.8058 | 0.6676 | 0.7302 | 0.5116 | 0.8047 |
+| attributes | 3 | 0.19 | 0.7652 | 0.7682 | 0.7641 | 0.7661 | 0.5304 | 0.8134 |
+| cfg | 2 | 0.26 | 0.7463 | 0.7846 | 0.6836 | 0.7307 | 0.4972 | 0.8107 |
+
+B 相对本轮 A：Accuracy **+1.35 个百分点**、F1 **+3.59 个百分点**、MCC **+1.88 个百分点**、AUC **+0.87 个百分点**；Precision 下降约 3.76 个百分点。因此是主要综合指标的正向信号，不能表述为所有指标全面上升或稳定泛化已经成立。
+
+C 相对 A：AUC +0.59 个百分点，但 Accuracy -0.54 个百分点、MCC -1.44 个百分点，F1 基本持平；相对 B 的 Accuracy、F1、MCC、AUC 均下降。当前对照没有支持有向 CFG 传播带来额外收益。
+
+### 9.3 误判变化与阈值对照
+
+| 方法 | TP | FP | TN | FN |
+| --- | --- | --- | --- | --- |
+| baseline | 249 | 60 | 308 | 124 |
+| attributes | 285 | 86 | 282 | 88 |
+| cfg | 255 | 70 | 298 | 118 |
+
+在各自 valid 选定阈值下，B 纠正 baseline 的 42 个 FN 和 4 个 FP，同时损坏 6 个 TP 和 30 个 TN；净增加 10 个正确判断（TP +36、FP +26）。C 纠正 36 条、损坏 40 条，净少 4 个正确判断。
+
+以下固定 0.5 的结果使用**同一组已经按 valid MCC 选定的 checkpoint**，没有按固定阈值重新选择 epoch：
+
+| 方法（固定 0.5） | Accuracy | Precision | Recall | F1 | MCC | AUC | TP | FP |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | 0.7166 | 0.8075 | 0.5737 | 0.6708 | 0.4539 | 0.8047 | 214 | 51 |
+| attributes | 0.7463 | 0.8315 | 0.6220 | 0.7117 | 0.5101 | 0.8134 | 232 | 47 |
+| cfg | 0.7166 | 0.8123 | 0.5684 | 0.6688 | 0.4556 | 0.8107 | 212 | 49 |
+
+固定 0.5 时，B 相比 A 多检出 18 个正例、少误报 4 个负例，净增加 22 个正确判断。这与 AUC 的上升共同说明收益不能仅解释为单纯移动分类阈值。但统一使用 baseline 的 0.31 阈值时，B 净少 5 个正确判断（TP +2、FP +7）；不能宣称在所有阈值下都改善。C 在固定 0.5 下净正确数不变，在共同 0.31 下净少 11 条。
+
+这三种阈值对照均完整保留，未按结果挑选唯一最有利口径。
+
+### 9.4 逐 epoch 结果
+
+| 方法 | epoch | Train loss | valid MCC | valid AUC |
+| --- | --- | --- | --- | --- |
+| baseline | 1 | 0.463666 | 0.447259 | 0.787963 |
+| baseline | 2 | 0.380412 | 0.503402 | 0.813775 |
+| baseline | 3 | 0.306261 | 0.511603 | 0.804727 |
+| attributes | 1 | 0.475088 | 0.452112 | 0.789042 |
+| attributes | 2 | 0.375186 | 0.508797 | 0.821432 |
+| attributes | 3 | 0.310852 | 0.530368 | 0.813389 |
+| cfg | 1 | 0.471406 | 0.438397 | 0.780569 |
+| cfg | 2 | 0.378154 | 0.497181 | 0.810671 |
+| cfg | 3 | 0.308559 | 0.486452 | 0.791315 |
+
+A/B 的最高 AUC 都出现在 epoch 2，但最高 MCC 在 epoch 3；C 选择 epoch 2。主表没有将不同 epoch 的最高 AUC 与最高 MCC 拼在一起。
+
+### 9.5 当前结论与核验
+
+**本轮提供了节点属性辅助分类的初步正向信号，尚未验证 CFG 传播收益。** B 保留 API、类型和字面量等信息，新增了可训练模块；B-A 本身不能证明模型学到真实漏洞机制，或已经摆脱词法先验/容量效应。单 seed、同一 valid 上选模和报告，也不足以确认稳定 test 增益。
+
+所有三组 741 条预测已逐样本对齐，从保存分数重算 selected/fixed-0.5 指标，并复核三种阈值下的纠错/损坏计数；与 metrics、comparison、complete 文件一致。checkpoint 的 selected epoch、validation 与三轮历史一致。此次没有重新训练或运行 test。
+
+原始来源：`results/cfg_abc_seed42/` 下的 `comparison.valid.json`、各组 `valid.metrics.json`、`valid.predictions.jsonl`、训练 history 和 checkpoint。公开数值、配置、9 条 epoch 记录、阈值对照与配对变化已合并到 [experiment_results.json](experiment_results.json) 的 `cfg_abc_seed42` 字段；未上传模型、图缓存或原始源码。
