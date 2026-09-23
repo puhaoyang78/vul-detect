@@ -60,6 +60,21 @@ def fixture_graph(literal="4"):
                                     for kind, pairs in (("AST", ast), ("CFG", cfg)) for s, t in pairs])
 
 
+def positioned_graph(source):
+    begin = source.index("return")
+    code = source[begin:source.index(";", begin) + 1]
+    nodes = [
+        dict(id="0", label="METHOD", code="f", properties=dict(kind="METHOD")),
+        dict(id="1", label="RETURN", code=code,
+             properties=dict(kind="RETURN", OFFSET=begin, OFFSET_END=begin+len(code),
+                             LINE_NUMBER=1, COLUMN_NUMBER=begin+1)),
+        dict(id="2", label="METHOD_RETURN", code="RET", properties=dict(kind="METHOD_RETURN")),
+    ]
+    edges = [dict(kind="AST", source="0", target=x) for x in ("1", "2")]
+    edges += [dict(kind="CFG", source=a, target=b) for a,b in (("0", "1"), ("1", "2"))]
+    return dict(nodes=nodes, edges=edges)
+
+
 def raw_graph(literal="4"):
     g = fixture_graph(literal)
     return FunctionGraph("foo", {n["id"]: GraphNode(n["id"], n["label"], n["code"], n["properties"])
@@ -336,7 +351,9 @@ class TinyEncoder(nn.Module):
     def __init__(self):
         super().__init__();self.embedding=nn.Embedding(32,8);self.adapter=nn.Linear(8,8,bias=False)
         self.embedding.weight.requires_grad_(False)
+        self.calls = 0
     def forward(self,input_ids,attention_mask,use_cache=False):
+        self.calls += 1
         h=self.embedding(input_ids);return types.SimpleNamespace(last_hidden_state=h+self.adapter(h))
 
 
@@ -354,24 +371,40 @@ class TinySource(nn.Module):
 class TinyTokenizer:
     pad_token_id=0
     eos_token_id=1
+    is_fast=True
     @classmethod
     def from_pretrained(cls,*args,**kwargs):
         return cls()
+    def __call__(self,text,*,add_special_tokens=False,truncation=False,max_length=None,
+                 return_offsets_mapping=False):
+        ids=[ord(c)%30+2 for c in text]
+        if truncation:ids=ids[:max_length]
+        result={"input_ids":ids}
+        if return_offsets_mapping:result["offset_mapping"]=[(i,i+1) for i in range(len(ids))]
+        return result
 
 
 class TinyInputBuilder:
     allow_test=False
     def __init__(self,tokenizer,*,source_max_length,context_max_length):
+        self.tokenizer=tokenizer
         self.source_max_length=source_max_length
+        self.source_prefix=[29,28]
     def _encode(self,text,max_length=None):
         return [ord(c)%30+2 for c in text][:max_length]
     def sequence_batch(self,records,*,variant,excluded_groups,device):
         if not self.allow_test and any(r["split"]=="test" for r in records):
             raise AssertionError("test records reached model during training")
-        ids=[self._encode(r["raw_source"],self.source_max_length)+[1] for r in records]
+        ids=[self.source_prefix+self._encode(r["raw_source"],self.source_max_length)+[1]
+             for r in records]
         tensor=torch.zeros((len(ids),max(map(len,ids))),dtype=torch.long,device=device)
         for i,seq in enumerate(ids):tensor[i,:len(seq)]=torch.tensor(seq,device=device)
         return tensor,tensor.ne(0).long()
+    def source_alignment_batch(self,records,*,device):
+        ids,mask=self.sequence_batch(records,variant="baseline",excluded_groups=(),device=device)
+        offsets=[[(i,i+1) for i in range(min(len(r["raw_source"]),self.source_max_length))]
+                 for r in records]
+        return ids,mask,offsets
 
 
 def fake_base():
@@ -478,6 +511,57 @@ class NetworkTests(unittest.TestCase):
         other=build_model(api,cfg,self.vocab.sizes(),torch.device("cpu"),training=False)
         other.load_state_dict(model.state_dict());torch.testing.assert_close(model(ids,mask,self.batch),other(ids,mask,self.batch))
 
+    def test_d_e_identical_parameters_and_directed_behavior(self):
+        torch.manual_seed(42)
+        d=AttributeCFGEncoder(self.vocab.sizes(),hidden_size=8,steps=2,
+                              mode="aligned_attributes",source_hidden_size=8)
+        torch.manual_seed(42)
+        e=AttributeCFGEncoder(self.vocab.sizes(),hidden_size=8,steps=2,
+                              mode="aligned_cfg",source_hidden_size=8)
+        self.assertEqual(d.steps,e.steps)
+        self.assertEqual(sum(p.numel() for p in d.parameters()),sum(p.numel() for p in e.parameters()))
+        for key,value in d.state_dict().items():self.assertTrue(torch.equal(value,e.state_dict()[key]))
+        api=fake_base()
+        api._seed_everything(42)
+        full_d=build_model(api,tiny_config("aligned_attributes"),self.vocab.sizes(),
+                           torch.device("cpu"),training=True)
+        api._seed_everything(42)
+        full_e=build_model(api,tiny_config("aligned_cfg"),self.vocab.sizes(),
+                           torch.device("cpu"),training=True)
+        self.assertEqual(sum(p.numel() for p in full_d.parameters()),
+                         sum(p.numel() for p in full_e.parameters()))
+        for key,value in full_d.state_dict().items():
+            self.assertTrue(torch.equal(value,full_e.state_dict()[key]))
+        batch=collate_graphs([self.view],[self.vocab.encode(self.view)],
+                             alignments=[[(0,2),(1,3)]])
+        empty=GraphBatch(batch.attributes,torch.empty((2,0),dtype=torch.long),batch.ptr,batch.token_pairs)
+        reverse=GraphBatch(batch.attributes,batch.edges.flip(0),batch.ptr,batch.token_pairs)
+        hidden=torch.randn(1,6,8)
+        no_alignment=GraphBatch(batch.attributes,batch.edges,batch.ptr,
+                                torch.empty((0,3),dtype=torch.long))
+        original=AttributeCFGEncoder(self.vocab.sizes(),hidden_size=8,steps=2,mode="attributes")
+        original.load_state_dict({key:value for key,value in d.state_dict().items()
+                                  if key in original.state_dict()})
+        torch.testing.assert_close(d(no_alignment,hidden),original(self.batch))
+        torch.testing.assert_close(d(batch,hidden),d(empty,hidden))
+        self.assertFalse(torch.allclose(e(batch,hidden),e(empty,hidden)))
+        self.assertFalse(torch.allclose(e(batch,hidden),e(reverse,hidden)))
+
+    def test_aligned_graph_backpropagates_through_one_source_forward(self):
+        api=fake_base();cfg=tiny_config("aligned_cfg")
+        model=build_model(api,cfg,self.vocab.sizes(),torch.device("cpu"),training=True)
+        batch=collate_graphs([self.view],[self.vocab.encode(self.view)],
+                             alignments=[[(0,2),(1,3)]])
+        with torch.no_grad():
+            model.task_modules["classifier"].weight.zero_()
+            model.task_modules["classifier"].bias.zero_()
+            model.task_modules["cfg_classifier"].weight.fill_(.1)
+        ids=torch.tensor([[29,28,2,3,1]]);mask=torch.ones_like(ids)
+        model(ids,mask,batch).sum().backward()
+        self.assertEqual(model.encoder.calls,1)
+        self.assertGreater(model.task_modules["cfg_encoder"].source_projection.weight.grad.abs().sum().item(),0)
+        self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(),0)
+
     def test_partial_accumulation_matches_full_batch_gradient(self):
         # Same sample-weighting formula used by the existing and new trainers.
         model=nn.Linear(3,1);other=copy.deepcopy(model);x=torch.randn(5,3);y=torch.arange(5).float()%2
@@ -515,12 +599,12 @@ class IntegrationTests(unittest.TestCase):
                 "--model-path","tiny-test-only","--device","cpu","--epochs","2","--batch-size","2",
                 "--gradient-accumulation","2","--source-max-length","8","--graph-hidden-size","8","--graph-steps","2"])
             output=exp.run_experiment(args,base=api)
-            self.assertEqual(set(output["metrics"]),set(exp.VARIANTS))
+            self.assertEqual(set(output["metrics"]),set(exp.DEFAULT_VARIANTS))
             self.assertEqual(api.train_model.call_count,1)
             self.assertEqual(api.train_model.call_args.kwargs["records"],rows)
             self.assertEqual(api.train_model.call_args.kwargs["variant"],"baseline")
             self.assertEqual(api.train_model.call_args.kwargs["source_max_length"],8)
-            for variant in exp.VARIANTS:
+            for variant in exp.DEFAULT_VARIANTS:
                 self.assertTrue((run/variant/"best.pt").exists())
                 self.assertFalse((run/variant/"test.predictions.jsonl").exists())
                 p=data.read_jsonl(run/variant/"valid.predictions.jsonl")
@@ -532,8 +616,8 @@ class IntegrationTests(unittest.TestCase):
             try:
                 with patch.object(exp,"select_threshold",side_effect=AssertionError("test threshold tuning")):
                     tested=exp.evaluate_run(evalargs,base=api)
-                self.assertEqual(set(tested["metrics"]),set(exp.VARIANTS))
-                for variant in exp.VARIANTS:
+                self.assertEqual(set(tested["metrics"]),set(exp.DEFAULT_VARIANTS))
+                for variant in exp.DEFAULT_VARIANTS:
                     cp=torch.load(run/variant/"best.pt",weights_only=False)
                     preds=data.read_jsonl(run/variant/"test.predictions.jsonl")
                     self.assertEqual({p["threshold"] for p in preds},{cp["decision_threshold"]})
@@ -542,6 +626,70 @@ class IntegrationTests(unittest.TestCase):
             cp_path=run/"cfg"/"best.pt"
             with cp_path.open("ab") as f:f.write(b"tampered")
             with self.assertRaises(ValueError):exp.run_experiment(args,base=api)
+
+    def test_de_runner_coverage_and_fixed_test_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root=Path(tmp);src=root/"source.jsonl";graphs=root/"graphs.jsonl";run=root/"de"
+            rows=fixture_rows();write_jsonl(src,rows)
+            exports=[dict(data.identity(r), graph_schema_version=data.GRAPH_SCHEMA,
+                          preprocessing_version=data.JOERN_SOURCE_PREPROCESSING_VERSION,
+                          preprocessing_applied=False,
+                          original_source_sha256=data.source_hash(r["raw_source"]),
+                          parsed_source_sha256=data.source_hash(r["raw_source"]),
+                          graph=positioned_graph(r["raw_source"])) for i,r in enumerate(rows)]
+            write_jsonl(graphs,exports)
+            api=fake_base()
+            args=exp.parser().parse_args(["run","--dataset",str(src),"--graphs",str(graphs),
+                "--output-dir",str(run),"--model-path","tiny-test-only","--device","cpu",
+                "--variants","aligned_attributes","aligned_cfg","--epochs","1","--batch-size","2",
+                "--graph-hidden-size","8","--graph-steps","2"])
+            result=exp.run_experiment(args,base=api)
+            self.assertEqual(set(result["metrics"]),{"aligned_attributes","aligned_cfg"})
+            self.assertIn("changes_aligned_cfg_vs_aligned_attributes",result)
+            self.assertEqual(api.train_model.call_count,0)
+            for variant in ("aligned_attributes","aligned_cfg"):
+                coverage=json.loads((run/variant/"alignment_coverage.json").read_text())
+                self.assertEqual(set(coverage),{"train","valid"})
+                self.assertGreater(coverage["valid"]["total_nodes"],0)
+                self.assertGreater(coverage["valid"]["aligned_nodes"],0)
+                self.assertEqual(json.loads((run/variant/"valid.metrics.json").read_text())
+                                 ["alignment_coverage"],coverage["valid"])
+            testargs=exp.parser().parse_args(["eval","--run-dir",str(run),"--split","test",
+                "--variants","aligned_attributes","aligned_cfg","--device","cpu"])
+            TinyInputBuilder.allow_test=True
+            try:
+                with patch.object(exp,"select_threshold",side_effect=AssertionError("test tuning")):
+                    tested=exp.evaluate_run(testargs,base=api)
+                self.assertEqual(set(tested["metrics"]),{"aligned_attributes","aligned_cfg"})
+                for variant in ("aligned_attributes","aligned_cfg"):
+                    cp=torch.load(run/variant/"best.pt",weights_only=False)
+                    preds=data.read_jsonl(run/variant/"test.predictions.jsonl")
+                    self.assertEqual({p["threshold"] for p in preds},{cp["decision_threshold"]})
+                    self.assertIn("alignment_coverage",json.loads((run/variant/"test.metrics.json").read_text()))
+            finally:TinyInputBuilder.allow_test=False
+            args.source_max_length=8
+            with self.assertRaisesRegex(ValueError,"2048-token"):
+                exp.run_experiment(args,base=api)
+
+    def test_compare_new_de_with_saved_matching_abc(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root=Path(tmp);abc=root/"abc";de=root/"de"
+            abc.mkdir();de.mkdir()
+            (abc/"config.json").write_text(json.dumps({"seed":42,"source_max_length":2048}))
+            (de/"config.json").write_text((abc/"config.json").read_text())
+            rows=fixture_rows()[5:7]
+            for variant in exp.VARIANTS:
+                folder=(abc if variant in exp.DEFAULT_VARIANTS else de)/variant
+                folder.mkdir()
+                predictions=[dict(data.identity(r),score=.8 if r["label"] else .2,
+                                  prediction=r["label"],threshold=.5) for r in rows]
+                write_jsonl(folder/"valid.predictions.jsonl",predictions)
+            compared=exp.compare_run(de,reference_root=abc)
+            self.assertEqual(set(compared["metrics"]),set(exp.VARIANTS))
+            self.assertIn("aligned_cfg",compared["changes_vs_baseline"])
+            (abc/"config.json").write_text(json.dumps({"seed":7,"source_max_length":2048}))
+            with self.assertRaisesRegex(ValueError,"different dataset"):
+                exp.compare_run(de,reference_root=abc)
 
     def test_cli_help_and_compare_without_model_dependencies(self):
         for command in ([],["build"],["run"],["eval"],["compare"]):

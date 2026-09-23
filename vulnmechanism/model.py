@@ -252,6 +252,31 @@ class InputBuilder:
             for record in records
         ], device=device)
 
+    def source_alignment_batch(
+        self,
+        records: list[dict[str, object]],
+        *,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, torch.Tensor, list[list[tuple[int, int]]]]:
+        """Baseline source IDs plus source-only offsets for CFG node alignment."""
+        if not getattr(self.tokenizer, "is_fast", False):
+            raise ValueError("source alignment requires a fast tokenizer with offset_mapping")
+        sequences, offsets = [], []
+        for record in records:
+            result = self.tokenizer(
+                str(record["raw_source"]), add_special_tokens=False,
+                truncation=True, max_length=self.source_max_length,
+                return_offsets_mapping=True,
+            )
+            source_ids = list(result["input_ids"])
+            source_offsets = list(result["offset_mapping"])
+            if len(source_ids) != len(source_offsets):
+                raise ValueError("tokenizer IDs and source offsets have different lengths")
+            sequences.append(self._with_eos([*self.source_prefix, *source_ids]))
+            offsets.append(source_offsets)
+        ids, mask = self._pad(sequences, device=device)
+        return ids, mask, offsets
+
     def fusion_batch(
         self,
         records: list[dict[str, object]],

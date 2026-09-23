@@ -11,16 +11,19 @@ class GraphBatch:
     attributes: torch.Tensor  # [nodes, 4]
     edges: torch.Tensor       # [2, edges], source -> target
     ptr: tuple[int, ...]      # graph boundaries in the node array
+    token_pairs: torch.Tensor | None = None  # [pairs, 3]: node, batch row, source token
 
     def to(self, device) -> "GraphBatch":
-        return GraphBatch(self.attributes.to(device), self.edges.to(device), self.ptr)
+        pairs = None if self.token_pairs is None else self.token_pairs.to(device)
+        return GraphBatch(self.attributes.to(device), self.edges.to(device), self.ptr, pairs)
 
 
-def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cpu") -> GraphBatch:
-    if not views or len(views) != len(encoded):
+def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cpu",
+                   alignments: list[list[tuple[int, int]]] | None = None) -> GraphBatch:
+    if not views or len(views) != len(encoded) or (alignments is not None and len(alignments) != len(views)):
         raise ValueError("nonempty matching graph/attribute lists required")
-    attributes, edges, ptr = [], [], [0]
-    for view, values in zip(views, encoded):
+    attributes, edges, ptr, token_pairs = [], [], [0], []
+    for row, (view, values) in enumerate(zip(views, encoded)):
         n = len(values)
         if not n or n != len(view["node_ids"]) or any(len(v) != 4 for v in values):
             raise ValueError("invalid node attributes")
@@ -29,36 +32,59 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
             if not 0 <= s < n or not 0 <= t < n:
                 raise ValueError("out-of-range CFG endpoint")
             edges.append((s + offset, t + offset))
+        if alignments is not None:
+            for node, token in alignments[row]:
+                if not 0 <= node < n or token < 0:
+                    raise ValueError("out-of-range source alignment")
+                token_pairs.append((offset + node, row, token))
         attributes.extend(values)
         ptr.append(offset + n)
     edge_tensor = torch.tensor(edges, dtype=torch.long).reshape(-1, 2).T.contiguous()
-    return GraphBatch(torch.tensor(attributes, dtype=torch.long), edge_tensor, tuple(ptr)).to(device)
+    pairs = None if alignments is None else torch.tensor(token_pairs, dtype=torch.long).reshape(-1, 3)
+    return GraphBatch(torch.tensor(attributes, dtype=torch.long), edge_tensor, tuple(ptr), pairs).to(device)
 
 
 class AttributeCFGEncoder(nn.Module):
-    """B and C have identical parameters, initialization and update counts.
+    """B/C and D/E are matched local-node / directed-CFG pairs.
 
-    B (attributes): node-local self messages only, without inter-node exchange.
-    C (cfg): the same self messages plus directed CFG predecessor messages.
+    B and D use node-local self messages only; C and E also sum directed
+    predecessor messages. Each pair shares parameters and update counts.
+    D/E add the same projected, position-aligned source-token mean to the
+    attribute embedding before the existing graph encoder.
     The raw attribute embedding is concatenated with the final node state before
     attention pooling, as in the DeepDFA encoder design. These are learned
     summaries, not a sound static-analysis result.
     """
     def __init__(self, vocabulary_sizes: list[int], *, hidden_size: int = 128,
-                 steps: int = 5, mode: str = "cfg"):
+                 steps: int = 5, mode: str = "cfg", source_hidden_size: int | None = None):
         super().__init__()
         if (len(vocabulary_sizes) != 4 or min(vocabulary_sizes) < 2 or
-                hidden_size < 4 or hidden_size % 4 or steps <= 0 or mode not in {"attributes", "cfg"}):
+                hidden_size < 4 or hidden_size % 4 or steps <= 0 or
+                mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg"} or
+                (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
         self.mode, self.steps = mode, steps
         self.embedding = nn.ModuleList([nn.Embedding(size, hidden_size // 4) for size in vocabulary_sizes])
+        if mode.startswith("aligned_"):
+            self.source_projection = nn.Linear(source_hidden_size, hidden_size, bias=False)
         self.message = nn.Linear(hidden_size, hidden_size)
         self.update = nn.GRUCell(hidden_size, hidden_size)
         self.pool_gate = nn.Linear(2 * hidden_size, 1)
         self.output_dim = 2 * hidden_size
 
-    def forward(self, batch: GraphBatch) -> torch.Tensor:
+    def forward(self, batch: GraphBatch, token_hidden: torch.Tensor | None = None) -> torch.Tensor:
         x = torch.cat([layer(batch.attributes[:, i]) for i, layer in enumerate(self.embedding)], dim=-1)
+        if self.mode.startswith("aligned_"):
+            if token_hidden is None or batch.token_pairs is None:
+                raise ValueError("aligned graph encoder requires source-token positions and hidden states")
+            pairs = batch.token_pairs
+            node_source = token_hidden.new_zeros((x.shape[0], token_hidden.shape[-1]), dtype=torch.float32)
+            if pairs.numel():
+                selected = token_hidden[pairs[:, 1], pairs[:, 2]].float()
+                node_source.index_add_(0, pairs[:, 0], selected)
+                counts = torch.bincount(pairs[:, 0], minlength=x.shape[0]).clamp_min(1).unsqueeze(-1)
+                node_source = node_source / counts
+            x = x + self.source_projection(node_source)
         state = x
         src, dst = batch.edges
         # Remove duplicate self edges: both controls receive exactly one self message.
@@ -67,7 +93,7 @@ class AttributeCFGEncoder(nn.Module):
         for _ in range(self.steps):
             transformed = self.message(state)
             incoming = transformed.clone()
-            if self.mode == "cfg" and src.numel():
+            if self.mode in {"cfg", "aligned_cfg"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             state = self.update(incoming, state)
         combined = torch.cat((state, x), dim=-1)
@@ -89,7 +115,9 @@ class SourceGraphClassifier(nn.Module):
         self.encoder = source_model.encoder
         self.task_modules = source_model.task_modules
         with torch.random.fork_rng(devices=[]):
-            graph = AttributeCFGEncoder(vocabulary_sizes, hidden_size=hidden_size, steps=steps, mode=mode)
+            graph = AttributeCFGEncoder(vocabulary_sizes, hidden_size=hidden_size, steps=steps, mode=mode,
+                                        source_hidden_size=(self.task_modules["classifier"].in_features
+                                                            if mode.startswith("aligned_") else None))
             head = nn.Linear(graph.output_dim, 1, bias=False)
             nn.init.zeros_(head.weight)
             self.task_modules["cfg_encoder"] = graph
@@ -102,7 +130,7 @@ class SourceGraphClassifier(nn.Module):
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = ((hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)).float()
         source_logit = self.task_modules["classifier"](pooled).squeeze(-1)
-        graph_vector = self.task_modules["cfg_encoder"](graph_batch)
+        graph_vector = self.task_modules["cfg_encoder"](graph_batch, hidden)
         return source_logit + self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
 
 

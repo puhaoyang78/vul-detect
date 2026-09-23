@@ -402,7 +402,12 @@ def abstract_cfg(graph: dict) -> dict:
                 stack.extend(ast.get(key, ()))
         signatures.append([json.dumps(sorted(values[f]), ensure_ascii=False, separators=(",", ":"))
                            for f in FAMILIES])
-    return dict(node_ids=node_ids, signatures=signatures,
+    position_fields = ("OFFSET", "OFFSET_END", "LINE_NUMBER", "COLUMN_NUMBER",
+                       "LINE_NUMBER_END", "COLUMN_NUMBER_END")
+    locations = [dict(code=nodes[key]["code"],
+                      **{field: nodes[key]["properties"][field] for field in position_fields
+                         if field in nodes[key]["properties"]}) for key in node_ids]
+    return dict(node_ids=node_ids, signatures=signatures, locations=locations,
                 edges=sorted((index[s], index[t]) for s, t in cfg_edges),
                 definition_count=definitions)
 

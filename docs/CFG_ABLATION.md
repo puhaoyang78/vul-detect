@@ -4,13 +4,15 @@
 它借鉴 DeepDFA 的赋值节点抽象属性、门控图传播和注意力汇聚，但**不是官方 DeepDFA 的逐项复现**。
 没有执行轨迹、修复对排序、漏洞类型辅助监督或新增源码 Transformer。
 
-## 1. 三组实验
+## 1. A/B/C 与新增 D/E
 
 | 标识 | 实现 |
 |---|---|
 | `baseline`（A） | 直接调用原 `model.train_model` 与 `predict_checkpoint`，保留源码编码、mean pooling 和分类头。 |
 | `attributes`（B） | 同一源码分支 + 节点属性编码。每个节点只做自身状态更新，不与其他节点交换信息。 |
 | `cfg`（C） | 与 B 相同的初始化、模块、参数量、更新次数、汇聚和分类头，额外沿有向 CFG 的真实前驱边聚合。 |
+| `aligned_attributes`（D） | 在 B 的节点属性上加入对应源码 token 的 Qwen 隐状态投影；节点独立更新。 |
+| `aligned_cfg`（E） | 与 D 完全相同的参数、初始化和更新次数，额外沿有向 CFG 前驱边传播。 |
 
 所有源码分支均从相同预训练模型与 seed 初始化，并正常微调 LoRA；不是冻结 Qwen 只训练图或分类头。
 B/C 额外模块的 CPU 初始化隔离随机数状态；不改变源码分支初始权重或后续随机数流。
@@ -46,8 +48,9 @@ API 名、类型名和原始字面量是明确保留的程序属性，并不声�
 
 ## 3. 数据不覆盖、不静默删样本
 
-只修改现有 `cpg.py`：给 `GraphNode` 增加可选 `properties` 字段，保留已有比较/hash语义及三参数构造方式。
-`model.py`、`dataset.py`、`semantics.py` 及原 checkpoint 格式均不改动。
+原 A/B/C 图导出在 `cpg.py` 的 `GraphNode` 保留 Joern `properties`，不改变已有比较/hash 语义。
+新增 D/E 只在 `model.py` 的 `InputBuilder` 增加源码 offset batch 方法；原输入方法、
+`dataset.py`、`semantics.py` 及旧 checkpoint 格式不变。
 
 新图文件按原 schema-9 `function_dataset.jsonl` 的已成功样本逐一导出。
 保留当前函数图视图的完整节点及 AST/CFG/CDG/DDG 边，不把 `cpg_relations` 文本反推为图，不按节点文本合并。
@@ -166,6 +169,47 @@ run 的数据、图文件、词表、参数、checkpoint 和完成预测均有�
 checkpoint 恢复、A/B/C 编排与指标。测试使用小型源码编码器和模拟 Joern 输出，
 **没有在交付环境加载 7B Qwen、运行真实 Joern 或完成 GPU 实验**。
 单 seed 的小幅差异只是开发信号；已有反复使用的验证/测试数据不能被描述为新的独立确认。
+
+## 7. 新增源码对齐节点 D/E（未启动正式训练）
+
+D/E 复用上述图侧训练、验证选模、分类头、损失、划分和 seed=42。源码仍按原 `InputBuilder`
+分别编码任务前缀与最多 2048 个源码 token，再追加 EOS；每个 batch 只调用一次 Qwen。
+Joern 的 UTF-16 位置转换成 Python 字符位置后，必须与该节点的源码片段在指定位置完全一致；
+再用仅属于源码的 tokenizer `offset_mapping` 选取可见 token。重复文本不做搜索。
+位置不一致、没有可靠位置、或节点跨出可见源码范围时，只保留原属性嵌入。
+`alignment_coverage.json` 记录 train/valid 节点覆盖率及各类未对齐原因，
+`valid.metrics.json` 和显式 test 评价的指标文件也记录该 split 的覆盖率。
+
+沿用已导出的 `data/graphs/primevul_cfg.jsonl`，在新目录只训练 D/E：
+
+```bash
+cd /home/PublicData/PHY-data/vul_detect/work/vul-detect
+CUDA_VISIBLE_DEVICES=0 python -m vulnmechanism.cfg_experiment run \
+  --dataset data/function_dataset.jsonl \
+  --graphs data/graphs/primevul_cfg.jsonl \
+  --source-dataset primevul \
+  --model-path /home/phy/models/Qwen2.5-Coder-7B-Instruct \
+  --output-dir results/cfg_de_seed42 \
+  --variants aligned_attributes aligned_cfg \
+  --source-max-length 2048 --batch-size 1 --gradient-accumulation 8 --epochs 3 \
+  --learning-rate 2e-4 --graph-learning-rate 1e-3 \
+  --seed 42 --device cuda --resume
+```
+
+D/E 内部比较，以及把既存 A/B/C 的 valid 预测一起比较（要求两次运行的配置、数据和图完全相同；只写新目录）：
+
+```bash
+python -m vulnmechanism.cfg_experiment compare \
+  --run-dir results/cfg_de_seed42 --split valid
+python -m vulnmechanism.cfg_experiment compare \
+  --run-dir results/cfg_de_seed42 --reference-run-dir results/cfg_abc_seed42 --split valid
+```
+
+第二条命令输出 A/B/C/D/E 指标、相对 A 的错误翻转和 E 相对 D 的错误翻转；
+结果写在 `results/cfg_de_seed42/comparison.valid.{json,csv}`，不会修改旧 A/B/C 结果。
+训练过程和 `compare` 均不在 test 上选模或调阈值。只有方案确定后才显式用
+`eval --run-dir results/cfg_de_seed42 --variants aligned_attributes aligned_cfg --split test`
+读取 valid 保存的阈值。
 
 ## 已完成实验（2026-09-22）
 
