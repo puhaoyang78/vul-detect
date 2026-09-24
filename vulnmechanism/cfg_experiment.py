@@ -1,4 +1,4 @@
-"""A/B/C and source-aligned D/E runner using the same graph training flow.
+"""A/B/C, source-aligned D/E, and DDG F/G runner using one graph training flow.
 
 Examples are in docs/CFG_ABLATION.md. Training never evaluates the test split.
 The baseline behavior, datasets, and old checkpoints are preserved.
@@ -23,7 +23,9 @@ from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic
                        output_lock, read_jsonl, read_records)
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
 
-VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg")
+VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg",
+            "cfg_ddg", "cfg_ddg_shuffled")
+DDG_VARIANTS = ("cfg_ddg", "cfg_ddg_shuffled")
 DEFAULT_VARIANTS = VARIANTS[:3]
 CHECKPOINT_SCHEMA = 1
 
@@ -71,8 +73,11 @@ def _graph_forward(model, batch, builder, views, encoded, device, coverage=None)
         ids, mask = builder.sequence_batch(batch, variant="baseline", excluded_groups=(), device=device)
         alignments = None
     keys = [r["sample_key"] for r in batch]
+    mode = model.task_modules["cfg_encoder"].mode
+    ddg_edges = ([views[k]["ddg_shuffled_edges" if mode == "cfg_ddg_shuffled" else "ddg_edges"]
+                  for k in keys] if mode in DDG_VARIANTS else None)
     graph_batch = collate_graphs([views[k] for k in keys], [encoded[k] for k in keys],
-                                 device=device, alignments=alignments)
+                                 device=device, alignments=alignments, ddg_edges=ddg_edges)
     return model(ids, mask, graph_batch)
 
 
@@ -243,8 +248,6 @@ def compare_run(root: str | Path, split: str = "valid",
         folder = reference if reference is not None and variant in DEFAULT_VARIANTS else root
         path = folder / variant / f"{split}.predictions.jsonl"
         if not path.is_file():
-            if reference is not None:
-                raise FileNotFoundError(f"comparison requires saved predictions: {path}")
             continue
         rows[variant] = read_jsonl(path)
         if not rows[variant]:
@@ -256,6 +259,8 @@ def compare_run(root: str | Path, split: str = "valid",
                                              [r["score"] for r in rows[variant]], thresholds.pop())
     if not rows:
         raise ValueError(f"no {split} predictions found in {root}")
+    if reference is not None and "cfg" not in rows:
+        raise FileNotFoundError(f"comparison requires saved C predictions in {reference / 'cfg'}")
     if "baseline" in rows:
         base_threshold = rows["baseline"][0]["threshold"]
         for variant in VARIANTS[1:]:
@@ -277,6 +282,20 @@ def compare_run(root: str | Path, split: str = "valid",
             "both_at_aligned_attributes_threshold": paired_changes(
                 local, directed, base_threshold=local_threshold, candidate_threshold=local_threshold),
         }
+    if "cfg" in rows:
+        cfg_threshold = rows["cfg"][0]["threshold"]
+        result["changes_vs_cfg"] = {}
+        for variant in DDG_VARIANTS:
+            if variant not in rows:
+                continue
+            result["changes_vs_cfg"][variant] = {
+                "validation_selected_thresholds": paired_changes(rows["cfg"], rows[variant]),
+                "both_fixed_at_0_5": paired_changes(rows["cfg"], rows[variant],
+                                                     base_threshold=0.5, candidate_threshold=0.5),
+                "both_at_cfg_threshold": paired_changes(rows["cfg"], rows[variant],
+                                                         base_threshold=cfg_threshold,
+                                                         candidate_threshold=cfg_threshold),
+            }
     atomic_json(root / f"comparison.{split}.json", result)
     fields = ["variant", "accuracy", "precision", "recall", "f1", "mcc", "auc", "tp", "fp", "tn", "fn", "threshold"]
     with (root / f"comparison.{split}.csv").open("w", newline="") as handle:
@@ -288,19 +307,79 @@ def compare_run(root: str | Path, split: str = "valid",
     return result
 
 
-def _prepare(dataset, graphs_path, source_dataset):
+def shuffle_ddg_edges(view: dict, seed: int, sample_key: str) -> list[tuple[int, int]]:
+    """Relabel only this function's DDG endpoints; preserve its degree multisets."""
+    n = len(view["node_ids"])
+    permutation = list(range(n))
+    random.Random(f"{seed}:{sample_key}").shuffle(permutation)
+    if n > 1 and all(i == p for i, p in enumerate(permutation)):
+        permutation = permutation[1:] + permutation[:1]
+    return sorted((permutation[s], permutation[t]) for s, t in view["ddg_edges"])
+
+
+def _ddg_degree_multiset(edges: list[tuple[int, int]], n: int) -> Counter:
+    incoming, outgoing = [0] * n, [0] * n
+    for source, target in edges:
+        outgoing[source] += 1
+        incoming[target] += 1
+    return Counter(zip(incoming, outgoing))
+
+
+def ddg_audit_report(rows: list[dict], views: dict[str, dict], seed: int) -> dict:
+    """Summarize the cached DDG and the fixed, within-function G permutation."""
+    splits = {}
+    for row in rows:
+        view = views[row["sample_key"]]
+        split = row["split"]
+        counts = splits.setdefault(split, Counter(functions=0, functions_with_ddg=0,
+                                                  functions_with_usable_ddg=0, cfg_edges=0,
+                                                  shuffled_edges=0, same_edge_count_functions=0,
+                                                  same_degree_multiset_functions=0,
+                                                  changed_edge_set_functions=0))
+        counts["functions"] += 1
+        counts["cfg_edges"] += len(view["edges"])
+        for key, value in view["ddg_audit"].items():
+            counts[key] += value
+        counts["functions_with_ddg"] += bool(view["ddg_audit"]["raw_edges"])
+        counts["functions_with_usable_ddg"] += bool(view["ddg_edges"])
+        shuffled = view.get("ddg_shuffled_edges")
+        if shuffled is None:
+            shuffled = shuffle_ddg_edges(view, seed, row["sample_key"])
+        counts["shuffled_edges"] += len(shuffled)
+        counts["same_edge_count_functions"] += len(shuffled) == len(view["ddg_edges"])
+        counts["same_degree_multiset_functions"] += (
+            _ddg_degree_multiset(shuffled, len(view["node_ids"])) ==
+            _ddg_degree_multiset(view["ddg_edges"], len(view["node_ids"])))
+        counts["changed_edge_set_functions"] += set(shuffled) != set(view["ddg_edges"])
+    report = {"seed": seed, "shuffle": "fixed per-function DDG node permutation; CFG unchanged",
+              "splits": {}}
+    for split, counts in sorted(splits.items()):
+        counts = dict(counts)
+        counts["usable_rate"] = (counts["usable_edges"] / counts["raw_edges"]
+                                 if counts["raw_edges"] else None)
+        report["splits"][split] = counts
+    return report
+
+
+def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
     rows = read_records(dataset, source_dataset)
     graphs = load_graphs(graphs_path, rows)
     views = {k: abstract_cfg(g) for k, g in graphs.items()}
     del graphs
+    if shuffle_seed is not None:
+        for row in rows:
+            key = row["sample_key"]
+            views[key]["ddg_shuffled_edges"] = shuffle_ddg_edges(views[key], shuffle_seed, key)
     return rows, views
 
 
 def run_experiment(args, base=None):
     import torch
-    if any(v.startswith("aligned_") for v in args.variants) and args.source_max_length != 2048:
-        raise ValueError("D/E require the original 2048-token source budget")
-    rows, views = _prepare(args.dataset, args.graphs, args.source_dataset)
+    if (any(v.startswith("aligned_") or v in DDG_VARIANTS for v in args.variants)
+            and args.source_max_length != 2048):
+        raise ValueError("D/E/F/G require the original 2048-token source budget")
+    rows, views = _prepare(args.dataset, args.graphs, args.source_dataset,
+                           shuffle_seed=args.seed if "cfg_ddg_shuffled" in args.variants else None)
     train = [r for r in rows if r["split"] == "train"]
     valid = [r for r in rows if r["split"] == "valid"]
     if args.source_dataset == "sven" or any({r["label"] for r in group} != {0, 1} for group in (train, valid)):
@@ -329,6 +408,14 @@ def run_experiment(args, base=None):
                 raise FileExistsError("variant directory exists without run metadata")
             atomic_json(meta, config)
             atomic_json(root / "vocabulary.json", vocab.values)
+        if any(variant in DDG_VARIANTS for variant in args.variants):
+            audit_path = root / "ddg_audit.json"
+            audit = ddg_audit_report(rows, views, args.seed)
+            if audit_path.exists():
+                if json.loads(audit_path.read_text()) != audit:
+                    raise ValueError("existing DDG audit differs from this graph cohort")
+            else:
+                atomic_json(audit_path, audit)
         base = _base_module() if base is None else base
         device = base._resolve_device(args.device)
         builder = _tokenizer(base, config)
@@ -394,7 +481,8 @@ def evaluate_run(args, base=None):
     from .cfg_network import build_model
     root = Path(args.run_dir)
     config = json.loads((root/"config.json").read_text())
-    rows, views = _prepare(config["dataset"], config["graphs"], config["source_dataset"])
+    rows, views = _prepare(config["dataset"], config["graphs"], config["source_dataset"],
+                           shuffle_seed=config["seed"] if "cfg_ddg_shuffled" in args.variants else None)
     if cohort_hash(rows) != config["cohort_sha256"] or file_sha256(config["graphs"]) != config["graph_file_sha256"]:
         raise ValueError("evaluation data/graphs differ from the recorded run")
     selected = [r for r in rows if r["split"] == args.split]
@@ -461,7 +549,7 @@ def parser():
     build.add_argument("--java-home", default="/home/phy/jdk21")
     build.add_argument("--timeout", type=int, default=300)
     build.add_argument("--batch-size", type=int, default=8)
-    run = sub.add_parser("run", help="train selected A/B/C/D/E variants; validation only")
+    run = sub.add_parser("run", help="train selected A/B/C/D/E/F/G variants; validation only")
     run.add_argument("--dataset", required=True)
     run.add_argument("--graphs", required=True)
     run.add_argument("--output-dir", required=True)
@@ -489,6 +577,19 @@ def parser():
     compare.add_argument("--run-dir", required=True)
     compare.add_argument("--split", choices=("valid", "test"), default="valid")
     compare.add_argument("--reference-run-dir", help="read saved A/B/C predictions from a matching prior run")
+    audit = sub.add_parser("audit-alignment", help="audit cached CFG node/source alignment without Qwen")
+    audit.add_argument("--dataset", required=True)
+    audit.add_argument("--graphs", required=True)
+    audit.add_argument("--output", required=True)
+    audit.add_argument("--source-dataset", choices=("primevul", "cleanvul", "sven"), default="primevul")
+    audit.add_argument("--model-path", default="/home/phy/models/Qwen2.5-Coder-7B-Instruct")
+    audit.add_argument("--example-limit", type=int, default=8)
+    ddg_audit = sub.add_parser("audit-ddg", help="audit cached DDG coverage and G shuffling without Qwen")
+    ddg_audit.add_argument("--dataset", required=True)
+    ddg_audit.add_argument("--graphs", required=True)
+    ddg_audit.add_argument("--output", required=True)
+    ddg_audit.add_argument("--source-dataset", choices=("primevul", "cleanvul", "sven"), default="primevul")
+    ddg_audit.add_argument("--seed", type=int, default=42)
     return p
 
 
@@ -518,8 +619,32 @@ def main():
             if args.batch_size <= 0:
                 raise ValueError("batch_size must be positive")
             evaluate_run(args)
-        else:
+        elif args.command == "compare":
             compare_run(args.run_dir, args.split, reference_root=args.reference_run_dir)
+        elif args.command == "audit-ddg":
+            output = Path(args.output)
+            if output.exists():
+                raise FileExistsError(f"DDG audit output already exists: {output}")
+            rows, views = _prepare(args.dataset, args.graphs, args.source_dataset)
+            report = ddg_audit_report(rows, views, args.seed)
+            atomic_json(output, report)
+            print(json.dumps({"output": str(output), "splits": report["splits"]},
+                             ensure_ascii=False), flush=True)
+        else:
+            from transformers import AutoTokenizer
+            from .cfg_alignment_audit import audit_alignment
+            output = Path(args.output)
+            if output.exists():
+                raise FileExistsError(f"alignment audit output already exists: {output}")
+            tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+            report = audit_alignment(
+                args.dataset, args.graphs, tokenizer, source_dataset=args.source_dataset,
+                source_max_length=2048, example_limit=args.example_limit,
+                progress=lambda done, total, _: print(f"alignment_audit={done}/{total}", flush=True))
+            report["tokenizer_path"] = str(Path(args.model_path).resolve())
+            atomic_json(output, report)
+            print(json.dumps({"output": str(output), "samples": report["samples"],
+                              "overall": report["overall"]}, ensure_ascii=False), flush=True)
     except (ValueError, RuntimeError, FileExistsError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

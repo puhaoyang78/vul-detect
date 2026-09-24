@@ -12,17 +12,22 @@ class GraphBatch:
     edges: torch.Tensor       # [2, edges], source -> target
     ptr: tuple[int, ...]      # graph boundaries in the node array
     token_pairs: torch.Tensor | None = None  # [pairs, 3]: node, batch row, source token
+    ddg_edges: torch.Tensor | None = None  # [2, edges], reaching definition -> use
 
     def to(self, device) -> "GraphBatch":
         pairs = None if self.token_pairs is None else self.token_pairs.to(device)
-        return GraphBatch(self.attributes.to(device), self.edges.to(device), self.ptr, pairs)
+        ddg = None if self.ddg_edges is None else self.ddg_edges.to(device)
+        return GraphBatch(self.attributes.to(device), self.edges.to(device), self.ptr, pairs, ddg)
 
 
 def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cpu",
-                   alignments: list[list[tuple[int, int]]] | None = None) -> GraphBatch:
-    if not views or len(views) != len(encoded) or (alignments is not None and len(alignments) != len(views)):
+                   alignments: list[list[tuple[int, int]]] | None = None,
+                   ddg_edges: list[list[tuple[int, int]]] | None = None) -> GraphBatch:
+    if (not views or len(views) != len(encoded) or
+            (alignments is not None and len(alignments) != len(views)) or
+            (ddg_edges is not None and len(ddg_edges) != len(views))):
         raise ValueError("nonempty matching graph/attribute lists required")
-    attributes, edges, ptr, token_pairs = [], [], [0], []
+    attributes, edges, ptr, token_pairs, ddg = [], [], [0], [], []
     for row, (view, values) in enumerate(zip(views, encoded)):
         n = len(values)
         if not n or n != len(view["node_ids"]) or any(len(v) != 4 for v in values):
@@ -32,6 +37,11 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
             if not 0 <= s < n or not 0 <= t < n:
                 raise ValueError("out-of-range CFG endpoint")
             edges.append((s + offset, t + offset))
+        if ddg_edges is not None:
+            for s, t in ddg_edges[row]:
+                if not 0 <= s < n or not 0 <= t < n:
+                    raise ValueError("out-of-range DDG endpoint")
+                ddg.append((s + offset, t + offset))
         if alignments is not None:
             for node, token in alignments[row]:
                 if not 0 <= node < n or token < 0:
@@ -41,16 +51,19 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
         ptr.append(offset + n)
     edge_tensor = torch.tensor(edges, dtype=torch.long).reshape(-1, 2).T.contiguous()
     pairs = None if alignments is None else torch.tensor(token_pairs, dtype=torch.long).reshape(-1, 3)
-    return GraphBatch(torch.tensor(attributes, dtype=torch.long), edge_tensor, tuple(ptr), pairs).to(device)
+    ddg_tensor = None if ddg_edges is None else torch.tensor(ddg, dtype=torch.long).reshape(-1, 2).T.contiguous()
+    return GraphBatch(torch.tensor(attributes, dtype=torch.long), edge_tensor, tuple(ptr), pairs,
+                      ddg_tensor).to(device)
 
 
 class AttributeCFGEncoder(nn.Module):
-    """B/C and D/E are matched local-node / directed-CFG pairs.
+    """B/C, D/E, and F/G share the existing attribute and CFG encoder.
 
     B and D use node-local self messages only; C and E also sum directed
     predecessor messages. Each pair shares parameters and update counts.
     D/E add the same projected, position-aligned source-token mean to the
-    attribute embedding before the existing graph encoder.
+    attribute embedding before the existing graph encoder. F/G additionally sum
+    directed DDG messages through their own projection before the same GRU update.
     The raw attribute embedding is concatenated with the final node state before
     attention pooling, as in the DeepDFA encoder design. These are learned
     summaries, not a sound static-analysis result.
@@ -60,7 +73,8 @@ class AttributeCFGEncoder(nn.Module):
         super().__init__()
         if (len(vocabulary_sizes) != 4 or min(vocabulary_sizes) < 2 or
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
-                mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg"} or
+                mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
+                             "cfg_ddg", "cfg_ddg_shuffled"} or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
         self.mode, self.steps = mode, steps
@@ -70,6 +84,9 @@ class AttributeCFGEncoder(nn.Module):
         self.message = nn.Linear(hidden_size, hidden_size)
         self.update = nn.GRUCell(hidden_size, hidden_size)
         self.pool_gate = nn.Linear(2 * hidden_size, 1)
+        # Allocate after every shared module so C/F/G share seeded initialization.
+        if mode in {"cfg_ddg", "cfg_ddg_shuffled"}:
+            self.ddg_message = nn.Linear(hidden_size, hidden_size)
         self.output_dim = 2 * hidden_size
 
     def forward(self, batch: GraphBatch, token_hidden: torch.Tensor | None = None) -> torch.Tensor:
@@ -87,14 +104,22 @@ class AttributeCFGEncoder(nn.Module):
             x = x + self.source_projection(node_source)
         state = x
         src, dst = batch.edges
-        # Remove duplicate self edges: both controls receive exactly one self message.
+        # Remove duplicate CFG self edges: every mode already receives one self message.
         mask = src != dst
         src, dst = src[mask], dst[mask]
+        use_ddg = self.mode in {"cfg_ddg", "cfg_ddg_shuffled"}
+        if use_ddg:
+            if batch.ddg_edges is None:
+                raise ValueError("DDG graph encoder requires directed DDG edges")
+            ddg_src, ddg_dst = batch.ddg_edges
         for _ in range(self.steps):
             transformed = self.message(state)
             incoming = transformed.clone()
-            if self.mode in {"cfg", "aligned_cfg"} and src.numel():
+            if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
+            if use_ddg and ddg_src.numel():
+                ddg_transformed = self.ddg_message(state)
+                incoming.index_add_(0, ddg_dst, ddg_transformed[ddg_src])
             state = self.update(incoming, state)
         combined = torch.cat((state, x), dim=-1)
         scores = self.pool_gate(combined).squeeze(-1)

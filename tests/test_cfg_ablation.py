@@ -112,6 +112,19 @@ class DataTests(unittest.TestCase):
         self.assertEqual(view["definition_count"], 2)
         self.assertEqual(view["signatures"][0], ["[]"]*4)
 
+    def test_ddg_uses_cfg_nodes_and_reports_each_skip_reason(self):
+        graph = fixture_graph()
+        graph["edges"].extend(dict(kind="DDG", source=source, target=target)
+                              for source, target in (("1", "5"), ("2", "5"),
+                                                     ("5", "3"), ("2", "3")))
+        view = data.abstract_cfg(graph)
+        self.assertEqual(view["ddg_edges"], [(view["node_ids"].index("1"),
+                                              view["node_ids"].index("5"))])
+        self.assertEqual(view["ddg_audit"], {
+            "raw_edges": 4, "usable_edges": 1, "skipped_source_outside_cfg": 1,
+            "skipped_target_outside_cfg": 1, "skipped_both_outside_cfg": 1,
+        })
+
     def test_literals_do_not_collapse(self):
         left, right = [data.abstract_cfg(fixture_graph(x)) for x in ("4", "999")]
         self.assertNotEqual(left["signatures"], right["signatures"])
@@ -483,6 +496,65 @@ class NetworkTests(unittest.TestCase):
         c=AttributeCFGEncoder(self.vocab.sizes(),hidden_size=8,steps=2)
         torch.testing.assert_close(c(batch),c(other))
 
+    def test_ddg_shuffle_is_function_local_with_exact_degree_multiset(self):
+        views = []
+        for i in range(2):
+            graph = fixture_graph()
+            graph["edges"].extend(dict(kind="DDG", source=source, target=target)
+                                  for source, target in (("1", "5"), ("5", "10"), ("1", "10")))
+            view = data.abstract_cfg(graph)
+            before_cfg = list(view["edges"])
+            shuffled = exp.shuffle_ddg_edges(view, 42, f"function-{i}")
+            self.assertEqual(view["edges"], before_cfg)
+            self.assertEqual(len(shuffled), len(view["ddg_edges"]))
+            self.assertEqual(exp._ddg_degree_multiset(shuffled, len(view["node_ids"])),
+                             exp._ddg_degree_multiset(view["ddg_edges"], len(view["node_ids"])))
+            view["ddg_shuffled_edges"] = shuffled
+            views.append(view)
+        batch = collate_graphs(views, [self.vocab.encode(v) for v in views],
+                               ddg_edges=[v["ddg_shuffled_edges"] for v in views])
+        self.assertTrue(torch.equal(batch.edges[:, :len(views[0]["edges"])], self.batch.edges))
+        for source, target in batch.ddg_edges.T.tolist():
+            self.assertEqual(source < batch.ptr[1], target < batch.ptr[1])
+        self.assertEqual(batch.ddg_edges.shape[1], 6)
+
+    def test_f_g_share_initialization_and_ddg_direction_backpropagates(self):
+        graph = fixture_graph()
+        graph["edges"].extend(dict(kind="DDG", source=source, target=target)
+                              for source, target in (("1", "5"), ("5", "10")))
+        view = data.abstract_cfg(graph)
+        batch = collate_graphs([view], [self.vocab.encode(view)], ddg_edges=[view["ddg_edges"]])
+        reverse = GraphBatch(batch.attributes, batch.edges, batch.ptr,
+                             ddg_edges=batch.ddg_edges.flip(0))
+        api = fake_base()
+        models = {}
+        for variant in ("cfg", "cfg_ddg", "cfg_ddg_shuffled"):
+            api._seed_everything(42)
+            models[variant] = build_model(api, tiny_config(variant), self.vocab.sizes(),
+                                          torch.device("cpu"), training=True)
+        c = models["cfg"].state_dict()
+        f = models["cfg_ddg"].state_dict()
+        g = models["cfg_ddg_shuffled"].state_dict()
+        self.assertEqual(sum(p.numel() for p in models["cfg_ddg"].parameters()),
+                         sum(p.numel() for p in models["cfg_ddg_shuffled"].parameters()))
+        for key, value in f.items():
+            self.assertTrue(torch.equal(value, g[key]), key)
+        for key, value in c.items():
+            self.assertTrue(torch.equal(value, f[key]), key)
+        encoder = models["cfg_ddg"].task_modules["cfg_encoder"]
+        self.assertFalse(torch.allclose(encoder(batch), encoder(reverse)))
+        model = models["cfg_ddg"]
+        with torch.no_grad():
+            model.task_modules["cfg_classifier"].weight.fill_(.1)
+        ids = torch.tensor([[2, 3, 1]])
+        mask = torch.ones_like(ids)
+        nn.functional.binary_cross_entropy_with_logits(model(ids, mask, batch),
+                                                       torch.ones(1)).backward()
+        self.assertEqual(model.encoder.calls, 1)
+        self.assertGreater(encoder.ddg_message.weight.grad.abs().sum().item(), 0)
+        self.assertGreater(encoder.message.weight.grad.abs().sum().item(), 0)
+        self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(), 0)
+
     def test_invalid_endpoint_fails(self):
         v=copy.deepcopy(self.view);v["edges"].append((0,999))
         with self.assertRaises(ValueError):collate_graphs([v],[self.vocab.encode(v)])
@@ -691,8 +763,92 @@ class IntegrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"different dataset"):
                 exp.compare_run(de,reference_root=abc)
 
+    def test_f_g_runner_reuses_graph_cache_and_validation_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source, graphs, run = root/"source.jsonl", root/"graphs.jsonl", root/"fg"
+            rows = fixture_rows()
+            write_jsonl(source, rows)
+            exports = []
+            for row in rows:
+                graph = fixture_graph()
+                graph["edges"].append(dict(kind="DDG", source="1", target="5"))
+                exports.append(dict(data.identity(row), graph_schema_version=data.GRAPH_SCHEMA,
+                                    preprocessing_version=data.JOERN_SOURCE_PREPROCESSING_VERSION,
+                                    preprocessing_applied=False,
+                                    original_source_sha256=data.source_hash(row["raw_source"]),
+                                    parsed_source_sha256=data.source_hash(row["raw_source"]),
+                                    graph=graph))
+            write_jsonl(graphs, exports)
+            api = fake_base()
+            args = exp.parser().parse_args([
+                "run", "--dataset", str(source), "--graphs", str(graphs), "--output-dir", str(run),
+                "--model-path", "tiny-test-only", "--device", "cpu", "--variants",
+                "cfg_ddg", "cfg_ddg_shuffled", "--epochs", "1", "--batch-size", "2",
+                "--graph-hidden-size", "8", "--graph-steps", "2"])
+            result = exp.run_experiment(args, base=api)
+            self.assertEqual(set(result["metrics"]), {"cfg_ddg", "cfg_ddg_shuffled"})
+            self.assertEqual(api.train_model.call_count, 0)
+            audit = json.loads((run/"ddg_audit.json").read_text())
+            self.assertEqual(audit["splits"]["train"]["raw_edges"], 5)
+            self.assertEqual(audit["splits"]["train"]["usable_edges"], 5)
+            self.assertEqual(audit["splits"]["train"]["same_degree_multiset_functions"], 5)
+            self.assertEqual(audit["splits"]["train"]["same_edge_count_functions"], 5)
+            with self.assertRaisesRegex(ValueError, "2048-token"):
+                args.source_max_length = 8
+                exp.run_experiment(args, base=api)
+            evaluation = exp.parser().parse_args([
+                "eval", "--run-dir", str(run), "--split", "test", "--variants",
+                "cfg_ddg", "cfg_ddg_shuffled", "--device", "cpu"])
+            TinyInputBuilder.allow_test = True
+            try:
+                with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
+                    tested = exp.evaluate_run(evaluation, base=api)
+                self.assertEqual(set(tested["metrics"]), {"cfg_ddg", "cfg_ddg_shuffled"})
+                for variant in exp.DDG_VARIANTS:
+                    checkpoint = torch.load(run/variant/"best.pt", weights_only=False)
+                    predictions = data.read_jsonl(run/variant/"test.predictions.jsonl")
+                    self.assertEqual({p["threshold"] for p in predictions},
+                                     {checkpoint["decision_threshold"]})
+            finally:
+                TinyInputBuilder.allow_test = False
+
+    def test_ddg_audit_and_compare_f_g_against_saved_c(self):
+        rows = fixture_rows()
+        views = graph_views(rows)
+        for view in views.values():
+            view["ddg_edges"] = [(0, 1)]
+            view["ddg_audit"] = dict(raw_edges=3, usable_edges=1,
+                                     skipped_source_outside_cfg=1,
+                                     skipped_target_outside_cfg=1,
+                                     skipped_both_outside_cfg=0)
+        report = exp.ddg_audit_report(rows, views, 42)
+        self.assertEqual(report["splits"]["valid"]["raw_edges"], 6)
+        self.assertEqual(report["splits"]["valid"]["usable_edges"], 2)
+        self.assertEqual(report["splits"]["valid"]["usable_rate"], 1/3)
+        self.assertEqual(report["splits"]["valid"]["same_edge_count_functions"], 2)
+        self.assertEqual(report["splits"]["valid"]["same_degree_multiset_functions"], 2)
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            old, new = root/"c", root/"fg"
+            old.mkdir(); new.mkdir()
+            config = {"seed": 42, "source_max_length": 2048}
+            (old/"config.json").write_text(json.dumps(config))
+            (new/"config.json").write_text(json.dumps(config))
+            for split in ("valid", "test"):
+                selected = [r for r in rows if r["split"] == split]
+                for variant in ("cfg", "cfg_ddg", "cfg_ddg_shuffled"):
+                    folder = (old if variant == "cfg" else new)/variant
+                    folder.mkdir(exist_ok=True)
+                    predictions = [dict(data.identity(r), score=.8 if r["label"] else .2,
+                                        prediction=r["label"], threshold=.5) for r in selected]
+                    write_jsonl(folder/f"{split}.predictions.jsonl", predictions)
+                result = exp.compare_run(new, split, reference_root=old)
+                self.assertEqual(set(result["metrics"]), {"cfg", "cfg_ddg", "cfg_ddg_shuffled"})
+                self.assertEqual(set(result["changes_vs_cfg"]), {"cfg_ddg", "cfg_ddg_shuffled"})
+
     def test_cli_help_and_compare_without_model_dependencies(self):
-        for command in ([],["build"],["run"],["eval"],["compare"]):
+        for command in ([],["build"],["run"],["eval"],["compare"],["audit-alignment"],["audit-ddg"]):
             with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as cm:
                 exp.parser().parse_args(command+["--help"])
             self.assertEqual(cm.exception.code,0)

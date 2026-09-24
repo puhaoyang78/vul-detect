@@ -407,8 +407,26 @@ def abstract_cfg(graph: dict) -> dict:
     locations = [dict(code=nodes[key]["code"],
                       **{field: nodes[key]["properties"][field] for field in position_fields
                          if field in nodes[key]["properties"]}) for key in node_ids]
+    ddg_edges = []
+    ddg_audit = Counter(raw_edges=0, usable_edges=0, skipped_source_outside_cfg=0,
+                        skipped_target_outside_cfg=0, skipped_both_outside_cfg=0)
+    for edge in graph["edges"]:
+        if edge["kind"] != "DDG":
+            continue
+        ddg_audit["raw_edges"] += 1
+        source, target = edge["source"], edge["target"]
+        if source in index and target in index:
+            ddg_edges.append((index[source], index[target]))
+            ddg_audit["usable_edges"] += 1
+        elif source not in index and target not in index:
+            ddg_audit["skipped_both_outside_cfg"] += 1
+        elif source not in index:
+            ddg_audit["skipped_source_outside_cfg"] += 1
+        else:
+            ddg_audit["skipped_target_outside_cfg"] += 1
     return dict(node_ids=node_ids, signatures=signatures, locations=locations,
                 edges=sorted((index[s], index[t]) for s, t in cfg_edges),
+                ddg_edges=sorted(ddg_edges), ddg_audit=dict(ddg_audit),
                 definition_count=definitions)
 
 

@@ -33,28 +33,33 @@ def _node_span(source: str, location: dict, units_to_chars: dict, line_starts: l
         line_begin = None
     if has_offsets:
         if begin not in units_to_chars or finish not in units_to_chars or begin >= finish:
-            return None, "position_mismatch"
+            return None, "coordinate_invalid"
+        if has_line and line_begin is None:
+            return None, "coordinate_invalid"
         if has_line and line_begin != begin:
-            return None, "position_mismatch"
+            return None, "coordinate_conflict"
     else:
         if line_begin is None:
-            return None, "position_mismatch"
+            return None, "coordinate_invalid"
         begin = line_begin
         finish = begin + len(code.encode("utf-16-le")) // 2
         if begin not in units_to_chars or finish not in units_to_chars:
-            return None, "position_mismatch"
+            return None, "coordinate_invalid"
     end_line, end_column = location.get("LINE_NUMBER_END"), location.get("COLUMN_NUMBER_END")
     if type(end_line) is int and type(end_column) is int:
-        if not 1 <= end_line < len(line_starts) or finish != line_starts[end_line - 1] + end_column:
-            return None, "position_mismatch"
+        if not 1 <= end_line < len(line_starts) or end_column < 1:
+            return None, "coordinate_invalid"
+        if finish != line_starts[end_line - 1] + end_column:
+            return None, "coordinate_conflict"
     char_begin, char_finish = units_to_chars[begin], units_to_chars[finish]
     if source[char_begin:char_finish] != code:
-        return None, "position_mismatch"
+        return None, "text_mismatch"
     return (char_begin, char_finish), None
 
 
 def align_nodes(source: str, locations: list[dict], offsets: list[tuple[int, int]],
-                prefix_tokens: int) -> tuple[list[tuple[int, int]], Counter]:
+                prefix_tokens: int, statuses: list[tuple[str, str | None]] | None = None
+                ) -> tuple[list[tuple[int, int]], Counter]:
     """Return (node index, sequence token index) pairs and node coverage counts.
 
     Offsets are from tokenizing only the source with the original source budget.
@@ -69,16 +74,22 @@ def align_nodes(source: str, locations: list[dict], offsets: list[tuple[int, int
         if (not isinstance(offset, (list, tuple)) or len(offset) != 2 or
                 any(type(value) is not int for value in offset)):
             counts["invalid_token_offsets"] = len(locations)
+            if statuses is not None:
+                statuses.extend([("invalid_token_offsets", None)] * len(locations))
             return [], counts
         start, end = offset
         if not 0 <= start <= end <= len(source) or start < previous_start or end < previous_end:
             counts["invalid_token_offsets"] = len(locations)
+            if statuses is not None:
+                statuses.extend([("invalid_token_offsets", None)] * len(locations))
             return [], counts
         previous_start, previous_end = start, end
         if start < end:
             tokens.append((start, end, prefix_tokens + index))
     if not tokens:
         counts["no_visible_token"] = len(locations)
+        if statuses is not None:
+            statuses.extend([("no_visible_token", None)] * len(locations))
         return [], counts
     units_to_chars, line_starts = _source_coordinates(source)
     token_ends = [end for _, end, _ in tokens]
@@ -87,11 +98,17 @@ def align_nodes(source: str, locations: list[dict], offsets: list[tuple[int, int
     for node_index, location in enumerate(locations):
         span, reason = _node_span(source, location, units_to_chars, line_starts)
         if reason:
-            counts[reason] += 1
+            status = "position_mismatch" if reason in {
+                "coordinate_invalid", "coordinate_conflict", "text_mismatch"} else reason
+            counts[status] += 1
+            if statuses is not None:
+                statuses.append((status, reason if status == "position_mismatch" else None))
             continue
         begin, finish = span
         if finish > visible_end:
             counts["outside_visible_source"] += 1
+            if statuses is not None:
+                statuses.append(("outside_visible_source", None))
             continue
         position = bisect_right(token_ends, begin)
         matched = 0
@@ -103,7 +120,10 @@ def align_nodes(source: str, locations: list[dict], offsets: list[tuple[int, int
                 pairs.append((node_index, token_index))
                 matched += 1
             position += 1
-        counts["aligned_nodes" if matched else "no_visible_token"] += 1
+        status = "aligned_nodes" if matched else "no_visible_token"
+        counts[status] += 1
+        if statuses is not None:
+            statuses.append((status, None))
     return pairs, counts
 
 
