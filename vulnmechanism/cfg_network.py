@@ -149,14 +149,19 @@ class SourceGraphClassifier(nn.Module):
             self.task_modules["cfg_classifier"] = head
         self.to(device)
 
-    def forward(self, input_ids, attention_mask, graph_batch: GraphBatch):
+    def representations(self, input_ids, attention_mask, graph_batch: GraphBatch):
+        """Return the existing source pool, graph pool, and combined C logit."""
         hidden = self.encoder(input_ids=input_ids, attention_mask=attention_mask,
                               use_cache=False).last_hidden_state
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = ((hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)).float()
         source_logit = self.task_modules["classifier"](pooled).squeeze(-1)
         graph_vector = self.task_modules["cfg_encoder"](graph_batch, hidden)
-        return source_logit + self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
+        logit = source_logit + self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
+        return pooled, graph_vector, logit
+
+    def forward(self, input_ids, attention_mask, graph_batch: GraphBatch):
+        return self.representations(input_ids, attention_mask, graph_batch)[2]
 
 
 def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, *, training: bool):

@@ -27,6 +27,8 @@ VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg"
             "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop")
 DDG_VARIANTS = ("cfg_ddg", "cfg_ddg_shuffled")
 DUAL_FORWARD_ALPHA = {"cfg_double_ce": 0.0, "cfg_rdrop": 1.0}
+READOUT_VARIANTS = ("linear", "mlp", "interaction")
+COMPARISON_VARIANTS = (*VARIANTS, *READOUT_VARIANTS)
 DEFAULT_VARIANTS = VARIANTS[:3]
 CHECKPOINT_SCHEMA = 1
 
@@ -234,17 +236,24 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
 
 
 def _prediction_outputs(folder, split, rows, scores, threshold, builder, *, checkpoint_hash,
-                        alignment_coverage=None):
-    if len(rows) != len(scores):
+                        alignment_coverage=None, source_reference=None):
+    if len(rows) != len(scores) or (source_reference is not None and len(source_reference) != len(rows)):
         raise ValueError("prediction count mismatch")
     labels = [r["label"] for r in rows]
     selected = metrics(labels, scores, threshold)
     predictions = []
-    for r, score in zip(rows, scores):
-        length = len(builder._encode(r["raw_source"]))
+    for i, (r, score) in enumerate(zip(rows, scores)):
+        if source_reference is None:
+            length = len(builder._encode(r["raw_source"]))
+            truncated = length > builder.source_max_length
+        else:
+            reference = source_reference[i]
+            if any(reference.get(key) != value for key, value in identity(r).items()):
+                raise ValueError("source prediction metadata does not match sample order")
+            length, truncated = reference["source_token_count"], reference["source_truncated"]
         predictions.append(dict(identity(r), score=float(score), prediction=int(score >= decision_boundary(threshold)),
                                 threshold=float(threshold), source_token_count=length,
-                                source_truncated=length > builder.source_max_length))
+                                source_truncated=truncated))
     summary = dict(selected=selected, fixed_0_5=metrics(labels, scores, 0.5),
                    cohort_sha256=cohort_hash(rows), checkpoint_sha256=checkpoint_hash,
                    source_truncated=sum(p["source_truncated"] for p in predictions), subgroups={})
@@ -265,6 +274,8 @@ def _prediction_outputs(folder, split, rows, scores, threshold, builder, *, chec
 def compare_run(root: str | Path, split: str = "valid",
                 reference_root: str | Path | None = None) -> dict:
     root = Path(root)
+    if (root / "readout_config.json").exists() and split != "valid":
+        raise ValueError("frozen C readout screening is valid-only; test was not extracted")
     reference = Path(reference_root) if reference_root is not None else None
     if reference is not None:
         if json.loads((root / "config.json").read_text()) != json.loads((reference / "config.json").read_text()):
@@ -272,7 +283,7 @@ def compare_run(root: str | Path, split: str = "valid",
     rows, result = {}, {"split": split, "metrics": {}, "changes_vs_baseline": {}}
     if reference is not None:
         result["reference_run_dir"] = str(reference.resolve())
-    for variant in VARIANTS:
+    for variant in COMPARISON_VARIANTS:
         folder = reference if reference is not None and variant in DEFAULT_VARIANTS else root
         path = folder / variant / f"{split}.predictions.jsonl"
         if not path.is_file():
@@ -291,7 +302,7 @@ def compare_run(root: str | Path, split: str = "valid",
         raise FileNotFoundError(f"comparison requires saved C predictions in {reference / 'cfg'}")
     if "baseline" in rows:
         base_threshold = rows["baseline"][0]["threshold"]
-        for variant in VARIANTS[1:]:
+        for variant in COMPARISON_VARIANTS[1:]:
             if variant not in rows:
                 continue
             result["changes_vs_baseline"][variant] = {
@@ -313,7 +324,7 @@ def compare_run(root: str | Path, split: str = "valid",
     if "cfg" in rows:
         cfg_threshold = rows["cfg"][0]["threshold"]
         result["changes_vs_cfg"] = {}
-        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA):
+        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA, *READOUT_VARIANTS):
             if variant not in rows:
                 continue
             result["changes_vs_cfg"][variant] = {
@@ -601,6 +612,18 @@ def parser():
     evaluate.add_argument("--batch-size", type=int, default=1)
     evaluate.add_argument("--device", default="auto")
     evaluate.add_argument("--replace-predictions", action="store_true")
+    extract = sub.add_parser("extract-readout", help="cache frozen C train/valid representations")
+    extract.add_argument("--c-run-dir", required=True)
+    extract.add_argument("--output", required=True)
+    extract.add_argument("--device", default="auto")
+    readout = sub.add_parser("train-readout", help="train residual heads on frozen C representations")
+    readout.add_argument("--cache", required=True)
+    readout.add_argument("--c-run-dir", required=True)
+    readout.add_argument("--output-dir", required=True)
+    readout.add_argument("--modes", nargs="+", choices=READOUT_VARIANTS,
+                         default=list(READOUT_VARIANTS))
+    readout.add_argument("--device", default="cpu")
+    readout.add_argument("--resume", action="store_true")
     compare = sub.add_parser("compare", help="recompute tables/error changes from saved predictions")
     compare.add_argument("--run-dir", required=True)
     compare.add_argument("--split", choices=("valid", "test"), default="valid")
@@ -647,6 +670,15 @@ def main():
             if args.batch_size <= 0:
                 raise ValueError("batch_size must be positive")
             evaluate_run(args)
+        elif args.command == "extract-readout":
+            from .cfg_readout import extract_representations
+            print(json.dumps(extract_representations(args.c_run_dir, args.output,
+                                                     device=args.device), ensure_ascii=False), flush=True)
+        elif args.command == "train-readout":
+            from .cfg_readout import train_readouts
+            print(json.dumps(train_readouts(args.cache, args.c_run_dir, args.output_dir,
+                                            modes=tuple(args.modes), device=args.device,
+                                            resume=args.resume), ensure_ascii=False), flush=True)
         elif args.command == "compare":
             compare_run(args.run_dir, args.split, reference_root=args.reference_run_dir)
         elif args.command == "audit-ddg":
