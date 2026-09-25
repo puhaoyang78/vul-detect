@@ -156,19 +156,30 @@ class SourceGraphClassifier(nn.Module):
             self.task_modules["cfg_classifier"] = head
         self.to(device)
 
-    def representations(self, input_ids, attention_mask, graph_batch: GraphBatch):
-        """Return the existing source pool, graph pool, and combined C logit."""
+    def _branch_outputs(self, input_ids, attention_mask, graph_batch: GraphBatch):
         hidden = self.encoder(input_ids=input_ids, attention_mask=attention_mask,
                               use_cache=False).last_hidden_state
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = ((hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)).float()
         source_logit = self.task_modules["classifier"](pooled).squeeze(-1)
         graph_vector = self.task_modules["cfg_encoder"](graph_batch, hidden)
-        logit = source_logit + self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
-        return pooled, graph_vector, logit
+        graph_logit = self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
+        return pooled, graph_vector, source_logit, graph_logit
+
+    def branch_logits(self, input_ids, attention_mask, graph_batch: GraphBatch):
+        """Return source and graph logits from one encoder forward."""
+        _, _, source_logit, graph_logit = self._branch_outputs(input_ids, attention_mask, graph_batch)
+        return source_logit, graph_logit
+
+    def representations(self, input_ids, attention_mask, graph_batch: GraphBatch):
+        """Return the existing source pool, graph pool, and combined C logit."""
+        pooled, graph_vector, source_logit, graph_logit = self._branch_outputs(
+            input_ids, attention_mask, graph_batch)
+        return pooled, graph_vector, source_logit + graph_logit
 
     def forward(self, input_ids, attention_mask, graph_batch: GraphBatch):
-        return self.representations(input_ids, attention_mask, graph_batch)[2]
+        source_logit, graph_logit = self.branch_logits(input_ids, attention_mask, graph_batch)
+        return source_logit + graph_logit
 
 
 def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, *, training: bool):
@@ -182,7 +193,8 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
         return source
     if vocabulary_sizes is None:
         raise ValueError("graph vocabulary required")
-    mode = "cfg" if config["variant"] in {"cfg_double_ce", "cfg_rdrop"} else config["variant"]
+    mode = ("cfg" if config["variant"] in {"cfg_double_ce", "cfg_rdrop",
+                                          "cfg_source_aux", "cfg_source_detach"} else config["variant"])
     return SourceGraphClassifier(source, vocabulary_sizes,
                                  hidden_size=config["graph_hidden_size"], steps=config["graph_steps"],
                                  mode=mode, device=device)

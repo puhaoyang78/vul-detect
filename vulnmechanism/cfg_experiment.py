@@ -24,8 +24,10 @@ from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
 
 JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
+SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
 VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg",
-            "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop", *JK_VARIANTS)
+            "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop",
+            *JK_VARIANTS, *SOURCE_SUPERVISION_VARIANTS)
 DDG_VARIANTS = ("cfg_ddg", "cfg_ddg_shuffled")
 DUAL_FORWARD_ALPHA = {"cfg_double_ce": 0.0, "cfg_rdrop": 1.0}
 READOUT_VARIANTS = ("linear", "mlp", "interaction")
@@ -85,22 +87,36 @@ def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
     return ids, mask, graph_batch
 
 
-def _graph_forward(model, batch, builder, views, encoded, device, coverage=None):
-    return model(*_graph_inputs(model, batch, builder, views, encoded, device, coverage))
+def source_supervision_loss(source_logits, graph_logits, labels, *, detach_source: bool):
+    """Unit-weight source BCE plus fused BCE; detach only the latter's source path."""
+    import torch
+    source_bce = torch.nn.functional.binary_cross_entropy_with_logits(source_logits.float(), labels.float())
+    fused_logits = (source_logits.detach() if detach_source else source_logits) + graph_logits
+    fusion_bce = torch.nn.functional.binary_cross_entropy_with_logits(fused_logits.float(), labels.float())
+    return source_bce + fusion_bce, source_bce, fusion_bce
 
 
-def _graph_scores(model, rows, builder, views, encoded, *, batch_size, device, coverage=None):
+def _graph_scores(model, rows, builder, views, encoded, *, batch_size, device, coverage=None,
+                  include_source=False):
     import torch
     model.eval()
-    values = []
+    values, source_values = [], []
     with torch.no_grad():
         for start in range(0, len(rows), batch_size):
-            logits = _graph_forward(model, rows[start:start+batch_size], builder, views, encoded, device,
-                                    coverage=coverage)
+            inputs = _graph_inputs(model, rows[start:start+batch_size], builder, views, encoded, device,
+                                   coverage=coverage)
+            if include_source:
+                source_logits, graph_logits = model.branch_logits(*inputs)
+                logits = source_logits + graph_logits
+                if not torch.isfinite(source_logits).all():
+                    raise ValueError("non-finite source prediction")
+                source_values.extend(torch.sigmoid(source_logits.float()).cpu().tolist())
+            else:
+                logits = model(*inputs)
             if not torch.isfinite(logits).all():
                 raise ValueError("non-finite graph prediction")
             values.extend(torch.sigmoid(logits.float()).cpu().tolist())
-    return values
+    return (values, source_values) if include_source else values
 
 
 def _save_torch(path, checkpoint):
@@ -133,7 +149,9 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
     ], weight_decay=config["weight_decay"])
     best_key = (-float("inf"),) * 4
     best_scores, best_threshold = None, None
+    best_source_scores, best_source_threshold = None, None
     aligned = config["variant"].startswith("aligned_")
+    source_supervision = config["variant"] in SOURCE_SUPERVISION_VARIANTS
     dual_alpha = DUAL_FORWARD_ALPHA.get(config["variant"])
     if dual_alpha is not None:
         from .rdrop import binary_rdrop_loss
@@ -154,6 +172,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
             num_batches = math.ceil(len(order)/batch_size)
             total_loss, window_loss, window_samples = 0.0, 0.0, 0
             total_bce = total_kl = window_bce = window_kl = 0.0
+            total_source_bce = total_fusion_bce = window_source_bce = window_fusion_bce = 0.0
             optimizer_steps = 0
             bar = tqdm(range(0, len(order), batch_size), total=num_batches,
                        desc=f"{config['variant']} epoch {epoch+1}/{config['epochs']}",
@@ -162,12 +181,18 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                 batch = [train[i] for i in order[start:start+batch_size]]
                 inputs = _graph_inputs(model, batch, builder, views, encoded, device,
                                        coverage=coverage["train"] if aligned and epoch == 0 else None)
-                logits = model(*inputs)
                 labels = torch.tensor([r["label"] for r in batch], dtype=torch.float32, device=device)
-                if dual_alpha is None:
+                if source_supervision:
+                    source_logits, graph_logits = model.branch_logits(*inputs)
+                    loss, source_bce, fusion_bce = source_supervision_loss(
+                        source_logits, graph_logits, labels,
+                        detach_source=config["variant"] == "cfg_source_detach")
+                elif dual_alpha is None:
+                    logits = model(*inputs)
                     loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels)
                 else:
                     # Reuse the exact same source/CFG tensors; dropout consumes fresh RNG state.
+                    logits = model(*inputs)
                     second_logits = model(*inputs)
                     loss, bce, kl = binary_rdrop_loss(logits, second_logits, labels, alpha=dual_alpha)
                 if not torch.isfinite(loss):
@@ -187,6 +212,13 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                     total_kl += kl_value*len(batch)
                     window_bce += bce_value*len(batch)
                     window_kl += kl_value*len(batch)
+                if source_supervision:
+                    source_value = float(source_bce.detach().cpu())
+                    fusion_value = float(fusion_bce.detach().cpu())
+                    total_source_bce += source_value*len(batch)
+                    total_fusion_bce += fusion_value*len(batch)
+                    window_source_bce += source_value*len(batch)
+                    window_fusion_bce += fusion_value*len(batch)
                 if (batch_index+1) % accumulation == 0 or batch_index+1 == num_batches:
                     norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                     if not torch.isfinite(norm):
@@ -199,29 +231,50 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                         log(dict(event="step", epoch=epoch+1, step=step, loss=window_loss/window_samples,
                                  source_lr=config["learning_rate"], graph_lr=config["graph_learning_rate"],
                                  **({"bce": window_bce/window_samples, "kl": window_kl/window_samples,
-                                     "alpha": dual_alpha} if dual_alpha is not None else {})))
+                                     "alpha": dual_alpha} if dual_alpha is not None else {}),
+                                 **({"source_bce": window_source_bce/window_samples,
+                                     "fusion_bce": window_fusion_bce/window_samples}
+                                    if source_supervision else {})))
                         window_loss, window_samples = 0.0, 0
                         window_bce = window_kl = 0.0
+                        window_source_bce = window_fusion_bce = 0.0
                 bar.set_postfix(loss=f"{value:.4f}", step=step, refresh=False)
-            scores = _graph_scores(model, valid, builder, views, encoded, batch_size=batch_size, device=device,
-                                   coverage=coverage["valid"] if aligned and epoch == 0 else None)
+            validation_scores = _graph_scores(
+                model, valid, builder, views, encoded, batch_size=batch_size, device=device,
+                coverage=coverage["valid"] if aligned and epoch == 0 else None,
+                include_source=source_supervision)
+            scores, source_scores = validation_scores if source_supervision else (validation_scores, None)
             threshold, validation = select_threshold([r["label"] for r in valid], scores)
-            training_loss = ({"bce": total_bce/len(train), "kl": total_kl/len(train),
-                              "alpha": dual_alpha} if dual_alpha is not None else None)
+            source_threshold, source_validation = (select_threshold([r["label"] for r in valid], source_scores)
+                                                   if source_supervision else (None, None))
+            if dual_alpha is not None:
+                training_loss = {"bce": total_bce/len(train), "kl": total_kl/len(train),
+                                 "alpha": dual_alpha}
+            elif source_supervision:
+                training_loss = {"source_bce": total_source_bce/len(train),
+                                 "fusion_bce": total_fusion_bce/len(train)}
+            else:
+                training_loss = None
             log(dict(event="epoch", variant=config["variant"], epoch=epoch+1,
                      train_loss=total_loss/len(train), optimizer_steps=optimizer_steps,
                      validation_threshold=threshold, validation=validation,
+                     **({"source_validation_threshold": source_threshold,
+                         "source_validation": source_validation} if source_supervision else {}),
                      **({"training_loss": training_loss} if training_loss is not None else {})))
             key = (validation["mcc"], validation["f1"], validation["accuracy"],
                    validation["auc"] if validation["auc"] is not None else -float("inf"))
             if key > best_key:
                 best_key, best_scores, best_threshold = key, list(scores), threshold
+                if source_supervision:
+                    best_source_scores, best_source_threshold = list(source_scores), source_threshold
                 checkpoint = dict(
                     cfg_ablation_version=CHECKPOINT_SCHEMA, feature_schema=FEATURE_SCHEMA,
                     model_config=config, vocabulary=vocab.values, selected_epoch=epoch+1,
                     decision_threshold=threshold, selection="validation_mcc", validation=validation,
                     trainable_parameters=sum(p.numel() for p in trainable),
                     **({"training_loss": training_loss} if training_loss is not None else {}),
+                    **({"source_validation": source_validation,
+                        "source_decision_threshold": source_threshold} if source_supervision else {}),
                     adapter_state=base._cpu_state(base.get_peft_model_state_dict(model.encoder)),
                     task_state=base._cpu_state(model.task_modules.state_dict()))
                 _save_torch(folder / "best.pt", checkpoint)
@@ -232,12 +285,13 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
     gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
-    return best_scores, best_threshold, ({split: coverage_summary(counts)
-                                         for split, counts in coverage.items()} if aligned else None)
+    return (best_scores, best_threshold,
+            {split: coverage_summary(counts) for split, counts in coverage.items()} if aligned else None,
+            (best_source_scores, best_source_threshold) if source_supervision else None)
 
 
 def _prediction_outputs(folder, split, rows, scores, threshold, builder, *, checkpoint_hash,
-                        alignment_coverage=None, source_reference=None):
+                        alignment_coverage=None, source_reference=None, prediction_suffix=""):
     if len(rows) != len(scores) or (source_reference is not None and len(source_reference) != len(rows)):
         raise ValueError("prediction count mismatch")
     labels = [r["label"] for r in rows]
@@ -264,11 +318,11 @@ def _prediction_outputs(folder, split, rows, scores, threshold, builder, *, chec
         indices = [i for i, p in enumerate(predictions) if p["source_truncated"] == flag]
         if indices:
             summary["subgroups"][name] = metrics([labels[i] for i in indices], [scores[i] for i in indices], threshold)
-    path = folder / f"{split}.predictions.jsonl"
+    path = folder / f"{split}{prediction_suffix}.predictions.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for p in predictions:
             handle.write(json.dumps(p, ensure_ascii=False, allow_nan=False) + "\n")
-    atomic_json(folder / f"{split}.metrics.json", summary)
+    atomic_json(folder / f"{split}{prediction_suffix}.metrics.json", summary)
     return summary
 
 
@@ -325,7 +379,8 @@ def compare_run(root: str | Path, split: str = "valid",
     if "cfg" in rows:
         cfg_threshold = rows["cfg"][0]["threshold"]
         result["changes_vs_cfg"] = {}
-        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA, *JK_VARIANTS, *READOUT_VARIANTS):
+        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA, *JK_VARIANTS,
+                        *SOURCE_SUPERVISION_VARIANTS, *READOUT_VARIANTS):
             if variant not in rows:
                 continue
             result["changes_vs_cfg"][variant] = {
@@ -415,9 +470,10 @@ def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
 
 def run_experiment(args, base=None):
     import torch
-    if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA or v in JK_VARIANTS
-            for v in args.variants) and args.source_max_length != 2048):
-        raise ValueError("D/E/F/G, C dual-forward, and CFG round-readout runs require the original 2048-token source budget")
+    if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA or
+            v in JK_VARIANTS or v in SOURCE_SUPERVISION_VARIANTS for v in args.variants) and
+            args.source_max_length != 2048):
+        raise ValueError("CFG ablations require the original 2048-token source budget")
     rows, views = _prepare(args.dataset, args.graphs, args.source_dataset,
                            shuffle_seed=args.seed if "cfg_ddg_shuffled" in args.variants else None)
     train = [r for r in rows if r["split"] == "train"]
@@ -473,6 +529,11 @@ def run_experiment(args, base=None):
                 if (not (folder/"valid.predictions.jsonl").exists() or
                         state.get("validation_predictions_sha256") != file_sha256(folder/"valid.predictions.jsonl")):
                     raise ValueError(f"{variant}: completed run is missing predictions")
+                if variant in SOURCE_SUPERVISION_VARIANTS:
+                    source_path = folder/"valid.source.predictions.jsonl"
+                    if (not source_path.exists() or
+                            state.get("source_validation_predictions_sha256") != file_sha256(source_path)):
+                        raise ValueError(f"{variant}: completed run is missing source predictions")
                 print(f"skip_completed_variant={variant}", flush=True)
                 continue
             if folder.exists() and any(folder.iterdir()):
@@ -480,6 +541,7 @@ def run_experiment(args, base=None):
                                       "move this variant directory aside or choose a new run directory.")
             folder.mkdir(exist_ok=True)
             atomic_json(folder / "config.json", variant_config)
+            source_output = None
             if variant == "baseline":
                 # Delegate A to the unchanged original trainer and model, not a reimplementation.
                 checkpoint = base.train_model(
@@ -498,7 +560,7 @@ def run_experiment(args, base=None):
                                                                 batch_size=args.batch_size, device=str(device))).tolist()
                 alignment_coverage = None
             else:
-                scores, threshold, alignment_coverage = _train_graph(
+                scores, threshold, alignment_coverage, source_output = _train_graph(
                     base, variant_config, rows, views, vocab, folder, device)
                 if alignment_coverage is not None:
                     atomic_json(folder / "alignment_coverage.json", alignment_coverage)
@@ -507,9 +569,17 @@ def run_experiment(args, base=None):
                                            checkpoint_hash=checkpoint_hash,
                                            alignment_coverage=(alignment_coverage["valid"]
                                                                if alignment_coverage else None))
-            atomic_json(complete, dict(config_sha256=digest(variant_config), checkpoint_sha256=checkpoint_hash,
-                                       validation_predictions_sha256=file_sha256(folder/"valid.predictions.jsonl"),
-                                       validation=summary["selected"]))
+            completed = dict(config_sha256=digest(variant_config), checkpoint_sha256=checkpoint_hash,
+                             validation_predictions_sha256=file_sha256(folder/"valid.predictions.jsonl"),
+                             validation=summary["selected"])
+            if source_output is not None:
+                source_scores, source_threshold = source_output
+                source_summary = _prediction_outputs(
+                    folder, "valid", valid, source_scores, source_threshold, builder,
+                    checkpoint_hash=checkpoint_hash, prediction_suffix=".source")
+                completed.update(source_validation_predictions_sha256=file_sha256(
+                    folder/"valid.source.predictions.jsonl"), source_validation=source_summary["selected"])
+            atomic_json(complete, completed)
             gc.collect()
             if device.type == "cuda":
                 torch.cuda.empty_cache()
@@ -541,9 +611,12 @@ def evaluate_run(args, base=None):
                     completed.get("checkpoint_sha256") != file_sha256(folder/"best.pt")):
                 raise ValueError(f"{variant}: checkpoint/config has changed since training")
             path = folder/f"{args.split}.predictions.jsonl"
-            if path.exists() and not args.replace_predictions:
-                raise FileExistsError(f"{path} exists; use --replace-predictions to recompute this evaluation only")
+            source_path = folder/f"{args.split}.source.predictions.jsonl" if variant in SOURCE_SUPERVISION_VARIANTS else None
+            for existing in (path, source_path):
+                if existing is not None and existing.exists() and not args.replace_predictions:
+                    raise FileExistsError(f"{existing} exists; use --replace-predictions to recompute this evaluation only")
             checkpoint = torch.load(folder/"best.pt", map_location="cpu", weights_only=False)
+            source_scores = None
             if variant == "baseline":
                 scores = torch.sigmoid(base.predict_checkpoint(folder/"best.pt", selected,
                                         batch_size=args.batch_size, device=str(device))).tolist()
@@ -560,16 +633,27 @@ def evaluate_run(args, base=None):
                 model.task_modules.load_state_dict(checkpoint["task_state"])
                 encoded = {r["sample_key"]: vocab.encode(views[r["sample_key"]]) for r in selected}
                 coverage = Counter() if variant.startswith("aligned_") else None
-                scores = _graph_scores(model, selected, builder, views, encoded, batch_size=args.batch_size,
-                                       device=device, coverage=coverage)
+                predictions = _graph_scores(model, selected, builder, views, encoded, batch_size=args.batch_size,
+                                            device=device, coverage=coverage,
+                                            include_source=variant in SOURCE_SUPERVISION_VARIANTS)
+                scores, source_scores = (predictions if variant in SOURCE_SUPERVISION_VARIANTS
+                                         else (predictions, None))
                 del model
             threshold = float(checkpoint["decision_threshold"])
             summary = _prediction_outputs(folder, args.split, selected, scores, threshold, builder,
                                           checkpoint_hash=file_sha256(folder/"best.pt"),
                                           alignment_coverage=coverage_summary(coverage) if variant != "baseline" and coverage is not None else None)
+            if source_scores is not None:
+                source_summary = _prediction_outputs(
+                    folder, args.split, selected, source_scores,
+                    float(checkpoint["source_decision_threshold"]), builder,
+                    checkpoint_hash=file_sha256(folder/"best.pt"), prediction_suffix=".source")
             if args.split == "valid":
                 completed["validation_predictions_sha256"] = file_sha256(path)
                 completed["validation"] = summary["selected"]
+                if source_scores is not None:
+                    completed["source_validation_predictions_sha256"] = file_sha256(source_path)
+                    completed["source_validation"] = source_summary["selected"]
                 atomic_json(folder/"complete.json", completed)
             del checkpoint
             gc.collect()
@@ -589,7 +673,7 @@ def parser():
     build.add_argument("--java-home", default="/home/phy/jdk21")
     build.add_argument("--timeout", type=int, default=300)
     build.add_argument("--batch-size", type=int, default=8)
-    run = sub.add_parser("run", help="train selected A/B/C/D/E/F/G, dual-forward, and CFG round-readout variants; validation only")
+    run = sub.add_parser("run", help="train selected CFG ablations; validation only")
     run.add_argument("--dataset", required=True)
     run.add_argument("--graphs", required=True)
     run.add_argument("--output-dir", required=True)

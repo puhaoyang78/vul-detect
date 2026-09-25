@@ -430,6 +430,40 @@ class RDropLossTests(unittest.TestCase):
         torch.testing.assert_close(full.bias.grad, micro.bias.grad)
 
 
+class SourceSupervisionLossTests(unittest.TestCase):
+    def test_aux_and_detach_have_identical_unweighted_loss_values(self):
+        source = torch.tensor([-1.2, .8, 2.1], requires_grad=True)
+        graph = torch.tensor([.4, -.3, .7], requires_grad=True)
+        labels = torch.tensor([0., 1., 0.])
+        expected_source = nn.functional.binary_cross_entropy_with_logits(source, labels)
+        expected_fusion = nn.functional.binary_cross_entropy_with_logits(source + graph, labels)
+        for detach_source in (False, True):
+            total, source_bce, fusion_bce = exp.source_supervision_loss(
+                source, graph, labels, detach_source=detach_source)
+            torch.testing.assert_close(source_bce, expected_source, rtol=0, atol=0)
+            torch.testing.assert_close(fusion_bce, expected_fusion, rtol=0, atol=0)
+            torch.testing.assert_close(total, expected_source + expected_fusion, rtol=0, atol=0)
+
+    def test_sample_weighted_partial_accumulation_for_both_losses(self):
+        torch.manual_seed(42)
+        initial = nn.Linear(3, 2)
+        features = torch.randn(5, 3)
+        labels = torch.tensor([0., 1., 1., 0., 1.])
+        for detach_source in (False, True):
+            full, partial = copy.deepcopy(initial), copy.deepcopy(initial)
+            def loss(model, start, end):
+                logits = model(features[start:end])
+                return exp.source_supervision_loss(
+                    logits[:, 0], logits[:, 1], labels[start:end],
+                    detach_source=detach_source)[0]
+            loss(full, 0, 5).backward()
+            for start in range(0, 5, 2):
+                end = min(start + 2, 5)
+                (loss(partial, start, end) * (end-start)/5).backward()
+            torch.testing.assert_close(full.weight.grad, partial.weight.grad)
+            torch.testing.assert_close(full.bias.grad, partial.bias.grad)
+
+
 class TinyEncoder(nn.Module):
     def __init__(self):
         super().__init__();self.embedding=nn.Embedding(32,8);self.adapter=nn.Linear(8,8,bias=False)
@@ -735,6 +769,81 @@ class NetworkTests(unittest.TestCase):
             self.assertGreater(encoder.message.weight.grad.abs().sum().item(), 0)
             self.assertGreater(encoder.update.weight_hh.grad.abs().sum().item(), 0)
             self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(), 0)
+
+    def test_source_supervision_models_match_c_initialization_and_single_forward(self):
+        api = fake_base()
+        models = {}
+        for variant in ("cfg", *exp.SOURCE_SUPERVISION_VARIANTS):
+            api._seed_everything(42)
+            models[variant] = build_model(api, dict(tiny_config(variant), graph_steps=5),
+                                          self.vocab.sizes(), torch.device("cpu"), training=True)
+        c = models["cfg"]
+        for variant in exp.SOURCE_SUPERVISION_VARIANTS:
+            model = models[variant]
+            self.assertEqual(model.task_modules["cfg_encoder"].mode, "cfg")
+            self.assertEqual(model.task_modules["cfg_encoder"].steps, 5)
+            self.assertEqual(sum(p.numel() for p in model.parameters()),
+                             sum(p.numel() for p in c.parameters()))
+            self.assertEqual(model.state_dict().keys(), c.state_dict().keys())
+            for key, value in c.state_dict().items():
+                self.assertTrue(torch.equal(value, model.state_dict()[key]), key)
+            with torch.no_grad():
+                model.task_modules["cfg_classifier"].weight.fill_(.1)
+            ids = torch.tensor([[2, 3, 1]])
+            mask = torch.ones_like(ids)
+            source, graph = model.branch_logits(ids, mask, self.batch)
+            self.assertEqual(model.encoder.calls, 1)
+            torch.testing.assert_close(model(ids, mask, self.batch), source + graph)
+            self.assertEqual(model.encoder.calls, 2)
+            pooled, graph_vector, combined = model.representations(ids, mask, self.batch)
+            torch.testing.assert_close(combined, source + graph)
+            self.assertEqual(pooled.shape, (1, 8))
+            self.assertEqual(graph_vector.shape, (1, 16))
+        ids = torch.tensor([[2, 3, 1]])
+        mask = torch.ones_like(ids)
+        c_source, c_graph = c.branch_logits(ids, mask, self.batch)
+        torch.testing.assert_close(c(ids, mask, self.batch), c_source + c_graph)
+
+    def test_source_detach_cuts_only_fusion_gradient_to_source(self):
+        api = fake_base()
+        ids = torch.tensor([[2, 3, 1]])
+        mask = torch.ones_like(ids)
+        labels = torch.ones(1)
+        for variant in exp.SOURCE_SUPERVISION_VARIANTS:
+            api._seed_everything(42)
+            model = build_model(api, tiny_config(variant), self.vocab.sizes(),
+                                torch.device("cpu"), training=True)
+            with torch.no_grad():
+                model.task_modules["cfg_classifier"].weight.fill_(.1)
+            source_params = [model.encoder.adapter.weight,
+                             model.task_modules["classifier"].weight,
+                             model.task_modules["classifier"].bias]
+            graph_params = [model.task_modules["cfg_classifier"].weight,
+                            model.task_modules["cfg_encoder"].message.weight,
+                            model.task_modules["cfg_encoder"].update.weight_hh]
+            source, graph = model.branch_logits(ids, mask, self.batch)
+            total, source_bce, fusion_bce = exp.source_supervision_loss(
+                source, graph, labels, detach_source=variant == "cfg_source_detach")
+            source_only_grads = torch.autograd.grad(source_bce, source_params, retain_graph=True)
+            self.assertTrue(all(g is None for g in torch.autograd.grad(
+                source_bce, graph_params, retain_graph=True, allow_unused=True)))
+            fusion_grads = torch.autograd.grad(
+                fusion_bce, source_params + graph_params, retain_graph=True, allow_unused=True)
+            total.backward()
+            for i, param in enumerate(source_params):
+                fusion_grad = fusion_grads[i]
+                if variant == "cfg_source_detach":
+                    self.assertIsNone(fusion_grad)
+                    torch.testing.assert_close(param.grad, source_only_grads[i])
+                else:
+                    self.assertIsNotNone(fusion_grad)
+                    torch.testing.assert_close(param.grad, source_only_grads[i] + fusion_grad)
+                    self.assertGreater(fusion_grad.abs().sum().item(), 0)
+            for param, expected in zip(graph_params, fusion_grads[len(source_params):]):
+                self.assertIsNotNone(expected)
+                torch.testing.assert_close(param.grad, expected)
+                self.assertGreater(param.grad.abs().sum().item(), 0)
+            self.assertEqual(model.encoder.calls, 1)
 
     def test_dual_configs_use_exact_c_model_and_independent_dropout(self):
         api = fake_base()
@@ -1043,6 +1152,109 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(set(compared["changes_vs_cfg"]), set(exp.JK_VARIANTS))
             for mode in exp.JK_VARIANTS:
                 self.assertIn("validation_selected_thresholds", compared["changes_vs_cfg"][mode])
+
+    def test_source_supervision_runner_saves_two_heads_and_uses_fusion_valid(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source, graphs, run, prior = (root/name for name in
+                                          ("source.jsonl", "graphs.jsonl", "source_supervision", "prior"))
+            rows = fixture_rows()
+            write_jsonl(source, rows)
+            write_jsonl(graphs, [dict(data.identity(row), graph_schema_version=data.GRAPH_SCHEMA,
+                                      preprocessing_version=data.JOERN_SOURCE_PREPROCESSING_VERSION,
+                                      preprocessing_applied=False,
+                                      original_source_sha256=data.source_hash(row["raw_source"]),
+                                      parsed_source_sha256=data.source_hash(row["raw_source"]),
+                                      graph=fixture_graph()) for row in rows])
+            api = fake_base()
+            api.SequenceVulnerabilityClassifier = DropoutTinySource
+            DropoutTinySource.created.clear()
+            args = exp.parser().parse_args([
+                "run", "--dataset", str(source), "--graphs", str(graphs), "--output-dir", str(run),
+                "--model-path", "tiny-test-only", "--device", "cpu", "--variants",
+                *exp.SOURCE_SUPERVISION_VARIANTS, "--epochs", "2", "--batch-size", "2",
+                "--gradient-accumulation", "2", "--graph-hidden-size", "8"])
+            self.assertEqual((args.seed, args.source_max_length, args.graph_steps), (42, 2048, 5))
+            trained = exp.run_experiment(args, base=api)
+            self.assertEqual(set(trained["metrics"]), set(exp.SOURCE_SUPERVISION_VARIANTS))
+            self.assertEqual(api.train_model.call_count, 0)
+            self.assertEqual(len(DropoutTinySource.created), 2)
+            for model in DropoutTinySource.created:
+                self.assertEqual(model.encoder.calls, 8)  # 2 epochs x (3 train + 1 valid) batches
+                self.assertEqual(model.task_modules["cfg_encoder"].mode, "cfg")
+            first, second = DropoutTinySource.created
+            for key, value in first.initial_state.items():
+                self.assertTrue(torch.equal(value, second.initial_state[key]), key)
+            for variant in exp.SOURCE_SUPERVISION_VARIANTS:
+                folder = run/variant
+                history = data.read_jsonl(folder/"history.jsonl")
+                epochs = [row for row in history if row["event"] == "epoch"]
+                steps = [row for row in history if row["event"] == "step"]
+                self.assertEqual(len(epochs), 2)
+                self.assertTrue(steps)
+                self.assertTrue(all({"source_bce", "fusion_bce"} <= row.keys() for row in steps))
+                for row in epochs:
+                    self.assertEqual(row["optimizer_steps"], 2)
+                    self.assertAlmostEqual(row["train_loss"], sum(row["training_loss"].values()), places=6)
+                    self.assertIn("source_validation", row)
+                checkpoint = torch.load(folder/"best.pt", weights_only=False)
+                best = max(epochs, key=lambda row: (row["validation"]["mcc"],
+                                                     row["validation"]["f1"],
+                                                     row["validation"]["accuracy"],
+                                                     row["validation"]["auc"]
+                                                     if row["validation"]["auc"] is not None else -float("inf")))
+                self.assertEqual(checkpoint["selected_epoch"], best["epoch"])
+                self.assertEqual(checkpoint["validation"], best["validation"])
+                self.assertEqual(checkpoint["source_validation"], best["source_validation"])
+                self.assertEqual(checkpoint["training_loss"], best["training_loss"])
+                for suffix, threshold in (("", checkpoint["decision_threshold"]),
+                                          (".source", checkpoint["source_decision_threshold"])):
+                    predictions = data.read_jsonl(folder/f"valid{suffix}.predictions.jsonl")
+                    metric_file = json.loads((folder/f"valid{suffix}.metrics.json").read_text())
+                    self.assertEqual([p["sample_key"] for p in predictions],
+                                     [r["sample_key"] for r in rows if r["split"] == "valid"])
+                    self.assertEqual({p["threshold"] for p in predictions}, {threshold})
+                    self.assertEqual(metric_file["selected"]["threshold"], threshold)
+                self.assertFalse((folder/"test.predictions.jsonl").exists())
+                self.assertFalse((folder/"test.source.predictions.jsonl").exists())
+            self.assertFalse((run/"ddg_audit.json").exists())
+            with self.assertRaisesRegex(ValueError, "2048-token"):
+                args.source_max_length = 8
+                exp.run_experiment(args, base=api)
+            prior.mkdir()
+            (prior/"config.json").write_text((run/"config.json").read_text())
+            for split in ("valid", "test"):
+                selected = [row for row in rows if row["split"] == split]
+                write_jsonl(prior/"cfg"/f"{split}.predictions.jsonl", [
+                    dict(data.identity(row), score=.8 if row["label"] else .2,
+                         prediction=row["label"], threshold=.5) for row in selected])
+            compared_valid = exp.compare_run(run, "valid", reference_root=prior)
+            self.assertEqual(set(compared_valid["changes_vs_cfg"]), set(exp.SOURCE_SUPERVISION_VARIANTS))
+            evaluation = exp.parser().parse_args([
+                "eval", "--run-dir", str(run), "--split", "test", "--variants",
+                *exp.SOURCE_SUPERVISION_VARIANTS, "--device", "cpu", "--batch-size", "2"])
+            TinyInputBuilder.allow_test = True
+            try:
+                with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
+                    tested = exp.evaluate_run(evaluation, base=api)
+                self.assertEqual(set(tested["metrics"]), set(exp.SOURCE_SUPERVISION_VARIANTS))
+                for model in DropoutTinySource.created[2:]:
+                    self.assertEqual(model.encoder.calls, 1)
+                for variant in exp.SOURCE_SUPERVISION_VARIANTS:
+                    folder = run/variant
+                    checkpoint = torch.load(folder/"best.pt", weights_only=False)
+                    for suffix, threshold in (("", checkpoint["decision_threshold"]),
+                                              (".source", checkpoint["source_decision_threshold"])):
+                        predictions = data.read_jsonl(folder/f"test{suffix}.predictions.jsonl")
+                        self.assertEqual([p["sample_key"] for p in predictions],
+                                         [r["sample_key"] for r in selected])
+                        self.assertEqual({p["threshold"] for p in predictions}, {threshold})
+                with self.assertRaises(FileExistsError):
+                    exp.evaluate_run(evaluation, base=api)
+            finally:
+                TinyInputBuilder.allow_test = False
+            compared_test = exp.compare_run(run, "test", reference_root=prior)
+            self.assertEqual(set(compared_test["changes_vs_cfg"]), set(exp.SOURCE_SUPERVISION_VARIANTS))
 
     def test_dual_forward_runner_records_losses_and_keeps_test_single_pass(self):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
