@@ -26,6 +26,7 @@ from vulnmechanism import cfg_experiment as exp
 from vulnmechanism import cfg_metrics as metric
 from vulnmechanism.cfg_network import (AttributeCFGEncoder, GraphBatch,
                                       SourceGraphClassifier, build_model, collate_graphs)
+from vulnmechanism.rdrop import binary_rdrop_loss
 from vulnmechanism.cpg import (
     FunctionGraph, GraphEdge, GraphNode, _prepare_joern_source, resolve_target_graph,
 )
@@ -360,6 +361,75 @@ class MetricTests(unittest.TestCase):
             metric.paired_changes(b,c)
 
 
+class RDropLossTests(unittest.TestCase):
+    def test_symmetric_bernoulli_kl_matches_independent_reference(self):
+        first = torch.tensor([-3.0, -0.4, 0.8, 2.5], dtype=torch.float16)
+        second = torch.tensor([1.5, 0.2, -1.1, 2.0], dtype=torch.float16)
+        labels = torch.tensor([0, 1, 1, 0])
+        total, bce, kl = binary_rdrop_loss(first, second, labels, alpha=1.0)
+        reference = 0.5 * (
+            torch.distributions.kl_divergence(
+                torch.distributions.Bernoulli(logits=first.double()),
+                torch.distributions.Bernoulli(logits=second.double())) +
+            torch.distributions.kl_divergence(
+                torch.distributions.Bernoulli(logits=second.double()),
+                torch.distributions.Bernoulli(logits=first.double()))).mean()
+        expected_bce = 0.5 * (
+            nn.functional.binary_cross_entropy_with_logits(first.float(), labels.float()) +
+            nn.functional.binary_cross_entropy_with_logits(second.float(), labels.float()))
+        self.assertEqual(total.dtype, torch.float32)
+        torch.testing.assert_close(kl.double(), reference, atol=2e-6, rtol=2e-6)
+        torch.testing.assert_close(bce, expected_bce)
+        torch.testing.assert_close(total, bce + kl)
+        control, control_bce, control_kl = binary_rdrop_loss(first, second, labels, alpha=0.0)
+        torch.testing.assert_close(control, expected_bce)
+        torch.testing.assert_close(control_bce, expected_bce)
+        torch.testing.assert_close(control_kl, kl)
+        _, _, zero_kl = binary_rdrop_loss(first, first, labels, alpha=1.0)
+        self.assertEqual(zero_kl.item(), 0.0)
+        extreme, _, extreme_kl = binary_rdrop_loss(
+            torch.tensor([-100.0, 100.0]), torch.tensor([100.0, -100.0]), labels[:2], alpha=1.0)
+        self.assertTrue(torch.isfinite(extreme))
+        self.assertTrue(torch.isfinite(extreme_kl))
+        self.assertGreater(extreme_kl.item(), 0)
+
+    def test_both_branches_receive_bce_and_kl_gradients(self):
+        first = torch.tensor([-1.4, 0.7, 2.1], requires_grad=True)
+        second = torch.tensor([0.5, -0.8, 1.3], requires_grad=True)
+        labels = torch.tensor([0.0, 1.0, 1.0])
+        total, bce, kl = binary_rdrop_loss(first, second, labels, alpha=1.0)
+        total.backward(retain_graph=True)
+        self.assertGreater(first.grad.abs().sum().item(), 0)
+        self.assertGreater(second.grad.abs().sum().item(), 0)
+        first.grad = second.grad = None
+        kl.backward(retain_graph=True)
+        self.assertGreater(first.grad.abs().sum().item(), 0)
+        self.assertGreater(second.grad.abs().sum().item(), 0)
+        first.grad = second.grad = None
+        control, _, _ = binary_rdrop_loss(first, second, labels, alpha=0.0)
+        control.backward()
+        self.assertGreater(first.grad.abs().sum().item(), 0)
+        self.assertGreater(second.grad.abs().sum().item(), 0)
+
+    def test_dual_loss_preserves_sample_weighted_gradient_accumulation(self):
+        torch.manual_seed(42)
+        full = nn.Linear(3, 1)
+        micro = copy.deepcopy(full)
+        x = torch.randn(5, 3)
+        perturbation = torch.randn(5, 3) * 0.2
+        labels = torch.tensor([0., 1., 1., 0., 1.])
+        def loss(model, start, end):
+            first = model(x[start:end]).squeeze(-1)
+            second = model(x[start:end] + perturbation[start:end]).squeeze(-1)
+            return binary_rdrop_loss(first, second, labels[start:end], alpha=1.0)[0]
+        loss(full, 0, 5).backward()
+        for start in range(0, 5, 2):
+            end = min(start + 2, 5)
+            (loss(micro, start, end) * (end-start)/5).backward()
+        torch.testing.assert_close(full.weight.grad, micro.weight.grad)
+        torch.testing.assert_close(full.bias.grad, micro.bias.grad)
+
+
 class TinyEncoder(nn.Module):
     def __init__(self):
         super().__init__();self.embedding=nn.Embedding(32,8);self.adapter=nn.Linear(8,8,bias=False)
@@ -379,6 +449,31 @@ class TinySource(nn.Module):
         hidden=self.encoder(input_ids,attention_mask).last_hidden_state
         mask=attention_mask.unsqueeze(-1).to(hidden.dtype)
         return self.task_modules["classifier"]((hidden*mask).sum(1)/mask.sum(1).clamp_min(1)).squeeze(-1)
+
+
+class DropoutTinyEncoder(TinyEncoder):
+    def __init__(self):
+        super().__init__()
+        self.dropout = nn.Dropout(0.5)
+        self.draws = []
+
+    def forward(self, input_ids, attention_mask, use_cache=False):
+        self.calls += 1
+        hidden = self.embedding(input_ids)
+        dropped = self.dropout(hidden)
+        self.draws.append(dropped.detach().clone())
+        return types.SimpleNamespace(last_hidden_state=hidden + self.adapter(dropped))
+
+
+class DropoutTinySource(TinySource):
+    created = []
+
+    def __init__(self, *args, device="cpu", **kwargs):
+        super().__init__(*args, device=device, **kwargs)
+        self.encoder = DropoutTinyEncoder()
+        self.to(device)
+        self.initial_state = {k: value.detach().clone() for k, value in self.state_dict().items()}
+        self.created.append(self)
 
 
 class TinyTokenizer:
@@ -554,6 +649,37 @@ class NetworkTests(unittest.TestCase):
         self.assertGreater(encoder.ddg_message.weight.grad.abs().sum().item(), 0)
         self.assertGreater(encoder.message.weight.grad.abs().sum().item(), 0)
         self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(), 0)
+
+    def test_dual_configs_use_exact_c_model_and_independent_dropout(self):
+        api = fake_base()
+        api.SequenceVulnerabilityClassifier = DropoutTinySource
+        states = {}
+        for variant in ("cfg", "cfg_double_ce", "cfg_rdrop"):
+            api._seed_everything(42)
+            model = build_model(api, tiny_config(variant), self.vocab.sizes(),
+                                torch.device("cpu"), training=True)
+            self.assertEqual(model.task_modules["cfg_encoder"].mode, "cfg")
+            states[variant] = {k: value.clone() for k, value in model.state_dict().items()}
+        self.assertEqual(states["cfg"].keys(), states["cfg_double_ce"].keys())
+        for key, value in states["cfg"].items():
+            self.assertTrue(torch.equal(value, states["cfg_double_ce"][key]), key)
+            self.assertTrue(torch.equal(value, states["cfg_rdrop"][key]), key)
+        model.train()
+        ids = torch.tensor([[2, 3, 4, 1]])
+        mask = torch.ones_like(ids)
+        first = model(ids, mask, self.batch)
+        second = model(ids, mask, self.batch)
+        self.assertEqual(model.encoder.calls, 2)
+        self.assertFalse(torch.equal(model.encoder.draws[-2], model.encoder.draws[-1]))
+        binary_rdrop_loss(first, second, torch.ones(1), alpha=1.0)[0].backward()
+        self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(), 0)
+        builder = TinyInputBuilder(None, source_max_length=2048, context_max_length=384)
+        before = model.encoder.calls
+        scores = exp._graph_scores(model, self.rows[:2], builder, self.views,
+                                   {r["sample_key"]: self.vocab.encode(self.views[r["sample_key"]])
+                                    for r in self.rows[:2]}, batch_size=2, device=torch.device("cpu"))
+        self.assertEqual(len(scores), 2)
+        self.assertEqual(model.encoder.calls, before + 1)
 
     def test_invalid_endpoint_fails(self):
         v=copy.deepcopy(self.view);v["edges"].append((0,999))
@@ -759,9 +885,85 @@ class IntegrationTests(unittest.TestCase):
             compared=exp.compare_run(de,reference_root=abc)
             self.assertEqual(set(compared["metrics"]),set(exp.VARIANTS))
             self.assertIn("aligned_cfg",compared["changes_vs_baseline"])
+            self.assertIn("cfg_double_ce",compared["changes_vs_cfg"])
+            self.assertIn("cfg_rdrop",compared["changes_vs_cfg"])
             (abc/"config.json").write_text(json.dumps({"seed":7,"source_max_length":2048}))
             with self.assertRaisesRegex(ValueError,"different dataset"):
                 exp.compare_run(de,reference_root=abc)
+
+    def test_dual_forward_runner_records_losses_and_keeps_test_single_pass(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source, graphs, run, prior = root/"source.jsonl", root/"graphs.jsonl", root/"dual", root/"prior"
+            rows = fixture_rows()
+            write_jsonl(source, rows)
+            write_jsonl(graphs, [dict(data.identity(row), graph_schema_version=data.GRAPH_SCHEMA,
+                                      preprocessing_version=data.JOERN_SOURCE_PREPROCESSING_VERSION,
+                                      preprocessing_applied=False,
+                                      original_source_sha256=data.source_hash(row["raw_source"]),
+                                      parsed_source_sha256=data.source_hash(row["raw_source"]),
+                                      graph=fixture_graph()) for row in rows])
+            api = fake_base()
+            api.SequenceVulnerabilityClassifier = DropoutTinySource
+            DropoutTinySource.created.clear()
+            args = exp.parser().parse_args([
+                "run", "--dataset", str(source), "--graphs", str(graphs), "--output-dir", str(run),
+                "--model-path", "tiny-test-only", "--device", "cpu", "--variants",
+                "cfg_double_ce", "cfg_rdrop", "--epochs", "1", "--batch-size", "2",
+                "--gradient-accumulation", "2", "--graph-hidden-size", "8", "--graph-steps", "2"])
+            trained = exp.run_experiment(args, base=api)
+            self.assertEqual(set(trained["metrics"]), set(exp.DUAL_FORWARD_ALPHA))
+            self.assertEqual(api.train_model.call_count, 0)
+            self.assertEqual(len(DropoutTinySource.created), 2)
+            first, second = DropoutTinySource.created
+            for key, value in first.initial_state.items():
+                self.assertTrue(torch.equal(value, second.initial_state[key]), key)
+            for source_model in (first, second):
+                self.assertEqual(source_model.encoder.calls, 7)  # 3 train batches x 2, 1 valid batch x 1
+                self.assertFalse(torch.equal(source_model.encoder.draws[0], source_model.encoder.draws[1]))
+            self.assertTrue(torch.equal(first.encoder.draws[0], second.encoder.draws[0]))
+            self.assertTrue(torch.equal(first.encoder.draws[1], second.encoder.draws[1]))
+            for variant, alpha in exp.DUAL_FORWARD_ALPHA.items():
+                history = data.read_jsonl(run/variant/"history.jsonl")
+                steps = [item for item in history if item["event"] == "step"]
+                epochs = [item for item in history if item["event"] == "epoch"]
+                self.assertTrue(steps)
+                self.assertEqual(len(epochs), 1)
+                self.assertTrue(all({"bce", "kl", "alpha"} <= item.keys() for item in steps))
+                self.assertEqual({item["alpha"] for item in steps}, {alpha})
+                self.assertEqual(epochs[0]["training_loss"]["alpha"], alpha)
+                self.assertIn("validation", epochs[0])
+                checkpoint = torch.load(run/variant/"best.pt", weights_only=False)
+                self.assertEqual(checkpoint["training_loss"], epochs[0]["training_loss"])
+            with self.assertRaisesRegex(ValueError, "2048-token"):
+                args.source_max_length = 8
+                exp.run_experiment(args, base=api)
+            evaluation = exp.parser().parse_args([
+                "eval", "--run-dir", str(run), "--split", "test", "--variants",
+                "cfg_double_ce", "cfg_rdrop", "--device", "cpu", "--batch-size", "2"])
+            TinyInputBuilder.allow_test = True
+            try:
+                with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
+                    tested = exp.evaluate_run(evaluation, base=api)
+                self.assertEqual(set(tested["metrics"]), set(exp.DUAL_FORWARD_ALPHA))
+                for source_model in DropoutTinySource.created[2:]:
+                    self.assertEqual(source_model.encoder.calls, 1)
+                for variant in exp.DUAL_FORWARD_ALPHA:
+                    checkpoint = torch.load(run/variant/"best.pt", weights_only=False)
+                    predictions = data.read_jsonl(run/variant/"test.predictions.jsonl")
+                    self.assertEqual({p["threshold"] for p in predictions},
+                                     {checkpoint["decision_threshold"]})
+            finally:
+                TinyInputBuilder.allow_test = False
+            prior.mkdir()
+            (prior/"config.json").write_text((run/"config.json").read_text())
+            for split in ("valid", "test"):
+                selected = [row for row in rows if row["split"] == split]
+                write_jsonl(prior/"cfg"/f"{split}.predictions.jsonl", [
+                    dict(data.identity(row), score=.8 if row["label"] else .2,
+                         prediction=row["label"], threshold=.5) for row in selected])
+                comparison = exp.compare_run(run, split, reference_root=prior)
+                self.assertEqual(set(comparison["changes_vs_cfg"]), set(exp.DUAL_FORWARD_ALPHA))
 
     def test_f_g_runner_reuses_graph_cache_and_validation_threshold(self):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):

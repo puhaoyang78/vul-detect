@@ -170,6 +170,7 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
         return source
     if vocabulary_sizes is None:
         raise ValueError("graph vocabulary required")
+    mode = "cfg" if config["variant"] in {"cfg_double_ce", "cfg_rdrop"} else config["variant"]
     return SourceGraphClassifier(source, vocabulary_sizes,
                                  hidden_size=config["graph_hidden_size"], steps=config["graph_steps"],
-                                 mode=config["variant"], device=device)
+                                 mode=mode, device=device)

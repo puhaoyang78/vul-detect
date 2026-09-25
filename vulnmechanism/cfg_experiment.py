@@ -1,4 +1,4 @@
-"""A/B/C, source-aligned D/E, and DDG F/G runner using one graph training flow.
+"""A/B/C, aligned D/E, DDG F/G, and C dual-forward runner in one training flow.
 
 Examples are in docs/CFG_ABLATION.md. Training never evaluates the test split.
 The baseline behavior, datasets, and old checkpoints are preserved.
@@ -24,8 +24,9 @@ from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
 
 VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg",
-            "cfg_ddg", "cfg_ddg_shuffled")
+            "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop")
 DDG_VARIANTS = ("cfg_ddg", "cfg_ddg_shuffled")
+DUAL_FORWARD_ALPHA = {"cfg_double_ce": 0.0, "cfg_rdrop": 1.0}
 DEFAULT_VARIANTS = VARIANTS[:3]
 CHECKPOINT_SCHEMA = 1
 
@@ -56,7 +57,7 @@ def _tokenizer(base, config):
                              context_max_length=384)
 
 
-def _graph_forward(model, batch, builder, views, encoded, device, coverage=None):
+def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
     from .cfg_network import collate_graphs
     aligned = model.task_modules["cfg_encoder"].mode.startswith("aligned_")
     if aligned:
@@ -78,7 +79,11 @@ def _graph_forward(model, batch, builder, views, encoded, device, coverage=None)
                   for k in keys] if mode in DDG_VARIANTS else None)
     graph_batch = collate_graphs([views[k] for k in keys], [encoded[k] for k in keys],
                                  device=device, alignments=alignments, ddg_edges=ddg_edges)
-    return model(ids, mask, graph_batch)
+    return ids, mask, graph_batch
+
+
+def _graph_forward(model, batch, builder, views, encoded, device, coverage=None):
+    return model(*_graph_inputs(model, batch, builder, views, encoded, device, coverage))
 
 
 def _graph_scores(model, rows, builder, views, encoded, *, batch_size, device, coverage=None):
@@ -126,6 +131,9 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
     best_key = (-float("inf"),) * 4
     best_scores, best_threshold = None, None
     aligned = config["variant"].startswith("aligned_")
+    dual_alpha = DUAL_FORWARD_ALPHA.get(config["variant"])
+    if dual_alpha is not None:
+        from .rdrop import binary_rdrop_loss
     coverage = {"train": Counter(), "valid": Counter()} if aligned else None
     step = 0
     batch_size, accumulation = config["batch_size"], config["gradient_accumulation"]
@@ -142,16 +150,23 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
             optimizer.zero_grad(set_to_none=True)
             num_batches = math.ceil(len(order)/batch_size)
             total_loss, window_loss, window_samples = 0.0, 0.0, 0
+            total_bce = total_kl = window_bce = window_kl = 0.0
             optimizer_steps = 0
             bar = tqdm(range(0, len(order), batch_size), total=num_batches,
                        desc=f"{config['variant']} epoch {epoch+1}/{config['epochs']}",
                        file=sys.stdout, dynamic_ncols=True, mininterval=1)
             for batch_index, start in enumerate(bar):
                 batch = [train[i] for i in order[start:start+batch_size]]
-                logits = _graph_forward(model, batch, builder, views, encoded, device,
-                                        coverage=coverage["train"] if aligned and epoch == 0 else None)
+                inputs = _graph_inputs(model, batch, builder, views, encoded, device,
+                                       coverage=coverage["train"] if aligned and epoch == 0 else None)
+                logits = model(*inputs)
                 labels = torch.tensor([r["label"] for r in batch], dtype=torch.float32, device=device)
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels)
+                if dual_alpha is None:
+                    loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels)
+                else:
+                    # Reuse the exact same source/CFG tensors; dropout consumes fresh RNG state.
+                    second_logits = model(*inputs)
+                    loss, bce, kl = binary_rdrop_loss(logits, second_logits, labels, alpha=dual_alpha)
                 if not torch.isfinite(loss):
                     raise ValueError(f"non-finite loss in epoch {epoch+1}, batch {batch_index+1}")
                 # Identical sample-weighted partial accumulation windows to model.py.
@@ -163,6 +178,12 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                 total_loss += value*len(batch)
                 window_loss += value*len(batch)
                 window_samples += len(batch)
+                if dual_alpha is not None:
+                    bce_value, kl_value = float(bce.detach().cpu()), float(kl.detach().cpu())
+                    total_bce += bce_value*len(batch)
+                    total_kl += kl_value*len(batch)
+                    window_bce += bce_value*len(batch)
+                    window_kl += kl_value*len(batch)
                 if (batch_index+1) % accumulation == 0 or batch_index+1 == num_batches:
                     norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                     if not torch.isfinite(norm):
@@ -173,15 +194,21 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                     step += 1
                     if step == 1 or step % config["log_every"] == 0 or batch_index+1 == num_batches:
                         log(dict(event="step", epoch=epoch+1, step=step, loss=window_loss/window_samples,
-                                 source_lr=config["learning_rate"], graph_lr=config["graph_learning_rate"]))
+                                 source_lr=config["learning_rate"], graph_lr=config["graph_learning_rate"],
+                                 **({"bce": window_bce/window_samples, "kl": window_kl/window_samples,
+                                     "alpha": dual_alpha} if dual_alpha is not None else {})))
                         window_loss, window_samples = 0.0, 0
+                        window_bce = window_kl = 0.0
                 bar.set_postfix(loss=f"{value:.4f}", step=step, refresh=False)
             scores = _graph_scores(model, valid, builder, views, encoded, batch_size=batch_size, device=device,
                                    coverage=coverage["valid"] if aligned and epoch == 0 else None)
             threshold, validation = select_threshold([r["label"] for r in valid], scores)
+            training_loss = ({"bce": total_bce/len(train), "kl": total_kl/len(train),
+                              "alpha": dual_alpha} if dual_alpha is not None else None)
             log(dict(event="epoch", variant=config["variant"], epoch=epoch+1,
                      train_loss=total_loss/len(train), optimizer_steps=optimizer_steps,
-                     validation_threshold=threshold, validation=validation))
+                     validation_threshold=threshold, validation=validation,
+                     **({"training_loss": training_loss} if training_loss is not None else {})))
             key = (validation["mcc"], validation["f1"], validation["accuracy"],
                    validation["auc"] if validation["auc"] is not None else -float("inf"))
             if key > best_key:
@@ -191,6 +218,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                     model_config=config, vocabulary=vocab.values, selected_epoch=epoch+1,
                     decision_threshold=threshold, selection="validation_mcc", validation=validation,
                     trainable_parameters=sum(p.numel() for p in trainable),
+                    **({"training_loss": training_loss} if training_loss is not None else {}),
                     adapter_state=base._cpu_state(base.get_peft_model_state_dict(model.encoder)),
                     task_state=base._cpu_state(model.task_modules.state_dict()))
                 _save_torch(folder / "best.pt", checkpoint)
@@ -285,7 +313,7 @@ def compare_run(root: str | Path, split: str = "valid",
     if "cfg" in rows:
         cfg_threshold = rows["cfg"][0]["threshold"]
         result["changes_vs_cfg"] = {}
-        for variant in DDG_VARIANTS:
+        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA):
             if variant not in rows:
                 continue
             result["changes_vs_cfg"][variant] = {
@@ -375,9 +403,9 @@ def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
 
 def run_experiment(args, base=None):
     import torch
-    if (any(v.startswith("aligned_") or v in DDG_VARIANTS for v in args.variants)
-            and args.source_max_length != 2048):
-        raise ValueError("D/E/F/G require the original 2048-token source budget")
+    if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA
+            for v in args.variants) and args.source_max_length != 2048):
+        raise ValueError("D/E/F/G and C dual-forward runs require the original 2048-token source budget")
     rows, views = _prepare(args.dataset, args.graphs, args.source_dataset,
                            shuffle_seed=args.seed if "cfg_ddg_shuffled" in args.variants else None)
     train = [r for r in rows if r["split"] == "train"]
@@ -549,7 +577,7 @@ def parser():
     build.add_argument("--java-home", default="/home/phy/jdk21")
     build.add_argument("--timeout", type=int, default=300)
     build.add_argument("--batch-size", type=int, default=8)
-    run = sub.add_parser("run", help="train selected A/B/C/D/E/F/G variants; validation only")
+    run = sub.add_parser("run", help="train selected A/B/C/D/E/F/G and C dual-forward variants; validation only")
     run.add_argument("--dataset", required=True)
     run.add_argument("--graphs", required=True)
     run.add_argument("--output-dir", required=True)
