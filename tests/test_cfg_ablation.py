@@ -650,6 +650,92 @@ class NetworkTests(unittest.TestCase):
         self.assertGreater(encoder.message.weight.grad.abs().sum().item(), 0)
         self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(), 0)
 
+    def test_jk_five_round_values_and_original_cfg_last_state(self):
+        outputs = {}
+        initial = None
+        for mode in ("cfg", *exp.JK_VARIANTS):
+            torch.manual_seed(42)
+            encoder = AttributeCFGEncoder(self.vocab.sizes(), hidden_size=8, steps=5, mode=mode)
+            if initial is None:
+                initial = {key: value.clone() for key, value in encoder.state_dict().items()}
+            else:
+                for key, value in initial.items():
+                    self.assertTrue(torch.equal(value, encoder.state_dict()[key]), key)
+            states = []
+            handle = encoder.update.register_forward_hook(lambda _module, _inputs, output: states.append(output))
+            output = encoder(self.batch)
+            handle.remove()
+            self.assertEqual(len(states), 5)
+            x = torch.cat([layer(self.batch.attributes[:, i])
+                           for i, layer in enumerate(encoder.embedding)], dim=-1)
+            if mode == "cfg":
+                selected = states[-1]
+            elif mode == "cfg_jk_mean":
+                selected = (states[0] + states[1] + states[2] + states[3] + states[4]) / 5
+            else:
+                selected = states[0]
+                for state in states[1:]:
+                    selected = torch.maximum(selected, state)
+            combined = torch.cat((selected, x), dim=-1)
+            scores = encoder.pool_gate(combined).squeeze(-1).softmax(dim=0)
+            expected = (scores.unsqueeze(-1) * combined).sum(dim=0, keepdim=True)
+            torch.testing.assert_close(output, expected)
+            outputs[mode] = output
+        self.assertFalse(torch.allclose(outputs["cfg"], outputs["cfg_jk_mean"]))
+        self.assertFalse(torch.allclose(outputs["cfg"], outputs["cfg_jk_max"]))
+
+    def test_jk_one_round_equals_cfg_and_full_model_initialization(self):
+        one_round = {}
+        for mode in ("cfg", *exp.JK_VARIANTS):
+            torch.manual_seed(42)
+            one_round[mode] = AttributeCFGEncoder(self.vocab.sizes(), hidden_size=8,
+                                                  steps=1, mode=mode)(self.batch)
+        for mode in exp.JK_VARIANTS:
+            torch.testing.assert_close(one_round[mode], one_round["cfg"], rtol=0, atol=0)
+        api = fake_base()
+        models = {}
+        for mode in ("cfg", *exp.JK_VARIANTS):
+            api._seed_everything(42)
+            models[mode] = build_model(api, dict(tiny_config(mode), graph_steps=5),
+                                       self.vocab.sizes(), torch.device("cpu"), training=True)
+        c = models["cfg"]
+        for mode in exp.JK_VARIANTS:
+            other = models[mode]
+            self.assertEqual(sum(p.numel() for p in c.parameters()),
+                             sum(p.numel() for p in other.parameters()))
+            self.assertEqual(c.state_dict().keys(), other.state_dict().keys())
+            for key, value in c.state_dict().items():
+                self.assertTrue(torch.equal(value, other.state_dict()[key]), key)
+            self.assertEqual(other.task_modules["cfg_encoder"].steps, 5)
+
+    def test_jk_mean_and_max_backpropagate_through_shared_cfg_and_source(self):
+        api = fake_base()
+        ids = torch.tensor([[2, 3, 1]])
+        mask = torch.ones_like(ids)
+        for mode in exp.JK_VARIANTS:
+            api._seed_everything(42)
+            model = build_model(api, dict(tiny_config(mode), graph_steps=5),
+                                self.vocab.sizes(), torch.device("cpu"), training=True)
+            with torch.no_grad():
+                model.task_modules["cfg_classifier"].weight.fill_(.1)
+            encoder = model.task_modules["cfg_encoder"]
+            states = []
+            def retain_state(_module, _inputs, output):
+                output.retain_grad()
+                states.append(output)
+            handle = encoder.update.register_forward_hook(retain_state)
+            logits = model(ids, mask, self.batch)
+            handle.remove()
+            nn.functional.binary_cross_entropy_with_logits(logits, torch.ones(1)).backward()
+            self.assertEqual(model.encoder.calls, 1)
+            self.assertEqual(len(states), 5)
+            self.assertTrue(any(state.grad is not None and state.grad.abs().sum() > 0
+                                for state in states[:-1]))
+            self.assertGreater(encoder.embedding[0].weight.grad.abs().sum().item(), 0)
+            self.assertGreater(encoder.message.weight.grad.abs().sum().item(), 0)
+            self.assertGreater(encoder.update.weight_hh.grad.abs().sum().item(), 0)
+            self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(), 0)
+
     def test_dual_configs_use_exact_c_model_and_independent_dropout(self):
         api = fake_base()
         api.SequenceVulnerabilityClassifier = DropoutTinySource
@@ -890,6 +976,73 @@ class IntegrationTests(unittest.TestCase):
             (abc/"config.json").write_text(json.dumps({"seed":7,"source_max_length":2048}))
             with self.assertRaisesRegex(ValueError,"different dataset"):
                 exp.compare_run(de,reference_root=abc)
+
+    def test_jk_runner_uses_c_settings_and_valid_threshold_for_test(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source, graphs, run, prior = (root/name for name in
+                                          ("source.jsonl", "graphs.jsonl", "jk", "prior"))
+            rows = fixture_rows()
+            write_jsonl(source, rows)
+            write_jsonl(graphs, [dict(data.identity(row), graph_schema_version=data.GRAPH_SCHEMA,
+                                      preprocessing_version=data.JOERN_SOURCE_PREPROCESSING_VERSION,
+                                      preprocessing_applied=False,
+                                      original_source_sha256=data.source_hash(row["raw_source"]),
+                                      parsed_source_sha256=data.source_hash(row["raw_source"]),
+                                      graph=fixture_graph()) for row in rows])
+            api = fake_base()
+            args = exp.parser().parse_args([
+                "run", "--dataset", str(source), "--graphs", str(graphs), "--output-dir", str(run),
+                "--model-path", "tiny-test-only", "--device", "cpu", "--variants", *exp.JK_VARIANTS,
+                "--epochs", "1", "--batch-size", "2", "--graph-hidden-size", "8"])
+            self.assertEqual(args.source_max_length, 2048)
+            self.assertEqual(args.seed, 42)
+            self.assertEqual(args.graph_steps, 5)
+            trained = exp.run_experiment(args, base=api)
+            self.assertEqual(set(trained["metrics"]), set(exp.JK_VARIANTS))
+            self.assertEqual(api.train_model.call_count, 0)
+            for mode in exp.JK_VARIANTS:
+                predictions = data.read_jsonl(run/mode/"valid.predictions.jsonl")
+                self.assertEqual([p["sample_key"] for p in predictions],
+                                 [r["sample_key"] for r in rows if r["split"] == "valid"])
+                self.assertFalse((run/mode/"test.predictions.jsonl").exists())
+                checkpoint = torch.load(run/mode/"best.pt", weights_only=False)
+                self.assertEqual(checkpoint["model_config"]["graph_steps"], 5)
+                self.assertNotIn("training_loss", checkpoint)
+            self.assertFalse((run/"ddg_audit.json").exists())
+            with self.assertRaisesRegex(ValueError, "2048-token"):
+                args.source_max_length = 8
+                exp.run_experiment(args, base=api)
+            prior.mkdir()
+            (prior/"config.json").write_text((run/"config.json").read_text())
+            for split in ("valid", "test"):
+                selected = [row for row in rows if row["split"] == split]
+                write_jsonl(prior/"cfg"/f"{split}.predictions.jsonl", [
+                    dict(data.identity(row), score=.8 if row["label"] else .2,
+                         prediction=row["label"], threshold=.5) for row in selected])
+            valid = exp.compare_run(run, "valid", reference_root=prior)
+            self.assertEqual(set(valid["changes_vs_cfg"]), set(exp.JK_VARIANTS))
+            evaluation = exp.parser().parse_args([
+                "eval", "--run-dir", str(run), "--split", "test", "--variants", *exp.JK_VARIANTS,
+                "--device", "cpu"])
+            TinyInputBuilder.allow_test = True
+            try:
+                with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
+                    tested = exp.evaluate_run(evaluation, base=api)
+                self.assertEqual(set(tested["metrics"]), set(exp.JK_VARIANTS))
+                for mode in exp.JK_VARIANTS:
+                    checkpoint = torch.load(run/mode/"best.pt", weights_only=False)
+                    predictions = data.read_jsonl(run/mode/"test.predictions.jsonl")
+                    self.assertEqual({p["threshold"] for p in predictions},
+                                     {checkpoint["decision_threshold"]})
+                    self.assertEqual([p["sample_key"] for p in predictions],
+                                     [r["sample_key"] for r in selected])
+            finally:
+                TinyInputBuilder.allow_test = False
+            compared = exp.compare_run(run, "test", reference_root=prior)
+            self.assertEqual(set(compared["changes_vs_cfg"]), set(exp.JK_VARIANTS))
+            for mode in exp.JK_VARIANTS:
+                self.assertIn("validation_selected_thresholds", compared["changes_vs_cfg"][mode])
 
     def test_dual_forward_runner_records_losses_and_keeps_test_single_pass(self):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):

@@ -57,16 +57,16 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
 
 
 class AttributeCFGEncoder(nn.Module):
-    """B/C, D/E, and F/G share the existing attribute and CFG encoder.
+    """B/C, D/E, F/G, and CFG round-readout variants share this encoder.
 
     B and D use node-local self messages only; C and E also sum directed
     predecessor messages. Each pair shares parameters and update counts.
     D/E add the same projected, position-aligned source-token mean to the
     attribute embedding before the existing graph encoder. F/G additionally sum
     directed DDG messages through their own projection before the same GRU update.
-    The raw attribute embedding is concatenated with the final node state before
-    attention pooling, as in the DeepDFA encoder design. These are learned
-    summaries, not a sound static-analysis result.
+    The raw attribute embedding is concatenated with the final or aggregated
+    node state before attention pooling, as in the DeepDFA encoder design.
+    These are learned summaries, not a sound static-analysis result.
     """
     def __init__(self, vocabulary_sizes: list[int], *, hidden_size: int = 128,
                  steps: int = 5, mode: str = "cfg", source_hidden_size: int | None = None):
@@ -74,7 +74,7 @@ class AttributeCFGEncoder(nn.Module):
         if (len(vocabulary_sizes) != 4 or min(vocabulary_sizes) < 2 or
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
                 mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
-                             "cfg_ddg", "cfg_ddg_shuffled"} or
+                             "cfg_ddg", "cfg_ddg_shuffled", "cfg_jk_mean", "cfg_jk_max"} or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
         self.mode, self.steps = mode, steps
@@ -112,15 +112,22 @@ class AttributeCFGEncoder(nn.Module):
             if batch.ddg_edges is None:
                 raise ValueError("DDG graph encoder requires directed DDG edges")
             ddg_src, ddg_dst = batch.ddg_edges
+        step_states = [] if self.mode in {"cfg_jk_mean", "cfg_jk_max"} else None
         for _ in range(self.steps):
             transformed = self.message(state)
             incoming = transformed.clone()
-            if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled"} and src.numel():
+            if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled",
+                             "cfg_jk_mean", "cfg_jk_max"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             if use_ddg and ddg_src.numel():
                 ddg_transformed = self.ddg_message(state)
                 incoming.index_add_(0, ddg_dst, ddg_transformed[ddg_src])
             state = self.update(incoming, state)
+            if step_states is not None:
+                step_states.append(state)
+        if step_states is not None:
+            stacked = torch.stack(step_states, dim=0)
+            state = stacked.mean(dim=0) if self.mode == "cfg_jk_mean" else stacked.amax(dim=0)
         combined = torch.cat((state, x), dim=-1)
         scores = self.pool_gate(combined).squeeze(-1)
         return torch.stack([(scores[a:b].softmax(dim=0).unsqueeze(-1) * combined[a:b]).sum(dim=0)

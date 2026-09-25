@@ -1,0 +1,73 @@
+{
+  "selected": {
+    "accuracy": 0.7345597897503285,
+    "precision": 0.6852248394004282,
+    "recall": 0.8533333333333334,
+    "f1": 0.7600950118764846,
+    "mcc": 0.48515773762831177,
+    "auc": 0.8326355785837651,
+    "tp": 320,
+    "tn": 239,
+    "fp": 147,
+    "fn": 55,
+    "samples": 761,
+    "threshold": 0.12
+  },
+  "fixed_0_5": {
+    "accuracy": 0.7253613666228647,
+    "precision": 0.8143939393939394,
+    "recall": 0.5733333333333334,
+    "f1": 0.672926447574335,
+    "mcc": 0.46886077886195354,
+    "auc": 0.8326355785837651,
+    "tp": 215,
+    "tn": 337,
+    "fp": 49,
+    "fn": 160,
+    "samples": 761,
+    "threshold": 0.5
+  },
+  "cohort_sha256": "56443879593a86d9abe64704a174be0c77bf043c3b64ab906f7e6b3140b90010",
+  "checkpoint_sha256": "3f53f2c4ae804e4e1779a6f290cf0c9495095e37e8829302d515e3f2c4a3c42b",
+  "source_truncated": 57,
+  "subgroups": {
+    "source_not_truncated": {
+      "accuracy": 0.7201704545454546,
+      "precision": 0.6536585365853659,
+      "recall": 0.8297213622291022,
+      "f1": 0.7312414733969987,
+      "mcc": 0.4617760595686407,
+      "auc": 0.8155416331472498,
+      "tp": 268,
+      "tn": 239,
+      "fp": 142,
+      "fn": 55,
+      "samples": 704,
+      "threshold": 0.12
+    },
+    "source_truncated": {
+      "accuracy": 0.9122807017543859,
+      "precision": 0.9122807017543859,
+      "recall": 1.0,
+      "f1": 0.9541284403669724,
+      "mcc": 0.0,
+      "auc": 0.6730769230769231,
+      "tp": 52,
+      "tn": 0,
+      "fp": 5,
+      "fn": 0,
+      "samples": 57,
+      "threshold": 0.12
+    }
+  },
+  "alignment_coverage": {
+    "total_nodes": 172504,
+    "aligned_nodes": 104981,
+    "coverage": 0.6085713954459027,
+    "missing_position": 1,
+    "position_mismatch": 31786,
+    "outside_visible_source": 35736,
+    "no_visible_token": 0,
+    "invalid_token_offsets": 0
+  }
+}

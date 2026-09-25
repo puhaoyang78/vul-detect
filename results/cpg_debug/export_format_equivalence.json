@@ -1,0 +1,11 @@
+{
+  "sample_key": "primevul:194963",
+  "nodes": 2922,
+  "edges": 14045,
+  "graphson_and_csv_nodes_equal": true,
+  "edge_multisets_equal": true,
+  "quality_equal": true,
+  "relation_text_sets_equal": true,
+  "model_semantic_text_equal": true,
+  "backslash_escape": "Inverted Flatgraph 0.1.27 escapeSpecialCharacters; verified exporter bytecode and literal-rich source."
+}

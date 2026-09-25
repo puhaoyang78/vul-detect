@@ -1,4 +1,4 @@
-"""A/B/C, aligned D/E, DDG F/G, and C dual-forward runner in one training flow.
+"""A/B/C, aligned D/E, DDG F/G, dual-forward, and CFG round readouts in one flow.
 
 Examples are in docs/CFG_ABLATION.md. Training never evaluates the test split.
 The baseline behavior, datasets, and old checkpoints are preserved.
@@ -23,8 +23,9 @@ from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic
                        output_lock, read_jsonl, read_records)
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
 
+JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg",
-            "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop")
+            "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop", *JK_VARIANTS)
 DDG_VARIANTS = ("cfg_ddg", "cfg_ddg_shuffled")
 DUAL_FORWARD_ALPHA = {"cfg_double_ce": 0.0, "cfg_rdrop": 1.0}
 READOUT_VARIANTS = ("linear", "mlp", "interaction")
@@ -324,7 +325,7 @@ def compare_run(root: str | Path, split: str = "valid",
     if "cfg" in rows:
         cfg_threshold = rows["cfg"][0]["threshold"]
         result["changes_vs_cfg"] = {}
-        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA, *READOUT_VARIANTS):
+        for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA, *JK_VARIANTS, *READOUT_VARIANTS):
             if variant not in rows:
                 continue
             result["changes_vs_cfg"][variant] = {
@@ -414,9 +415,9 @@ def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
 
 def run_experiment(args, base=None):
     import torch
-    if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA
+    if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA or v in JK_VARIANTS
             for v in args.variants) and args.source_max_length != 2048):
-        raise ValueError("D/E/F/G and C dual-forward runs require the original 2048-token source budget")
+        raise ValueError("D/E/F/G, C dual-forward, and CFG round-readout runs require the original 2048-token source budget")
     rows, views = _prepare(args.dataset, args.graphs, args.source_dataset,
                            shuffle_seed=args.seed if "cfg_ddg_shuffled" in args.variants else None)
     train = [r for r in rows if r["split"] == "train"]
@@ -588,7 +589,7 @@ def parser():
     build.add_argument("--java-home", default="/home/phy/jdk21")
     build.add_argument("--timeout", type=int, default=300)
     build.add_argument("--batch-size", type=int, default=8)
-    run = sub.add_parser("run", help="train selected A/B/C/D/E/F/G and C dual-forward variants; validation only")
+    run = sub.add_parser("run", help="train selected A/B/C/D/E/F/G, dual-forward, and CFG round-readout variants; validation only")
     run.add_argument("--dataset", required=True)
     run.add_argument("--graphs", required=True)
     run.add_argument("--output-dir", required=True)

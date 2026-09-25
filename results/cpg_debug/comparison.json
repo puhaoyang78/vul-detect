@@ -1,0 +1,642 @@
+{
+  "baseline": {
+    "groups": {
+      "cleanvul/label_0": {
+        "done": 25,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0,
+        "total": 25
+      },
+      "cleanvul/label_1": {
+        "done": 25,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0,
+        "total": 25
+      },
+      "primevul/label_0": {
+        "done": 22,
+        "failed": 19,
+        "failed_joern": 7,
+        "failed_syntax": 12,
+        "failure_rate_joern": 0.17073170731707318,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.2926829268292683,
+        "failure_rate_target_method": 0.0,
+        "total": 41
+      },
+      "primevul/label_1": {
+        "done": 40,
+        "failed": 19,
+        "failed_joern": 5,
+        "failed_syntax": 14,
+        "failure_rate_joern": 0.0847457627118644,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.23728813559322035,
+        "failure_rate_target_method": 0.0,
+        "total": 59
+      },
+      "sven/label_0": {
+        "failed": 25,
+        "failed_syntax": 25,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 1.0,
+        "failure_rate_target_method": 0.0,
+        "total": 25
+      },
+      "sven/label_1": {
+        "failed": 25,
+        "failed_syntax": 25,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 1.0,
+        "failure_rate_target_method": 0.0,
+        "total": 25
+      }
+    },
+    "success": 112,
+    "success_at_most_10_relations": 22,
+    "success_rate": 0.56,
+    "success_without_semantic_items": 27,
+    "total": 200
+  },
+  "baseline_revision": "e4a2f9a12ea7b28b3cb492d43b4354a49f309ae4",
+  "batch_equivalence": [
+    {
+      "equivalent": true,
+      "sample_key": "primevul:218964"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:194963"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:224153"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:195023"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:220023"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:195026"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:220000"
+    },
+    {
+      "equivalent": true,
+      "sample_key": "primevul:194989"
+    }
+  ],
+  "environment": {
+    "baseline": "-Xmx4g -XX:ActiveProcessorCount=4; one function, four exports",
+    "full_file": "-Xmx2g -XX:ActiveProcessorCount=2; batch=2; original GraphSON comparison",
+    "full_file_recheck": "-Xmx2g -XX:ActiveProcessorCount=2; batch=2; Neo4j CSV, four heap failures only",
+    "function_only": "-Xmx4g -XX:ActiveProcessorCount=4; batch=8; Neo4j CSV",
+    "java": "21.0.2",
+    "joern": "4.0.465",
+    "tree_sitter": "0.25.2",
+    "tree_sitter_c": "0.24.1",
+    "tree_sitter_cpp": "0.23.4"
+  },
+  "export_format_equivalence": {
+    "backslash_escape": "Inverted Flatgraph 0.1.27 escapeSpecialCharacters; verified exporter bytecode and literal-rich source.",
+    "edge_multisets_equal": true,
+    "edges": 14045,
+    "graphson_and_csv_nodes_equal": true,
+    "model_semantic_text_equal": true,
+    "nodes": 2922,
+    "quality_equal": true,
+    "relation_text_sets_equal": true,
+    "sample_key": "primevul:194963"
+  },
+  "export_memory_recheck": {
+    "accepted": 2,
+    "note": "Only the four original GraphSON heap failures were rerun with CSV at the same 2 GB heap; original 100-run results retained.",
+    "remaining_backend_failures": 0,
+    "samples": 4,
+    "seconds": 98.36395536735654
+  },
+  "fname_full_file_probe": {
+    "error": "expected one source-aligned target method; found 0; hint='FNAME'; methods=[('<clinit>', 84, 97), ('ept_gpte_to_gfn_lvl', 99, 102), ('ept_protect_clean_gpte', 104, 120), ('ept_is_present_gpte', 122, 129), ('ept_is_bad_mt_xwr', 131, 138), ('ept_is_rsvd_bits_set', 140, 144), ('ept_prefetch_invalid_gpte', 189, 209), ('ept_gpte_access', 217, 233), ('ept_update_accessed_dirty_bits', 235, 295), ('ept_gpte_pkeys', 297, 306), ('ept_is_last_gpte', 308, 336), ('ept_walk_addr_generic', 340, 540), ('ept_walk_addr', 542, 547), ('ept_prefetch_gpte', 549, 579), ('ept_gpte_changed', 581, 602), ('ept_pte_prefetch', 604, 640), ('ept_fetch', 647, 766), ('ept_is_self_change_mapping', 785, 806), ('ept_page_fault', 822, 916), ('ept_get_level1_sp_gpa', 918, 928), ('ept_invlpg', 930, 987), ('ept_gva_to_gpa', 990, 1012), ('ept_sync_page', 1024, 1107)]",
+    "error_type": "TargetMethodError",
+    "mode": "full-file-target-method",
+    "sample_key": "primevul:201006",
+    "seconds": 23.023763180710375,
+    "source_path": "/home/PublicData/PHY-data/vul_detect/data/PrimeVul_v0.1/file_contents/linux/99223665847947661027332128453448877347.txt",
+    "start_line": 146,
+    "status": "failed"
+  },
+  "full_file": {
+    "groups": {
+      "primevul/label_0": {
+        "done": 30,
+        "failed": 11,
+        "failed_joern": 2,
+        "failed_low_quality_cpg": 4,
+        "failed_target_method": 5,
+        "failure_rate_joern": 0.04878048780487805,
+        "failure_rate_low_quality_cpg": 0.0975609756097561,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.12195121951219512,
+        "total": 41
+      },
+      "primevul/label_1": {
+        "done": 43,
+        "failed": 16,
+        "failed_joern": 2,
+        "failed_low_quality_cpg": 7,
+        "failed_target_method": 7,
+        "failure_rate_joern": 0.03389830508474576,
+        "failure_rate_low_quality_cpg": 0.11864406779661017,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.11864406779661017,
+        "total": 59
+      }
+    },
+    "success": 73,
+    "success_at_most_10_relations": 0,
+    "success_rate": 0.73,
+    "success_without_semantic_items": 5,
+    "total": 100
+  },
+  "full_file_after_csv_recheck": {
+    "groups": {
+      "primevul/label_0": {
+        "done": 31,
+        "failed": 10,
+        "failed_low_quality_cpg": 5,
+        "failed_target_method": 5,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.12195121951219512,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.12195121951219512,
+        "total": 41
+      },
+      "primevul/label_1": {
+        "done": 44,
+        "failed": 15,
+        "failed_low_quality_cpg": 8,
+        "failed_target_method": 7,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.13559322033898305,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.11864406779661017,
+        "total": 59
+      }
+    },
+    "success": 75,
+    "success_at_most_10_relations": 0,
+    "success_rate": 0.75,
+    "success_without_semantic_items": 5,
+    "total": 100
+  },
+  "full_file_after_csv_transitions": {
+    "done->done": 52,
+    "done->failed": 8,
+    "failed->done": 23,
+    "failed->failed": 17
+  },
+  "full_file_transitions": {
+    "done->done": 50,
+    "done->failed": 10,
+    "failed->done": 23,
+    "failed->failed": 17
+  },
+  "function_only": {
+    "groups": {
+      "cleanvul/label_0": {
+        "done": 19,
+        "failed": 6,
+        "failed_low_quality_cpg": 4,
+        "failed_target_method": 2,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.16,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.08,
+        "total": 25
+      },
+      "cleanvul/label_1": {
+        "done": 20,
+        "failed": 5,
+        "failed_low_quality_cpg": 3,
+        "failed_target_method": 2,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.12,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.08,
+        "total": 25
+      },
+      "primevul/label_0": {
+        "done": 30,
+        "failed": 11,
+        "failed_low_quality_cpg": 1,
+        "failed_target_method": 10,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.024390243902439025,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.24390243902439024,
+        "total": 41
+      },
+      "primevul/label_1": {
+        "done": 30,
+        "failed": 29,
+        "failed_low_quality_cpg": 6,
+        "failed_target_method": 23,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.1016949152542373,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.3898305084745763,
+        "total": 59
+      },
+      "sven/label_0": {
+        "done": 23,
+        "failed": 2,
+        "failed_low_quality_cpg": 1,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.04,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.04,
+        "total": 25
+      },
+      "sven/label_1": {
+        "done": 23,
+        "failed": 2,
+        "failed_low_quality_cpg": 1,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.04,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.04,
+        "total": 25
+      }
+    },
+    "success": 145,
+    "success_at_most_10_relations": 0,
+    "success_rate": 0.725,
+    "success_without_semantic_items": 10,
+    "total": 200
+  },
+  "function_only_matched_full_file": {
+    "groups": {
+      "primevul/label_0": {
+        "done": 30,
+        "failed": 11,
+        "failed_low_quality_cpg": 1,
+        "failed_target_method": 10,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.024390243902439025,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.24390243902439024,
+        "total": 41
+      },
+      "primevul/label_1": {
+        "done": 30,
+        "failed": 29,
+        "failed_low_quality_cpg": 6,
+        "failed_target_method": 23,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.1016949152542373,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.3898305084745763,
+        "total": 59
+      }
+    },
+    "success": 60,
+    "success_at_most_10_relations": 0,
+    "success_rate": 0.6,
+    "success_without_semantic_items": 6,
+    "total": 100
+  },
+  "macro_probe_audit": {
+    "batch_size": 8,
+    "build_wall_seconds": 88.88168667070568,
+    "failed": 9,
+    "failure_stage": {
+      "low_quality_cpg": 5,
+      "target_method": 4
+    },
+    "failure_type": {
+      "CPGQualityError": 5,
+      "TargetMethodError": 4
+    },
+    "groups": {
+      "primevul/test/label_1": {
+        "failed": 7,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 3,
+        "failed_syntax": 0,
+        "failed_target_method": 4,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.3333333333333333,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.4444444444444444,
+        "input": 9,
+        "success": 2,
+        "success_rate": 0.2222222222222222
+      },
+      "sven/external_test/label_0": {
+        "failed": 1,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 1,
+        "failed_syntax": 0,
+        "failed_target_method": 0,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 1.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0,
+        "input": 1,
+        "success_rate": 0.0
+      },
+      "sven/external_test/label_1": {
+        "failed": 1,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 1,
+        "failed_syntax": 0,
+        "failed_target_method": 0,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 1.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0,
+        "input": 1,
+        "success_rate": 0.0
+      }
+    },
+    "pair_build_status": {
+      "sven/both_failed": 1
+    },
+    "potential_pattern_count_distribution": {
+      "32": 1,
+      "361": 1
+    },
+    "quality_flags": {},
+    "quality_note": "AST and CFG presence plus target-method alignment are enforced. Empty CDG/DDG or absence of a potential pattern is reported, not treated as failure; these facts do not by themselves prove or disprove the true vulnerability mechanism.",
+    "resumed_records": 0,
+    "schema_version": 8,
+    "success": 2,
+    "success_rate": 0.18181818181818182,
+    "total": 11
+  },
+  "new_build_audit": {
+    "batch_size": 8,
+    "build_wall_seconds": 688.9253011029214,
+    "failed": 55,
+    "failure_stage": {
+      "low_quality_cpg": 16,
+      "target_method": 39
+    },
+    "failure_type": {
+      "CPGQualityError": 16,
+      "TargetMethodError": 39
+    },
+    "groups": {
+      "cleanvul/test/label_0": {
+        "failed": 1,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 0,
+        "failed_syntax": 0,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.16666666666666666,
+        "input": 6,
+        "success": 5,
+        "success_rate": 0.8333333333333334
+      },
+      "cleanvul/test/label_1": {
+        "failed": 1,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 0,
+        "failed_syntax": 0,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.16666666666666666,
+        "input": 6,
+        "success": 5,
+        "success_rate": 0.8333333333333334
+      },
+      "cleanvul/train/label_0": {
+        "failed": 4,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 3,
+        "failed_syntax": 0,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.1875,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0625,
+        "input": 16,
+        "success": 12,
+        "success_rate": 0.75
+      },
+      "cleanvul/train/label_1": {
+        "failed": 4,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 3,
+        "failed_syntax": 0,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.1875,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0625,
+        "input": 16,
+        "success": 12,
+        "success_rate": 0.75
+      },
+      "cleanvul/valid/label_0": {
+        "failed": 1,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 1,
+        "failed_syntax": 0,
+        "failed_target_method": 0,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.3333333333333333,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0,
+        "input": 3,
+        "success": 2,
+        "success_rate": 0.6666666666666666
+      },
+      "cleanvul/valid/label_1": {
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 0,
+        "failed_syntax": 0,
+        "failed_target_method": 0,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.0,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.0,
+        "input": 3,
+        "success": 3,
+        "success_rate": 1.0
+      },
+      "primevul/test/label_0": {
+        "failed": 11,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 1,
+        "failed_syntax": 0,
+        "failed_target_method": 10,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.024390243902439025,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.24390243902439024,
+        "input": 41,
+        "success": 30,
+        "success_rate": 0.7317073170731707
+      },
+      "primevul/test/label_1": {
+        "failed": 29,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 6,
+        "failed_syntax": 0,
+        "failed_target_method": 23,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.1016949152542373,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.3898305084745763,
+        "input": 59,
+        "success": 30,
+        "success_rate": 0.5084745762711864
+      },
+      "sven/external_test/label_0": {
+        "failed": 2,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 1,
+        "failed_syntax": 0,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.04,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.04,
+        "input": 25,
+        "success": 23,
+        "success_rate": 0.92
+      },
+      "sven/external_test/label_1": {
+        "failed": 2,
+        "failed_joern": 0,
+        "failed_low_quality_cpg": 1,
+        "failed_syntax": 0,
+        "failed_target_method": 1,
+        "failure_rate_joern": 0.0,
+        "failure_rate_low_quality_cpg": 0.04,
+        "failure_rate_syntax": 0.0,
+        "failure_rate_target_method": 0.04,
+        "input": 25,
+        "success": 23,
+        "success_rate": 0.92
+      }
+    },
+    "pair_build_status": {
+      "cleanvul/both_failed": 5,
+      "cleanvul/complete": 19,
+      "cleanvul/incomplete": 1,
+      "sven/both_failed": 2,
+      "sven/complete": 23
+    },
+    "potential_pattern_count_distribution": {
+      "0": 33,
+      "1": 10,
+      "10": 2,
+      "106": 1,
+      "108": 1,
+      "11": 2,
+      "119": 1,
+      "12": 2,
+      "13": 5,
+      "14": 1,
+      "15": 2,
+      "16": 1,
+      "174": 1,
+      "18": 2,
+      "19": 2,
+      "2": 7,
+      "20": 3,
+      "21": 1,
+      "22": 2,
+      "23": 1,
+      "24": 4,
+      "26": 2,
+      "27": 3,
+      "28": 1,
+      "3": 3,
+      "32": 1,
+      "33": 1,
+      "34": 2,
+      "355": 1,
+      "36": 1,
+      "361": 1,
+      "37": 1,
+      "39": 1,
+      "4": 1,
+      "41": 1,
+      "43": 1,
+      "45": 2,
+      "456": 2,
+      "46": 4,
+      "47": 2,
+      "48": 2,
+      "5": 4,
+      "51": 1,
+      "52": 2,
+      "56": 1,
+      "6": 4,
+      "67": 2,
+      "7": 2,
+      "75": 2,
+      "8": 5,
+      "81": 1,
+      "89": 1,
+      "9": 2,
+      "911": 1
+    },
+    "quality_flags": {
+      "success_without_cdg": 10,
+      "success_without_ddg": 1,
+      "success_without_potential_pattern": 33,
+      "success_without_semantic_items": 10
+    },
+    "quality_note": "AST and CFG presence plus target-method alignment are enforced. Empty CDG/DDG or absence of a potential pattern is reported, not treated as failure; these facts do not by themselves prove or disprove the true vulnerability mechanism.",
+    "resumed_records": 0,
+    "schema_version": 8,
+    "success": 145,
+    "success_rate": 0.725,
+    "total": 200
+  },
+  "old_to_new_transitions": {
+    "done->done": 76,
+    "done->failed": 36,
+    "failed->done": 69,
+    "failed->failed": 19
+  },
+  "provenance": {
+    "input_pairs": "Both sides retained; output pair completeness in function_only.audit.json",
+    "labels_and_splits_unchanged": true,
+    "sample_rows_match_manifest": true,
+    "sampling": "Targeted failures, low-relation successes and ordinary successes; not a population success-rate estimate"
+  },
+  "semantic_rendering": "Replayed public renderer on persisted semantic_items after removing run-local IDs from model text; native graph evidence unchanged.",
+  "timing": {
+    "baseline_measured_samples": 60,
+    "baseline_measured_seconds": 1450.868698425591,
+    "full_file_total_seconds": 1924.645847783424,
+    "new_same_samples_amortized_seconds": 225.7936394320568,
+    "new_total_seconds": 671.3146151441615,
+    "note": "Batch wall time amortized across samples; baseline reuses logged outcomes where available. Concurrent local diagnostic jobs; not an isolated throughput benchmark."
+  }
+}

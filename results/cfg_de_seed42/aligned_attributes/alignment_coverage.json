@@ -1,0 +1,22 @@
+{
+  "train": {
+    "total_nodes": 1313728,
+    "aligned_nodes": 757734,
+    "coverage": 0.5767814951040093,
+    "missing_position": 31,
+    "position_mismatch": 252864,
+    "outside_visible_source": 303099,
+    "no_visible_token": 0,
+    "invalid_token_offsets": 0
+  },
+  "valid": {
+    "total_nodes": 147565,
+    "aligned_nodes": 94849,
+    "coverage": 0.6427608172669671,
+    "missing_position": 1,
+    "position_mismatch": 29456,
+    "outside_visible_source": 23259,
+    "no_visible_token": 0,
+    "invalid_token_offsets": 0
+  }
+}

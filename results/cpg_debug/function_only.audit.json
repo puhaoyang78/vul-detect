@@ -1,0 +1,183 @@
+{
+  "batch_size": 8,
+  "build_wall_seconds": 529.0129642728716,
+  "failed": 37,
+  "failure_stage": {
+    "low_quality_cpg": 16,
+    "target_method": 21
+  },
+  "failure_type": {
+    "CPGQualityError": 16,
+    "TargetMethodError": 21
+  },
+  "groups": {
+    "cleanvul/test/label_0": {
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 0,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 6,
+      "success": 6,
+      "success_rate": 1.0
+    },
+    "cleanvul/test/label_1": {
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 0,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 6,
+      "success": 6,
+      "success_rate": 1.0
+    },
+    "cleanvul/train/label_0": {
+      "failed": 3,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 3,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.1875,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 16,
+      "success": 13,
+      "success_rate": 0.8125
+    },
+    "cleanvul/train/label_1": {
+      "failed": 3,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 3,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.1875,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 16,
+      "success": 13,
+      "success_rate": 0.8125
+    },
+    "cleanvul/valid/label_0": {
+      "failed": 1,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 1,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.3333333333333333,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 3,
+      "success": 2,
+      "success_rate": 0.6666666666666666
+    },
+    "cleanvul/valid/label_1": {
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 0,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 3,
+      "success": 3,
+      "success_rate": 1.0
+    },
+    "primevul/test/label_0": {
+      "failed": 10,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 1,
+      "failed_syntax": 0,
+      "failed_target_method": 9,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.024390243902439025,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.21951219512195122,
+      "input": 41,
+      "success": 31,
+      "success_rate": 0.7560975609756098
+    },
+    "primevul/test/label_1": {
+      "failed": 16,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 6,
+      "failed_syntax": 0,
+      "failed_target_method": 10,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.1016949152542373,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.1694915254237288,
+      "input": 59,
+      "success": 43,
+      "success_rate": 0.7288135593220338
+    },
+    "sven/external_test/label_0": {
+      "failed": 2,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 1,
+      "failed_syntax": 0,
+      "failed_target_method": 1,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.04,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.04,
+      "input": 25,
+      "success": 23,
+      "success_rate": 0.92
+    },
+    "sven/external_test/label_1": {
+      "failed": 2,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 1,
+      "failed_syntax": 0,
+      "failed_target_method": 1,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.04,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.04,
+      "input": 25,
+      "success": 23,
+      "success_rate": 0.92
+    }
+  },
+  "mechanism_candidate_count_distribution": {
+    "0": 137,
+    "1": 13,
+    "2": 4,
+    "3": 3,
+    "4": 2,
+    "5": 4
+  },
+  "mechanism_candidate_kinds": {
+    "BOUNDS_FLOW": 7,
+    "DOUBLE_FREE_FLOW": 2,
+    "SIZE_ARITHMETIC_FLOW": 49
+  },
+  "pair_build_status": {
+    "cleanvul/both_failed": 3,
+    "cleanvul/complete": 21,
+    "cleanvul/incomplete": 1,
+    "sven/both_failed": 2,
+    "sven/complete": 23
+  },
+  "quality_flags": {
+    "success_without_cdg": 25,
+    "success_without_ddg": 1,
+    "success_without_mechanism_candidate": 137
+  },
+  "quality_note": "AST and CFG are structural requirements. CDG/DDG may legitimately be empty. MECHANISM_CANDIDATE records are CPG-supported vulnerability-mechanism hypotheses, not causal ground truth; absence of a candidate does not imply benign code.",
+  "resumed_records": 0,
+  "schema_version": 9,
+  "success": 163,
+  "success_rate": 0.815,
+  "total": 200
+}

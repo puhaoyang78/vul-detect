@@ -1,0 +1,51 @@
+{
+  "batch_size": 2,
+  "build_wall_seconds": 12.097084123641253,
+  "failed": 0,
+  "failure_stage": {},
+  "failure_type": {},
+  "groups": {
+    "sven/external_test/label_0": {
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 0,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 1,
+      "success": 1,
+      "success_rate": 1.0
+    },
+    "sven/external_test/label_1": {
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 0,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 1,
+      "success": 1,
+      "success_rate": 1.0
+    }
+  },
+  "mechanism_candidate_count_distribution": {
+    "1": 2
+  },
+  "mechanism_candidate_kinds": {
+    "SIZE_ARITHMETIC_FLOW": 2
+  },
+  "pair_build_status": {
+    "sven/complete": 1
+  },
+  "quality_flags": {},
+  "quality_note": "AST and CFG are structural requirements. CDG/DDG may legitimately be empty. MECHANISM_CANDIDATE records are CPG-supported vulnerability-mechanism hypotheses, not causal ground truth; absence of a candidate does not imply benign code.",
+  "resumed_records": 0,
+  "schema_version": 9,
+  "success": 2,
+  "success_rate": 1.0,
+  "total": 2
+}

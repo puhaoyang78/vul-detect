@@ -2,5 +2,24 @@ __pycache__/
 *.py[cod]
 .venv/
 /data/
-/results/
+# Version metric reports; keep checkpoints, predictions, caches, and logs local.
+/results/**
+!/results/
+!/results/**/
+!/results/**/*metrics*.json
+!/results/**/*metrics*.csv
+!/results/**/comparison*.json
+!/results/**/comparison*.csv
+!/results/**/history.jsonl
+!/results/**/*.training.jsonl
+!/results/**/alignment_coverage.json
+!/results/**/ddg_audit.json
+!/results/cfg_ddg_audit_seed42.json
+!/results/**/probe_results.json
+!/results/**/results.json
+!/results/cpg_debug/*.audit.json
+!/results/cpg_debug/batch_equivalence.json
+!/results/cpg_debug/export_format_equivalence.json
+!/results/cpg_debug/historical_statistics.json
+!/results/cpg_debug/integrity_checks.json
 *.pt

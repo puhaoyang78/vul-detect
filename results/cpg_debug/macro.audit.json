@@ -1,0 +1,69 @@
+{
+  "batch_size": 8,
+  "build_wall_seconds": 88.88168667070568,
+  "failed": 9,
+  "failure_stage": {
+    "low_quality_cpg": 5,
+    "target_method": 4
+  },
+  "failure_type": {
+    "CPGQualityError": 5,
+    "TargetMethodError": 4
+  },
+  "groups": {
+    "primevul/test/label_1": {
+      "failed": 7,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 3,
+      "failed_syntax": 0,
+      "failed_target_method": 4,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 0.3333333333333333,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.4444444444444444,
+      "input": 9,
+      "success": 2,
+      "success_rate": 0.2222222222222222
+    },
+    "sven/external_test/label_0": {
+      "failed": 1,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 1,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 1.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 1,
+      "success_rate": 0.0
+    },
+    "sven/external_test/label_1": {
+      "failed": 1,
+      "failed_joern": 0,
+      "failed_low_quality_cpg": 1,
+      "failed_syntax": 0,
+      "failed_target_method": 0,
+      "failure_rate_joern": 0.0,
+      "failure_rate_low_quality_cpg": 1.0,
+      "failure_rate_syntax": 0.0,
+      "failure_rate_target_method": 0.0,
+      "input": 1,
+      "success_rate": 0.0
+    }
+  },
+  "pair_build_status": {
+    "sven/both_failed": 1
+  },
+  "potential_pattern_count_distribution": {
+    "32": 1,
+    "361": 1
+  },
+  "quality_flags": {},
+  "quality_note": "AST and CFG presence plus target-method alignment are enforced. Empty CDG/DDG or absence of a potential pattern is reported, not treated as failure; these facts do not by themselves prove or disprove the true vulnerability mechanism.",
+  "resumed_records": 0,
+  "schema_version": 8,
+  "success": 2,
+  "success_rate": 0.18181818181818182,
+  "total": 11
+}

@@ -1,0 +1,59 @@
+{
+  "reusable_success_records": 145,
+  "source_label_split_pair_exactly_preserved": true,
+  "semantic_text_replayed_and_verified": true,
+  "pair_views": {
+    "cleanvul": {
+      "source_dataset": "cleanvul",
+      "input_records": 145,
+      "selected_records": 38,
+      "dropped_incomplete_pair_records": 1,
+      "dropped_primevul_benign_records": 0,
+      "detected_sources": {
+        "cleanvul": 39,
+        "primevul": 60,
+        "sven": 46
+      },
+      "split_counts": {
+        "test": 10,
+        "train": 24,
+        "valid": 4
+      },
+      "label_counts": {
+        "0": 19,
+        "1": 19
+      },
+      "split_label_counts": {
+        "test/label_0": 5,
+        "test/label_1": 5,
+        "train/label_0": 12,
+        "train/label_1": 12,
+        "valid/label_0": 2,
+        "valid/label_1": 2
+      }
+    },
+    "sven": {
+      "source_dataset": "sven",
+      "input_records": 145,
+      "selected_records": 46,
+      "dropped_incomplete_pair_records": 0,
+      "dropped_primevul_benign_records": 0,
+      "detected_sources": {
+        "cleanvul": 39,
+        "primevul": 60,
+        "sven": 46
+      },
+      "split_counts": {
+        "external_test": 46
+      },
+      "label_counts": {
+        "0": 23,
+        "1": 23
+      },
+      "split_label_counts": {
+        "external_test/label_0": 23,
+        "external_test/label_1": 23
+      }
+    }
+  }
+}

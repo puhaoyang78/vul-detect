@@ -1,0 +1,54 @@
+{
+  "seed": 42,
+  "shuffle": "fixed per-function DDG node permutation; CFG unchanged",
+  "splits": {
+    "test": {
+      "functions": 761,
+      "functions_with_ddg": 759,
+      "functions_with_usable_ddg": 756,
+      "cfg_edges": 183043,
+      "shuffled_edges": 539475,
+      "same_edge_count_functions": 761,
+      "same_degree_multiset_functions": 761,
+      "changed_edge_set_functions": 756,
+      "raw_edges": 555125,
+      "usable_edges": 539475,
+      "skipped_source_outside_cfg": 7971,
+      "skipped_target_outside_cfg": 4635,
+      "skipped_both_outside_cfg": 3044,
+      "usable_rate": 0.9718081513172708
+    },
+    "train": {
+      "functions": 5886,
+      "functions_with_ddg": 5874,
+      "functions_with_usable_ddg": 5826,
+      "cfg_edges": 1395759,
+      "shuffled_edges": 3815770,
+      "same_edge_count_functions": 5886,
+      "same_degree_multiset_functions": 5886,
+      "changed_edge_set_functions": 5826,
+      "raw_edges": 3944807,
+      "usable_edges": 3815770,
+      "skipped_source_outside_cfg": 67734,
+      "skipped_target_outside_cfg": 37252,
+      "skipped_both_outside_cfg": 24051,
+      "usable_rate": 0.9672894009770313
+    },
+    "valid": {
+      "functions": 741,
+      "functions_with_ddg": 741,
+      "functions_with_usable_ddg": 738,
+      "cfg_edges": 156092,
+      "shuffled_edges": 449607,
+      "same_edge_count_functions": 741,
+      "same_degree_multiset_functions": 741,
+      "changed_edge_set_functions": 738,
+      "raw_edges": 466129,
+      "usable_edges": 449607,
+      "skipped_source_outside_cfg": 9070,
+      "skipped_target_outside_cfg": 4502,
+      "skipped_both_outside_cfg": 2950,
+      "usable_rate": 0.9645548764397839
+    }
+  }
+}

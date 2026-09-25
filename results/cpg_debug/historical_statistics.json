@@ -1,0 +1,30 @@
+{
+  "sven/label_0": {
+    "total": 371,
+    "done": 236,
+    "failed": 135,
+    "syntax": 119,
+    "joern": 16
+  },
+  "sven/label_1": {
+    "total": 371,
+    "done": 236,
+    "failed": 135,
+    "syntax": 119,
+    "joern": 16
+  },
+  "primevul/label_0": {
+    "total": 478,
+    "done": 299,
+    "failed": 179,
+    "joern": 62,
+    "syntax": 117
+  },
+  "primevul/label_1": {
+    "total": 507,
+    "done": 335,
+    "failed": 172,
+    "syntax": 123,
+    "joern": 49
+  }
+}
