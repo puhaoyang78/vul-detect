@@ -200,10 +200,11 @@ def _reachable(start, end, successors, blocked=frozenset()):
 
 
 def function_relations(record: dict, graph: dict, tokenizer, *, source_max_length: int = 2048,
-                       prefix_tokens: int = 0) -> tuple[list[dict], Counter]:
-    """Positive DDG pairs and CFG-proved killed old definitions for one train function."""
-    if record["split"] != "train":
-        raise ValueError("relation supervision is train-only")
+                       prefix_tokens: int = 0, for_valid: bool = False) -> tuple[list[dict], Counter]:
+    """Positive DDG pairs and CFG-proved killed old definitions for one function."""
+    expected_split = "valid" if for_valid else "train"
+    if record["split"] != expected_split:
+        raise ValueError(f"relation extraction requires the {expected_split} split")
     source = record["raw_source"]
     stats = Counter(functions=1)
     language = record.get("resolved_language") or record.get("language")
@@ -331,7 +332,7 @@ def function_relations(record: dict, graph: dict, tokenizer, *, source_max_lengt
     relations = []
     for (definition_id, use_id), label, provenance in sorted(chosen, key=lambda x: sort_key(x[0])):
         definition, use = definitions[definition_id], uses[use_id]
-        relations.append({"sample_key": record["sample_key"], "split": "train",
+        relations.append({"sample_key": record["sample_key"], "split": expected_split,
                           "source_sha256": source_hash(source), "definition_node_id": definition_id,
                           "use_node_id": use_id, "definition_span": definition["span"],
                           "use_span": use["span"],
@@ -480,6 +481,27 @@ def relation_function_loss(hidden, relation_batch, head):
     return loss, labels, logits
 
 
+def accumulation_window_counts(order, train, supervision, batch_size, accumulation):
+    """Precount all and relation-bearing functions in each optimizer window."""
+    if batch_size < 1 or accumulation < 1:
+        raise ValueError("batch size and gradient accumulation must be positive")
+    counts = []
+    width = batch_size * accumulation
+    for start in range(0, len(order), width):
+        indices = order[start:start + width]
+        total = len(indices)
+        effective = sum(bool(supervision.get(train[index]["sample_key"])) for index in indices)
+        counts.extend([(total, effective)] * ((total + batch_size - 1) // batch_size))
+    return counts
+
+
+def accumulation_window_loss(lm_loss, relation_loss, m, total, k, effective):
+    """One microbatch's contribution to a function-averaged optimizer window."""
+    if not (0 < m <= total and 0 <= k <= m and 0 <= effective <= total and k <= effective):
+        raise ValueError("invalid optimizer-window function counts")
+    return lm_loss * (m / total) + (relation_loss * (k / effective) if effective else 0)
+
+
 def _load_qwen_lm_weight(model_path: str, hidden_size: int, device):
     from safetensors import safe_open
     import torch
@@ -596,6 +618,7 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
               "supervision_dir": str(Path(supervision_dir).resolve()),
               "relations_sha256": audit["relations_sha256"], "pretrain_epochs": 1,
               "relation_alpha": 1.0, "relation_rank": 32,
+              "relation_accumulation_normalization": "window_effective_functions",
               "objective": "source_clm_plus_optional_scoped_scalar_relation"}
     root.mkdir(parents=True, exist_ok=True)
     from .cfg_data import output_lock
@@ -645,8 +668,12 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             batch_size = c_config["batch_size"]
             accumulation = c_config["gradient_accumulation"]
             num_batches = math.ceil(len(order) / batch_size)
+            window_counts = accumulation_window_counts(
+                order, train, supervision if head is not None else {}, batch_size, accumulation)
             optimizer.zero_grad(set_to_none=True)
             total_lm = total_dep = 0.0
+            total_functions = effective_functions = 0
+            positive_relations = negative_relations = 0
             relation_labels, relation_scores = [], []
             optimizer_steps = 0
             with (folder / "history.jsonl").open("x", encoding="utf-8") as history:
@@ -658,22 +685,27 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                                                        excluded_groups=(), device=resolved_device)
                     hidden = encoder(input_ids=ids, attention_mask=mask, use_cache=False).last_hidden_state
                     lm, _ = clm_shifted_loss(hidden, ids, mask, lm_weight, len(builder.source_prefix))
-                    relation_batch = [supervision.get(row["sample_key"], []) for row in batch]
+                    relation_batch = ([supervision.get(row["sample_key"], []) for row in batch]
+                                      if head is not None else [])
                     if head is not None:
                         dep, labels, logits = relation_function_loss(hidden, relation_batch, head)
                         relation_labels.extend(labels)
                         relation_scores.extend(torch.sigmoid(torch.tensor(logits)).tolist())
                     else:
-                        dep = lm.new_zeros(())
-                    loss = lm + dep
+                        dep, labels = lm.new_zeros(()), []
+                    m = len(batch)
+                    k = sum(bool(relations) for relations in relation_batch)
+                    M, K = window_counts[batch_index]
+                    loss = accumulation_window_loss(lm, dep, m, M, k, K)
                     if not torch.isfinite(loss):
                         raise ValueError(f"non-finite pretrain loss at batch {batch_index + 1}")
-                    group_start = (batch_index // accumulation) * accumulation
-                    group_end = min(group_start + accumulation, num_batches)
-                    group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
-                    (loss * len(batch) / group_samples).backward()
-                    total_lm += float(lm.detach()) * len(batch)
-                    total_dep += float(dep.detach()) * len(batch)
+                    loss.backward()
+                    total_lm += float(lm.detach()) * m
+                    total_dep += float(dep.detach()) * k
+                    total_functions += m
+                    effective_functions += k
+                    positive_relations += sum(labels)
+                    negative_relations += len(labels) - sum(labels)
                     if (batch_index + 1) % accumulation == 0 or batch_index + 1 == num_batches:
                         norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                         if not torch.isfinite(norm):
@@ -684,8 +716,14 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                         if (optimizer_steps == 1 or optimizer_steps % c_config["log_every"] == 0 or
                                 batch_index + 1 == num_batches):
                             event = {"event": "step", "mode": mode, "step": optimizer_steps,
-                                     "lm_loss_mean_so_far": total_lm / min((batch_index + 1) * batch_size, len(train)),
-                                     "relation_loss_mean_so_far": total_dep / min((batch_index + 1) * batch_size, len(train))}
+                                     "lm_loss_mean_so_far": total_lm / total_functions,
+                                     "relation_loss_mean_so_far": (total_dep / effective_functions
+                                                                   if effective_functions else 0.0),
+                                     "total_functions_so_far": total_functions,
+                                     "effective_relation_functions_so_far": effective_functions,
+                                     "relation_coverage_so_far": effective_functions / total_functions,
+                                     "relation_positive_so_far": positive_relations,
+                                     "relation_negative_so_far": negative_relations}
                             history.write(json.dumps(event) + "\n")
                             history.flush()
                             print(json.dumps(event), flush=True)
@@ -695,10 +733,15 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                 relation_metrics = (metrics(relation_labels, relation_scores, 0.5)
                                     if relation_labels and len(set(relation_labels)) == 2 else None)
                 summary = {"mode": mode, "epoch": 1, "samples": len(train),
-                           "optimizer_steps": optimizer_steps, "lm_loss": total_lm / len(train),
-                           "relation_loss": total_dep / len(train),
+                           "optimizer_steps": optimizer_steps, "lm_loss": total_lm / total_functions,
+                           "relation_loss": (total_dep / effective_functions
+                                             if effective_functions else 0.0),
+                           "total_functions": total_functions,
+                           "effective_relation_functions": effective_functions,
+                           "relation_coverage": effective_functions / total_functions,
                            "relation_pairs": len(relation_labels),
-                           "relation_positive": sum(relation_labels),
+                           "relation_positive": positive_relations,
+                           "relation_negative": negative_relations,
                            "relation_metrics_train_online": relation_metrics}
                 history.write(json.dumps({"event": "epoch", **summary}) + "\n")
                 history.flush()
@@ -714,3 +757,124 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             if resolved_device.type == "cuda":
                 torch.cuda.empty_cache()
     return {mode: json.loads((root / mode / "complete.json").read_text())["summary"] for mode in modes}
+
+
+def _fixed_relation_predictions(encoder, head, builder, records, supervision, batch_size, device):
+    """Score only verified pairs from a fixed, single-forward eval model."""
+    from .cfg_metrics import metrics
+
+    if batch_size < 1:
+        raise ValueError("relation evaluation batch size must be positive")
+    selected = [row for row in records if supervision.get(row["sample_key"])]
+    predictions = []
+    encoder.eval()
+    head.eval()
+    with torch.no_grad():
+        for start in range(0, len(selected), batch_size):
+            batch = selected[start:start + batch_size]
+            ids, mask = builder.sequence_batch(batch, variant="baseline",
+                                               excluded_groups=(), device=device)
+            hidden = encoder(input_ids=ids, attention_mask=mask,
+                             use_cache=False).last_hidden_state
+            relation_batch = [supervision[row["sample_key"]] for row in batch]
+            _, labels, logits = relation_function_loss(hidden, relation_batch, head)
+            pairs = [relation for relations in relation_batch for relation in relations]
+            if len(pairs) != len(labels) or len(pairs) != len(logits):
+                raise ValueError("relation prediction order/count changed")
+            scores = torch.sigmoid(torch.tensor(logits, dtype=torch.float32)).tolist()
+            predictions.extend({**relation, "score": score,
+                                "prediction": int(score >= 0.5), "threshold": 0.5}
+                               for relation, score in zip(pairs, scores))
+            if (start // batch_size + 1) % 100 == 0 or start + batch_size >= len(selected):
+                print(f"fixed_relation_eval={start + len(batch)}/{len(selected)}", flush=True)
+    labels = [row["label"] for row in predictions]
+    scores = [row["score"] for row in predictions]
+    summary = {"total_functions": len(records), "effective_relation_functions": len(selected),
+               "relation_coverage": len(selected) / len(records) if records else 0.0,
+               "relation_pairs": len(predictions), "relation_positive": sum(labels),
+               "relation_negative": len(labels) - sum(labels),
+               "fixed_model": metrics(labels, scores, 0.5) if labels else None,
+               "all_positive_reference": metrics(labels, [1.0] * len(labels), 0.5)
+                                         if labels else None}
+    return predictions, summary
+
+
+def evaluate_fixed_relations(pretrain_dir: str, output_dir: str, *, batch_size: int = 1,
+                             device="auto", base=None) -> dict:
+    """Evaluate the saved stage-1 relation model on train and cached-graph valid pairs."""
+    import gc
+    from .cfg_experiment import _base_module, _tokenizer
+
+    root = Path(output_dir)
+    if root.exists():
+        raise FileExistsError(f"fixed relation evaluation output exists: {root}")
+    stage1 = Path(pretrain_dir).resolve()
+    config = json.loads((stage1 / "config.json").read_text())
+    c_config = config["c_config"]
+    reference = Path(config["reference_run_dir"])
+    if (json.loads((reference / "config.json").read_text()) != c_config or
+            c_config["source_max_length"] != 2048 or c_config["seed"] != 42):
+        raise ValueError("fixed relation evaluation differs from original C")
+    rows = read_records(c_config["dataset"], c_config["source_dataset"])
+    train = [row for row in rows if row["split"] == "train"]
+    valid = [row for row in rows if row["split"] == "valid"]
+    if (cohort_hash(rows) != c_config["cohort_sha256"] or
+            cohort_hash(train) != c_config["train_cohort_sha256"] or
+            cohort_hash(valid) != c_config["valid_cohort_sha256"] or
+            file_sha256(c_config["graphs"]) != c_config["graph_file_sha256"]):
+        raise ValueError("fixed relation evaluation data/graph identity changed")
+    base = _base_module() if base is None else base
+    builder = _tokenizer(base, c_config)
+    supervision, audit = _checked_relation_rows(config["supervision_dir"], train, builder)
+    if (audit["reference_run_dir"] != str(reference.resolve()) or
+            audit["train_cohort_sha256"] != c_config["train_cohort_sha256"] or
+            audit["relations_sha256"] != config["relations_sha256"]):
+        raise ValueError("train relation supervision differs from stage-1 provenance")
+    checkpoint_path = stage1 / "dep_pretrain" / "last.pt"
+    complete = json.loads((checkpoint_path.parent / "complete.json").read_text())
+    checkpoint_sha256 = file_sha256(checkpoint_path)
+    if (complete["mode"] != "dep_pretrain" or
+            complete["checkpoint_sha256"] != checkpoint_sha256):
+        raise ValueError("fixed relation checkpoint identity changed")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if (checkpoint.get("mode") != "dep_pretrain" or
+            checkpoint.get("pretrain_config") != config or
+            "relation_head_state" not in checkpoint):
+        raise ValueError("fixed relation checkpoint lacks matching LoRA/relation head")
+    graphs = load_graphs(c_config["graphs"], rows)
+    valid_supervision = {}
+    valid_counts = Counter()
+    for row in valid:
+        relations, counts = function_relations(
+            row, graphs[row["sample_key"]], builder.tokenizer,
+            source_max_length=builder.source_max_length,
+            prefix_tokens=len(builder.source_prefix), for_valid=True)
+        valid_counts.update(counts)
+        if relations:
+            valid_supervision[row["sample_key"]] = relations
+    del graphs
+    gc.collect()
+    resolved_device = base._resolve_device(device)
+    encoder, hidden_size = base._build_lora_encoder(
+        c_config["model_path"], device=resolved_device, lora_r=c_config["lora_r"],
+        lora_alpha=c_config["lora_alpha"], lora_dropout=c_config["lora_dropout"],
+        target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        gradient_checkpointing=False)
+    encoder.to(resolved_device)
+    base.set_peft_model_state_dict(encoder, checkpoint["adapter_state"])
+    head = DirectedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
+    head.load_state_dict(checkpoint["relation_head_state"])
+    root.mkdir(parents=True, exist_ok=False)
+    result = {"pretrain_dir": str(stage1), "checkpoint_sha256": checkpoint_sha256,
+              "threshold": 0.5, "valid_relation_source": "existing_cached_joern",
+              "valid_relation_audit": dict(valid_counts), "splits": {}}
+    for split, records, relations in (("train", train, supervision),
+                                       ("valid", valid, valid_supervision)):
+        predictions, summary = _fixed_relation_predictions(
+            encoder, head, builder, records, relations, batch_size, resolved_device)
+        with (root / f"{split}.predictions.jsonl").open("x", encoding="utf-8") as output:
+            for prediction in predictions:
+                output.write(json.dumps(prediction, ensure_ascii=False) + "\n")
+        result["splits"][split] = summary
+    atomic_json(root / "metrics.json", result)
+    return result

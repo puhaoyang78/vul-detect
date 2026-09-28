@@ -858,6 +858,11 @@ def parser():
                               default=["lm_pretrain", "dep_pretrain"])
     pretrain_dep.add_argument("--device", default="auto")
     pretrain_dep.add_argument("--resume", action="store_true")
+    eval_dep = sub.add_parser("eval-dep-relations", help="score saved stage-1 relation head on train/valid only")
+    eval_dep.add_argument("--pretrain-dir", required=True)
+    eval_dep.add_argument("--output-dir", required=True)
+    eval_dep.add_argument("--batch-size", type=int, default=1)
+    eval_dep.add_argument("--device", default="auto")
     return p
 
 
@@ -896,6 +901,11 @@ def main():
                 args.reference_run_dir, args.supervision_dir, args.output_dir,
                 modes=tuple(args.modes), device=args.device, resume=args.resume),
                 ensure_ascii=False), flush=True)
+        elif args.command == "eval-dep-relations":
+            from .cfg_dependency import evaluate_fixed_relations
+            print(json.dumps(evaluate_fixed_relations(
+                args.pretrain_dir, args.output_dir, batch_size=args.batch_size,
+                device=args.device), ensure_ascii=False), flush=True)
         elif args.command == "run":
             for name in ("source_max_length", "epochs", "batch_size", "gradient_accumulation",
                          "lora_r", "lora_alpha", "graph_steps", "log_every"):
