@@ -1,4 +1,4 @@
-"""A/B/C, aligned D/E, DDG F/G, dual-forward, and CFG round readouts in one flow.
+"""CFG ablations, source supervision, and train-negative rotation in one flow.
 
 Examples are in docs/CFG_ABLATION.md. Training never evaluates the test split.
 The baseline behavior, datasets, and old checkpoints are preserved.
@@ -9,7 +9,6 @@ import argparse
 from collections import Counter
 import csv
 import gc
-import hashlib
 import importlib
 import json
 import math
@@ -19,29 +18,22 @@ import sys
 
 from .cfg_alignment import align_nodes, coverage_summary
 from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic_json,
-                       build_graphs, cohort_hash, digest, identity, load_graphs,
+                       build_graphs, cohort_hash, digest, file_sha256, identity, load_graphs,
                        output_lock, read_jsonl, read_records)
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
+from .cfg_rotation import ROTATION_VARIANTS, epoch_train_rows, load_selected, schedule_report
 
 JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
 VARIANTS = ("baseline", "attributes", "cfg", "aligned_attributes", "aligned_cfg",
             "cfg_ddg", "cfg_ddg_shuffled", "cfg_double_ce", "cfg_rdrop",
-            *JK_VARIANTS, *SOURCE_SUPERVISION_VARIANTS)
+            *JK_VARIANTS, *SOURCE_SUPERVISION_VARIANTS, *ROTATION_VARIANTS)
 DDG_VARIANTS = ("cfg_ddg", "cfg_ddg_shuffled")
 DUAL_FORWARD_ALPHA = {"cfg_double_ce": 0.0, "cfg_rdrop": 1.0}
 READOUT_VARIANTS = ("linear", "mlp", "interaction")
 COMPARISON_VARIANTS = (*VARIANTS, *READOUT_VARIANTS)
 DEFAULT_VARIANTS = VARIANTS[:3]
 CHECKPOINT_SCHEMA = 1
-
-
-def file_sha256(path):
-    result = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            result.update(chunk)
-    return result.hexdigest()
 
 
 def _base_module():
@@ -127,14 +119,18 @@ def _save_torch(path, checkpoint):
     partial.replace(path)
 
 
-def _train_graph(base, config, rows, views, vocab, folder, device):
+def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows=None):
     import torch
     from .cfg_network import build_model
     from tqdm.auto import tqdm
 
     train = [r for r in rows if r["split"] == "train"]
     valid = [r for r in rows if r["split"] == "valid"]
-    train_views = {r["sample_key"]: views[r["sample_key"]] for r in train+valid}
+    train_epochs = epoch_rows if epoch_rows is not None else [train] * config["epochs"]
+    if len(train_epochs) != config["epochs"] or any(len(group) != len(train) for group in train_epochs):
+        raise ValueError("each training epoch must retain the original C sample count")
+    train_views = {r["sample_key"]: views[r["sample_key"]]
+                   for group in [*train_epochs, valid] for r in group}
     encoded = {k: vocab.encode(v) for k, v in train_views.items()}
     builder = _tokenizer(base, config)
     base._seed_everything(config["seed"])
@@ -166,7 +162,8 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
 
         for epoch in range(config["epochs"]):
             model.train()
-            order = list(range(len(train)))
+            epoch_train = train_epochs[epoch]
+            order = list(range(len(epoch_train)))
             random.Random(config["seed"] + epoch).shuffle(order)
             optimizer.zero_grad(set_to_none=True)
             num_batches = math.ceil(len(order)/batch_size)
@@ -178,7 +175,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device):
                        desc=f"{config['variant']} epoch {epoch+1}/{config['epochs']}",
                        file=sys.stdout, dynamic_ncols=True, mininterval=1)
             for batch_index, start in enumerate(bar):
-                batch = [train[i] for i in order[start:start+batch_size]]
+                batch = [epoch_train[i] for i in order[start:start+batch_size]]
                 inputs = _graph_inputs(model, batch, builder, views, encoded, device,
                                        coverage=coverage["train"] if aligned and epoch == 0 else None)
                 labels = torch.tensor([r["label"] for r in batch], dtype=torch.float32, device=device)
@@ -333,11 +330,22 @@ def compare_run(root: str | Path, split: str = "valid",
         raise ValueError("frozen C readout screening is valid-only; test was not extracted")
     reference = Path(reference_root) if reference_root is not None else None
     if reference is not None:
-        if json.loads((root / "config.json").read_text()) != json.loads((reference / "config.json").read_text()):
-            raise ValueError("reference run uses a different dataset, graph, or training configuration")
+        candidate_config = json.loads((root / "config.json").read_text())
+        reference_config = json.loads((reference / "config.json").read_text())
+        if candidate_config != reference_config:
+            if candidate_config.get("training_member_policy") != "primevul_negative_rotation":
+                raise ValueError("reference run uses a different dataset, graph, or training configuration")
+            declared = {"training_member_policy", "rotation_dir", "rotation_selected_sha256",
+                        "rotation_graphs_sha256", "reference_run_dir"}
+            shared = {k: v for k, v in candidate_config.items() if k not in declared}
+            if (shared != reference_config or
+                    candidate_config.get("reference_run_dir") != str(reference.resolve())):
+                raise ValueError("rotation comparison differs beyond declared training members")
     rows, result = {}, {"split": split, "metrics": {}, "changes_vs_baseline": {}}
     if reference is not None:
         result["reference_run_dir"] = str(reference.resolve())
+        if candidate_config.get("training_member_policy"):
+            result["training_member_policy"] = candidate_config["training_member_policy"]
     for variant in COMPARISON_VARIANTS:
         folder = reference if reference is not None and variant in DEFAULT_VARIANTS else root
         path = folder / variant / f"{split}.predictions.jsonl"
@@ -380,7 +388,7 @@ def compare_run(root: str | Path, split: str = "valid",
         cfg_threshold = rows["cfg"][0]["threshold"]
         result["changes_vs_cfg"] = {}
         for variant in (*DDG_VARIANTS, *DUAL_FORWARD_ALPHA, *JK_VARIANTS,
-                        *SOURCE_SUPERVISION_VARIANTS, *READOUT_VARIANTS):
+                        *SOURCE_SUPERVISION_VARIANTS, *ROTATION_VARIANTS, *READOUT_VARIANTS):
             if variant not in rows:
                 continue
             result["changes_vs_cfg"][variant] = {
@@ -471,7 +479,8 @@ def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
 def run_experiment(args, base=None):
     import torch
     if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA or
-            v in JK_VARIANTS or v in SOURCE_SUPERVISION_VARIANTS for v in args.variants) and
+            v in JK_VARIANTS or v in SOURCE_SUPERVISION_VARIANTS or v in ROTATION_VARIANTS
+            for v in args.variants) and
             args.source_max_length != 2048):
         raise ValueError("CFG ablations require the original 2048-token source budget")
     rows, views = _prepare(args.dataset, args.graphs, args.source_dataset,
@@ -480,7 +489,28 @@ def run_experiment(args, base=None):
     valid = [r for r in rows if r["split"] == "valid"]
     if args.source_dataset == "sven" or any({r["label"] for r in group} != {0, 1} for group in (train, valid)):
         raise ValueError("training requires train and valid splits, each containing both labels; never train SVEN")
-    vocab = AttributeVocabulary.fit(train, views, args.vocab_limit)
+    rotating = any(v in ROTATION_VARIANTS for v in args.variants)
+    if rotating and (any(v not in ROTATION_VARIANTS for v in args.variants) or
+                     not args.rotation_dir or not args.reference_run_dir):
+        raise ValueError("rotation run needs only fixed/rotating variants, --rotation-dir, and --reference-run-dir")
+    selected_rows = None
+    if rotating:
+        reference = Path(args.reference_run_dir).resolve()
+        reference_config = json.loads((reference / "config.json").read_text())
+        vocab = AttributeVocabulary(json.loads((reference / "vocabulary.json").read_text()))
+        if digest(vocab.values) != reference_config["vocabulary_sha256"]:
+            raise ValueError("original C attribute vocabulary changed")
+        from .cfg_rotation import _preparation
+        preparation, _ = _preparation(args.rotation_dir)
+        if preparation["reference_run_dir"] != str(reference):
+            raise ValueError("rotation candidates were prepared against another C run")
+        selected_rows, selected_views, selection = load_selected(args.rotation_dir,
+                                                                 expected_count=2 * sum(r["label"] == 0 for r in train))
+        if set(selected_views) & set(views):
+            raise ValueError("rotation candidates overlap original C records")
+        views.update(selected_views)
+    else:
+        vocab = AttributeVocabulary.fit(train, views, args.vocab_limit)
     root = Path(args.output_dir)
     config = {name: getattr(args, name) for name in (
         "model_path", "source_dataset", "source_max_length", "epochs", "batch_size",
@@ -491,6 +521,14 @@ def run_experiment(args, base=None):
                   feature_schema=FEATURE_SCHEMA, cohort_sha256=cohort_hash(rows),
                   train_cohort_sha256=cohort_hash(train), valid_cohort_sha256=cohort_hash(valid),
                   graph_file_sha256=file_sha256(args.graphs), vocabulary_sha256=digest(vocab.values))
+    if rotating:
+        if config != reference_config:
+            raise ValueError("rotation must keep the original C data, graph, model, and training settings")
+        config.update(training_member_policy="primevul_negative_rotation",
+                      rotation_dir=str(Path(args.rotation_dir).resolve()),
+                      rotation_selected_sha256=selection["selected_sha256"],
+                      rotation_graphs_sha256=selection["selected_graphs_sha256"],
+                      reference_run_dir=str(reference))
     root.mkdir(parents=True, exist_ok=True)
     with output_lock(root / "experiment"):
         meta = root / "config.json"
@@ -560,8 +598,12 @@ def run_experiment(args, base=None):
                                                                 batch_size=args.batch_size, device=str(device))).tolist()
                 alignment_coverage = None
             else:
+                schedule = (epoch_train_rows(train, selected_rows, variant, args.epochs)
+                            if variant in ROTATION_VARIANTS else None)
+                if schedule is not None:
+                    atomic_json(folder / "train_epochs.json", schedule_report(schedule))
                 scores, threshold, alignment_coverage, source_output = _train_graph(
-                    base, variant_config, rows, views, vocab, folder, device)
+                    base, variant_config, rows, views, vocab, folder, device, epoch_rows=schedule)
                 if alignment_coverage is not None:
                     atomic_json(folder / "alignment_coverage.json", alignment_coverage)
             checkpoint_hash = file_sha256(folder/"best.pt")
@@ -583,7 +625,7 @@ def run_experiment(args, base=None):
             gc.collect()
             if device.type == "cuda":
                 torch.cuda.empty_cache()
-        return compare_run(root, "valid")
+        return compare_run(root, "valid", reference_root=reference if rotating else None)
 
 
 def evaluate_run(args, base=None):
@@ -595,6 +637,11 @@ def evaluate_run(args, base=None):
                            shuffle_seed=config["seed"] if "cfg_ddg_shuffled" in args.variants else None)
     if cohort_hash(rows) != config["cohort_sha256"] or file_sha256(config["graphs"]) != config["graph_file_sha256"]:
         raise ValueError("evaluation data/graphs differ from the recorded run")
+    if config.get("training_member_policy") == "primevul_negative_rotation":
+        _, _, selection = load_selected(config["rotation_dir"])
+        if (selection["selected_sha256"] != config["rotation_selected_sha256"] or
+                selection["selected_graphs_sha256"] != config["rotation_graphs_sha256"]):
+            raise ValueError("rotation training members or graphs changed")
     selected = [r for r in rows if r["split"] == args.split]
     if not selected:
         raise ValueError(f"empty split {args.split}")
@@ -659,7 +706,7 @@ def evaluate_run(args, base=None):
             gc.collect()
             if device.type == "cuda":
                 torch.cuda.empty_cache()
-        return compare_run(root, args.split)
+        return compare_run(root, args.split, reference_root=config.get("reference_run_dir"))
 
 
 def parser():
@@ -677,6 +724,8 @@ def parser():
     run.add_argument("--dataset", required=True)
     run.add_argument("--graphs", required=True)
     run.add_argument("--output-dir", required=True)
+    run.add_argument("--rotation-dir", help="prepared and graph-verified new PrimeVul train negatives")
+    run.add_argument("--reference-run-dir", help="completed original C run; reuse its exact vocabulary and settings")
     run.add_argument("--source-dataset", choices=("primevul", "cleanvul"), default="primevul")
     run.add_argument("--model-path", default="/home/phy/models/Qwen2.5-Coder-7B-Instruct")
     run.add_argument("--variants", nargs="+", choices=VARIANTS, default=list(DEFAULT_VARIANTS))
@@ -726,6 +775,17 @@ def parser():
     ddg_audit.add_argument("--output", required=True)
     ddg_audit.add_argument("--source-dataset", choices=("primevul", "cleanvul", "sven"), default="primevul")
     ddg_audit.add_argument("--seed", type=int, default=42)
+    prepare_rotation = sub.add_parser("prepare-rotation", help="screen official train negatives without Joern")
+    prepare_rotation.add_argument("--raw-root", default="/home/PublicData/PHY-data/vul_detect/data")
+    prepare_rotation.add_argument("--benchmark-manifest", default="data/benchmark/manifest.jsonl")
+    prepare_rotation.add_argument("--reference-run-dir", required=True)
+    prepare_rotation.add_argument("--output-dir", required=True)
+    build_rotation = sub.add_parser("build-rotation", help="graph only needed new negatives; refill failures")
+    build_rotation.add_argument("--rotation-dir", required=True)
+    build_rotation.add_argument("--joern-dir", default="/home/phy/joern")
+    build_rotation.add_argument("--java-home", default="/home/phy/jdk21")
+    build_rotation.add_argument("--timeout", type=int, default=300)
+    build_rotation.add_argument("--batch-size", type=int, default=8)
     return p
 
 
@@ -738,6 +798,18 @@ def main():
                                   timeout=args.timeout, batch_size=args.batch_size)
             if not report["complete"]:
                 return 2
+        elif args.command == "prepare-rotation":
+            from .cfg_rotation import prepare_rotation
+            print(json.dumps(prepare_rotation(args.raw_root, args.benchmark_manifest,
+                                              args.reference_run_dir, args.output_dir),
+                             ensure_ascii=False), flush=True)
+        elif args.command == "build-rotation":
+            from .cfg_rotation import build_rotation
+            selection = build_rotation(args.rotation_dir, joern_dir=args.joern_dir,
+                                       java_home=args.java_home, timeout=args.timeout,
+                                       batch_size=args.batch_size)
+            print(json.dumps({k: v for k, v in selection.items() if k != "selected_sample_keys"},
+                             ensure_ascii=False), flush=True)
         elif args.command == "run":
             for name in ("source_max_length", "epochs", "batch_size", "gradient_accumulation",
                          "lora_r", "lora_alpha", "graph_steps", "log_every"):

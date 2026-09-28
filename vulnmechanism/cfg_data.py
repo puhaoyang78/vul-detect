@@ -43,6 +43,14 @@ def source_hash(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def file_sha256(path: str | Path) -> str:
+    result = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            result.update(chunk)
+    return result.hexdigest()
+
+
 def identity(record: dict) -> dict:
     return {"sample_key": record["sample_key"], "dataset": record["dataset"],
             "split": record["split"], "label": record["label"],
