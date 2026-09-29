@@ -1,0 +1,188 @@
+{
+  "pretrain_dir": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/cfg_composition_pretrain_seed42",
+  "mode": "composition_pretrain",
+  "checkpoint_sha256": "30b32066f6187ccad24b60b86bc7ec215dbe37daf158b6a98605661f8ebfd67c",
+  "threshold": 0.5,
+  "valid_relation_source": "existing_cached_joern",
+  "valid_relation_audit": {
+    "functions": 741,
+    "unsupported_statement": 2551,
+    "unsupported_check": 958,
+    "unknown_if_reset": 1361,
+    "functions_with_slices": 29,
+    "functions_with_queries": 0,
+    "unsupported_integer_type": 1086,
+    "unknown_effect_reset": 1769,
+    "missing_cached_IDENTIFIER": 226,
+    "missing_verified_binding": 231,
+    "unsupported_declaration": 445,
+    "unsupported_operand": 573,
+    "unsupported_update": 309,
+    "constant_updates": 133,
+    "verified_scalar_read_paths": 40,
+    "unsupported_array_operand": 158,
+    "syntax_error_or_multiple_functions": 173,
+    "uninitialized_or_missing_use_cfg": 56,
+    "unsupported_check_operand": 195,
+    "missing_cached_CONTROL_STRUCTURE": 42,
+    "missing_check_cfg_site": 42,
+    "unknown_or_use_limit": 12,
+    "uninitialized_check_operand": 62,
+    "uninitialized_copy": 3,
+    "implicit_conversion_unknown": 10,
+    "missing_cached_<operator>.equals": 4,
+    "missing_cached_<operator>.notEquals": 1,
+    "missing_cached_RETURN": 2,
+    "copy_updates": 1,
+    "missing_cached_<operator>.indirectIndexAccess": 2,
+    "path_limit": 1,
+    "query_unknown": 1,
+    "query_scalar_read_unknown": 1
+  },
+  "splits": {
+    "train": {
+      "total_functions": 5886,
+      "effective_relation_functions": 6,
+      "relation_coverage": 0.0010193679918450561,
+      "relation_pairs": 9,
+      "relation_positive": 5,
+      "relation_negative": 4,
+      "fixed_model": {
+        "accuracy": 0.4444444444444444,
+        "precision": 0.5,
+        "recall": 0.8,
+        "f1": 0.6153846153846154,
+        "mcc": -0.31622776601683794,
+        "auc": 0.6,
+        "tp": 4,
+        "tn": 0,
+        "fp": 4,
+        "fn": 1,
+        "samples": 9,
+        "threshold": 0.5
+      },
+      "all_positive_reference": {
+        "accuracy": 0.5555555555555556,
+        "precision": 0.5555555555555556,
+        "recall": 1.0,
+        "f1": 0.7142857142857143,
+        "mcc": 0.0,
+        "auc": 0.5,
+        "tp": 5,
+        "tn": 0,
+        "fp": 4,
+        "fn": 0,
+        "samples": 9,
+        "threshold": 0.5
+      },
+      "examples": {
+        "correct": [
+          {
+            "sample_key": "primevul:10748",
+            "split": "train",
+            "label": 1,
+            "prediction": 1,
+            "score": 1.0,
+            "source": "same_value_versions",
+            "check_text": "version_id >= 4",
+            "update_text": "version_id >= 4",
+            "use_text": "version_id"
+          },
+          {
+            "sample_key": "primevul:13249",
+            "split": "train",
+            "label": 1,
+            "prediction": 1,
+            "score": 1.0,
+            "source": "same_value_versions",
+            "check_text": "code < 0",
+            "update_text": "code < 0",
+            "use_text": "code"
+          },
+          {
+            "sample_key": "primevul:13249",
+            "split": "train",
+            "label": 1,
+            "prediction": 1,
+            "score": 1.0,
+            "source": "same_value_versions",
+            "check_text": "code != 0",
+            "update_text": "code != 0",
+            "use_text": "code"
+          },
+          {
+            "sample_key": "primevul:349222",
+            "split": "train",
+            "label": 1,
+            "prediction": 1,
+            "score": 1.0,
+            "source": "same_value_versions",
+            "check_text": "destIfNull==destIfFalse",
+            "update_text": "destIfNull==destIfFalse",
+            "use_text": "destIfFalse"
+          }
+        ],
+        "incorrect": [
+          {
+            "sample_key": "primevul:10748",
+            "split": "train",
+            "label": 0,
+            "prediction": 1,
+            "score": 1.0,
+            "source": "opposite_branch_counterexample",
+            "check_text": "version_id >= 3",
+            "update_text": "version_id >= 3",
+            "use_text": "version_id"
+          },
+          {
+            "sample_key": "primevul:166817",
+            "split": "train",
+            "label": 0,
+            "prediction": 1,
+            "score": 0.5449097156524658,
+            "source": "opposite_branch_counterexample",
+            "check_text": "num == 0",
+            "update_text": "num == 0",
+            "use_text": "num"
+          },
+          {
+            "sample_key": "primevul:166817",
+            "split": "train",
+            "label": 1,
+            "prediction": 0,
+            "score": 0.1189122423529625,
+            "source": "same_value_versions",
+            "check_text": "num == 0",
+            "update_text": "return(NULL);",
+            "use_text": "num"
+          },
+          {
+            "sample_key": "primevul:168511",
+            "split": "train",
+            "label": 0,
+            "prediction": 1,
+            "score": 1.0,
+            "source": "opposite_branch_counterexample",
+            "check_text": "len >= 4",
+            "update_text": "len >= 4",
+            "use_text": "len"
+          }
+        ]
+      }
+    },
+    "valid": {
+      "total_functions": 741,
+      "effective_relation_functions": 0,
+      "relation_coverage": 0.0,
+      "relation_pairs": 0,
+      "relation_positive": 0,
+      "relation_negative": 0,
+      "fixed_model": null,
+      "all_positive_reference": null,
+      "examples": {
+        "correct": [],
+        "incorrect": []
+      }
+    }
+  }
+}

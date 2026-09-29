@@ -24,6 +24,11 @@ SCOPES = {"function_definition", "compound_statement", "for_statement", "if_stat
           "while_statement", "switch_statement", "catch_clause"}
 SCALAR_WORDS = {"_Bool", "bool", "char", "short", "int", "long", "float", "double",
                 "signed", "unsigned"}
+INTEGER_TYPES = {"int", "unsigned", "unsigned int", "short", "unsigned short",
+                 "long", "unsigned long", "long long", "unsigned long long",
+                 "size_t", "ssize_t", "ptrdiff_t", "intptr_t", "uintptr_t",
+                 "int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t",
+                 "int64_t", "uint64_t"}
 
 
 def _declarator_name(node):
@@ -137,9 +142,19 @@ def lexical_bindings(source: str, language: str) -> tuple[dict[tuple[int, int], 
             if name_node is None:
                 continue
             name = name_node.text.decode("utf-8", errors="replace")
+            type_node = node.child_by_field_name("type")
+            primitive = (" ".join(type_node.text.decode("utf-8", errors="replace").split())
+                         if type_node is not None and type_node.type in {"primitive_type", "type_identifier"}
+                         else None)
+            qualifiers = {child.text.decode("utf-8", errors="replace") for child in node.children
+                          if child.type == "type_qualifier"}
+            safe_integer = (simple and primitive in INTEGER_TYPES and
+                            not qualifiers.intersection({"volatile", "_Atomic"}))
             entry = {"binding": f"{scope.start_byte}:{name_node.start_byte}:{name}",
                      "name": name, "start": name_node.start_byte,
-                     "scalar": _scalar_declaration(node, declarator, simple)}
+                     "scalar": _scalar_declaration(node, declarator, simple),
+                     "integer_type": primitive if safe_integer else None,
+                     "parameter": node.type == "parameter_declaration"}
             declarations[(scope.id, name)].append(entry)
             declaration_nodes[(name_node.start_byte, name_node.end_byte)] = entry
     result = {}
@@ -166,7 +181,8 @@ def lexical_bindings(source: str, language: str) -> tuple[dict[tuple[int, int], 
         role = _identifier_role(node)
         value = {"binding": direct["binding"] if direct else None,
                  "scalar": bool(direct and direct["scalar"]), "role": role,
-                 "name": name}
+                 "integer_type": direct["integer_type"] if direct else None,
+                 "parameter": bool(direct and direct["parameter"]), "name": name}
         if span in result and result[span] != value:
             result[span] = {"binding": None, "scalar": False, "role": "unsupported", "name": name}
         else:
@@ -453,6 +469,23 @@ class DirectedRelationHead(nn.Module):
                 self.use(use_hidden.float())).sum(dim=-1) / self.rank**0.5 + self.bias
 
 
+class ComposedRelationHead(nn.Module):
+    """Predict a check/update/use query from three causal source positions only."""
+
+    def __init__(self, hidden_size: int, rank: int = 32):
+        super().__init__()
+        self.check = nn.Linear(hidden_size, rank, bias=False)
+        self.update = nn.Linear(hidden_size, rank, bias=False)
+        self.use = nn.Linear(hidden_size, rank, bias=False)
+        self.output = nn.Linear(3 * rank, 1)
+
+    def forward(self, check_hidden, update_hidden, use_hidden):
+        check = self.check(check_hidden.float())
+        update = self.update(update_hidden.float())
+        use = self.use(use_hidden.float())
+        return self.output(torch.cat((check * use, update * use, check * update), dim=-1)).squeeze(-1)
+
+
 def relation_function_loss(hidden, relation_batch, head):
     """Mean pair BCE per eligible function, then mean across eligible functions."""
     import torch
@@ -464,16 +497,15 @@ def relation_function_loss(hidden, relation_batch, head):
     for index, relations in enumerate(relation_batch):
         if not relations:
             continue
-        definition_indices = torch.tensor([row["definition_token"] for row in relations],
-                                          dtype=torch.long, device=hidden.device)
-        use_indices = torch.tensor([row["use_token"] for row in relations],
-                                   dtype=torch.long, device=hidden.device)
-        if (definition_indices < 0).any() or (use_indices < 0).any() or (
-                definition_indices >= hidden.shape[1]).any() or (use_indices >= hidden.shape[1]).any():
+        stems = (("check", "update", "use") if isinstance(head, ComposedRelationHead)
+                 else ("definition", "use"))
+        indices = [torch.tensor([row[f"{stem}_token"] for row in relations],
+                                dtype=torch.long, device=hidden.device) for stem in stems]
+        if any((item < 0).any() or (item >= hidden.shape[1]).any() for item in indices):
             raise ValueError("relation token index is outside the encoded sequence")
         expected = torch.tensor([row["label"] for row in relations],
                                 dtype=torch.float32, device=hidden.device)
-        predicted = head(hidden[index, definition_indices], hidden[index, use_indices])
+        predicted = head(*(hidden[index, item] for item in indices))
         function_losses.append(F.binary_cross_entropy_with_logits(predicted.float(), expected))
         labels.extend(int(value) for value in expected.detach().cpu().tolist())
         logits.extend(predicted.detach().float().cpu().tolist())
@@ -579,9 +611,47 @@ def _checked_relation_rows(supervision_dir: str, train: list[dict], builder) -> 
     return dict(result), audit
 
 
+def _checked_program_queries(program_dir, records, builder, split="train"):
+    """Select only proved local queries from one specified split; unknown never enters BCE."""
+    from .cfg_data import read_jsonl
+
+    if split not in {"train", "valid"}:
+        raise ValueError("program relation queries are train/valid only")
+    root = Path(program_dir)
+    audit = json.loads((root / "audit.json").read_text())
+    path = root / f"{split}.queries.jsonl"
+    if file_sha256(path) != audit[f"{split}_queries_sha256"]:
+        raise ValueError("program query audit/content mismatch")
+    expected = {row["sample_key"]: row for row in records}
+    if any(row["split"] != split for row in records):
+        raise ValueError("program query records have the wrong split")
+    result = defaultdict(list)
+    seen = set()
+    for query in read_jsonl(path):
+        key = query["sample_key"]
+        if (key not in expected or query["split"] != split or
+                query["source_sha256"] != source_hash(expected[key]["raw_source"])):
+            raise ValueError("program query is outside the requested original C split")
+        identity = (key, tuple(query["check_span"]), query["branch"], tuple(query["use_span"]))
+        if identity in seen or query["label"] not in (0, 1, None):
+            raise ValueError("duplicate or malformed program query")
+        seen.add(identity)
+        if query["label"] is None:
+            continue
+        sequence_length = len(builder.source_ids(expected[key]))
+        if any(type(query.get(f"{stem}_token")) is not int or
+               not 0 <= query[f"{stem}_token"] < sequence_length - 1
+               for stem in ("check", "update", "use")):
+            raise ValueError("program query token is outside visible source")
+        if not query["check_token"] <= query["update_token"] <= query["use_token"]:
+            raise ValueError("program query is not causal")
+        result[key].append(query)
+    return dict(result), audit
+
+
 def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, output_dir: str,
                                *, modes=("lm_pretrain", "dep_pretrain"), device="auto",
-                               resume=False, base=None):
+                               resume=False, base=None, program_dir=None):
     """One train-only source pass per mode; the relationship task shares Qwen's forward."""
     import gc
     import math
@@ -591,8 +661,12 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
     from tqdm.auto import tqdm
 
     if not modes or len(modes) != len(set(modes)) or any(
-            mode not in {"lm_pretrain", "dep_pretrain"} for mode in modes):
-        raise ValueError("modes must be lm_pretrain and/or dep_pretrain")
+            mode not in {"lm_pretrain", "dep_pretrain", "composition_pretrain"} for mode in modes):
+        raise ValueError("unsupported source pretraining mode")
+    if "composition_pretrain" in modes and (not program_dir or len(modes) != 1):
+        raise ValueError("composition pretraining requires --program-dir and its own mode run")
+    if any(mode in {"lm_pretrain", "dep_pretrain"} for mode in modes) and not supervision_dir:
+        raise ValueError("existing source pretraining requires --supervision-dir")
     from .cfg_experiment import _base_module, _save_torch, _tokenizer
     base = _base_module() if base is None else base
     reference = Path(reference_run_dir).resolve()
@@ -606,20 +680,37 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             file_sha256(c_config["graphs"]) != c_config["graph_file_sha256"]):
         raise ValueError("pretraining data or graph identity differs from original C")
     builder = _tokenizer(base, c_config)
-    supervision, audit = _checked_relation_rows(supervision_dir, train, builder)
-    if audit["reference_run_dir"] != str(reference) or (
-            audit["train_cohort_sha256"] != c_config["train_cohort_sha256"]):
-        raise ValueError("supervision was not prepared for this original C train cohort")
-    if "dep_pretrain" in modes and (audit["counts"].get("selected_positive", 0) == 0 or
-                                     audit["counts"].get("selected_negative", 0) == 0):
-        raise ValueError("verified relation supervision needs both positive and negative examples")
+    old_supervision = old_audit = None
+    if any(mode in {"lm_pretrain", "dep_pretrain"} for mode in modes):
+        old_supervision, old_audit = _checked_relation_rows(supervision_dir, train, builder)
+        if old_audit["reference_run_dir"] != str(reference) or (
+                old_audit["train_cohort_sha256"] != c_config["train_cohort_sha256"]):
+            raise ValueError("supervision was not prepared for this original C train cohort")
+        if "dep_pretrain" in modes and (old_audit["counts"].get("selected_positive", 0) == 0 or
+                                         old_audit["counts"].get("selected_negative", 0) == 0):
+            raise ValueError("verified relation supervision needs both classes")
+    program_supervision = program_audit = None
+    if "composition_pretrain" in modes:
+        program_supervision, program_audit = _checked_program_queries(program_dir, train, builder)
+        if (program_audit["reference_run_dir"] != str(reference) or
+                program_audit["cohort_sha256"] != c_config["cohort_sha256"]):
+            raise ValueError("program queries differ from the original C cohort")
+        labels = {relation["label"] for group in program_supervision.values() for relation in group}
+        if labels != {0, 1}:
+            raise ValueError("composition supervision needs proved positive and negative queries")
     root = Path(output_dir)
     config = {"c_config": c_config, "reference_run_dir": str(reference),
-              "supervision_dir": str(Path(supervision_dir).resolve()),
-              "relations_sha256": audit["relations_sha256"], "pretrain_epochs": 1,
-              "relation_alpha": 1.0, "relation_rank": 32,
+              "supervision_dir": str(Path(supervision_dir).resolve()) if old_audit else None,
+              "relations_sha256": (old_audit["relations_sha256"] if old_audit else
+                                    program_audit["train_queries_sha256"]),
+              "pretrain_epochs": 1, "relation_alpha": 1.0, "relation_rank": 32,
               "relation_accumulation_normalization": "window_effective_functions",
-              "objective": "source_clm_plus_optional_scoped_scalar_relation"}
+              "objective": ("source_clm_plus_optional_composed_relation"
+                            if "composition_pretrain" in modes else
+                            "source_clm_plus_optional_scoped_scalar_relation")}
+    if program_audit is not None:
+        config.update(program_dir=str(Path(program_dir).resolve()),
+                      program_sha256=program_audit["program_sha256"])
     root.mkdir(parents=True, exist_ok=True)
     from .cfg_data import output_lock
     with output_lock(root / "experiment"):
@@ -628,7 +719,8 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             if not resume or json.loads(meta.read_text()) != config:
                 raise ValueError("pretrain output exists or its configuration differs")
         else:
-            if any((root / mode).exists() for mode in ("lm_pretrain", "dep_pretrain")):
+            if any((root / mode).exists() for mode in ("lm_pretrain", "dep_pretrain",
+                                                      "composition_pretrain")):
                 raise FileExistsError("pretrain mode directory exists without config")
             atomic_json(meta, config)
         resolved_device = base._resolve_device(device)
@@ -656,7 +748,11 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             lm_weight = _load_qwen_lm_weight(c_config["model_path"], hidden_size, resolved_device)
             with torch.random.fork_rng(devices=[]):
                 head = (DirectedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
-                        if mode == "dep_pretrain" else None)
+                        if mode == "dep_pretrain" else
+                        ComposedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
+                        if mode == "composition_pretrain" else None)
+            supervision = (program_supervision if mode == "composition_pretrain" else
+                           old_supervision if old_supervision is not None else {})
             lora_parameters = [p for p in encoder.parameters() if p.requires_grad]
             groups = [{"params": lora_parameters, "lr": c_config["learning_rate"]}]
             if head is not None:
@@ -789,22 +885,39 @@ def _fixed_relation_predictions(encoder, head, builder, records, supervision, ba
                 print(f"fixed_relation_eval={start + len(batch)}/{len(selected)}", flush=True)
     labels = [row["label"] for row in predictions]
     scores = [row["score"] for row in predictions]
+    sources = {row["sample_key"]: row["raw_source"] for row in records}
+    examples = {"correct": [], "incorrect": []}
+    for prediction in predictions:
+        bucket = "correct" if prediction["prediction"] == prediction["label"] else "incorrect"
+        if len(examples[bucket]) >= 4:
+            continue
+        source = sources[prediction["sample_key"]]
+        example = {key: prediction[key] for key in ("sample_key", "split", "label",
+                    "prediction", "score", "source") if key in prediction}
+        for stem in ("definition", "check", "update", "use"):
+            span = prediction.get(f"{stem}_span")
+            if span is not None:
+                example[f"{stem}_text"] = source[slice(*span)]
+        examples[bucket].append(example)
     summary = {"total_functions": len(records), "effective_relation_functions": len(selected),
                "relation_coverage": len(selected) / len(records) if records else 0.0,
                "relation_pairs": len(predictions), "relation_positive": sum(labels),
                "relation_negative": len(labels) - sum(labels),
                "fixed_model": metrics(labels, scores, 0.5) if labels else None,
                "all_positive_reference": metrics(labels, [1.0] * len(labels), 0.5)
-                                         if labels else None}
+                                         if labels else None,
+               "examples": examples}
     return predictions, summary
 
 
 def evaluate_fixed_relations(pretrain_dir: str, output_dir: str, *, batch_size: int = 1,
-                             device="auto", base=None) -> dict:
+                             device="auto", base=None, mode="dep_pretrain") -> dict:
     """Evaluate the saved stage-1 relation model on train and cached-graph valid pairs."""
     import gc
     from .cfg_experiment import _base_module, _tokenizer
 
+    if mode not in {"dep_pretrain", "composition_pretrain"} or batch_size < 1:
+        raise ValueError("fixed relation evaluation needs a valid relation mode and batch size")
     root = Path(output_dir)
     if root.exists():
         raise FileExistsError(f"fixed relation evaluation output exists: {root}")
@@ -825,35 +938,44 @@ def evaluate_fixed_relations(pretrain_dir: str, output_dir: str, *, batch_size: 
         raise ValueError("fixed relation evaluation data/graph identity changed")
     base = _base_module() if base is None else base
     builder = _tokenizer(base, c_config)
-    supervision, audit = _checked_relation_rows(config["supervision_dir"], train, builder)
-    if (audit["reference_run_dir"] != str(reference.resolve()) or
-            audit["train_cohort_sha256"] != c_config["train_cohort_sha256"] or
-            audit["relations_sha256"] != config["relations_sha256"]):
-        raise ValueError("train relation supervision differs from stage-1 provenance")
-    checkpoint_path = stage1 / "dep_pretrain" / "last.pt"
+    if mode == "dep_pretrain":
+        supervision, audit = _checked_relation_rows(config["supervision_dir"], train, builder)
+        if (audit["reference_run_dir"] != str(reference.resolve()) or
+                audit["train_cohort_sha256"] != c_config["train_cohort_sha256"] or
+                audit["relations_sha256"] != config["relations_sha256"]):
+            raise ValueError("train relation supervision differs from stage-1 provenance")
+        graphs = load_graphs(c_config["graphs"], rows)
+        valid_supervision = {}
+        valid_counts = Counter()
+        for row in valid:
+            relations, counts = function_relations(
+                row, graphs[row["sample_key"]], builder.tokenizer,
+                source_max_length=builder.source_max_length,
+                prefix_tokens=len(builder.source_prefix), for_valid=True)
+            valid_counts.update(counts)
+            if relations:
+                valid_supervision[row["sample_key"]] = relations
+        del graphs
+        gc.collect()
+    else:
+        supervision, audit = _checked_program_queries(config["program_dir"], train, builder)
+        valid_supervision, _ = _checked_program_queries(config["program_dir"], valid, builder,
+                                                        split="valid")
+        if (audit["reference_run_dir"] != str(reference.resolve()) or
+                audit["cohort_sha256"] != c_config["cohort_sha256"] or
+                audit["train_queries_sha256"] != config["relations_sha256"] or
+                audit["program_sha256"] != config["program_sha256"]):
+            raise ValueError("composition query provenance differs from stage 1")
+        valid_counts = Counter(audit["splits"]["valid"])
+    checkpoint_path = stage1 / mode / "last.pt"
     complete = json.loads((checkpoint_path.parent / "complete.json").read_text())
     checkpoint_sha256 = file_sha256(checkpoint_path)
-    if (complete["mode"] != "dep_pretrain" or
-            complete["checkpoint_sha256"] != checkpoint_sha256):
+    if (complete["mode"] != mode or complete["checkpoint_sha256"] != checkpoint_sha256):
         raise ValueError("fixed relation checkpoint identity changed")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if (checkpoint.get("mode") != "dep_pretrain" or
-            checkpoint.get("pretrain_config") != config or
+    if (checkpoint.get("mode") != mode or checkpoint.get("pretrain_config") != config or
             "relation_head_state" not in checkpoint):
         raise ValueError("fixed relation checkpoint lacks matching LoRA/relation head")
-    graphs = load_graphs(c_config["graphs"], rows)
-    valid_supervision = {}
-    valid_counts = Counter()
-    for row in valid:
-        relations, counts = function_relations(
-            row, graphs[row["sample_key"]], builder.tokenizer,
-            source_max_length=builder.source_max_length,
-            prefix_tokens=len(builder.source_prefix), for_valid=True)
-        valid_counts.update(counts)
-        if relations:
-            valid_supervision[row["sample_key"]] = relations
-    del graphs
-    gc.collect()
     resolved_device = base._resolve_device(device)
     encoder, hidden_size = base._build_lora_encoder(
         c_config["model_path"], device=resolved_device, lora_r=c_config["lora_r"],
@@ -862,11 +984,13 @@ def evaluate_fixed_relations(pretrain_dir: str, output_dir: str, *, batch_size: 
         gradient_checkpointing=False)
     encoder.to(resolved_device)
     base.set_peft_model_state_dict(encoder, checkpoint["adapter_state"])
-    head = DirectedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
+    head_type = DirectedRelationHead if mode == "dep_pretrain" else ComposedRelationHead
+    head = head_type(hidden_size, config["relation_rank"]).to(resolved_device)
     head.load_state_dict(checkpoint["relation_head_state"])
     root.mkdir(parents=True, exist_ok=False)
-    result = {"pretrain_dir": str(stage1), "checkpoint_sha256": checkpoint_sha256,
-              "threshold": 0.5, "valid_relation_source": "existing_cached_joern",
+    result = {"pretrain_dir": str(stage1), "mode": mode,
+              "checkpoint_sha256": checkpoint_sha256, "threshold": 0.5,
+              "valid_relation_source": "existing_cached_joern",
               "valid_relation_audit": dict(valid_counts), "splits": {}}
     for split, records, relations in (("train", train, supervision),
                                        ("valid", valid, valid_supervision)):
