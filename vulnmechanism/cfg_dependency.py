@@ -30,7 +30,6 @@ INTEGER_TYPES = {"int", "unsigned", "unsigned int", "short", "unsigned short",
                  "int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t",
                  "int64_t", "uint64_t"}
 
-
 def _declarator_name(node):
     if node is None:
         return None, False
@@ -111,7 +110,8 @@ def _identifier_role(node):
     return "read"
 
 
-def lexical_bindings(source: str, language: str) -> tuple[dict[tuple[int, int], dict], str | None]:
+def lexical_bindings(source: str, language: str, *, integer_types=INTEGER_TYPES) -> tuple[
+        dict[tuple[int, int], dict], str | None]:
     """Map exact character spans to scoped declaration IDs and read/write roles."""
     encoded = source.encode("utf-8")
     root = parser_for(language).parse(encoded).root_node
@@ -148,10 +148,12 @@ def lexical_bindings(source: str, language: str) -> tuple[dict[tuple[int, int], 
                          else None)
             qualifiers = {child.text.decode("utf-8", errors="replace") for child in node.children
                           if child.type == "type_qualifier"}
-            safe_integer = (simple and primitive in INTEGER_TYPES and
+            safe_integer = (simple and primitive in integer_types and
                             not qualifiers.intersection({"volatile", "_Atomic"}))
             entry = {"binding": f"{scope.start_byte}:{name_node.start_byte}:{name}",
                      "name": name, "start": name_node.start_byte,
+                     "declaration_span": (byte_to_char[name_node.start_byte],
+                                          byte_to_char[name_node.end_byte]),
                      "scalar": _scalar_declaration(node, declarator, simple),
                      "integer_type": primitive if safe_integer else None,
                      "parameter": node.type == "parameter_declaration"}
@@ -182,7 +184,9 @@ def lexical_bindings(source: str, language: str) -> tuple[dict[tuple[int, int], 
         value = {"binding": direct["binding"] if direct else None,
                  "scalar": bool(direct and direct["scalar"]), "role": role,
                  "integer_type": direct["integer_type"] if direct else None,
-                 "parameter": bool(direct and direct["parameter"]), "name": name}
+                 "parameter": bool(direct and direct["parameter"]),
+                 "declaration_span": direct["declaration_span"] if direct else None,
+                 "name": name}
         if span in result and result[span] != value:
             result[span] = {"binding": None, "scalar": False, "role": "unsupported", "name": name}
         else:
@@ -470,20 +474,65 @@ class DirectedRelationHead(nn.Module):
 
 
 class ComposedRelationHead(nn.Module):
-    """Predict a check/update/use query from three causal source positions only."""
+    """Causal source positions plus an explicit comparison query; no analyzer verdict input."""
 
     def __init__(self, hidden_size: int, rank: int = 32):
         super().__init__()
+        from .cfg_program import OPS
         self.check = nn.Linear(hidden_size, rank, bias=False)
-        self.update = nn.Linear(hidden_size, rank, bias=False)
+        self.target = nn.Linear(hidden_size, rank, bias=False)
+        self.reference = nn.Linear(hidden_size, rank, bias=False)
         self.use = nn.Linear(hidden_size, rank, bias=False)
-        self.output = nn.Linear(3 * rank, 1)
+        self.definition = nn.Linear(hidden_size, rank, bias=False)
+        self.update = nn.GRUCell(hidden_size, rank)
+        # operator(6), desired branch(2), target side(2), reference kind(2),
+        # no update, missing/incomplete path, operation, path count = 17 descriptors.
+        self.output = nn.Linear(10 * rank + 17, 1)
+        self.rank = rank
 
-    def forward(self, check_hidden, update_hidden, use_hidden):
-        check = self.check(check_hidden.float())
-        update = self.update(update_hidden.float())
-        use = self.use(use_hidden.float())
-        return self.output(torch.cat((check * use, update * use, check * update), dim=-1)).squeeze(-1)
+    def forward(self, source_hidden, query):
+        import torch.nn.functional as F
+        from .cfg_program import OPS
+        if query["comparison"] not in OPS or query["branch"] not in (1, 2) or (
+                query["target_side"] not in (1, 2)):
+            raise ValueError("invalid composed query description")
+        states = source_hidden.float()
+        check = self.check(states[query["check_token"]])
+        target = self.target(states[query["target_token"]])
+        reference = self.reference(states[query["reference_token"]])
+        use = self.use(states[query["use_token"]])
+        descriptor = torch.cat((
+            F.one_hot(torch.tensor(OPS[query["comparison"]]-1, device=states.device), 6),
+            F.one_hot(torch.tensor(query["branch"]-1, device=states.device), 2),
+            F.one_hot(torch.tensor(query["target_side"]-1, device=states.device), 2),
+            F.one_hot(torch.tensor(int(query["reference_kind"] == "binding"), device=states.device), 2),
+        )).float()
+        path_vectors = []
+        missing = incomplete = 0
+        for path in query["paths"]:
+            if path["missing"]:
+                missing += 1
+                continue
+            incomplete += int(path["incomplete"])
+            target_def = self.definition(states[path["target_definition_token"]])
+            current_def = self.definition(states[path["current_definition_token"]])
+            reference_def = self.definition(states[path["reference_definition_token"]])
+            update = states.new_zeros((self.rank,))
+            for token in path["update_tokens"]:
+                update = self.update(states[token], update)
+            path_vectors.append(torch.cat((check * use, target * reference,
+                                           target_def * reference_def, current_def * use,
+                                           update * use)))
+        if not path_vectors:
+            raise ValueError("composed query has no visible path")
+        stacked = torch.stack(path_vectors)
+        count = len(query["paths"])
+        description = torch.cat((descriptor, states.new_tensor((
+            float(all(not p["update_tokens"] for p in query["paths"] if not p["missing"])),
+            missing / count, incomplete / count,
+            float(query["operation"] == "array_index"), count / 8.0))))
+        return self.output(torch.cat((stacked.amin(dim=0), stacked.amax(dim=0),
+                                      description))).squeeze(-1)
 
 
 def relation_function_loss(hidden, relation_batch, head):
@@ -497,15 +546,17 @@ def relation_function_loss(hidden, relation_batch, head):
     for index, relations in enumerate(relation_batch):
         if not relations:
             continue
-        stems = (("check", "update", "use") if isinstance(head, ComposedRelationHead)
-                 else ("definition", "use"))
-        indices = [torch.tensor([row[f"{stem}_token"] for row in relations],
-                                dtype=torch.long, device=hidden.device) for stem in stems]
-        if any((item < 0).any() or (item >= hidden.shape[1]).any() for item in indices):
-            raise ValueError("relation token index is outside the encoded sequence")
         expected = torch.tensor([row["label"] for row in relations],
                                 dtype=torch.float32, device=hidden.device)
-        predicted = head(*(hidden[index, item] for item in indices))
+        if isinstance(head, ComposedRelationHead):
+            predicted = torch.stack([head(hidden[index], row) for row in relations])
+        else:
+            indices = [torch.tensor([row[f"{stem}_token"] for row in relations],
+                                    dtype=torch.long, device=hidden.device)
+                       for stem in ("definition", "use")]
+            if any((item < 0).any() or (item >= hidden.shape[1]).any() for item in indices):
+                raise ValueError("relation token index is outside the encoded sequence")
+            predicted = head(*(hidden[index, item] for item in indices))
         function_losses.append(F.binary_cross_entropy_with_logits(predicted.float(), expected))
         labels.extend(int(value) for value in expected.detach().cpu().tolist())
         logits.extend(predicted.detach().float().cpu().tolist())
@@ -612,13 +663,16 @@ def _checked_relation_rows(supervision_dir: str, train: list[dict], builder) -> 
 
 
 def _checked_program_queries(program_dir, records, builder, split="train"):
-    """Select only proved local queries from one specified split; unknown never enters BCE."""
+    """Validate full model inputs and identity before excluding unknown labels."""
     from .cfg_data import read_jsonl
+    from .cfg_program import PROGRAM_SCHEMA, OPS
 
     if split not in {"train", "valid"}:
         raise ValueError("program relation queries are train/valid only")
     root = Path(program_dir)
     audit = json.loads((root / "audit.json").read_text())
+    if audit.get("program_schema") != PROGRAM_SCHEMA:
+        raise ValueError("old program query schema is incompatible; prepare a new directory")
     path = root / f"{split}.queries.jsonl"
     if file_sha256(path) != audit[f"{split}_queries_sha256"]:
         raise ValueError("program query audit/content mismatch")
@@ -626,26 +680,57 @@ def _checked_program_queries(program_dir, records, builder, split="train"):
     if any(row["split"] != split for row in records):
         raise ValueError("program query records have the wrong split")
     result = defaultdict(list)
-    seen = set()
+    seen = {}
     for query in read_jsonl(path):
         key = query["sample_key"]
-        if (key not in expected or query["split"] != split or
+        if (query.get("schema") != PROGRAM_SCHEMA or key not in expected or
+                query["split"] != split or
                 query["source_sha256"] != source_hash(expected[key]["raw_source"])):
-            raise ValueError("program query is outside the requested original C split")
-        identity = (key, tuple(query["check_span"]), query["branch"], tuple(query["use_span"]))
-        if identity in seen or query["label"] not in (0, 1, None):
-            raise ValueError("duplicate or malformed program query")
-        seen.add(identity)
-        if query["label"] is None:
-            continue
-        sequence_length = len(builder.source_ids(expected[key]))
-        if any(type(query.get(f"{stem}_token")) is not int or
-               not 0 <= query[f"{stem}_token"] < sequence_length - 1
-               for stem in ("check", "update", "use")):
-            raise ValueError("program query token is outside visible source")
-        if not query["check_token"] <= query["update_token"] <= query["use_token"]:
-            raise ValueError("program query is not causal")
-        result[key].append(query)
+            raise ValueError("program query is outside the requested original C split/schema")
+        if query["comparison"] not in OPS or query["branch"] not in (1, 2) or (
+                query["target_side"] not in (1, 2)) or query["label"] not in (0, 1, None):
+            raise ValueError(f"malformed composed query: {key}")
+        length = len(builder.source_ids(expected[key])) - 1
+        tokens = [query.get(stem) for stem in ("check_token", "use_token", "target_token",
+                                               "reference_token")]
+        for item in query["paths"]:
+            if item["missing"]:
+                continue
+            tokens.extend((item.get("target_definition_token"),
+                           item.get("current_definition_token"),
+                           item.get("reference_definition_token")))
+            tokens.extend(item["update_tokens"])
+        if query["label"] is not None and (not tokens or any(type(t) is not int or
+                                               not 0 <= t < length for t in tokens) or
+                                            not query["check_token"] <= query["use_token"] or
+                                            any(t > query["use_token"] for t in tokens)):
+            raise ValueError(f"program query token is outside causal visible source: {key}")
+        model_input = (key, query["check_token"], query["use_token"], query["target_token"],
+                       query["reference_token"], query["comparison"], query["branch"],
+                       query["target_side"], query["reference_kind"], query["operation"],
+                       tuple(sorted((item["missing"], item["incomplete"],
+                                     -1 if item.get("target_definition_token") is None else
+                                     item["target_definition_token"],
+                                     -1 if item.get("current_definition_token") is None else
+                                     item["current_definition_token"],
+                                     -1 if item.get("reference_definition_token") is None else
+                                     item["reference_definition_token"],
+                                     tuple(-1 if token is None else token
+                                           for token in item.get("update_tokens", ())))
+                                    for item in query["paths"])))
+        semantic = (query["target_binding"], query["reference_binding"],
+                    query["reference_version"], tuple(query["check_span"]),
+                    tuple(query["use_span"]),
+                    tuple((path.get("target_version"), path.get("reference_version"),
+                           path.get("current_version")) for path in query["paths"]))
+        if model_input in seen:
+            previous = seen[model_input]
+            raise ValueError(f"composed query input collision/conflict at {key} "
+                             f"check={query['check_span']} use={query['use_span']}: "
+                             f"previous={previous} current={(semantic, query['label'])}")
+        seen[model_input] = (semantic, query["label"])
+        if query["label"] is not None:
+            result[key].append(query)
     return dict(result), audit
 
 
@@ -695,9 +780,16 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
         if (program_audit["reference_run_dir"] != str(reference) or
                 program_audit["cohort_sha256"] != c_config["cohort_sha256"]):
             raise ValueError("program queries differ from the original C cohort")
-        labels = {relation["label"] for group in program_supervision.values() for relation in group}
-        if labels != {0, 1}:
-            raise ValueError("composition supervision needs proved positive and negative queries")
+        valid = [row for row in rows if row["split"] == "valid"]
+        valid_supervision, _ = _checked_program_queries(program_dir, valid, builder, split="valid")
+        for name, groups in (("train", program_supervision), ("valid", valid_supervision)):
+            if not program_audit["readiness"][name]["eligible"]:
+                raise ValueError(f"composition {name} independent-function coverage is too small; "
+                                 "see prepared audit before formal training")
+            labels = {relation["label"] for group in groups.values() for relation in group}
+            if labels != {0, 1}:
+                raise ValueError(f"composition supervision needs both verified labels in {name}; "
+                                 "see prepared audit before formal training")
     root = Path(output_dir)
     config = {"c_config": c_config, "reference_run_dir": str(reference),
               "supervision_dir": str(Path(supervision_dir).resolve()) if old_audit else None,
@@ -710,7 +802,8 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                             "source_clm_plus_optional_scoped_scalar_relation")}
     if program_audit is not None:
         config.update(program_dir=str(Path(program_dir).resolve()),
-                      program_sha256=program_audit["program_sha256"])
+                      program_sha256=program_audit["program_sha256"],
+                      program_schema=program_audit["program_schema"])
     root.mkdir(parents=True, exist_ok=True)
     from .cfg_data import output_lock
     with output_lock(root / "experiment"):
@@ -964,7 +1057,8 @@ def evaluate_fixed_relations(pretrain_dir: str, output_dir: str, *, batch_size: 
         if (audit["reference_run_dir"] != str(reference.resolve()) or
                 audit["cohort_sha256"] != c_config["cohort_sha256"] or
                 audit["train_queries_sha256"] != config["relations_sha256"] or
-                audit["program_sha256"] != config["program_sha256"]):
+                audit["program_sha256"] != config["program_sha256"] or
+                audit["program_schema"] != config.get("program_schema")):
             raise ValueError("composition query provenance differs from stage 1")
         valid_counts = Counter(audit["splits"]["valid"])
     checkpoint_path = stage1 / mode / "last.pt"

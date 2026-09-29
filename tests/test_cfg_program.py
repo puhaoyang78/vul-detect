@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import redirect_stdout
 import io
+import copy
 import json
 import tempfile
 from unittest.mock import patch
@@ -14,11 +15,12 @@ import torch
 from vulnmechanism.cfg_data import (GRAPH_SCHEMA, cohort_hash, file_sha256,
                                    source_hash)
 from vulnmechanism.cpg import JOERN_SOURCE_PREPROCESSING_VERSION
-from vulnmechanism.cfg_dependency import (ComposedRelationHead, _checked_program_queries,
+from vulnmechanism.cfg_dependency import (ComposedRelationHead, accumulation_window_loss,
+                                         _checked_program_queries,
                                          evaluate_fixed_relations, pretrain_causal_dependency,
                                          relation_function_loss)
 from vulnmechanism.cfg_network import AttributeCFGEncoder, ProgramCFGEncoder, collate_graphs
-from vulnmechanism.cfg_program import (JOERN_OPS, build_program, load_programs,
+from vulnmechanism.cfg_program import (_Builder, JOERN_OPS, PROGRAM_SCHEMA, build_program, load_programs,
                                        prepare_program, program_cost)
 from vulnmechanism.model import InputBuilder
 from vulnmechanism.syntax import parser_for, walk
@@ -58,6 +60,8 @@ def cached_graph(source, *, renumber=False):
         properties = {"kind": kind, "OFFSET": start, "OFFSET_END": end}
         if name:
             properties["NAME"] = name
+        if kind == "CONTROL_STRUCTURE":
+            properties["CONTROL_STRUCTURE_TYPE"] = "IF"
         nodes.append({"id": node_id, "label": kind, "code": node.text.decode(),
                       "properties": properties})
         parent = node.parent
@@ -97,8 +101,11 @@ class ProgramFactTests(unittest.TestCase):
                             and query["operation"] == operation]
                 self.assertTrue(selected, counts)
                 self.assertIn(label, {query["label"] for query in selected})
-                self.assertTrue(all(query["check_token"] <= query["update_token"] <=
-                                    query["use_token"] for query in selected))
+                self.assertTrue(all(query["check_token"] <= query["use_token"] and
+                                    all(query["check_token"] <= token <= query["use_token"]
+                                        for path in query["paths"] if not path["missing"]
+                                        for token in path["update_tokens"])
+                                    for query in selected))
 
     def test_early_return_branch_and_opposite_query(self):
         source = "int f(int i){if(i>=10)return 0;return a[i];}"
@@ -106,7 +113,12 @@ class ProgramFactTests(unittest.TestCase):
         selected = [query for query in program["queries"] if query["operation"] == "array_index"]
         self.assertEqual({(query["branch"], query["label"]) for query in selected},
                          {(1, 0), (2, 1)})
-        self.assertNotEqual(selected[0]["update_token"], selected[1]["update_token"])
+        self.assertEqual(selected[0]["paths"][0]["update_tokens"], [])
+        self.assertEqual(selected[1]["paths"][0]["update_tokens"], [])
+        self.assertNotEqual(selected[0]["branch"], selected[1]["branch"])
+        right, _ = facts("int f(int i){if(10>i){return a[i];}return 0;}")
+        self.assertEqual({(q["target_side"], q["branch"], q["label"])
+                          for q in right["queries"]}, {(2, 1, 1), (2, 2, 0)})
 
     def test_shadowing_multi_path_and_unknown_update(self):
         shadow = "int f(int i){if(i<10){int i=20;return a[i];}return 0;}"
@@ -114,7 +126,8 @@ class ProgramFactTests(unittest.TestCase):
         self.assertFalse(any(q["label"] is not None for q in program["queries"]))
         merged = "int f(int i,int j){if(i<10){i=20;}else{i=j;}return a[i];}"
         program, _ = facts(merged)
-        self.assertFalse(any(q["label"] is not None for q in program["queries"]))
+        self.assertEqual({q["branch"]: q["label"] for q in program["queries"]
+                          if q["operation"] == "array_index"}, {1: 0, 2: None})
         unsupported = "int f(int i){if(i<10){i+=1;return a[i];}return 0;}"
         program, _ = facts(unsupported)
         self.assertFalse(any(q["label"] is not None for q in program["queries"]))
@@ -147,8 +160,10 @@ class ProgramFactTests(unittest.TestCase):
         right = "int f(int i){if(i>10){i=20;return a[i];}return 0;}"
         left_program, _ = facts(left)
         right_program, _ = facts(right)
-        self.assertEqual({q["label"] for q in left_program["queries"] if q["label"] is not None}, {0})
-        self.assertEqual({q["label"] for q in right_program["queries"] if q["label"] is not None}, {1})
+        self.assertEqual({q["branch"]: q["label"] for q in left_program["queries"]
+                          if q["operation"] == "array_index"}, {1: 0, 2: 1})
+        self.assertEqual({q["branch"]: q["label"] for q in right_program["queries"]
+                          if q["operation"] == "array_index"}, {1: 1, 2: 0})
         exchange = "int f(int i,int j){if(i<10){j=i;i=20;return a[j];}return 0;}"
         exchanged, _ = facts(exchange)
         self.assertTrue(any(q["label"] == 1 for q in exchanged["queries"]))
@@ -178,12 +193,12 @@ class ProgramFactTests(unittest.TestCase):
         self.assertNotIn("j<5", check_texts)
 
     def test_composition_head_grads_and_train_only_preparation(self):
-        hidden = torch.randn(2, 8, 4, requires_grad=True)
+        first, _ = facts("int f(int i){if(i<10){i=5;i=20;return a[i];}return 0;}")
+        second, _ = facts("int f(int i){if(i<10){return a[i];}return 0;}")
+        hidden = torch.randn(2, 512, 4, requires_grad=True)
         head = ComposedRelationHead(4, rank=2)
-        loss, labels, _ = relation_function_loss(hidden, [
-            [{"check_token": 1, "update_token": 2, "use_token": 5, "label": 1}],
-            [{"check_token": 0, "update_token": 3, "use_token": 6, "label": 0}]], head)
-        self.assertEqual(labels, [1, 0])
+        loss, labels, _ = relation_function_loss(hidden, [first["queries"], second["queries"]], head)
+        self.assertEqual(labels, [0, 1, 1, 0])
         loss.backward()
         self.assertGreater(hidden.grad.abs().sum().item(), 0)
         self.assertTrue(all(parameter.grad is not None and parameter.grad.abs().sum() > 0
@@ -192,9 +207,10 @@ class ProgramFactTests(unittest.TestCase):
         sources = ["int f(int i){if(i<10){return a[i];}return 0;}",
                    "int f(int i){if(i<10){i=20;return a[i];}return 0;}",
                    "int f(int i){if(i>=10)return 0;return a[i];}",
+                   "int f(int i){if(i<7){i=4;return a[i];}return 0;}",
                    "int f(int i){return a[i];}"]
         rows = [record(source, f"p{index}", split="train" if index < 2 else
-                       "valid" if index == 2 else "test", label=index % 2)
+                       "valid" if index < 4 else "test", label=index % 2)
                 for index, source in enumerate(sources)]
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -216,7 +232,7 @@ class ProgramFactTests(unittest.TestCase):
                       "source_max_length": 2048, "seed": 42, "model_path": "tiny-test-only",
                       "cohort_sha256": cohort_hash(rows),
                       "train_cohort_sha256": cohort_hash(rows[:2]),
-                      "valid_cohort_sha256": cohort_hash(rows[2:3]),
+                      "valid_cohort_sha256": cohort_hash(rows[2:4]),
                       "graph_file_sha256": file_sha256(graphs), "lora_r": 16,
                       "lora_alpha": 32, "lora_dropout": .05, "learning_rate": .0002,
                       "graph_learning_rate": .001, "batch_size": 2,
@@ -242,14 +258,24 @@ class ProgramFactTests(unittest.TestCase):
                     program_dir=str(prepared), base=base)["composition_pretrain"]
             self.assertEqual(base.encoders[0].calls, 1)
             self.assertEqual(result["effective_relation_functions"], 2)
-            self.assertEqual((result["relation_positive"], result["relation_negative"]), (1, 1))
+            self.assertEqual((result["relation_positive"], result["relation_negative"]), (2, 2))
             with redirect_stdout(io.StringIO()):
                 report = evaluate_fixed_relations(str(root / "stage1"),
                     str(root / "evaluation"), mode="composition_pretrain", base=TinyBase())
-            self.assertEqual(report["splits"]["valid"]["relation_pairs"], 2)
+            self.assertEqual(report["splits"]["valid"]["relation_pairs"], 4)
             self.assertFalse((root / "evaluation" / "test.predictions.jsonl").exists())
             self.assertEqual(set(report["splits"]["valid"]["examples"]),
                              {"correct", "incorrect"})
+            readiness_audit = json.loads((prepared / "audit.json").read_text())
+            readiness_audit["readiness"]["valid"]["eligible"] = False
+            (prepared / "audit.json").write_text(json.dumps(readiness_audit))
+            blocked_base = TinyBase()
+            with self.assertRaisesRegex(ValueError, "valid independent-function coverage is too small"):
+                pretrain_causal_dependency(str(reference), str(root / "unused"),
+                    str(root / "blocked"), modes=("composition_pretrain",),
+                    program_dir=str(prepared), base=blocked_base)
+            self.assertEqual(blocked_base.encoders, [])
+            self.assertFalse((root / "blocked").exists())
             valid_query = json.loads((prepared / "valid.queries.jsonl").read_text().splitlines()[0])
             train_path = prepared / "train.queries.jsonl"
             train_path.write_text(json.dumps(valid_query) + "\n")
@@ -308,7 +334,8 @@ class ProgramFactTests(unittest.TestCase):
                     "relation_alpha": 1.0, "relations_sha256": "synthetic-only"}
                 if mode == "composition_pretrain":
                     pretrain_config.update(program_dir=str(prepared.resolve()),
-                                           program_sha256=audit["program_sha256"])
+                                           program_sha256=audit["program_sha256"],
+                                           program_schema=PROGRAM_SCHEMA)
                 (stage1 / "config.json").write_text(json.dumps(pretrain_config))
                 folder = stage1 / mode
                 folder.mkdir()
@@ -361,7 +388,7 @@ class ProgramFactTests(unittest.TestCase):
         self.assertGreater(versioned.program_message.weight.grad.abs().sum().item(), 0)
         self.assertGreater(versioned.program_embedding[0].weight.grad[1].abs().sum().item(), 0)
         self.assertFalse(torch.allclose(plain(batch), versioned(batch)))
-        fallback = collate_graphs([view], [[[0]*4, [0]*4]], programs=[{"slices": []}])
+        fallback = collate_graphs([view], [[[0]*4, [0]*4]], programs=[{"schema": PROGRAM_SCHEMA, "slices": []}])
         torch.manual_seed(42)
         original = AttributeCFGEncoder([2]*4, hidden_size=8, steps=2, mode="cfg")
         self.assertTrue(torch.allclose(versioned(fallback), original(fallback), atol=1e-6))
@@ -369,7 +396,217 @@ class ProgramFactTests(unittest.TestCase):
         events = program["slices"][0]["paths"][0]["events"]
         check = next(i for i, e in enumerate(events) if e["kind"] == "check")
         write = next(i for i, e in enumerate(events) if e["kind"] == "write")
+        reference = next(i for i, e in enumerate(events) if e["kind"] == "reference")
         self.assertNotIn([check, write], program["slices"][0]["paths"][0]["edges"])
+        self.assertNotIn([check, reference], program["slices"][0]["paths"][0]["edges"])
+
+    def test_complete_query_input_and_conflict_detection(self):
+        source = "int f(int i){if(i<10){return a[i];}return 0;}"
+        program, _ = facts(source)
+        positive, negative = program["queries"]
+        self.assertEqual((positive["check_token"], positive["use_token"]),
+                         (negative["check_token"], negative["use_token"]))
+        self.assertEqual((positive["branch"], negative["branch"]), (1, 2))
+        self.assertEqual(positive["paths"][0]["update_tokens"], [])
+        self.assertEqual(negative["paths"][0]["update_tokens"], [])
+        hidden = torch.randn(512, 4)
+        head = ComposedRelationHead(4, 2)
+        with torch.no_grad():
+            head.output.weight.zero_()
+            head.output.bias.zero_()
+            head.output.weight[0, 10 * head.rank + 6] = 1
+            head.output.weight[0, 10 * head.rank + 7] = -1
+        self.assertEqual((head(hidden, positive).item(), head(hidden, negative).item()), (1, -1))
+        repeated = copy.deepcopy(positive)
+        repeated["paths"].append(copy.deepcopy(repeated["paths"][0]))
+        with torch.no_grad():
+            head.output.weight.zero_()
+            head.output.weight[0, 10 * head.rank + 16] = 1
+        self.assertEqual((head(hidden, positive).item(), head(hidden, repeated).item()),
+                         (0.125, 0.25))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            row = record(source, "t0")
+            builder = InputBuilder(CharTokenizer(), source_max_length=2048, context_max_length=384)
+            query_path = root / "train.queries.jsonl"
+            query_path.write_text("".join(json.dumps(query) + "\n" for query in program["queries"]))
+            (root / "audit.json").write_text(json.dumps({"program_schema": PROGRAM_SCHEMA,
+                "train_queries_sha256": file_sha256(query_path)}))
+            loaded, _ = _checked_program_queries(root, [row], builder)
+            self.assertEqual(len(loaded["t0"]), 2)
+            conflicting = copy.deepcopy(positive)
+            conflicting["label"] = 0
+            query_path.write_text(query_path.read_text() + json.dumps(conflicting) + "\n")
+            (root / "audit.json").write_text(json.dumps({"program_schema": PROGRAM_SCHEMA,
+                "train_queries_sha256": file_sha256(query_path)}))
+            with self.assertRaisesRegex(ValueError, "input collision/conflict.*t0"):
+                _checked_program_queries(root, [row], builder)
+
+    def test_all_paths_counterexample_unknown_and_incomplete(self):
+        cases = (
+            ("int f(int i){if(i<10){i=5;}else{i=5;}return a[i];}", {1: 1, 2: 0}),
+            ("int f(int i){if(i<10){i=5;}else{i=20;}return a[i];}", {1: 0, 2: 0}),
+            ("int f(int i,int j){if(i<10){i=5;}else{i=j;}return a[i];}", {1: None, 2: 0}),
+            ("int f(int i){if(i<10){i=20;}else{foo();}return a[i];}", {1: 0, 2: None}),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                program, _ = facts(source)
+                actual = {q["branch"]: q["label"] for q in program["queries"]
+                          if q["operation"] == "array_index"}
+                self.assertEqual(actual, expected)
+        incomplete, _ = facts(cases[-1][0])
+        paths = incomplete["slices"][0]["paths"]
+        self.assertEqual(len(paths), 2)
+        self.assertTrue(any(path["incomplete"] for path in paths))
+
+    def test_reference_version_is_frozen_and_target_updates_are_ordered(self):
+        source = "int f(int i,int j){j=10;if(i<j){j=20;return a[i];}return 0;}"
+        program, _ = facts(source)
+        query = next(q for q in program["queries"] if q["operation"] == "array_index" and
+                     q["branch"] == 1)
+        self.assertEqual(query["label"], 1)
+        self.assertEqual(query["reference_version"], 1)
+        self.assertEqual(query["paths"][0]["reference_version"], 1)
+        self.assertEqual(query["paths"][0]["update_tokens"], [])
+        self.assertLess(query["paths"][0]["reference_definition_token"], query["check_token"])
+        source = "int f(int i){int j;if(i<10){j=i;return a[j];}return 0;}"
+        program, _ = facts(source)
+        query = next(q for q in program["queries"] if q["operation"] == "array_index" and
+                     q["branch"] == 1)
+        self.assertEqual(query["label"], 1)
+        self.assertEqual(len(query["paths"][0]["update_tokens"]), 1)
+        self.assertEqual(query["paths"][0]["current_definition_token"],
+                         query["paths"][0]["update_tokens"][0])
+        source = "int f(int i){if(i<10){i=5;i=20;return a[i];}return 0;}"
+        program, _ = facts(source)
+        query = next(q for q in program["queries"] if q["operation"] == "array_index" and
+                     q["branch"] == 1)
+        updates = query["paths"][0]["update_tokens"]
+        self.assertEqual(len(updates), 2)
+        self.assertLess(updates[0], updates[1])
+
+    def test_infeasible_branch_is_not_a_negative_witness(self):
+        source = "int f(int i){if(i<5){if(i>10){return a[i];}}return 0;}"
+        program, counts = facts(source)
+        self.assertEqual(counts["infeasible_branch_skipped"], 1)
+        self.assertFalse(any(query["operation"] == "array_index"
+                             for query in program["queries"]))
+        source = "int f(int i){if(i==i){return a[i];}else{return a[i];}}"
+        program, counts = facts(source)
+        self.assertEqual(counts["infeasible_branch_skipped"], 1)
+        self.assertEqual(len([p for use in program["slices"] for p in use["paths"]]), 1)
+
+    def test_composed_effective_function_accumulation_gradient(self):
+        a, _ = facts("int f(int i){if(i<10){i=5;i=20;return a[i];}return 0;}")
+        b, _ = facts("int f(int i){if(i>=10)return 0;return a[i];}")
+        torch.manual_seed(42)
+        hidden = torch.randn(3, 512, 4)
+        all_relations = [a["queries"], [], b["queries"]]
+        full = ComposedRelationHead(4, 2)
+        micro = ComposedRelationHead(4, 2)
+        micro.load_state_dict(full.state_dict())
+        full_loss, _, _ = relation_function_loss(hidden, all_relations, full)
+        full_loss.backward()
+        first, _, _ = relation_function_loss(hidden[:2], all_relations[:2], micro)
+        second, _, _ = relation_function_loss(hidden[2:], all_relations[2:], micro)
+        (accumulation_window_loss(torch.zeros(()), first, 2, 3, 1, 2) +
+         accumulation_window_loss(torch.zeros(()), second, 1, 3, 1, 2)).backward()
+        for name, parameter in full.named_parameters():
+            torch.testing.assert_close(parameter.grad, dict(micro.named_parameters())[name].grad)
+
+    def test_old_program_schema_rejected(self):
+        source = "int f(int i){if(i<10)return a[i];return 0;}"
+        program, _ = facts(source)
+        row = record(source, "t0")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "train.queries.jsonl"
+            path.write_text("".join(json.dumps(q) + "\n" for q in program["queries"]))
+            (root / "audit.json").write_text(json.dumps({
+                "program_schema": PROGRAM_SCHEMA - 1,
+                "train_queries_sha256": file_sha256(path)}))
+            builder = InputBuilder(CharTokenizer(), source_max_length=2048, context_max_length=384)
+            with self.assertRaisesRegex(ValueError, "old program query schema"):
+                _checked_program_queries(root, [row], builder)
+            with self.assertRaisesRegex(ValueError, "current prepared structure schema"):
+                collate_graphs([{"node_ids": ["a"], "edges": []}], [[[0]*4]],
+                               programs=[{"schema": PROGRAM_SCHEMA - 1, "slices": []}])
+
+    def test_unknown_effect_and_control_flow_scope(self):
+        before, _ = facts("int f(int i){foo();if(i<10)return a[i];return 0;}")
+        self.assertEqual({q["label"] for q in before["queries"] if
+                          q["operation"] == "array_index"}, {0, 1})
+        after, _ = facts("int f(int i){if(i<10)return foo(a[i]);return 0;}")
+        self.assertFalse(any(q["operation"] == "array_index" for q in after["queries"]))
+        loop, counts = facts("int f(int i){for(;;){}if(i<10)return a[i];return 0;}")
+        self.assertGreater(counts["unsupported_control_flow"], 0)
+        self.assertTrue(all(q["label"] is None for q in loop["queries"] if
+                            q["operation"] == "array_index"))
+
+    def test_real_joern_branch_not_source_order(self):
+        fragment = json.loads((Path(__file__).parent / "fixtures" /
+                               "joern_if_early_return.json").read_text())
+        source, graph = fragment["source"], fragment["graph"]
+        program, _ = facts(source, graph=graph)
+        self.assertEqual({(q["branch"], q["label"]) for q in program["queries"]},
+                         {(1, 1), (2, 0)})
+        comparison = program["queries"][0]["check_node_id"]
+        successors = {e["target"] for e in graph["edges"]
+                      if e["kind"] == "CFG" and e["source"] == comparison}
+        self.assertEqual(len(successors), 2)
+        cut = copy.deepcopy(graph)
+        cut["edges"] = [e for e in cut["edges"] if not (
+            e["kind"] == "CFG" and e["source"] == comparison)]
+        cut_program, _ = facts(source, graph=cut)
+        self.assertFalse(any(q["label"] is not None for q in cut_program["queries"]))
+
+    def test_real_joern_long_control_uses_exact_ast_start(self):
+        fragment = json.loads((Path(__file__).parent / "fixtures" /
+                               "joern_long_control_span.json").read_text())
+        source, graph = fragment["source"], fragment["graph"]
+        builder = _Builder(record(source, "long-if"), graph, None, 2048, 0)
+        node = next(node for node in walk(builder.function)
+                    if node.type == "if_statement" and builder.span(node)[0] == 352)
+        self.assertNotIn(("CONTROL_STRUCTURE", builder.span(node)), builder.cache)
+        self.assertIsNone(builder.compare({"env": {}}, node))
+        self.assertEqual(builder.stats["control_ast_start_recovered"], 1)
+        self.assertEqual(builder.stats["missing_check_cfg_site"], 0)
+        self.assertEqual(builder.stats["unsupported_check_operand"], 1)
+
+    def test_relation_path_readout_preserves_attribution_and_order(self):
+        source = "int f(int i){if(i<10){i=5;}else{i=20;}return a[i];}"
+        program, _ = facts(source)
+        view = {"node_ids": ["a", "b"], "edges": [(0, 1)]}
+        attributes = [[[0]*4, [0]*4]]
+        batch = collate_graphs([view], attributes, programs=[program])
+        self.assertEqual(len(batch.program.relation_groups[0]), 1)
+        self.assertEqual(len(batch.program.relation_groups[0][0][1]), 2)
+        reversed_paths = copy.deepcopy(program)
+        reversed_paths["slices"][0]["paths"].reverse()
+        reversed_batch = collate_graphs([view], attributes, programs=[reversed_paths])
+        identical_paths = copy.deepcopy(program)
+        identical_paths["slices"][0]["paths"][1] = copy.deepcopy(
+            identical_paths["slices"][0]["paths"][0])
+        identical_batch = collate_graphs([view], attributes, programs=[identical_paths])
+        single_path = copy.deepcopy(identical_paths)
+        single_path["slices"][0]["paths"].pop()
+        single_batch = collate_graphs([view], attributes, programs=[single_path])
+        torch.manual_seed(42)
+        model = ProgramCFGEncoder([2]*4, hidden_size=8, steps=2, mode="program_state").eval()
+        torch.testing.assert_close(model(batch), model(reversed_batch))
+        self.assertFalse(torch.allclose(model(batch), model(identical_batch)))
+        self.assertFalse(torch.allclose(model(identical_batch), model(single_batch)))
+        # Labels and proof explanations exist only in the separate query file.
+        changed = copy.deepcopy(program)
+        for query in changed["queries"]:
+            query["label"] = None
+            query["source"] = "redacted"
+        redacted = collate_graphs([view], attributes, programs=[changed])
+        torch.testing.assert_close(model(batch), model(redacted))
+        for path in program["slices"][0]["paths"]:
+            self.assertNotIn("label", path)
+            self.assertNotIn("source", path)
 
 
 if __name__ == "__main__":

@@ -32,20 +32,25 @@ class ProgramBatch:
     path_ends: tuple[int, ...]
     use_ptr: tuple[int, ...]  # path boundaries per use
     function_ptr: tuple[int, ...]  # use boundaries per function
+    relation_groups: tuple  # per use: check/use key, path check/ref/update pointers and versions
 
     def to(self, device) -> "ProgramBatch":
         return ProgramBatch(self.features.to(device), self.literals.to(device),
                             self.edges.to(device), self.plain_edges.to(device),
-                            self.path_ends, self.use_ptr, self.function_ptr)
+                            self.path_ends, self.use_ptr, self.function_ptr,
+                            self.relation_groups)
 
 
 def collate_programs(programs: list[dict], device="cpu") -> ProgramBatch:
-    from .cfg_program import KINDS, TYPES
+    from .cfg_program import KINDS, TYPES, PROGRAM_SCHEMA
 
     features, literals, edges, plain_edges, path_ends = [], [], [], [], []
-    use_ptr, function_ptr = [0], [0]
+    use_ptr, function_ptr, relation_groups = [0], [0], []
     for program in programs:
+        if program.get("schema") != PROGRAM_SCHEMA:
+            raise ValueError("program batch requires current prepared structure schema")
         for use in program["slices"]:
+            per_path_relations = []
             for path in use["paths"]:
                 start = len(features)
                 events = path["events"]
@@ -64,14 +69,35 @@ def collate_programs(programs: list[dict], device="cpu") -> ProgramBatch:
                     if not 0 <= a < len(events) or not 0 <= b < len(events):
                         raise ValueError("program plain edge is out of range")
                     plain_edges.append((start + a, start + b))
+                mapped = {}
+                for relation in path.get("relations", []):
+                    indices = (relation["check_event"], relation["reference_event"],
+                               *relation["update_events"])
+                    if any(type(index) is not int or not 0 <= index < len(events)
+                           for index in indices):
+                        raise ValueError("program relation event is out of range")
+                    key = (tuple(relation["check_span"]), relation["side"])
+                    if key in mapped:
+                        raise ValueError("repeated relation in one program path")
+                    mapped[key] = (start + relation["check_event"],
+                                   start + relation["reference_event"],
+                                   tuple(start + item for item in relation["update_events"]),
+                                   bool(relation["incomplete"] or path["incomplete"]),
+                                   relation["target_version"], relation["reference_version"],
+                                   relation["current_version"])
+                per_path_relations.append(mapped)
                 path_ends.append(len(features) - 1)
+            keys = sorted(set().union(*(item.keys() for item in per_path_relations)))
+            relation_groups.append(tuple((key, tuple(item.get(key) for item in per_path_relations))
+                                         for key in keys))
             use_ptr.append(len(path_ends))
         function_ptr.append(len(use_ptr) - 1)
     return ProgramBatch(torch.tensor(features, dtype=torch.long).reshape(-1, 6),
                         torch.tensor(literals, dtype=torch.float32).reshape(-1, 1),
                         torch.tensor(edges, dtype=torch.long).reshape(-1, 2).T.contiguous(),
                         torch.tensor(plain_edges, dtype=torch.long).reshape(-1, 2).T.contiguous(),
-                        tuple(path_ends), tuple(use_ptr), tuple(function_ptr)).to(device)
+                        tuple(path_ends), tuple(use_ptr), tuple(function_ptr),
+                        tuple(relation_groups)).to(device)
 
 
 def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cpu",
@@ -199,10 +225,12 @@ class ProgramCFGEncoder(AttributeCFGEncoder):
         # Both controls allocate identical modules after the original C weights.
         from .cfg_program import TYPES
         self.program_embedding = nn.ModuleList(nn.Embedding(size, hidden_size) for size in
-                                               (7, 7, 3, 3, len(TYPES) + 1, 2))
+                                               (8, 7, 3, 3, len(TYPES) + 1, 2))
         self.literal_projection = nn.Linear(1, hidden_size, bias=False)
         self.program_message = nn.Linear(hidden_size, hidden_size)
         self.program_update = nn.GRUCell(hidden_size, hidden_size)
+        self.path_projection = nn.Linear(6 * hidden_size, 2 * hidden_size)
+        self.path_merge = nn.Linear(4 * hidden_size + 3, 2 * hidden_size)
         self.use_gate = nn.Linear(2 * hidden_size, 1)
         self.use_projection = nn.Linear(2 * hidden_size, 2 * hidden_size, bias=False)
 
@@ -225,21 +253,42 @@ class ProgramCFGEncoder(AttributeCFGEncoder):
             if src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             state = self.program_update(incoming, state)
-        # Keep the active check context separate from the current value state.
-        # A constant write can then be compared with a prior check at the use,
-        # without copying that check into an unrelated new value version.
-        from .cfg_program import KINDS
-        path_states = []
-        start = 0
-        for end in program.path_ends:
-            check_mask = program.features[start:end + 1, 0] == KINDS["check"]
-            context = (state[start:end + 1][check_mask].mean(dim=0)
-                       if check_mask.any() else state.new_zeros((state.shape[-1],)))
-            path_states.append(torch.cat((state[end], x[end] + context), dim=-1))
-            start = end + 1
-        path_states = torch.stack(path_states)
-        use_states = torch.stack([path_states[a:b].mean(dim=0)
-                                  for a, b in zip(program.use_ptr[:-1], program.use_ptr[1:])])
+        zero = state.new_zeros((state.shape[-1],))
+        use_states = []
+        for use_index, (a, b) in enumerate(zip(program.use_ptr[:-1], program.use_ptr[1:])):
+            groups = program.relation_groups[use_index]
+            if not groups:
+                # An observed use without an analyzable relation is retained as structure.
+                groups = ((None, tuple(None for _ in range(a, b))),)
+            relation_states = []
+            for _, members in groups:
+                path_vectors = []
+                missing = incomplete = 0
+                for relative, path_index in enumerate(range(a, b)):
+                    end = program.path_ends[path_index]
+                    member = members[relative]
+                    if member is None:
+                        missing += 1
+                        check = reference = updates = zero
+                        incomplete += 1
+                    else:
+                        check_index, reference_index, update_indices, flagged = member[:4]
+                        check, reference = state[check_index], state[reference_index]
+                        updates = zero
+                        for update_index in update_indices:
+                            updates = self.program_update(state[update_index], updates)
+                        incomplete += int(flagged)
+                    path_vectors.append(self.path_projection(torch.cat((
+                        check, state[end], reference, updates, x[end],
+                        x[member[1]] if member is not None else zero))))
+                path_matrix = torch.stack(path_vectors)
+                masks = state.new_tensor((missing / (b-a), incomplete / (b-a), (b-a) / 8.0))
+                relation_states.append(self.path_merge(torch.cat((
+                    path_matrix.amin(dim=0), path_matrix.amax(dim=0), masks))))
+            relation_matrix = torch.stack(relation_states)
+            weights = self.use_gate(relation_matrix).squeeze(-1).softmax(dim=0)
+            use_states.append((weights.unsqueeze(-1) * relation_matrix).sum(dim=0))
+        use_states = torch.stack(use_states)
         additions = []
         for a, b in zip(program.function_ptr[:-1], program.function_ptr[1:]):
             if a == b:

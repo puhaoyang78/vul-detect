@@ -357,7 +357,7 @@ def compare_run(root: str | Path, split: str = "valid",
                          "rotation_graphs_sha256", "reference_run_dir"} if rotation_policy == "primevul_negative_rotation"
                         else {"initialization_policy", "pretrain_run_dir",
                               "pretrain_relations_sha256", "reference_run_dir",
-                              "program_dir", "program_sha256"})
+                              "program_dir", "program_sha256", "program_schema"})
             shared = {k: v for k, v in candidate_config.items() if k not in declared}
             if (shared != reference_config or
                     candidate_config.get("reference_run_dir") != str(reference.resolve())):
@@ -548,10 +548,12 @@ def run_experiment(args, base=None):
                     pretrain_config["pretrain_epochs"] != 1 or
                     pretrain_config["relation_alpha"] != 1.0):
                 raise ValueError("pretraining must match original C and the specified one-epoch objective")
-            if any(PRETRAIN_MODE[v] == "composition_pretrain" for v in args.variants) and not (
-                    args.program_dir and pretrain_config.get("program_dir") ==
-                    str(Path(args.program_dir).resolve())):
-                raise ValueError("composition stage 2 requires its phase-1 program facts")
+            if any(PRETRAIN_MODE[v] == "composition_pretrain" for v in args.variants):
+                from .cfg_program import PROGRAM_SCHEMA
+                if (not args.program_dir or pretrain_config.get("program_dir") !=
+                        str(Path(args.program_dir).resolve()) or
+                        pretrain_config.get("program_schema") != PROGRAM_SCHEMA):
+                    raise ValueError("composition stage 2 requires matching current-schema phase-1 facts")
     else:
         vocab = AttributeVocabulary.fit(train, views, args.vocab_limit)
     root = Path(args.output_dir)
@@ -583,12 +585,14 @@ def run_experiment(args, base=None):
         from .cfg_program import load_programs
         programs, program_audit = load_programs(args.program_dir, rows, reference)
         if (pretrain_config.get("program_sha256") is not None and
-                pretrain_config["program_sha256"] != program_audit["program_sha256"]):
+                (pretrain_config["program_sha256"] != program_audit["program_sha256"] or
+                 pretrain_config.get("program_schema") != program_audit["program_schema"])):
             raise ValueError("classification program facts differ from composition pretraining")
         for key, program in programs.items():
             views[key]["program"] = program
         config.update(program_dir=str(Path(args.program_dir).resolve()),
-                      program_sha256=program_audit["program_sha256"])
+                      program_sha256=program_audit["program_sha256"],
+                      program_schema=program_audit["program_schema"])
     root.mkdir(parents=True, exist_ok=True)
     with output_lock(root / "experiment"):
         meta = root / "config.json"
@@ -728,7 +732,8 @@ def evaluate_run(args, base=None):
     if config.get("program_dir"):
         from .cfg_program import load_programs
         programs, audit = load_programs(config["program_dir"], rows, config["reference_run_dir"])
-        if audit["program_sha256"] != config["program_sha256"]:
+        if (audit["program_sha256"] != config["program_sha256"] or
+                audit["program_schema"] != config.get("program_schema")):
             raise ValueError("evaluation program facts changed")
         for key, program in programs.items():
             views[key]["program"] = program
