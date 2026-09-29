@@ -136,14 +136,13 @@ def coverage_summary(counts: Counter) -> dict:
                     "no_visible_token", "invalid_token_offsets")})
 
 
-def region_targets(record, view, encoded, regions, builder):
+def region_candidates(record, view, encoded, regions, builder):
     """Visible operation-end states and distributions over C's existing categories.
 
     Overlapping operations retain the outermost complete operation. Exact
     duplicates are counted once; conflicts/cross-region duplicates are excluded.
     No node is removed from H. EMPTY=0 and UNK=1 are never reconstruction answers.
     """
-    import random
     from collections import defaultdict
     from .cfg_data import FAMILIES
     if record["split"] not in {"train", "valid"}:
@@ -171,6 +170,9 @@ def region_targets(record, view, encoded, regions, builder):
             continue
         if statuses[node][0] != "aligned_nodes":
             stats["target_excluded_" + statuses[node][0]] += 1
+            for family, value in zip(FAMILIES, values):
+                if value >= 2:
+                    stats[f"{family}_target_excluded_{statuses[node][0]}"] += 1
             continue
         span, reason = _node_span(source, view["locations"][node], units, lines)
         if reason is not None:
@@ -209,6 +211,14 @@ def region_targets(record, view, encoded, regions, builder):
     stats["supervisable_regions"] = len(candidates)
     stats["supervisable_functions"] = bool(candidates)
     stats["supervisable_multinode_regions"] = sum(len(regions["members"][r["region"]]) > 1 for r in candidates)
+    return candidates, stats
+
+
+def region_targets(record, view, encoded, regions, builder):
+    """Original seed-42 sampling, shared with the read-only candidate audit."""
+    import random
+    from .cfg_data import FAMILIES
+    candidates, stats = region_candidates(record, view, encoded, regions, builder)
     indices = sorted(random.Random(f"42:{record['sample_key']}").sample(
         range(len(candidates)), min(8, len(candidates))))
     selected = [candidates[i] for i in indices]

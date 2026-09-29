@@ -1,0 +1,420 @@
+{
+  "pretrain_dir": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/cfg_hp_p1_seed42",
+  "region_dir": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/data/cfg_regions_seed42",
+  "checkpoint_sha256": "e33ab47a1194e44a1807e6e4c9819c7496db57cc56985a9a8cabb93fbbd9337e",
+  "evaluation": "fixed stage-1 eval/no_grad; natural-log units",
+  "aggregation": "valid families -> selected regions -> effective functions",
+  "family_and_group_aggregation": "restrict group then renormalize within each eligible function",
+  "online_training_summary": {
+    "mode": "region_pretrain",
+    "epoch": 1,
+    "samples": 5886,
+    "optimizer_steps": 736,
+    "lm_loss": 1.108407333464752,
+    "relation_loss": 2.265890507032838,
+    "total_functions": 5886,
+    "effective_relation_functions": 1000,
+    "relation_coverage": 0.16989466530750935,
+    "relation_pairs": 4658,
+    "relation_positive": 3445,
+    "relation_negative": 1213,
+    "relation_metrics_train_online": {
+      "accuracy": 0.7385143838557321,
+      "precision": 0.7866151866151866,
+      "recall": 0.8870827285921625,
+      "f1": 0.8338335607094133,
+      "mcc": 0.24023209326328057,
+      "auc": 0.7045643650008315,
+      "tp": 3056,
+      "tn": 384,
+      "fp": 829,
+      "fn": 389,
+      "samples": 4658,
+      "threshold": 0.5
+    },
+    "effective_region_functions": 4715,
+    "region_loss": 4.626826718027683,
+    "region_head_parameters": 1514616
+  },
+  "splits": {
+    "train": {
+      "all": {
+        "functions": 4715,
+        "regions": 22850,
+        "family_targets": 46913,
+        "fixed_model": {
+          "ce": 3.648912006152292,
+          "entropy": 0.0973152158112965,
+          "kl": 3.551596790340996
+        },
+        "constant": {
+          "ce": 4.481914522564589,
+          "entropy": 0.0973152158112965,
+          "kl": 4.384599306753292
+        }
+      },
+      "single_operation": {
+        "functions": 4226,
+        "regions": 17496,
+        "family_targets": 32539,
+        "fixed_model": {
+          "ce": 3.469299394137067,
+          "entropy": 0.0,
+          "kl": 3.469299394137067
+        },
+        "constant": {
+          "ce": 4.413856035685504,
+          "entropy": 0.0,
+          "kl": 4.413856035685504
+        }
+      },
+      "multiple_operations": {
+        "functions": 3036,
+        "regions": 5354,
+        "family_targets": 14374,
+        "fixed_model": {
+          "ce": 4.102819823378145,
+          "entropy": 0.353651444938978,
+          "kl": 3.749168378439167
+        },
+        "constant": {
+          "ce": 4.6650582860717185,
+          "entropy": 0.353651444938978,
+          "kl": 4.311406841132741
+        }
+      },
+      "single_category": {
+        "functions": 4655,
+        "regions": 22012,
+        "family_targets": 40383,
+        "fixed_model": {
+          "ce": 3.5963266675286225,
+          "entropy": 0.0,
+          "kl": 3.5963266675286225
+        },
+        "constant": {
+          "ce": 4.460445140295762,
+          "entropy": 0.0,
+          "kl": 4.460445140295762
+        }
+      },
+      "multiple_categories": {
+        "functions": 2528,
+        "regions": 4117,
+        "family_targets": 6530,
+        "fixed_model": {
+          "ce": 4.522343203385365,
+          "entropy": 0.7752409423223211,
+          "kl": 3.747102261063044
+        },
+        "constant": {
+          "ce": 4.942182651900603,
+          "entropy": 0.7752409423223211,
+          "kl": 4.166941709578281
+        }
+      },
+      "api": {
+        "functions": 2476,
+        "regions": 5105,
+        "family_targets": 5105,
+        "fixed_model": {
+          "ce": 6.271117619651729,
+          "entropy": 0.060148912262987325,
+          "kl": 6.210968707388742
+        },
+        "constant": {
+          "ce": 6.787683807306649,
+          "entropy": 0.060148912262987325,
+          "kl": 6.727534895043661
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 0.5605900383489875,
+            "entropy": 0.005390054756125437,
+            "kl": 0.555199983592862
+          },
+          "constant": {
+            "ce": 0.6040686378810138,
+            "entropy": 0.005390054756125437,
+            "kl": 0.5986785831248884
+          }
+        }
+      },
+      "datatype": {
+        "functions": 4236,
+        "regions": 20101,
+        "family_targets": 20101,
+        "fixed_model": {
+          "ce": 3.9714529589780203,
+          "entropy": 0.10963940064293347,
+          "kl": 3.8618135583350863
+        },
+        "constant": {
+          "ce": 5.074520076284541,
+          "entropy": 0.10963940064293347,
+          "kl": 4.964880675641607
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 1.6515586838763812,
+            "entropy": 0.03570666373738924,
+            "kl": 1.6158520201389917
+          },
+          "constant": {
+            "ce": 2.1776265160263537,
+            "entropy": 0.03570666373738924,
+            "kl": 2.141919852288965
+          }
+        }
+      },
+      "literal": {
+        "functions": 3306,
+        "regions": 8019,
+        "family_targets": 8019,
+        "fixed_model": {
+          "ce": 2.420307773777547,
+          "entropy": 0.10873202959904991,
+          "kl": 2.3115757441784974
+        },
+        "constant": {
+          "ce": 3.017927989985179,
+          "entropy": 0.10873202959904991,
+          "kl": 2.909195960386129
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 0.34656385159743464,
+            "entropy": 0.014726695194865079,
+            "kl": 0.3318371564025695
+          },
+          "constant": {
+            "ce": 0.438033735289211,
+            "entropy": 0.014726695194865079,
+            "kl": 0.4233070400943459
+          }
+        }
+      },
+      "operator": {
+        "functions": 4214,
+        "regions": 13688,
+        "family_targets": 13688,
+        "fixed_model": {
+          "ce": 3.8426850505711867,
+          "entropy": 0.15036129615695432,
+          "kl": 3.692323754414233
+        },
+        "constant": {
+          "ce": 4.360119174960332,
+          "entropy": 0.15036129615695432,
+          "kl": 4.209757878803378
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 1.0901994323294892,
+            "entropy": 0.04149180212291673,
+            "kl": 1.0487076302065725
+          },
+          "constant": {
+            "ce": 1.2621856333680102,
+            "entropy": 0.04149180212291673,
+            "kl": 1.2206938312450932
+          }
+        }
+      }
+    },
+    "valid": {
+      "all": {
+        "functions": 610,
+        "regions": 2899,
+        "family_targets": 5357,
+        "fixed_model": {
+          "ce": 3.403823266495569,
+          "entropy": 0.09890323026432513,
+          "kl": 3.304920036231244
+        },
+        "constant": {
+          "ce": 4.203285175509575,
+          "entropy": 0.09890323026432513,
+          "kl": 4.10438194524525
+        }
+      },
+      "single_operation": {
+        "functions": 545,
+        "regions": 2252,
+        "family_targets": 3727,
+        "fixed_model": {
+          "ce": 3.2747223861929355,
+          "entropy": 0.0,
+          "kl": 3.2747223861929355
+        },
+        "constant": {
+          "ce": 4.178174633420137,
+          "entropy": 0.0,
+          "kl": 4.178174633420137
+        }
+      },
+      "multiple_operations": {
+        "functions": 387,
+        "regions": 647,
+        "family_targets": 1630,
+        "fixed_model": {
+          "ce": 3.582975157356845,
+          "entropy": 0.354511787511584,
+          "kl": 3.2284633698452616
+        },
+        "constant": {
+          "ce": 4.138725979699999,
+          "entropy": 0.354511787511584,
+          "kl": 3.7842141921884154
+        }
+      },
+      "single_category": {
+        "functions": 590,
+        "regions": 2782,
+        "family_targets": 4642,
+        "fixed_model": {
+          "ce": 3.310709946717544,
+          "entropy": 0.0,
+          "kl": 3.310709946717544
+        },
+        "constant": {
+          "ce": 4.155449808971358,
+          "entropy": 0.0,
+          "kl": 4.155449808971358
+        }
+      },
+      "multiple_categories": {
+        "functions": 318,
+        "regions": 475,
+        "family_targets": 715,
+        "fixed_model": {
+          "ce": 4.160166276589982,
+          "entropy": 0.7709292163165291,
+          "kl": 3.3892370602734525
+        },
+        "constant": {
+          "ce": 4.492238666709053,
+          "entropy": 0.7709292163165291,
+          "kl": 3.721309450392523
+        }
+      },
+      "api": {
+        "functions": 257,
+        "regions": 454,
+        "family_targets": 454,
+        "fixed_model": {
+          "ce": 6.275539639427649,
+          "entropy": 0.08500328473745852,
+          "kl": 6.19053635469019
+        },
+        "constant": {
+          "ce": 6.989076976766686,
+          "entropy": 0.08500328473745852,
+          "kl": 6.904073692029228
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 0.40652076746595717,
+            "entropy": 0.005092974869261871,
+            "kl": 0.4014277925966953
+          },
+          "constant": {
+            "ce": 0.4527696369499559,
+            "entropy": 0.005092974869261871,
+            "kl": 0.447676662080694
+          }
+        }
+      },
+      "datatype": {
+        "functions": 522,
+        "regions": 2151,
+        "family_targets": 2151,
+        "fixed_model": {
+          "ce": 3.325061784875583,
+          "entropy": 0.10306030607144288,
+          "kl": 3.22200147880414
+        },
+        "constant": {
+          "ce": 4.476900063410406,
+          "entropy": 0.10306030607144288,
+          "kl": 4.373839757338963
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 1.3216314217280893,
+            "entropy": 0.03285677590029715,
+            "kl": 1.2887746458277922
+          },
+          "constant": {
+            "ce": 1.8094548871914289,
+            "entropy": 0.03285677590029715,
+            "kl": 1.7765981112911318
+          }
+        }
+      },
+      "literal": {
+        "functions": 433,
+        "regions": 1032,
+        "family_targets": 1032,
+        "fixed_model": {
+          "ce": 2.4074576272503707,
+          "entropy": 0.11776277680676865,
+          "kl": 2.289694850443602
+        },
+        "constant": {
+          "ce": 3.0685618631186626,
+          "entropy": 0.11776277680676865,
+          "kl": 2.950799086311894
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 0.38519612890891264,
+            "entropy": 0.018637677819896115,
+            "kl": 0.3665584510890165
+          },
+          "constant": {
+            "ce": 0.4841874908320361,
+            "entropy": 0.018637677819896115,
+            "kl": 0.46554981301214
+          }
+        }
+      },
+      "operator": {
+        "functions": 541,
+        "regions": 1720,
+        "family_targets": 1720,
+        "fixed_model": {
+          "ce": 3.8944110950595108,
+          "entropy": 0.13511500047042144,
+          "kl": 3.7592960945890894
+        },
+        "constant": {
+          "ce": 4.338267736585163,
+          "entropy": 0.13511500047042144,
+          "kl": 4.203152736114741
+        },
+        "objective_contribution": {
+          "fixed_model": {
+            "ce": 1.2904749483926101,
+            "entropy": 0.042315801674869986,
+            "kl": 1.2481591467177402
+          },
+          "constant": {
+            "ce": 1.4568731605361547,
+            "entropy": 0.042315801674869986,
+            "kl": 1.4145573588612845
+          }
+        }
+      }
+    }
+  },
+  "complete": true,
+  "batch_size": 1,
+  "device": "cuda:0",
+  "source_max_length": 2048,
+  "regions_sha256": "c4c9c0caaffcc25451962a4f37ea1c8f02a95cfb13e92590a1d560b2a9f99645",
+  "target_cache_sha256": {
+    "train": "82cfd83e72a5c0d0be1a9729646ae540292e0fd0e14140cb5d63750ad31fb5be",
+    "valid": "3f1fc842b08e34ab67c7198f538aa2ab96bda51fb61e6570b5038c4134e26ae7"
+  }
+}

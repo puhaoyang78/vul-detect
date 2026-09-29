@@ -1000,6 +1000,13 @@ def parser():
     eval_dep.add_argument("--output-dir", required=True)
     eval_dep.add_argument("--batch-size", type=int, default=1)
     eval_dep.add_argument("--device", default="auto")
+    for command in ("audit-regions", "eval-regions"):
+        diagnostic = sub.add_parser(command, help="read-only H/P train/valid diagnostics")
+        diagnostic.add_argument("--pretrain-dir", required=True)
+        diagnostic.add_argument("--output-dir", required=True)
+        if command == "eval-regions":
+            diagnostic.add_argument("--batch-size", type=int, default=1)
+            diagnostic.add_argument("--device", default="auto")
     return p
 
 
@@ -1055,6 +1062,15 @@ def main():
                 program_dir=args.program_dir, region_dir=args.region_dir,
                 reference_pretrain_dir=args.reference_pretrain_dir),
                 ensure_ascii=False), flush=True)
+        elif args.command == "audit-regions":
+            from .cfg_region_diagnostics import audit_regions
+            report = audit_regions(args.pretrain_dir, args.output_dir)
+            print(json.dumps({"output": args.output_dir, "splits": {
+                s: v["counts"] for s, v in report["splits"].items()}}), flush=True)
+        elif args.command == "eval-regions":
+            from .cfg_region_diagnostics import evaluate_regions
+            print(json.dumps(evaluate_regions(args.pretrain_dir, args.output_dir,
+                batch_size=args.batch_size, device=args.device)), flush=True)
         elif args.command == "eval-dep-relations":
             from .cfg_dependency import evaluate_fixed_relations
             print(json.dumps(evaluate_fixed_relations(

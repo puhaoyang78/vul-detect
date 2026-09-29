@@ -76,10 +76,11 @@ def read_jsonl(path: str | Path) -> list[dict]:
     return rows
 
 
-def read_records(path: str | Path, source_dataset: str) -> list[dict]:
+def read_records(path: str | Path, source_dataset: str, *, splits=None) -> list[dict]:
     if source_dataset not in {"primevul", "cleanvul", "sven"}:
         raise ValueError("source_dataset must be primevul, cleanvul, or sven")
-    rows = [r for r in read_jsonl(path) if r.get("dataset") == source_dataset]
+    rows = [r for r in read_jsonl(path) if r.get("dataset") == source_dataset
+            and (splits is None or r.get("split") in splits)]
     if not rows:
         raise ValueError(f"no {source_dataset} records in {path}")
     seen = set()
@@ -475,20 +476,9 @@ class AttributeVocabulary:
 REGION_SCHEMA = 1
 
 
-def cfg_regions(view: dict) -> dict:
-    """Partition C's actual CFG into disjoint noncyclic, nonbranching chains.
-
-    Cyclic SCC members (including pure closed rings) stay singleton. This avoids
-    guessing a loop entry or making the partition depend on DFS/back-edge order.
-    IDs are indices only; every original edge has an explicit internal/cross map.
-    """
-    n = len(view["node_ids"])
-    successors, predecessors = [set() for _ in range(n)], [set() for _ in range(n)]
-    for a, b in view["edges"]:
-        if not 0 <= a < n or not 0 <= b < n:
-            raise ValueError("invalid CFG region endpoint")
-        successors[a].add(b)
-        predecessors[b].add(a)
+def _cyclic_nodes(successors, predecessors):
+    """SCC membership shared by region construction and read-only diagnostics."""
+    n = len(successors)
     # Iterative Kosaraju: no recursion limit on large functions.
     seen, finish = set(), []
     for start in range(n):
@@ -520,6 +510,24 @@ def cfg_regions(view: dict) -> dict:
                     pending.append(parent)
         if len(component) > 1 or start in successors[start]:
             cyclic.update(component)
+    return cyclic
+
+
+def cfg_regions(view: dict) -> dict:
+    """Partition C's actual CFG into disjoint noncyclic, nonbranching chains.
+
+    Cyclic SCC members (including pure closed rings) stay singleton. This avoids
+    guessing a loop entry or making the partition depend on DFS/back-edge order.
+    IDs are indices only; every original edge has an explicit internal/cross map.
+    """
+    n = len(view["node_ids"])
+    successors, predecessors = [set() for _ in range(n)], [set() for _ in range(n)]
+    for a, b in view["edges"]:
+        if not 0 <= a < n or not 0 <= b < n:
+            raise ValueError("invalid CFG region endpoint")
+        successors[a].add(b)
+        predecessors[b].add(a)
+    cyclic = _cyclic_nodes(successors, predecessors)
     next_node, previous = {}, {}
     for a in range(n):
         if a in cyclic or len(successors[a]) != 1:
