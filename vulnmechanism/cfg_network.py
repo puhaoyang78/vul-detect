@@ -15,12 +15,24 @@ class GraphBatch:
     token_pairs: torch.Tensor | None = None  # [pairs, 3]: node, batch row, source token
     ddg_edges: torch.Tensor | None = None  # [2, edges], reaching definition -> use
     program: ProgramBatch | None = None  # sparse check/update/use paths
+    regions: RegionBatch | None = None
 
     def to(self, device) -> "GraphBatch":
         pairs = None if self.token_pairs is None else self.token_pairs.to(device)
         ddg = None if self.ddg_edges is None else self.ddg_edges.to(device)
         return GraphBatch(self.attributes.to(device), self.edges.to(device), self.ptr, pairs,
-                          ddg, None if self.program is None else self.program.to(device))
+                          ddg, None if self.program is None else self.program.to(device),
+                          None if self.regions is None else self.regions.to(device))
+
+
+@dataclass
+class RegionBatch:
+    members: tuple[tuple[int, ...], ...]
+    edges: torch.Tensor
+    ptr: tuple[int, ...]
+
+    def to(self, device):
+        return RegionBatch(self.members, self.edges.to(device), self.ptr)
 
 
 @dataclass
@@ -103,11 +115,13 @@ def collate_programs(programs: list[dict], device="cpu") -> ProgramBatch:
 def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cpu",
                    alignments: list[list[tuple[int, int]]] | None = None,
                    ddg_edges: list[list[tuple[int, int]]] | None = None,
-                   programs: list[dict] | None = None) -> GraphBatch:
+                   programs: list[dict] | None = None,
+                   regions: list[dict] | None = None) -> GraphBatch:
     if (not views or len(views) != len(encoded) or
             (alignments is not None and len(alignments) != len(views)) or
             (ddg_edges is not None and len(ddg_edges) != len(views)) or
-            (programs is not None and len(programs) != len(views))):
+            (programs is not None and len(programs) != len(views)) or
+            (regions is not None and len(regions) != len(views))):
         raise ValueError("nonempty matching graph/attribute lists required")
     attributes, edges, ptr, token_pairs, ddg = [], [], [0], [], []
     for row, (view, values) in enumerate(zip(views, encoded)):
@@ -134,8 +148,25 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
     edge_tensor = torch.tensor(edges, dtype=torch.long).reshape(-1, 2).T.contiguous()
     pairs = None if alignments is None else torch.tensor(token_pairs, dtype=torch.long).reshape(-1, 3)
     ddg_tensor = None if ddg_edges is None else torch.tensor(ddg, dtype=torch.long).reshape(-1, 2).T.contiguous()
+    region_batch = None
+    if regions is not None:
+        members, cross, region_ptr = [], [], [0]
+        for row, partition in enumerate(regions):
+            n = ptr[row+1] - ptr[row]
+            if sorted(node for group in partition["members"] for node in group) != list(range(n)):
+                raise ValueError("regions must cover each CFG node exactly once")
+            count = len(partition["members"])
+            for a, b in partition["edges"]:
+                if not 0 <= a < count or not 0 <= b < count:
+                    raise ValueError("region CFG endpoint out of range")
+                cross.append((a+region_ptr[-1], b+region_ptr[-1]))
+            members.extend(tuple(node+ptr[row] for node in group) for group in partition["members"])
+            region_ptr.append(region_ptr[-1]+count)
+        region_batch = RegionBatch(tuple(members),
+            torch.tensor(cross, dtype=torch.long).reshape(-1, 2).T.contiguous(), tuple(region_ptr))
     return GraphBatch(torch.tensor(attributes, dtype=torch.long), edge_tensor, tuple(ptr), pairs,
-                      ddg_tensor, collate_programs(programs, device) if programs is not None else None).to(device)
+                      ddg_tensor, collate_programs(programs, device) if programs is not None else None,
+                      region_batch).to(device)
 
 
 class AttributeCFGEncoder(nn.Module):
@@ -157,7 +188,8 @@ class AttributeCFGEncoder(nn.Module):
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
                 mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
                              "cfg_ddg", "cfg_ddg_shuffled", "cfg_jk_mean", "cfg_jk_max",
-                             "program_plain", "program_state"} or
+                             "program_plain", "program_state", "cfg_hierarchical"} or
+                (mode == "cfg_hierarchical" and steps != 5) or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
         self.mode, self.steps = mode, steps
@@ -196,11 +228,12 @@ class AttributeCFGEncoder(nn.Module):
                 raise ValueError("DDG graph encoder requires directed DDG edges")
             ddg_src, ddg_dst = batch.ddg_edges
         step_states = [] if self.mode in {"cfg_jk_mean", "cfg_jk_max"} else None
-        for _ in range(self.steps):
+        for _ in range(2 if self.mode == "cfg_hierarchical" else self.steps):
             transformed = self.message(state)
             incoming = transformed.clone()
             if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled",
-                             "cfg_jk_mean", "cfg_jk_max", "program_plain", "program_state"} and src.numel():
+                             "cfg_jk_mean", "cfg_jk_max", "program_plain", "program_state",
+                             "cfg_hierarchical"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             if use_ddg and ddg_src.numel():
                 ddg_transformed = self.ddg_message(state)
@@ -211,10 +244,32 @@ class AttributeCFGEncoder(nn.Module):
         if step_states is not None:
             stacked = torch.stack(step_states, dim=0)
             state = stacked.mean(dim=0) if self.mode == "cfg_jk_mean" else stacked.amax(dim=0)
+        ptr = batch.ptr
+        if self.mode == "cfg_hierarchical":
+            if batch.regions is None:
+                raise ValueError("hierarchical CFG requires the shared region partition")
+            combined = torch.cat((state, x), dim=-1)
+            gates = self.pool_gate(combined).squeeze(-1)
+            summaries = []
+            for members in batch.regions.members:
+                indices = torch.tensor(members, device=state.device)
+                weights = gates[indices].softmax(dim=0).unsqueeze(-1)
+                summaries.append((weights * combined[indices]).sum(dim=0))
+            state, x = torch.stack(summaries).chunk(2, dim=-1)
+            src, dst = batch.regions.edges
+            mask = src != dst
+            src, dst = src[mask], dst[mask]
+            for _ in range(3):
+                transformed = self.message(state)
+                incoming = transformed.clone()
+                if src.numel():
+                    incoming.index_add_(0, dst, transformed[src])
+                state = self.update(incoming, state)
+            ptr = batch.regions.ptr
         combined = torch.cat((state, x), dim=-1)
         scores = self.pool_gate(combined).squeeze(-1)
         return torch.stack([(scores[a:b].softmax(dim=0).unsqueeze(-1) * combined[a:b]).sum(dim=0)
-                            for a, b in zip(batch.ptr[:-1], batch.ptr[1:])])
+                            for a, b in zip(ptr[:-1], ptr[1:])])
 
 
 class ProgramCFGEncoder(AttributeCFGEncoder):
@@ -365,7 +420,9 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
                                           "cfg_source_aux", "cfg_source_detach",
                                           "cfg_rotation_fixed", "cfg_rotation_rotating",
                                           "lm_pretrain_cfg", "dep_pretrain_cfg",
-                                          "composition_pretrain_cfg"} else
+                                          "composition_pretrain_cfg", "region_pretrain_cfg"} else
+            "cfg_hierarchical" if config["variant"] in {"dep_pretrain_hierarchical",
+                                                         "region_pretrain_hierarchical"} else
             "program_plain" if config["variant"] == "dep_pretrain_program_plain" else
             "program_state" if config["variant"] in {"dep_pretrain_program_state",
                                                       "composition_pretrain_program_state"}

@@ -571,6 +571,109 @@ def relation_function_loss(hidden, relation_batch, head):
     return loss, labels, logits
 
 
+class RegionReconstructionHead(nn.Module):
+    """Source-only operation-end mean -> 128 dimensions -> four known-category heads."""
+    def __init__(self, hidden_size, vocabulary_sizes):
+        super().__init__()
+        self.projection = nn.Linear(hidden_size, 128)
+        self.heads = nn.ModuleDict({str(i): nn.Linear(128, size-2)
+                                   for i, size in enumerate(vocabulary_sizes) if size > 2})
+
+    def forward(self, hidden, tokens):
+        if not tokens or len(tokens) != len(set(tokens)) or any(
+                type(t) is not int or not 0 <= t < hidden.shape[0] for t in tokens):
+            raise ValueError("region requires unique visible source tokens")
+        state = torch.tanh(self.projection(hidden[tokens].float().mean(dim=0)))
+        return [self.heads[str(i)](state) if str(i) in self.heads else None for i in range(4)]
+
+
+def region_function_loss(hidden, region_batch, head):
+    """Mean families -> regions -> eligible functions; targets never enter the head."""
+    import torch.nn.functional as F
+    if len(region_batch) != hidden.shape[0]:
+        raise ValueError("region batch size mismatch")
+    functions = []
+    for states, regions in zip(hidden, region_batch):
+        losses = []
+        for region in regions:
+            predictions = head(states, region["tokens"])
+            families = []
+            for logits, target in zip(predictions, region["targets"]):
+                if not target:
+                    continue
+                if logits is None:
+                    raise ValueError("target family has no known vocabulary")
+                indices = torch.tensor([item[0]-2 for item in target], device=hidden.device)
+                weights = logits.new_tensor([item[1] for item in target])
+                families.append(-(weights * F.log_softmax(logits, dim=-1)[indices]).sum())
+            if not families:
+                raise ValueError("selected region has no reliable target")
+            losses.append(torch.stack(families).mean())
+        if losses:
+            functions.append(torch.stack(losses).mean())
+    return torch.stack(functions).mean() if functions else hidden.sum() * 0
+
+
+def _checked_region_rows(region_dir, records, builder, partitions, split="train"):
+    from .cfg_data import REGION_SCHEMA, read_jsonl
+    import math
+    root = Path(region_dir)
+    audit = json.loads((root / "audit.json").read_text())
+    if (split not in {"train", "valid"} or any(r["split"] != split for r in records) or
+            audit.get("region_schema") != REGION_SCHEMA or audit["max_regions"] != 8 or
+            audit["seed"] != 42 or builder.source_max_length != audit["source_max_length"]):
+        raise ValueError("region supervision split/schema/budget mismatch")
+    path = root / f"{split}.regions.jsonl"
+    if file_sha256(path) != audit[f"{split}_targets_sha256"]:
+        raise ValueError("region supervision changed")
+    expected, seen, result = {r["sample_key"]: r for r in records}, set(), {}
+    for item in read_jsonl(path):
+        key = item["sample_key"]
+        if (key not in expected or key in seen or item["split"] != split or
+                item["source_sha256"] != source_hash(expected[key]["raw_source"])):
+            raise ValueError("region supervision source/split mismatch")
+        seen.add(key)
+        source = expected[key]["raw_source"]
+        offsets = builder.tokenizer(source, add_special_tokens=False, truncation=True,
+            max_length=builder.source_max_length, return_offsets_mapping=True)["offset_mapping"]
+        used_tokens, used_regions, intervals = set(), set(), []
+        if len(item["regions"]) > 8:
+            raise ValueError("region sampling budget exceeded")
+        for region in item["regions"]:
+            index = region["region"]
+            if (type(index) is not int or not 0 <= index < len(partitions[key]["members"]) or
+                    index in used_regions or len(region["targets"]) != 4 or
+                    not len(region["nodes"]) == len(region["spans"]) == len(region["tokens"]) or
+                    not region["tokens"] or len(set(region["nodes"])) != len(region["nodes"])):
+                raise ValueError("invalid region supervision structure")
+            used_regions.add(index)
+            for node, span, token in zip(region["nodes"], region["spans"], region["tokens"]):
+                a, b = span
+                if (node not in partitions[key]["members"][index] or token in used_tokens or
+                        not 0 <= a < b <= len(source) or any(a < y and x < b for x, y in intervals)):
+                    raise ValueError("duplicate/overlapping or mismatched region operation")
+                location = {"code": source[a:b], "OFFSET": len(source[:a].encode("utf-16-le"))//2,
+                            "OFFSET_END": len(source[:b].encode("utf-16-le"))//2}
+                pairs, counts = align_nodes(source, [location], offsets, len(builder.source_prefix))
+                if counts["aligned_nodes"] != 1 or max(t for _, t in pairs) != token:
+                    raise ValueError("region operation is not completely visible/aligned")
+                used_tokens.add(token)
+                intervals.append((a, b))
+            if not any(region["targets"]):
+                raise ValueError("empty region target")
+            for target, size in zip(region["targets"], audit["vocabulary_sizes"]):
+                if target and (len({k for k, _ in target}) != len(target) or
+                        any(type(k) is not int or not 2 <= k < size or
+                            not math.isfinite(v) or v <= 0 for k, v in target) or
+                        not math.isclose(sum(v for _, v in target), 1.0)):
+                    raise ValueError("invalid known-category region distribution")
+        if item["regions"]:
+            result[key] = item["regions"]
+    if seen != set(expected):
+        raise ValueError("region supervision omits original split functions")
+    return result, audit
+
+
 def accumulation_window_counts(order, train, supervision, batch_size, accumulation):
     """Precount all and relation-bearing functions in each optimizer window."""
     if batch_size < 1 or accumulation < 1:
@@ -743,7 +846,8 @@ def _checked_program_queries(program_dir, records, builder, split="train"):
 
 def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, output_dir: str,
                                *, modes=("lm_pretrain", "dep_pretrain"), device="auto",
-                               resume=False, base=None, program_dir=None):
+                               resume=False, base=None, program_dir=None, region_dir=None,
+                               reference_pretrain_dir=None):
     """One train-only source pass per mode; the relationship task shares Qwen's forward."""
     import gc
     import math
@@ -753,11 +857,13 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
     from tqdm.auto import tqdm
 
     if not modes or len(modes) != len(set(modes)) or any(
-            mode not in {"lm_pretrain", "dep_pretrain", "composition_pretrain"} for mode in modes):
+            mode not in {"lm_pretrain", "dep_pretrain", "composition_pretrain", "region_pretrain"} for mode in modes):
         raise ValueError("unsupported source pretraining mode")
+    if "region_pretrain" in modes and (len(modes) != 1 or not region_dir or not reference_pretrain_dir):
+        raise ValueError("P1 needs its own mode run, --region-dir and --reference-pretrain-dir")
     if "composition_pretrain" in modes and (not program_dir or len(modes) != 1):
         raise ValueError("composition pretraining requires --program-dir and its own mode run")
-    if any(mode in {"lm_pretrain", "dep_pretrain"} for mode in modes) and not supervision_dir:
+    if any(mode in {"lm_pretrain", "dep_pretrain", "region_pretrain"} for mode in modes) and not supervision_dir:
         raise ValueError("existing source pretraining requires --supervision-dir")
     from .cfg_experiment import _base_module, _save_torch, _tokenizer
     base = _base_module() if base is None else base
@@ -773,14 +879,31 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
         raise ValueError("pretraining data or graph identity differs from original C")
     builder = _tokenizer(base, c_config)
     old_supervision = old_audit = None
-    if any(mode in {"lm_pretrain", "dep_pretrain"} for mode in modes):
+    if any(mode in {"lm_pretrain", "dep_pretrain", "region_pretrain"} for mode in modes):
         old_supervision, old_audit = _checked_relation_rows(supervision_dir, train, builder)
         if old_audit["reference_run_dir"] != str(reference) or (
                 old_audit["train_cohort_sha256"] != c_config["train_cohort_sha256"]):
             raise ValueError("supervision was not prepared for this original C train cohort")
-        if "dep_pretrain" in modes and (old_audit["counts"].get("selected_positive", 0) == 0 or
+        if any(m in modes for m in ("dep_pretrain", "region_pretrain")) and (old_audit["counts"].get("selected_positive", 0) == 0 or
                                          old_audit["counts"].get("selected_negative", 0) == 0):
             raise ValueError("verified relation supervision needs both classes")
+    region_supervision, region_audit = {}, None
+    if "region_pretrain" in modes:
+        from .cfg_data import load_regions
+        partitions, region_audit = load_regions(region_dir, rows, reference)
+        region_supervision, _ = _checked_region_rows(region_dir, train, builder, partitions)
+        if not region_supervision:
+            raise ValueError("P1 has no reliable region targets")
+        p0_root = Path(reference_pretrain_dir).resolve()
+        p0_config = json.loads((p0_root / "config.json").read_text())
+        complete = json.loads((p0_root / "dep_pretrain" / "complete.json").read_text())
+        if (p0_config["c_config"] != c_config or p0_config["reference_run_dir"] != str(reference) or
+                p0_config["relation_rank"] != 32 or p0_config["relations_sha256"] != old_audit["relations_sha256"] or
+                p0_config.get("relation_accumulation_normalization") != "window_effective_functions" or
+                p0_config["pretrain_epochs"] != 1 or p0_config["relation_alpha"] != 1.0 or
+                complete["mode"] != "dep_pretrain" or
+                complete["checkpoint_sha256"] != file_sha256(p0_root / "dep_pretrain" / "last.pt")):
+            raise ValueError("P1 must match the corrected P0 initialization/data/budget")
     program_supervision = program_audit = None
     if "composition_pretrain" in modes:
         program_supervision, program_audit = _checked_program_queries(program_dir, train, builder)
@@ -807,6 +930,14 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
               "objective": ("source_clm_plus_optional_composed_relation"
                             if "composition_pretrain" in modes else
                             "source_clm_plus_optional_scoped_scalar_relation")}
+    if region_audit is not None:
+        config.update(region_dir=str(Path(region_dir).resolve()),
+                      region_schema=region_audit["region_schema"],
+                      regions_sha256=region_audit["regions_sha256"],
+                      region_targets_sha256=region_audit["train_targets_sha256"],
+                      region_alpha=1.0, region_projection=128,
+                      reference_pretrain_dir=str(p0_root),
+                      objective="source_clm_plus_dependency_plus_region")
     if program_audit is not None:
         config.update(program_dir=str(Path(program_dir).resolve()),
                       program_sha256=program_audit["program_sha256"],
@@ -821,7 +952,7 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                 raise ValueError("pretrain output exists or its configuration differs")
         else:
             if any((root / mode).exists() for mode in ("lm_pretrain", "dep_pretrain",
-                                                      "composition_pretrain")):
+                                                      "composition_pretrain", "region_pretrain")):
                 raise FileExistsError("pretrain mode directory exists without config")
             atomic_json(meta, config)
         resolved_device = base._resolve_device(device)
@@ -849,17 +980,23 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             lm_weight = _load_qwen_lm_weight(c_config["model_path"], hidden_size, resolved_device)
             with torch.random.fork_rng(devices=[]):
                 head = (DirectedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
-                        if mode == "dep_pretrain" else
+                        if mode in {"dep_pretrain", "region_pretrain"} else
                         ComposedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
                         if mode == "composition_pretrain" else None)
+                region_head = (RegionReconstructionHead(hidden_size, region_audit["vocabulary_sizes"]).to(resolved_device)
+                               if mode == "region_pretrain" else None)
             supervision = (program_supervision if mode == "composition_pretrain" else
                            old_supervision if old_supervision is not None else {})
             lora_parameters = [p for p in encoder.parameters() if p.requires_grad]
             groups = [{"params": lora_parameters, "lr": c_config["learning_rate"]}]
             if head is not None:
                 groups.append({"params": list(head.parameters()), "lr": c_config["graph_learning_rate"]})
+            if region_head is not None:
+                groups.append({"params": list(region_head.parameters()), "lr": c_config["graph_learning_rate"]})
             optimizer = torch.optim.AdamW(groups, weight_decay=c_config["weight_decay"])
             trainable = lora_parameters + (list(head.parameters()) if head is not None else [])
+            if region_head is not None:
+                trainable += list(region_head.parameters())
             order = list(range(len(train)))
             random.Random(c_config["seed"]).shuffle(order)
             batch_size = c_config["batch_size"]
@@ -867,8 +1004,11 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             num_batches = math.ceil(len(order) / batch_size)
             window_counts = accumulation_window_counts(
                 order, train, supervision if head is not None else {}, batch_size, accumulation)
+            region_window_counts = accumulation_window_counts(
+                order, train, region_supervision, batch_size, accumulation)
             optimizer.zero_grad(set_to_none=True)
-            total_lm = total_dep = 0.0
+            total_lm = total_dep = total_region = 0.0
+            region_functions = 0
             total_functions = effective_functions = 0
             positive_relations = negative_relations = 0
             relation_labels, relation_scores = [], []
@@ -894,6 +1034,15 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                     k = sum(bool(relations) for relations in relation_batch)
                     M, K = window_counts[batch_index]
                     loss = accumulation_window_loss(lm, dep, m, M, k, K)
+                    region_loss = hidden.sum() * 0 if region_head is not None else None
+                    if region_head is not None:
+                        region_batch = [region_supervision.get(row["sample_key"], []) for row in batch]
+                        region_loss = region_function_loss(hidden, region_batch, region_head)
+                        r = sum(bool(items) for items in region_batch)
+                        _, R = region_window_counts[batch_index]
+                        loss = loss + (region_loss * (r/R) if R else 0)
+                        total_region += float(region_loss.detach()) * r
+                        region_functions += r
                     if not torch.isfinite(loss):
                         raise ValueError(f"non-finite pretrain loss at batch {batch_index + 1}")
                     loss.backward()
@@ -921,11 +1070,14 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                                      "relation_coverage_so_far": effective_functions / total_functions,
                                      "relation_positive_so_far": positive_relations,
                                      "relation_negative_so_far": negative_relations}
+                            if region_head is not None:
+                                event.update(effective_region_functions_so_far=region_functions,
+                                             region_loss_mean_so_far=total_region/region_functions if region_functions else 0)
                             history.write(json.dumps(event) + "\n")
                             history.flush()
                             print(json.dumps(event), flush=True)
                     bar.set_postfix(loss=f"{float(loss.detach()):.4f}", step=optimizer_steps, refresh=False)
-                    del hidden, lm, dep, loss, ids, mask
+                    del hidden, lm, dep, loss, ids, mask, region_loss
                 from .cfg_metrics import metrics
                 relation_metrics = (metrics(relation_labels, relation_scores, 0.5)
                                     if relation_labels and len(set(relation_labels)) == 2 else None)
@@ -940,16 +1092,21 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                            "relation_positive": positive_relations,
                            "relation_negative": negative_relations,
                            "relation_metrics_train_online": relation_metrics}
+                if region_head is not None:
+                    summary.update(effective_region_functions=region_functions,
+                                   region_loss=total_region/region_functions if region_functions else 0,
+                                   region_head_parameters=sum(p.numel() for p in region_head.parameters()))
                 history.write(json.dumps({"event": "epoch", **summary}) + "\n")
                 history.flush()
             checkpoint = {"mode": mode, "pretrain_config": config, "summary": summary,
                           "adapter_state": base._cpu_state(base.get_peft_model_state_dict(encoder)),
-                          **({"relation_head_state": base._cpu_state(head.state_dict())} if head else {})}
+                          **({"relation_head_state": base._cpu_state(head.state_dict())} if head else {}),
+                          **({"region_head_state": base._cpu_state(region_head.state_dict())} if region_head else {})}
             _save_torch(folder / "last.pt", checkpoint)
             atomic_json(folder / "complete.json", {"mode": mode,
                                                      "checkpoint_sha256": file_sha256(folder / "last.pt"),
                                                      "summary": summary})
-            del encoder, head, lm_weight, optimizer, checkpoint, lora_parameters, trainable, groups
+            del encoder, head, region_head, lm_weight, optimizer, checkpoint, lora_parameters, trainable, groups
             gc.collect()
             if resolved_device.type == "cuda":
                 torch.cuda.empty_cache()

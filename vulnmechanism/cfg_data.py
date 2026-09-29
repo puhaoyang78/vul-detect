@@ -470,3 +470,192 @@ class AttributeVocabulary:
 
     def sizes(self) -> list[int]:
         return [len(self.values[f]) for f in FAMILIES]
+
+
+REGION_SCHEMA = 1
+
+
+def cfg_regions(view: dict) -> dict:
+    """Partition C's actual CFG into disjoint noncyclic, nonbranching chains.
+
+    Cyclic SCC members (including pure closed rings) stay singleton. This avoids
+    guessing a loop entry or making the partition depend on DFS/back-edge order.
+    IDs are indices only; every original edge has an explicit internal/cross map.
+    """
+    n = len(view["node_ids"])
+    successors, predecessors = [set() for _ in range(n)], [set() for _ in range(n)]
+    for a, b in view["edges"]:
+        if not 0 <= a < n or not 0 <= b < n:
+            raise ValueError("invalid CFG region endpoint")
+        successors[a].add(b)
+        predecessors[b].add(a)
+    # Iterative Kosaraju: no recursion limit on large functions.
+    seen, finish = set(), []
+    for start in range(n):
+        if start in seen:
+            continue
+        seen.add(start)
+        stack = [(start, iter(successors[start]))]
+        while stack:
+            node, children = stack[-1]
+            child = next(children, None)
+            if child is None:
+                finish.append(node)
+                stack.pop()
+            elif child not in seen:
+                seen.add(child)
+                stack.append((child, iter(successors[child])))
+    assigned, cyclic = set(), set()
+    for start in reversed(finish):
+        if start in assigned:
+            continue
+        component, pending = [], [start]
+        assigned.add(start)
+        while pending:
+            node = pending.pop()
+            component.append(node)
+            for parent in predecessors[node]:
+                if parent not in assigned:
+                    assigned.add(parent)
+                    pending.append(parent)
+        if len(component) > 1 or start in successors[start]:
+            cyclic.update(component)
+    next_node, previous = {}, {}
+    for a in range(n):
+        if a in cyclic or len(successors[a]) != 1:
+            continue
+        b = next(iter(successors[a]))
+        if b not in cyclic and len(predecessors[b]) == 1:
+            next_node[a], previous[b] = b, a
+    members = []
+    for start in range(n):
+        if start in previous:
+            continue
+        chain, node = [], start
+        while True:
+            chain.append(node)
+            if node not in next_node:
+                break
+            node = next_node[node]
+        members.append(chain)
+    node_to_region = [-1] * n
+    for region, chain in enumerate(members):
+        for node in chain:
+            if node_to_region[node] != -1:
+                raise ValueError("overlapping CFG regions")
+            node_to_region[node] = region
+    if -1 in node_to_region:
+        raise ValueError("CFG region partition lost a node")
+    # Self-loop CFG edges stay in the internal map, not invented cross edges.
+    edges = sorted({(node_to_region[a], node_to_region[b]) for a, b in view["edges"]
+                    if node_to_region[a] != node_to_region[b]})
+    edge_index = {edge: index for index, edge in enumerate(edges)}
+    internal = [[] for _ in members]
+    edge_map = []
+    for index, (a, b) in enumerate(view["edges"]):
+        ra, rb = node_to_region[a], node_to_region[b]
+        if ra == rb:
+            internal[ra].append(index)
+            edge_map.append({"internal_region": ra})
+        else:
+            edge_map.append({"region_edge": edge_index[(ra, rb)]})
+    return {"schema": REGION_SCHEMA, "members": members, "node_to_region": node_to_region,
+            "edges": [list(e) for e in edges], "internal_edges": internal, "edge_map": edge_map}
+
+
+def prepare_regions(reference_run_dir, output_dir, tokenizer):
+    """Prepare H structure and P train/valid targets using C's unchanged vocabulary."""
+    from .cfg_alignment import region_targets
+    from .model import InputBuilder
+    root, reference = Path(output_dir), Path(reference_run_dir).resolve()
+    if root.exists():
+        raise FileExistsError(f"region output exists: {root}")
+    config = json.loads((reference / "config.json").read_text())
+    if config["source_max_length"] != 2048 or config["seed"] != 42 or config["graph_steps"] != 5:
+        raise ValueError("regions require C's 2048-token, seed-42, five-step setting")
+    vocab = AttributeVocabulary(json.loads((reference / "vocabulary.json").read_text()))
+    rows = read_records(config["dataset"], config["source_dataset"])
+    if (digest(vocab.values) != config["vocabulary_sha256"] or cohort_hash(rows) != config["cohort_sha256"] or
+            file_sha256(config["graphs"]) != config["graph_file_sha256"]):
+        raise ValueError("region inputs differ from original C")
+    graphs = load_graphs(config["graphs"], rows)
+    builder = InputBuilder(tokenizer, source_max_length=2048, context_max_length=384)
+    counts = {split: Counter() for split in ("train", "valid", "test")}
+    sizes = {split: Counter() for split in counts}
+    target_signatures = {split: {f: set() for f in FAMILIES} for split in ("train", "valid")}
+    root.mkdir(parents=True)
+    with (root / "regions.jsonl").open("x") as structures, \
+            (root / "train.regions.jsonl").open("x") as train_out, \
+            (root / "valid.regions.jsonl").open("x") as valid_out:
+        for index, row in enumerate(rows, 1):
+            key, split = row["sample_key"], row["split"]
+            view = abstract_cfg(graphs.pop(key))
+            region = cfg_regions(view)
+            structures.write(json.dumps({"sample_key": key, "split": split,
+                "source_sha256": source_hash(row["raw_source"]), "node_ids": view["node_ids"],
+                "cfg_edges": view["edges"], "region": region}) + "\n")
+            c = counts[split]
+            n, r = len(view["node_ids"]), len(region["members"])
+            c.update(functions=1, nodes=n, regions=r,
+                     multinode_regions=sum(len(m) > 1 for m in region["members"]),
+                     functions_with_multinode_regions=int(n > r),
+                     singleton_regions=sum(len(m) == 1 for m in region["members"]))
+            sizes[split].update(map(len, region["members"]))
+            edge_count = sum(a != b for a, b in view["edges"])
+            c.update(flat_node_updates=5*n, hierarchical_node_updates=2*n+3*r,
+                     flat_edge_messages=5*edge_count,
+                     hierarchical_edge_messages=2*edge_count+3*len(region["edges"]),
+                     hierarchical_pool_gate_rows=n+r, flat_pool_gate_rows=n)
+            if split in target_signatures:
+                targets, audit = region_targets(row, view, vocab.encode(view), region, builder)
+                c.update(audit)
+                for target in targets:
+                    for family, distribution in zip(FAMILIES, target["targets"]):
+                        if distribution:
+                            target_signatures[split][family].add(tuple(map(tuple, distribution)))
+                (train_out if split == "train" else valid_out).write(json.dumps({
+                    "sample_key": key, "split": split, "source_sha256": source_hash(row["raw_source"]),
+                    "regions": targets}) + "\n")
+            if index % 200 == 0 or index == len(rows):
+                print(f"region_prepare={index}/{len(rows)}", flush=True)
+    splits = {}
+    for split, c in counts.items():
+        splits[split] = {**dict(c), "size_histogram": dict(sorted(sizes[split].items())),
+                         "regions_per_node": c["regions"] / c["nodes"] if c["nodes"] else 0,
+                         "node_reduction": 1-c["regions"] / c["nodes"] if c["nodes"] else 0}
+        if split in target_signatures:
+            splits[split]["distinct_selected_distributions"] = {
+                f: len(v) for f, v in target_signatures[split].items()}
+    audit = {"region_schema": REGION_SCHEMA, "reference_run_dir": str(reference),
+             "c_config": config, "vocabulary_sizes": vocab.sizes(), "max_regions": 8,
+             "seed": 42, "source_max_length": 2048,
+             "regions_sha256": file_sha256(root / "regions.jsonl"),
+             **{f"{split}_targets_sha256": file_sha256(root / f"{split}.regions.jsonl")
+                for split in ("train", "valid")}, "splits": splits, "test_targets_generated": False}
+    atomic_json(root / "audit.json", audit)
+    return audit
+
+
+def load_regions(region_dir, rows, reference_run_dir, views=None):
+    root, reference = Path(region_dir), Path(reference_run_dir).resolve()
+    audit = json.loads((root / "audit.json").read_text())
+    config = json.loads((reference / "config.json").read_text())
+    if (audit.get("region_schema") != REGION_SCHEMA or audit["reference_run_dir"] != str(reference) or
+            audit["c_config"] != config or cohort_hash(rows) != config["cohort_sha256"] or
+            file_sha256(root / "regions.jsonl") != audit["regions_sha256"]):
+        raise ValueError("region cache differs from original C")
+    expected = {r["sample_key"]: r for r in rows}
+    result = {}
+    for item in read_jsonl(root / "regions.jsonl"):
+        key = item["sample_key"]
+        if (key not in expected or key in result or item["split"] != expected[key]["split"] or
+                item["source_sha256"] != source_hash(expected[key]["raw_source"])):
+            raise ValueError("region source/split mismatch")
+        view = {"node_ids": item["node_ids"], "edges": item["cfg_edges"]} if views is None else views[key]
+        if (view["node_ids"] != item["node_ids"] or [list(e) for e in view["edges"]] != item["cfg_edges"] or
+                cfg_regions(view) != item["region"]):
+            raise ValueError("region partition or original CFG changed")
+        result[key] = item["region"]
+    if set(result) != set(expected):
+        raise ValueError("region cache omits original functions")
+    return result, audit

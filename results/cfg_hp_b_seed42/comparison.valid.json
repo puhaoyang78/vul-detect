@@ -1,0 +1,170 @@
+{
+  "split": "valid",
+  "metrics": {
+    "dep_pretrain_hierarchical": {
+      "accuracy": 0.7489878542510121,
+      "precision": 0.7619047619047619,
+      "recall": 0.7292225201072386,
+      "f1": 0.7452054794520548,
+      "mcc": 0.4985639913157105,
+      "auc": 0.8084421261219257,
+      "tp": 272,
+      "tn": 283,
+      "fp": 85,
+      "fn": 101,
+      "samples": 741,
+      "threshold": 0.21
+    },
+    "dep_pretrain_cfg": {
+      "accuracy": 0.7462887989203779,
+      "precision": 0.7620396600566572,
+      "recall": 0.7211796246648794,
+      "f1": 0.7410468319559229,
+      "mcc": 0.4934582937375616,
+      "auc": 0.8208343046975172,
+      "tp": 269,
+      "tn": 284,
+      "fp": 84,
+      "fn": 104,
+      "samples": 741,
+      "threshold": 0.3
+    }
+  },
+  "changes_vs_baseline": {},
+  "reference_run_dir": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/cfg_dep_cfg_windowfix_seed42",
+  "initialization_policy": "source_dependency_pretraining",
+  "changes_vs_A": {
+    "dep_pretrain_hierarchical": {
+      "validation_selected_thresholds": {
+        "counts": {
+          "fn_to_tp": 12,
+          "fp_to_tn": 10,
+          "tp_to_fn": 9,
+          "tn_to_fp": 11
+        },
+        "sample_keys": {
+          "fn_to_tp": [
+            "primevul:201848",
+            "primevul:202139",
+            "primevul:202741",
+            "primevul:204725",
+            "primevul:206516",
+            "primevul:207760",
+            "primevul:208509",
+            "primevul:212892",
+            "primevul:214890",
+            "primevul:215062",
+            "primevul:215063",
+            "primevul:215492"
+          ],
+          "fp_to_tn": [
+            "primevul:231619",
+            "primevul:237594",
+            "primevul:268960",
+            "primevul:280190",
+            "primevul:330491",
+            "primevul:342111",
+            "primevul:381926",
+            "primevul:385205",
+            "primevul:402312",
+            "primevul:446291"
+          ],
+          "tp_to_fn": [
+            "primevul:195776",
+            "primevul:195842",
+            "primevul:196865",
+            "primevul:197993",
+            "primevul:206293",
+            "primevul:207463",
+            "primevul:207756",
+            "primevul:210268",
+            "primevul:217321"
+          ],
+          "tn_to_fp": [
+            "primevul:244414",
+            "primevul:255348",
+            "primevul:274252",
+            "primevul:336269",
+            "primevul:385610",
+            "primevul:389223",
+            "primevul:399287",
+            "primevul:409207",
+            "primevul:461637",
+            "primevul:473434",
+            "primevul:482999"
+          ]
+        },
+        "net_corrected": 2,
+        "net_fewer_fn": 3,
+        "net_fewer_fp": -1
+      },
+      "both_fixed_at_0_5": {
+        "counts": {
+          "fn_to_tp": 4,
+          "fp_to_tn": 13,
+          "tp_to_fn": 24,
+          "tn_to_fp": 5
+        },
+        "sample_keys": {
+          "fn_to_tp": [
+            "primevul:195755",
+            "primevul:198147",
+            "primevul:204031",
+            "primevul:207760"
+          ],
+          "fp_to_tn": [
+            "primevul:221453",
+            "primevul:232639",
+            "primevul:233000",
+            "primevul:262680",
+            "primevul:269062",
+            "primevul:284231",
+            "primevul:303472",
+            "primevul:333145",
+            "primevul:333833",
+            "primevul:385205",
+            "primevul:441978",
+            "primevul:451235",
+            "primevul:505198"
+          ],
+          "tp_to_fn": [
+            "primevul:195057",
+            "primevul:195084",
+            "primevul:195966",
+            "primevul:197296",
+            "primevul:197725",
+            "primevul:197832",
+            "primevul:197890",
+            "primevul:197993",
+            "primevul:198141",
+            "primevul:198315",
+            "primevul:198733",
+            "primevul:200767",
+            "primevul:205582",
+            "primevul:206293",
+            "primevul:206666",
+            "primevul:206698",
+            "primevul:207148",
+            "primevul:209050",
+            "primevul:212088",
+            "primevul:212377",
+            "primevul:212945",
+            "primevul:214120",
+            "primevul:214338",
+            "primevul:216799"
+          ],
+          "tn_to_fp": [
+            "primevul:346306",
+            "primevul:389223",
+            "primevul:429721",
+            "primevul:447685",
+            "primevul:461637"
+          ]
+        },
+        "net_corrected": -12,
+        "net_fewer_fn": -20,
+        "net_fewer_fp": 8
+      }
+    }
+  }
+}

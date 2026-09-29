@@ -134,3 +134,90 @@ def coverage_summary(counts: Counter) -> dict:
                 **{reason: counts[reason] for reason in (
                     "missing_position", "position_mismatch", "outside_visible_source",
                     "no_visible_token", "invalid_token_offsets")})
+
+
+def region_targets(record, view, encoded, regions, builder):
+    """Visible operation-end states and distributions over C's existing categories.
+
+    Overlapping operations retain the outermost complete operation. Exact
+    duplicates are counted once; conflicts/cross-region duplicates are excluded.
+    No node is removed from H. EMPTY=0 and UNK=1 are never reconstruction answers.
+    """
+    import random
+    from collections import defaultdict
+    from .cfg_data import FAMILIES
+    if record["split"] not in {"train", "valid"}:
+        raise ValueError("region targets are train/valid only")
+    if not getattr(builder.tokenizer, "is_fast", False):
+        raise ValueError("region targets require reliable fast-tokenizer offsets")
+    source = record["raw_source"]
+    tokens = builder.tokenizer(source, add_special_tokens=False, truncation=True,
+        max_length=builder.source_max_length, return_offsets_mapping=True)
+    statuses = []
+    pairs, counts = align_nodes(source, view["locations"], tokens["offset_mapping"],
+                                len(builder.source_prefix), statuses=statuses)
+    ends = {}
+    for node, token in pairs:
+        ends[node] = max(token, ends.get(node, token))
+    stats = Counter({"alignment_"+k: v for k, v in counts.items()})
+    units, lines = _source_coordinates(source)
+    spans = defaultdict(list)
+    for node, values in enumerate(encoded):
+        for family, value in zip(FAMILIES, values):
+            stats[f"{family}_empty_nodes" if value == 0 else
+                  f"{family}_unk_nodes" if value == 1 else f"{family}_known_nodes"] += 1
+        if not any(value >= 2 for value in values):
+            stats["no_known_target_nodes"] += 1
+            continue
+        if statuses[node][0] != "aligned_nodes":
+            stats["target_excluded_" + statuses[node][0]] += 1
+            continue
+        span, reason = _node_span(source, view["locations"][node], units, lines)
+        if reason is not None:
+            raise ValueError("alignment span changed")
+        spans[span].append(node)
+    kept, covered_end, used_tokens = [], -1, set()
+    for span, nodes in sorted(spans.items(), key=lambda item: (item[0][0], -item[0][1])):
+        signatures = {(regions["node_to_region"][node], tuple(encoded[node])) for node in nodes}
+        if len(signatures) != 1:
+            stats["ambiguous_duplicate_operations"] += len(nodes)
+            continue
+        stats["duplicate_operations"] += len(nodes)-1
+        node = nodes[0]
+        if span[0] < covered_end or ends[node] in used_tokens:
+            stats["overlapping_operations"] += 1
+            continue
+        covered_end = span[1]
+        used_tokens.add(ends[node])
+        kept.append((node, span, ends[node]))
+    grouped = defaultdict(list)
+    for node, span, token in kept:
+        grouped[regions["node_to_region"][node]].append((node, span, token))
+    candidates = []
+    for region, operations in grouped.items():
+        targets = []
+        for i, family in enumerate(FAMILIES):
+            counts = Counter(encoded[node][i] for node, _, _ in operations if encoded[node][i] >= 2)
+            total = sum(counts.values())
+            targets.append([[category, count/total] for category, count in sorted(counts.items())])
+            stats[f"{family}_supervisable_regions"] += bool(total)
+            stats[f"{family}_nonconstant_regions"] += len(counts) > 1
+        candidates.append({"region": region, "tokens": [t for _, _, t in operations],
+                           "nodes": [n for n, _, _ in operations],
+                           "spans": [list(s) for _, s, _ in operations], "targets": targets})
+    candidates.sort(key=lambda item: item["spans"])
+    stats["supervisable_regions"] = len(candidates)
+    stats["supervisable_functions"] = bool(candidates)
+    stats["supervisable_multinode_regions"] = sum(len(regions["members"][r["region"]]) > 1 for r in candidates)
+    indices = sorted(random.Random(f"42:{record['sample_key']}").sample(
+        range(len(candidates)), min(8, len(candidates))))
+    selected = [candidates[i] for i in indices]
+    stats["supervisable_nonconstant_regions"] = sum(any(len(t) > 1 for t in r["targets"]) for r in candidates)
+    stats["selected_nonconstant_regions"] = sum(any(len(t) > 1 for t in r["targets"]) for r in selected)
+    stats["selected_multinode_regions"] = sum(len(regions["members"][r["region"]]) > 1 for r in selected)
+    stats["selected_regions"] = len(selected)
+    stats["selected_operations"] = sum(len(r["tokens"]) for r in selected)
+    for family_index, family in enumerate(FAMILIES):
+        stats[f"{family}_effective_functions"] = any(r["targets"][family_index] for r in selected)
+        stats[f"{family}_selected_regions"] = sum(bool(r["targets"][family_index]) for r in selected)
+    return selected, stats

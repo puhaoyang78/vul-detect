@@ -27,9 +27,12 @@ JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
 PROGRAM_VARIANTS = ("dep_pretrain_program_plain", "dep_pretrain_program_state",
                     "composition_pretrain_program_state")
-PRETRAIN_CFG_VARIANTS = ("lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
+REGION_VARIANTS = ("dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
+PRETRAIN_CFG_VARIANTS = (*REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
                          "composition_pretrain_cfg")
-PRETRAIN_MODE = {"lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
+PRETRAIN_MODE = {"dep_pretrain_hierarchical": "dep_pretrain",
+                 "region_pretrain_cfg": "region_pretrain",
+                 "region_pretrain_hierarchical": "region_pretrain", "lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
                  "dep_pretrain_program_plain": "dep_pretrain",
                  "dep_pretrain_program_state": "dep_pretrain",
                  "composition_pretrain_cfg": "composition_pretrain",
@@ -87,7 +90,8 @@ def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
     programs = [views[k]["program"] for k in keys] if mode in {"program_plain", "program_state"} else None
     graph_batch = collate_graphs([views[k] for k in keys], [encoded[k] for k in keys],
                                  device=device, alignments=alignments, ddg_edges=ddg_edges,
-                                 programs=programs)
+                                 programs=programs,
+                                 regions=[views[k]["regions"] for k in keys] if mode == "cfg_hierarchical" else None)
     return ids, mask, graph_batch
 
 
@@ -175,6 +179,10 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             history.flush()
             print(json.dumps(row, ensure_ascii=False, allow_nan=False), flush=True)
 
+        if config["variant"] in REGION_VARIANTS:
+            log({"event": "parameters", "graph_encoder": sum(p.numel() for p in model.task_modules["cfg_encoder"].parameters()),
+                 "graph_classifier": sum(p.numel() for p in model.task_modules["cfg_classifier"].parameters()),
+                 "trainable_total": sum(p.numel() for p in trainable)})
         for epoch in range(config["epochs"]):
             model.train()
             epoch_train = train_epochs[epoch]
@@ -339,7 +347,7 @@ def _prediction_outputs(folder, split, rows, scores, threshold, builder, *, chec
 
 
 def compare_run(root: str | Path, split: str = "valid",
-                reference_root: str | Path | None = None) -> dict:
+                reference_root: str | Path | None = None, reference_variant: str = "cfg") -> dict:
     root = Path(root)
     if (root / "readout_config.json").exists() and split != "valid":
         raise ValueError("frozen C readout screening is valid-only; test was not extracted")
@@ -347,7 +355,15 @@ def compare_run(root: str | Path, split: str = "valid",
     if reference is not None:
         candidate_config = json.loads((root / "config.json").read_text())
         reference_config = json.loads((reference / "config.json").read_text())
-        if candidate_config != reference_config:
+        if reference_variant == "dep_pretrain_cfg":
+            declared = {"initialization_policy", "pretrain_run_dir", "pretrain_relations_sha256",
+                        "reference_run_dir", "region_dir", "regions_sha256", "region_schema", "comparison_run_dir"}
+            if ({k: v for k, v in candidate_config.items() if k not in declared} !=
+                    {k: v for k, v in reference_config.items() if k not in declared} or
+                    candidate_config.get("reference_run_dir") != reference_config.get("reference_run_dir") or
+                    candidate_config.get("pretrain_relations_sha256") != reference_config.get("pretrain_relations_sha256")):
+                raise ValueError("comparison with A differs beyond declared H/P metadata")
+        elif candidate_config != reference_config:
             rotation_policy = candidate_config.get("training_member_policy")
             pretrain_policy = candidate_config.get("initialization_policy")
             if (rotation_policy != "primevul_negative_rotation" and
@@ -369,7 +385,8 @@ def compare_run(root: str | Path, split: str = "valid",
             if candidate_config.get(policy_name):
                 result[policy_name] = candidate_config[policy_name]
     for variant in COMPARISON_VARIANTS:
-        folder = reference if reference is not None and variant in DEFAULT_VARIANTS else root
+        folder = reference if reference is not None and (
+            variant == reference_variant or reference_variant == "cfg" and variant in DEFAULT_VARIANTS) else root
         path = folder / variant / f"{split}.predictions.jsonl"
         if not path.is_file():
             continue
@@ -383,8 +400,8 @@ def compare_run(root: str | Path, split: str = "valid",
                                              [r["score"] for r in rows[variant]], thresholds.pop())
     if not rows:
         raise ValueError(f"no {split} predictions found in {root}")
-    if reference is not None and "cfg" not in rows:
-        raise FileNotFoundError(f"comparison requires saved C predictions in {reference / 'cfg'}")
+    if reference is not None and reference_variant not in rows:
+        raise FileNotFoundError(f"comparison requires saved {reference_variant} predictions in {reference}")
     if "baseline" in rows:
         base_threshold = rows["baseline"][0]["threshold"]
         for variant in COMPARISON_VARIANTS[1:]:
@@ -422,6 +439,12 @@ def compare_run(root: str | Path, split: str = "valid",
                                                          base_threshold=cfg_threshold,
                                                          candidate_threshold=cfg_threshold),
             }
+    if reference_variant == "dep_pretrain_cfg" and reference_variant in rows:
+        result["changes_vs_A"] = {variant: {
+            "validation_selected_thresholds": paired_changes(rows[reference_variant], predictions),
+            "both_fixed_at_0_5": paired_changes(rows[reference_variant], predictions,
+                                                 base_threshold=0.5, candidate_threshold=0.5)}
+            for variant, predictions in rows.items() if variant != reference_variant}
     atomic_json(root / f"comparison.{split}.json", result)
     fields = ["variant", "accuracy", "precision", "recall", "f1", "mcc", "auc", "tp", "fp", "tn", "fn", "threshold"]
     with (root / f"comparison.{split}.csv").open("w", newline="") as handle:
@@ -582,6 +605,39 @@ def run_experiment(args, base=None):
                           pretrain_run_dir=str(pretrain_root),
                           pretrain_relations_sha256=pretrain_config["relations_sha256"],
                           reference_run_dir=str(reference))
+    if any(v in REGION_VARIANTS for v in args.variants):
+        from .cfg_data import load_regions
+        if not args.region_dir or not args.comparison_run_dir or args.graph_steps != 5:
+            raise ValueError("H/P require --region-dir, --comparison-run-dir A and five graph steps")
+        partitions, region_audit = load_regions(args.region_dir, rows, reference, views)
+        if (pretrain_config.get("relation_accumulation_normalization") != "window_effective_functions" or
+                pretrain_config["relations_sha256"] != json.loads((Path(args.comparison_run_dir) /
+                    "config.json").read_text())["pretrain_relations_sha256"]):
+            raise ValueError("H/P require corrected P0 dependency supervision")
+        if any(PRETRAIN_MODE[v] == "region_pretrain" for v in args.variants) and (
+                pretrain_config.get("region_alpha") != 1.0 or
+                pretrain_config.get("region_projection") != 128 or
+                pretrain_config.get("region_schema") != region_audit["region_schema"] or
+                pretrain_config.get("regions_sha256") != region_audit["regions_sha256"] or
+                pretrain_config.get("region_targets_sha256") != region_audit["train_targets_sha256"]):
+            raise ValueError("P1 region supervision differs from stage 1")
+        for key, partition in partitions.items():
+            views[key]["regions"] = partition
+        config.update(region_dir=str(Path(args.region_dir).resolve()),
+                      regions_sha256=region_audit["regions_sha256"],
+                      region_schema=region_audit["region_schema"],
+                      comparison_run_dir=str(Path(args.comparison_run_dir).resolve()))
+        # Check A's shared settings before any model or output directory is created.
+        a_config = json.loads((Path(args.comparison_run_dir) / "config.json").read_text())
+        if (a_config.get("initialization_policy") != "source_dependency_pretraining" or
+                a_config.get("reference_run_dir") != str(reference) or
+                {k: a_config.get(k) for k in reference_config} != reference_config):
+            raise ValueError("A differs from H/P's original C settings")
+        a_pretrain = str(Path(a_config["pretrain_run_dir"]).resolve())
+        if (any(PRETRAIN_MODE[v] == "dep_pretrain" for v in args.variants) and str(pretrain_root) != a_pretrain or
+                any(PRETRAIN_MODE[v] == "region_pretrain" for v in args.variants) and
+                pretrain_config.get("reference_pretrain_dir") != a_pretrain):
+            raise ValueError("B must reuse A's P0; C/D must use the matching fresh P1")
     program_audit = None
     if any(variant in PROGRAM_VARIANTS for variant in args.variants):
         from .cfg_program import load_programs
@@ -719,7 +775,9 @@ def run_experiment(args, base=None):
             gc.collect()
             if device.type == "cuda":
                 torch.cuda.empty_cache()
-        return compare_run(root, "valid", reference_root=reference if rotating or pretraining else None)
+        return compare_run(root, "valid", reference_root=config.get("comparison_run_dir") or
+                           (reference if rotating or pretraining else None),
+                           reference_variant="dep_pretrain_cfg" if config.get("comparison_run_dir") else "cfg")
 
 
 def evaluate_run(args, base=None):
@@ -731,6 +789,13 @@ def evaluate_run(args, base=None):
                            shuffle_seed=config["seed"] if "cfg_ddg_shuffled" in args.variants else None)
     if cohort_hash(rows) != config["cohort_sha256"] or file_sha256(config["graphs"]) != config["graph_file_sha256"]:
         raise ValueError("evaluation data/graphs differ from the recorded run")
+    if config.get("region_dir"):
+        from .cfg_data import load_regions
+        partitions, audit = load_regions(config["region_dir"], rows, config["reference_run_dir"], views)
+        if audit["regions_sha256"] != config["regions_sha256"] or audit["region_schema"] != config["region_schema"]:
+            raise ValueError("evaluation region facts changed")
+        for key, partition in partitions.items():
+            views[key]["regions"] = partition
     if config.get("program_dir"):
         from .cfg_program import load_programs
         programs, audit = load_programs(config["program_dir"], rows, config["reference_run_dir"])
@@ -815,7 +880,9 @@ def evaluate_run(args, base=None):
             gc.collect()
             if device.type == "cuda":
                 torch.cuda.empty_cache()
-        return compare_run(root, args.split, reference_root=config.get("reference_run_dir"))
+        return compare_run(root, args.split,
+                           reference_root=config.get("comparison_run_dir") or config.get("reference_run_dir"),
+                           reference_variant="dep_pretrain_cfg" if config.get("comparison_run_dir") else "cfg")
 
 
 def parser():
@@ -835,6 +902,8 @@ def parser():
     run.add_argument("--output-dir", required=True)
     run.add_argument("--rotation-dir", help="prepared and graph-verified new PrimeVul train negatives")
     run.add_argument("--pretrain-dir", help="completed train-only source pretraining run")
+    run.add_argument("--region-dir", help="shared H/P region cache")
+    run.add_argument("--comparison-run-dir", help="A: corrected dependency-pretrained C result")
     run.add_argument("--program-dir", help="prepared check/update/use facts for program graph variants")
     run.add_argument("--reference-run-dir", help="completed original C run; reuse its exact vocabulary and settings")
     run.add_argument("--source-dataset", choices=("primevul", "cleanvul"), default="primevul")
@@ -872,6 +941,7 @@ def parser():
     compare = sub.add_parser("compare", help="recompute tables/error changes from saved predictions")
     compare.add_argument("--run-dir", required=True)
     compare.add_argument("--split", choices=("valid", "test"), default="valid")
+    compare.add_argument("--reference-variant", choices=("cfg", "dep_pretrain_cfg"), default="cfg")
     compare.add_argument("--reference-run-dir", help="read saved A/B/C predictions from a matching prior run")
     audit = sub.add_parser("audit-alignment", help="audit cached CFG node/source alignment without Qwen")
     audit.add_argument("--dataset", required=True)
@@ -897,6 +967,9 @@ def parser():
     build_rotation.add_argument("--java-home", default="/home/phy/jdk21")
     build_rotation.add_argument("--timeout", type=int, default=300)
     build_rotation.add_argument("--batch-size", type=int, default=8)
+    region_prepare = sub.add_parser("prepare-regions", help="prepare shared H/P regions using cached CFG and C vocabulary")
+    region_prepare.add_argument("--reference-run-dir", required=True)
+    region_prepare.add_argument("--output-dir", required=True)
     prepare_program_cmd = sub.add_parser("prepare-program", help="prepare cached check/update/use facts and train/valid queries")
     prepare_program_cmd.add_argument("--dataset", required=True)
     prepare_program_cmd.add_argument("--graphs", required=True)
@@ -911,10 +984,12 @@ def parser():
     pretrain_dep = sub.add_parser("pretrain-dep", help="one-epoch train-only CLM and relation pretraining")
     pretrain_dep.add_argument("--reference-run-dir", required=True)
     pretrain_dep.add_argument("--supervision-dir", help="existing scoped relation supervision; required for old modes")
+    pretrain_dep.add_argument("--region-dir", help="prepared H/P source-to-region targets")
+    pretrain_dep.add_argument("--reference-pretrain-dir", help="corrected P0 run for equal-budget P1 provenance")
     pretrain_dep.add_argument("--program-dir", help="prepared composition queries and structural facts")
     pretrain_dep.add_argument("--output-dir", required=True)
     pretrain_dep.add_argument("--modes", nargs="+", choices=("lm_pretrain", "dep_pretrain",
-                                                       "composition_pretrain"),
+                                                       "composition_pretrain", "region_pretrain"),
                               default=["lm_pretrain", "dep_pretrain"])
     pretrain_dep.add_argument("--device", default="auto")
     pretrain_dep.add_argument("--resume", action="store_true")
@@ -949,6 +1024,12 @@ def main():
                                        batch_size=args.batch_size)
             print(json.dumps({k: v for k, v in selection.items() if k != "selected_sample_keys"},
                              ensure_ascii=False), flush=True)
+        elif args.command == "prepare-regions":
+            from .cfg_data import prepare_regions
+            from transformers import AutoTokenizer
+            config = json.loads((Path(args.reference_run_dir) / "config.json").read_text())
+            tokenizer = AutoTokenizer.from_pretrained(config["model_path"], trust_remote_code=True)
+            print(json.dumps(prepare_regions(args.reference_run_dir, args.output_dir, tokenizer)), flush=True)
         elif args.command == "prepare-program":
             from transformers import AutoTokenizer
             from .cfg_program import prepare_program
@@ -971,7 +1052,8 @@ def main():
             print(json.dumps(pretrain_causal_dependency(
                 args.reference_run_dir, args.supervision_dir, args.output_dir,
                 modes=tuple(args.modes), device=args.device, resume=args.resume,
-                program_dir=args.program_dir),
+                program_dir=args.program_dir, region_dir=args.region_dir,
+                reference_pretrain_dir=args.reference_pretrain_dir),
                 ensure_ascii=False), flush=True)
         elif args.command == "eval-dep-relations":
             from .cfg_dependency import evaluate_fixed_relations
@@ -1005,7 +1087,8 @@ def main():
                                             modes=tuple(args.modes), device=args.device,
                                             resume=args.resume), ensure_ascii=False), flush=True)
         elif args.command == "compare":
-            compare_run(args.run_dir, args.split, reference_root=args.reference_run_dir)
+            compare_run(args.run_dir, args.split, reference_root=args.reference_run_dir,
+                        reference_variant=args.reference_variant)
         elif args.command == "audit-ddg":
             output = Path(args.output)
             if output.exists():
