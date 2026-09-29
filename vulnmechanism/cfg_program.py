@@ -19,7 +19,7 @@ MAX_USES = 16
 MAX_EVENTS = 32
 MAX_QUERIES = 32
 MAX_UPDATES = 8
-PROGRAM_SCHEMA = 7
+PROGRAM_SCHEMA = 8
 OPS = {"<": 1, "<=": 2, ">": 3, ">=": 4, "==": 5, "!=": 6}
 INVERSE = {"<": ">=", "<=": ">", ">": "<=", ">=": "<", "==": "!=", "!=": "=="}
 SWAP = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "!=": "!="}
@@ -410,7 +410,7 @@ class _Builder:
             return int(_holds(values[0], operator, values[1])), "confirmed_constant_comparison"
         return None, "unproved_current_value"
 
-    def record_use(self, path, target_info, use_id, use_span, operation):
+    def record_use(self, path, target_info, use_id, use_span, operation, *, operand_read=False):
         state = self.state(path, target_info)
         use_cfg = self.cfg(use_id)
         if not state["initialized"] or use_cfg is None:
@@ -484,6 +484,7 @@ class _Builder:
                                                  len(update_indices) > MAX_UPDATES)})
         events.append(self.event("use_array" if operation == "array_index" else "use_scalar",
                                  target_info, state, span=use_span, literal=state["constant"]))
+        events_for_updates = events
         if len(events) > MAX_EVENTS:
             self.stats["too_many_events_for_use"] += 1
             # Retain a flagged path, rather than silently proving a statement from the others.
@@ -497,60 +498,112 @@ class _Builder:
         for check, side in related:
             target, reference = check["operands"][side], check["operands"][1-side]
             update_indices = relation_updates.get((check["span"], side), [])
-            updates = [events[i]["span"] for i in update_indices]
+            updates = [events_for_updates[i]["span"] for i in update_indices]
             for desired in (1, 2):
                 verdict, reason = self.candidate(path, check, side, state, desired)
-                if path["incomplete"] or len(updates) > MAX_UPDATES:
+                if path["incomplete"] or len(updates) > MAX_UPDATES or len(events_for_updates) > MAX_EVENTS:
                     verdict, reason = None, "incomplete_or_update_limit"
                 candidates[(check["span"], side, desired)] = {
                     "label": verdict, "source": reason, "check": check,
                     "side": side, "target": target, "reference": reference,
-                    "current": state, "updates": updates[:MAX_UPDATES]}
+                    "current": state, "updates": updates[:MAX_UPDATES],
+                    "incomplete": bool(path["incomplete_history"] or path["incomplete"] or
+                                       len(updates) > MAX_UPDATES or len(events_for_updates) > MAX_EVENTS)}
         self.records[(use_span, operation)].append({
             "slice": {"events": events, "edges": edges, "plain_edges": plain_edges,
                       "relations": relations, "incomplete": path_incomplete},
-            "candidates": candidates, "use_node_id": use_id,
+            "candidates": candidates, "use_node_id": use_id, "operand_read": operand_read,
             "target_operand_span": target_info["span"], "incomplete": path_incomplete})
         self.use_count += 1
         self.stats[f"verified_{operation}_paths"] += 1
 
     def use(self, path, expression):
-        if any(item.type in {"call_expression", "update_expression", "assignment_expression"}
-               for item in walk(expression)):
+        """Admit only unconditional rvalue operands of a pure expression grammar.
+
+        A compound index yields scalar operand queries, never an index-bound claim.
+        The binding role remains conservative for the original DDG objective; only
+        this syntax-checked index context may admit its alias_or_address role.
+        """
+        def unwrap(node):
+            while node is not None and node.type in {"return_statement", "parenthesized_expression"}:
+                children = [c for c in node.named_children if c.type != "comment"]
+                node = children[0] if len(children) == 1 else None
+            return node
+
+        def array_base(node):
+            node = unwrap(node)
+            if node is None:
+                return False
+            if node.type == "identifier":
+                return True
+            if node.type == "field_expression":
+                return array_base(node.child_by_field_name("argument"))
+            return False
+
+        def reads(node, in_index=False):
+            node = unwrap(node)
+            if node is None:
+                return None
+            if node.type == "identifier":
+                binding = self.bindings.get(self.span(node))
+                if not binding or binding.get("integer_type") not in TYPES:
+                    return None
+                return [(node, None, in_index)]
+            if node.type in {"number_literal", "char_literal", "true", "false"}:
+                return []
+            if node.type == "binary_expression":
+                operator = node.child_by_field_name("operator")
+                if operator is None or operator.text not in {
+                        b"+", b"-", b"*", b"/", b"%", b"<<", b">>", b"&", b"|", b"^",
+                        b"<", b"<=", b">", b">=", b"==", b"!="}:
+                    return None
+                left = reads(node.child_by_field_name("left"), in_index)
+                right = reads(node.child_by_field_name("right"), in_index)
+                return None if left is None or right is None else left + right
+            if node.type == "unary_expression":
+                operator = node.child_by_field_name("operator")
+                if operator is not None and operator.text in {b"+", b"-", b"!", b"~"}:
+                    return reads(node.child_by_field_name("argument"), in_index)
+            if node.type == "subscript_expression" and array_base(node.child_by_field_name("argument")):
+                index = unwrap(node.child_by_field_name("index"))
+                if index is not None and index.type == "identifier":
+                    return [(index, node, True)]
+                # Nested memory accesses are not a pure scalar index expression.
+                if index is not None and not any(n.type == "subscript_expression" for n in walk(index)):
+                    return reads(index, True)
+            return None
+
+        candidates = reads(expression)
+        if candidates is None:
             self.stats["use_context_effect_unknown"] += 1
+            self.stats[f"use_skipped_{expression.type}"] += 1
             return
-        if self.use_count >= MAX_USES:
-            self.stats["use_limit"] += 1
-            self.structural_truncation = True
-            path["incomplete"] = True
-            return
-        subscripts = [item for item in walk(expression) if item.type == "subscript_expression"]
-        for subscript in subscripts:
-            argument, index = (subscript.child_by_field_name(name) for name in ("argument", "index"))
-            if argument is None or index is None or index.type != "identifier" or any(
-                    item.type == "call_expression" for item in walk(argument)):
-                self.stats["unsupported_array_operand"] += 1
+        seen = set()
+        for identifier, subscript, in_index in candidates:
+            span = self.span(identifier)
+            if span in seen:
                 continue
-            access_id = self.match("<operator>.indirectIndexAccess", subscript)
-            if access_id is None:
+            seen.add(span)
+            binding = self.bindings.get(span)
+            allowed_roles = {"read", "alias_or_address"} if in_index else {"read"}
+            if not binding or binding["role"] not in allowed_roles:
+                self.stats["use_non_rvalue"] += 1
                 continue
-            target_info = self.info(index)
-            if target_info is not None:
-                self.record_use(path, target_info, access_id, self.span(subscript), "array_index")
-        direct = expression
-        if direct.type == "return_statement":
-            direct = direct.named_children[0] if len(direct.named_children) == 1 else None
-        while direct is not None and direct.type == "parenthesized_expression":
-            direct = direct.named_children[0] if len(direct.named_children) == 1 else None
-        if direct is None or direct.type != "identifier" or self.use_count >= MAX_USES or (
-                self.stats["verified_scalar_read_paths"] >= 8):
-            return
-        binding = self.bindings.get(self.span(direct))
-        if binding and binding["role"] == "read":
-            target_info = self.info(direct)
-            if target_info is not None:
-                self.record_use(path, target_info, target_info["node_id"],
-                                self.span(direct), "scalar_read")
+            if self.use_count >= MAX_USES:
+                self.stats["use_limit"] += 1
+                self.structural_truncation = True
+                path["incomplete"] = True
+                return
+            info = self.info(identifier)
+            if info is None:
+                continue
+            if subscript is not None:
+                access = self.match("<operator>.indirectIndexAccess", subscript)
+                if access is not None:
+                    self.record_use(path, info, access, self.span(subscript), "array_index")
+            else:
+                self.record_use(path, info, info["node_id"], span, "scalar_read",
+                                operand_read=unwrap(expression).type != "identifier")
 
     def kill_binding(self, path, identifier, reason):
         """A verified direct local write affects one binding, without inventing its value."""
@@ -654,8 +707,11 @@ class _Builder:
                 left, right = (expression.child_by_field_name(name) for name in ("left", "right"))
                 op = expression.child_by_field_name("operator")
                 if op is not None and op.text == b"=":
-                    if right is not None and not any(item.type in {"assignment_expression", "update_expression"}
-                                                      for item in walk(right)):
+                    ordered = left is not None and not any(item.type in {
+                        "call_expression", "assignment_expression", "update_expression"}
+                        for item in walk(left))
+                    if ordered and right is not None and not any(item.type in {
+                            "assignment_expression", "update_expression"} for item in walk(right)):
                         self.use(path, right)
                     if (left is not None and left.type == "subscript_expression" and
                             right is not None and not any(item.type in {
@@ -728,7 +784,7 @@ class _Builder:
                        "reference_version": first["reference"].get("version"),
                        "reference_definition_span": (list(first["reference"].get("definition_span"))
                                                      if first["reference"].get("definition_span") else None),
-                       "operation": operation, "label": label,
+                       "operation": operation, "operand_read": paths[0]["operand_read"], "label": label,
                        "source": ("verified_counterexample" if label == 0 else
                                   "all_paths_support" if label == 1 else "unknown_incomplete_or_unproved"),
                        "paths": []}
@@ -744,8 +800,7 @@ class _Builder:
                             continue
                         target_def = item["target"].get("definition_span")
                         reference_def = item["reference"].get("definition_span")
-                        path_row = {"missing": False, "incomplete": bool(
-                            item["source"] == "incomplete_path"),
+                        path_row = {"missing": False, "incomplete": item["incomplete"],
                             "target_version": item["target"]["version"],
                             "reference_version": item["reference"].get("version"),
                             "target_definition_span": list(target_def) if target_def else None,
@@ -786,6 +841,41 @@ class _Builder:
         for name, value in (("positive", 1), ("negative", 0), ("unknown", None)):
             self.stats[f"functions_with_{name}_queries"] += any(
                 row["label"] == value for row in queries)
+        paths = [p for use in slices for p in use["paths"]]
+        self.stats["graph_relation_functions"] += any(p["relations"] for p in paths)
+        self.stats["graph_complete_relation_functions"] += any(
+            not p["incomplete"] and any(not r["incomplete"] for r in p["relations"]) for p in paths)
+        self.stats["different_topology_functions"] += any(p["edges"] != p["plain_edges"] for p in paths)
+        self.stats["incomplete_graph_paths"] += sum(p["incomplete"] for p in paths)
+        self.stats["graph_paths"] += len(paths)
+        categories = defaultdict(list)
+        for q in queries:
+            categories["all"].append(q)
+            categories["array_index" if q["operation"] == "array_index" else
+                       "operand_read" if q["operand_read"] else "direct_scalar_read"].append(q)
+            visible = [p for p in q["paths"] if not p["missing"]]
+            if len(q["paths"]) > 1:
+                categories["multipath"].append(q)
+            if visible and all(not p["update_spans"] for p in visible):
+                categories["no_update"].append(q)
+            update_spans = {tuple(span) for p in visible for span in p["update_spans"]}
+            events = [e for use in slices if use["use_span"] == q["use_span"]
+                      for p in use["paths"] for e in p["events"] if tuple(e["span"]) in update_spans]
+            for name, predicate in (("overwrite", lambda e: e["kind"] == "write"),
+                                    ("copy", lambda e: e["kind"] == "copy"),
+                                    ("constant_update", lambda e: e["kind"] == "write" and e["literal"] is not None)):
+                if any(predicate(e) for e in events):
+                    categories[name].append(q)
+        for category, group in categories.items():
+            self.stats[f"{category}_effective_functions"] += any(q["label"] is not None for q in group)
+            for name, label in (("positive", 1), ("negative", 0), ("unknown", None)):
+                self.stats[f"{category}_{name}_queries"] += sum(q["label"] == label for q in group)
+            self.stats[f"{category}_check_use_combinations"] += len({
+                (tuple(q["check_span"]), tuple(q["use_span"]), q["target_side"], q["operation"])
+                for q in group})
+            self.stats[f"{category}_effective_check_use_combinations"] += len({
+                (tuple(q["check_span"]), tuple(q["use_span"]), q["target_side"], q["operation"])
+                for q in group if q["label"] is not None})
         return {"schema": PROGRAM_SCHEMA, "slices": slices, "queries": queries}, self.stats
 
 
@@ -798,7 +888,8 @@ def build_program(record, graph, tokenizer=None, *, source_max_length=2048, pref
     return _Builder(record, graph, tokenizer, source_max_length, prefix_tokens).build()
 
 
-def prepare_program(dataset, graphs_path, reference_run_dir, output_dir, tokenizer):
+def prepare_program(dataset, graphs_path, reference_run_dir, output_dir, tokenizer, *,
+                    comparison_program_dir=None):
     """Reuse the saved graph and source; write structure for all splits, query labels only train/valid."""
     root = Path(output_dir)
     if root.exists():
@@ -812,12 +903,26 @@ def prepare_program(dataset, graphs_path, reference_run_dir, output_dir, tokeniz
             str(Path(dataset).resolve()) != config["dataset"] or
             file_sha256(graphs_path) != config["graph_file_sha256"]):
         raise ValueError("program dataset or graph cache differs from original C")
+    previous = {}
+    if comparison_program_dir is not None:
+        previous_root = Path(comparison_program_dir)
+        previous_audit = json.loads((previous_root / "audit.json").read_text())
+        if (previous_audit["cohort_sha256"] != cohort_hash(rows) or
+                previous_audit["reference_run_dir"] != str(reference)):
+            raise ValueError("comparison program differs from original C cohort")
+        from .cfg_data import read_jsonl
+        for split in ("train", "valid"):
+            path = previous_root / f"{split}.queries.jsonl"
+            if file_sha256(path) != previous_audit[f"{split}_queries_sha256"]:
+                raise ValueError("comparison query content differs from audit")
+            previous[split] = list(read_jsonl(path))
     graphs = load_graphs(graphs_path, rows)
     from .model import InputBuilder
     builder = InputBuilder(tokenizer, source_max_length=2048, context_max_length=384)
     root.mkdir(parents=True, exist_ok=False)
     totals = {split: Counter() for split in ("train", "valid")}
-    examples = {split: {"positive": [], "negative": [], "unknown": []}
+    current = {split: [] for split in ("train", "valid")}
+    examples = {split: {"positive": [], "negative": [], "unknown": [], "operand_read": []}
                 for split in ("train", "valid")}
     with (root / "program.jsonl").open("x", encoding="utf-8") as output, \
          (root / "train.queries.jsonl").open("x", encoding="utf-8") as train_out, \
@@ -833,6 +938,7 @@ def prepare_program(dataset, graphs_path, reference_run_dir, output_dir, tokeniz
             if split in totals:
                 totals[split].update(counts)
                 stream = train_out if split == "train" else valid_out
+                current[split].extend(program["queries"])
                 for query in program["queries"]:
                     stream.write(json.dumps(query, ensure_ascii=False) + "\n")
                     name = "unknown" if query["label"] is None else "positive" if query["label"] else "negative"
@@ -843,6 +949,12 @@ def prepare_program(dataset, graphs_path, reference_run_dir, output_dir, tokeniz
                             "check_text": record["raw_source"][slice(*query["check_span"])],
                             "use_text": record["raw_source"][slice(*query["use_span"])],
                             "reference_text": record["raw_source"][slice(*query["reference_span"])]})
+                    if query["operand_read"] and len(examples[split]["operand_read"]) < 4 and not any(
+                            item["sample_key"] == record["sample_key"] for item in examples[split]["operand_read"]):
+                        examples[split]["operand_read"].append({**query,
+                            "check_text": record["raw_source"][slice(*query["check_span"])],
+                            "use_text": record["raw_source"][slice(*query["use_span"])],
+                            "source_excerpt": record["raw_source"][max(0, query["use_span"][0]-60):query["use_span"][1]+60]})
             if index % 200 == 0 or index == len(rows):
                 print(f"program_prepare={index}/{len(rows)}", flush=True)
     readiness = {}
@@ -869,6 +981,26 @@ def prepare_program(dataset, graphs_path, reference_run_dir, output_dir, tokeniz
              "valid_queries_sha256": file_sha256(root / "valid.queries.jsonl"),
              "splits": {split: dict(counts) for split, counts in totals.items()},
              "examples": examples, "test_queries_generated": False}
+    if previous:
+        comparison = {}
+        for split in ("train", "valid"):
+            def combinations(group):
+                return {(q["sample_key"], tuple(q["check_span"]), tuple(q["use_span"]),
+                         q["target_side"], q["operation"]) for q in group if q["label"] is not None}
+            old, new = combinations(previous[split]), combinations(current[split])
+            old_functions, new_functions = {q[0] for q in old}, {q[0] for q in new}
+            added = new - old
+            comparison[split] = {
+                "old_effective_functions": len(old_functions), "new_effective_functions": len(new_functions),
+                "old_effective_combinations": len(old), "new_effective_combinations": len(new),
+                "added_functions": sorted(new_functions - old_functions),
+                "lost_functions": sorted(old_functions - new_functions),
+                "retained_functions": len(old_functions & new_functions),
+                "added_combinations_in_new_functions": sum(q[0] not in old_functions for q in added),
+                "added_combinations_in_existing_functions": sum(q[0] in old_functions for q in added),
+                "lost_combinations": len(old - new)}
+        audit["comparison"] = {"program_dir": str(Path(comparison_program_dir).resolve()),
+                               "program_schema": previous_audit["program_schema"], "splits": comparison}
     atomic_json(root / "audit.json", audit)
     return audit
 

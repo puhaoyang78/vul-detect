@@ -15,7 +15,7 @@ import torch
 from vulnmechanism.cfg_data import (GRAPH_SCHEMA, cohort_hash, file_sha256,
                                    source_hash)
 from vulnmechanism.cpg import JOERN_SOURCE_PREPROCESSING_VERSION
-from vulnmechanism.cfg_dependency import (ComposedRelationHead, accumulation_window_loss,
+from vulnmechanism.cfg_dependency import (COMPOSED_HEAD_VERSION, ComposedRelationHead, accumulation_window_loss,
                                          _checked_program_queries,
                                          evaluate_fixed_relations, pretrain_causal_dependency,
                                          relation_function_loss)
@@ -244,6 +244,15 @@ class ProgramFactTests(unittest.TestCase):
             self.assertGreater(audit["splits"]["train"]["query_positive"], 0)
             self.assertGreater(audit["splits"]["train"]["query_negative"], 0)
             self.assertFalse((prepared / "test.queries.jsonl").exists())
+            with redirect_stdout(io.StringIO()):
+                comparison = prepare_program(str(dataset), str(graphs), str(reference),
+                    str(root / "compared"), CharTokenizer(), comparison_program_dir=prepared)
+            for split in ("train", "valid"):
+                compared = comparison["comparison"]["splits"][split]
+                self.assertEqual(compared["added_functions"], [])
+                self.assertEqual(compared["lost_functions"], [])
+                self.assertEqual(compared["old_effective_combinations"], compared["new_effective_combinations"])
+
             programs, _ = load_programs(prepared, rows, reference)
             self.assertEqual(set(programs), {row["sample_key"] for row in rows})
             self.assertGreater(program_cost(programs, rows, 2)["train"]["event_states"], 0)
@@ -335,7 +344,8 @@ class ProgramFactTests(unittest.TestCase):
                 if mode == "composition_pretrain":
                     pretrain_config.update(program_dir=str(prepared.resolve()),
                                            program_sha256=audit["program_sha256"],
-                                           program_schema=PROGRAM_SCHEMA)
+                                           program_schema=PROGRAM_SCHEMA,
+                                           composed_head_version=COMPOSED_HEAD_VERSION)
                 (stage1 / "config.json").write_text(json.dumps(pretrain_config))
                 folder = stage1 / mode
                 folder.mkdir()
@@ -411,19 +421,19 @@ class ProgramFactTests(unittest.TestCase):
         self.assertEqual(negative["paths"][0]["update_tokens"], [])
         hidden = torch.randn(512, 4)
         head = ComposedRelationHead(4, 2)
-        with torch.no_grad():
-            head.output.weight.zero_()
-            head.output.bias.zero_()
-            head.output.weight[0, 10 * head.rank + 6] = 1
-            head.output.weight[0, 10 * head.rank + 7] = -1
-        self.assertEqual((head(hidden, positive).item(), head(hidden, negative).item()), (1, -1))
+        inputs = []
+        hook = head.path_query.register_forward_pre_hook(lambda module, args: inputs.append(args[0].detach()))
+        head(hidden, positive)
+        head(hidden, negative)
         repeated = copy.deepcopy(positive)
         repeated["paths"].append(copy.deepcopy(repeated["paths"][0]))
-        with torch.no_grad():
-            head.output.weight.zero_()
-            head.output.weight[0, 10 * head.rank + 16] = 1
-        self.assertEqual((head(hidden, positive).item(), head(hidden, repeated).item()),
-                         (0.125, 0.25))
+        head(hidden, repeated)
+        hook.remove()
+        self.assertEqual(inputs[0].shape, (1, 5 * head.rank + 17))
+        torch.testing.assert_close(inputs[0][:, :5 * head.rank], inputs[1][:, :5 * head.rank])
+        self.assertEqual(inputs[0][0, 5 * head.rank + 6:5 * head.rank + 8].tolist(), [1, 0])
+        self.assertEqual(inputs[1][0, 5 * head.rank + 6:5 * head.rank + 8].tolist(), [0, 1])
+        self.assertEqual(inputs[2][:, -1].tolist(), [0.25, 0.25])
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             row = record(source, "t0")
@@ -515,6 +525,110 @@ class ProgramFactTests(unittest.TestCase):
         for name, parameter in full.named_parameters():
             torch.testing.assert_close(parameter.grad, dict(micro.named_parameters())[name].grad)
 
+    def test_query_interaction_cpu_fit_and_noncomplementary_paths(self):
+        torch.manual_seed(42)
+        sources = ["int f(int i){if(i<10)return a[i];return 0;}",
+                   "int f(int i){if(i<10){i=20;return a[i];}return 0;}",
+                   "int f(int i){if(i<10){i=5;}else{i=20;}return a[i];}"]
+        queries = [[q for q in facts(source)[0]["queries"] if q["operation"] == "array_index"]
+                   for source in sources]
+        self.assertEqual([[q["label"] for q in group] for group in queries],
+                         [[1, 0], [0, 1], [0, 0]])
+        hidden = torch.randn(3, 512, 4)  # Fixed CPU states; no source model is loaded.
+        head = ComposedRelationHead(4, 8)
+        # Reproduce the schema-7 affine readout on its actual pre-MLP path features.
+        captured = []
+        hook = head.path_query.register_forward_pre_hook(lambda module, args: captured.append(args[0].detach()))
+        for x in hidden[:2]:
+            for query in queries[0]:
+                head(x, query)
+        hook.remove()
+        old_linear = torch.nn.Linear(10 * head.rank + 17, 1)
+        old_logits = torch.stack([old_linear(torch.cat((v[:, :40].amin(0),
+            v[:, :40].amax(0), v[0, 40:]))) for v in captured]).reshape(2, 2)
+        torch.testing.assert_close(old_logits[0, 0] - old_logits[0, 1],
+                                   old_logits[1, 0] - old_logits[1, 1])
+        optimizer = torch.optim.Adam(head.parameters(), lr=0.03)
+        targets = torch.tensor([1., 0., 0., 1., 0., 0.])
+        for _ in range(350):
+            optimizer.zero_grad()
+            logits = torch.stack([head(x, q) for x, group in zip(hidden, queries) for q in group])
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets)
+            loss.backward()
+            optimizer.step()
+        with torch.no_grad():
+            probabilities = torch.stack([head(x, q).sigmoid() for x, group in zip(hidden, queries)
+                                         for q in group])
+        self.assertTrue(torch.all(probabilities[targets == 1] > .95), probabilities)
+        self.assertTrue(torch.all(probabilities[targets == 0] < .05), probabilities)
+        for query in queries[2]:
+            reversed_query = copy.deepcopy(query)
+            reversed_query["paths"].reverse()
+            torch.testing.assert_close(head(hidden[2], query), head(hidden[2], reversed_query))
+        changed = copy.deepcopy(queries[0][0])
+        changed.update(label=0, source="arbitrary analyzer verdict", operand_read=True)
+        torch.testing.assert_close(head(hidden[0], changed), head(hidden[0], queries[0][0]))
+        x = hidden[1].clone().requires_grad_()
+        head.zero_grad()
+        head(x, queries[1][0]).backward()
+        q = queries[1][0]
+        for token in {q["check_token"], q["use_token"], q["target_token"], q["reference_token"],
+                      *q["paths"][0]["update_tokens"]}:
+            self.assertGreater(float(x.grad[token].abs().sum()), 0)
+        self.assertGreater(float(head.path_query[0].weight.grad[:, 5 * head.rank:].abs().sum()), 0)
+
+    def test_pure_operand_reads_and_excluded_contexts(self):
+        for expression in ("i+1", "(i)+1", "a[i+1]", "i+i", "~i", "(i<3)+1"):
+            source = "int f(int i){if(i<10){return " + expression + ";}return 0;}"
+            program, counts = facts(source)
+            selected = [q for q in program["queries"] if q["label"] is not None]
+            self.assertTrue(selected, (source, counts))
+            self.assertTrue(all(q["operation"] == "scalar_read" and q["operand_read"] for q in selected))
+            self.assertTrue(all(source[slice(*q["use_span"])] == "i" for q in selected))
+            self.assertEqual(len(selected), 4 if expression == "i+i" else 2)
+            self.assertEqual(len({(tuple(q["use_span"]), q["branch"]) for q in selected}), len(selected))
+        for expression in ("sizeof(i+1)", "sizeof(a[i])", "0 && a[i]", "1 || i",
+                           "i ? a[i] : i", "foo(i)", "MACRO(i)", "i++ + i", "&i", "*p+i",
+                           "(short)i", "i+UNKNOWN_MACRO"):
+            source = "int f(int i,int *p){if(i<10){return " + expression + ";}return 0;}"
+            program, _ = facts(source)
+            self.assertFalse(program["queries"], source)
+        for assignment in ("a[i++]=i+1", "a[foo()]=i+1", "a[i=20]=i+1"):
+            p, _ = facts("int f(int i){if(i<10){" + assignment + ";}return 0;}")
+            self.assertFalse(p["queries"], assignment)
+        source = "int f(int i){if(i<10){i=20;return i+1;}return 0;}"
+        p, _ = facts(source)
+        self.assertEqual({q["branch"]: q["label"] for q in p["queries"]}, {1: 0, 2: 1})
+        self.assertTrue(all(q["use_span"][0] > source.index("i=20") for q in p["queries"]))
+        copied, _ = facts("int f(int i){int j;if(i<10){j=i;return j+1;}return 0;}")
+        self.assertTrue(any(q["operand_read"] and q["label"] == 1 for q in copied["queries"]))
+        shadow, _ = facts("int f(int i){if(i<10){int i=20;return i+1;}return 0;}")
+        self.assertFalse(shadow["queries"])
+        truncated, _ = facts("int f(int i){/*" + "x"*2100 + "*/if(i<10){return i+1;}return 0;}")
+        self.assertTrue(truncated["queries"])
+        self.assertTrue(all(q["label"] is None for q in truncated["queries"]))
+        # No relaxed suffix, sign or conversion semantics in the check analyzer.
+        for literal in ("10U", "-1", "40000"):
+            p, _ = facts("int f(int i){if(i<" + literal + ")return i+1;return 0;}")
+            self.assertFalse(p["queries"])
+
+    def test_event_limit_keeps_queries_unknown(self):
+        source = "int f(int i){if(i<10){i=5;i=20;return i+1;}return 0;}"
+        with patch("vulnmechanism.cfg_program.MAX_EVENTS", 3):
+            program, counts = facts(source)
+        self.assertGreater(counts["too_many_events_for_use"], 0)
+        self.assertTrue(program["queries"])
+        self.assertTrue(all(q["label"] is None for q in program["queries"]))
+        self.assertTrue(all(p["incomplete"] for q in program["queries"] for p in q["paths"]))
+
+    def test_old_query_head_weights_rejected(self):
+        head = ComposedRelationHead(4, 8)
+        old = {name: value for name, value in head.state_dict().items()
+               if not name.startswith("path_query.")}
+        old["output.weight"] = torch.zeros(1, 10 * head.rank + 17)
+        with self.assertRaises(RuntimeError):
+            head.load_state_dict(old)
+
     def test_old_program_schema_rejected(self):
         source = "int f(int i){if(i<10)return a[i];return 0;}"
         program, _ = facts(source)
@@ -560,6 +674,25 @@ class ProgramFactTests(unittest.TestCase):
             e["kind"] == "CFG" and e["source"] == comparison)]
         cut_program, _ = facts(source, graph=cut)
         self.assertFalse(any(q["label"] is not None for q in cut_program["queries"]))
+
+    def test_real_joern_compound_index_is_only_an_operand_read(self):
+        fixture = json.loads((Path(__file__).parent / "fixtures" / "joern_operand_read.json").read_text())
+        self.assertEqual(fixture["split"], "train")
+        source, graph = fixture["source"], fixture["graph"]
+        program, _ = facts(source, graph=graph)
+        self.assertEqual({q["branch"]: q["label"] for q in program["queries"]}, {1: 0, 2: None})
+        self.assertIn("args[nargs - 1]", source)
+        for query in program["queries"]:
+            self.assertEqual(query["operation"], "scalar_read")
+            self.assertTrue(query["operand_read"])
+            self.assertEqual(source[slice(*query["use_span"])], "nargs")
+            self.assertEqual(query["use_span"], [328, 333])
+        altered = copy.deepcopy(graph)
+        use_id = program["queries"][0]["use_node_id"]
+        node = next(n for n in altered["nodes"] if n["id"] == use_id)
+        node["code"] = "wrong_source_position"
+        invalid, _ = facts(source, graph=altered)
+        self.assertFalse(invalid["queries"])
 
     def test_real_joern_long_control_uses_exact_ast_start(self):
         fragment = json.loads((Path(__file__).parent / "fixtures" /

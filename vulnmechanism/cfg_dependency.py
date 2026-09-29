@@ -473,6 +473,9 @@ class DirectedRelationHead(nn.Module):
                 self.use(use_hidden.float())).sum(dim=-1) / self.rank**0.5 + self.bias
 
 
+COMPOSED_HEAD_VERSION = 2
+
+
 class ComposedRelationHead(nn.Module):
     """Causal source positions plus an explicit comparison query; no analyzer verdict input."""
 
@@ -487,7 +490,9 @@ class ComposedRelationHead(nn.Module):
         self.update = nn.GRUCell(hidden_size, rank)
         # operator(6), desired branch(2), target side(2), reference kind(2),
         # no update, missing/incomplete path, operation, path count = 17 descriptors.
-        self.output = nn.Linear(10 * rank + 17, 1)
+        self.path_query = nn.Sequential(nn.Linear(5 * rank + 17, rank), nn.Tanh(),
+                                        nn.Linear(rank, rank), nn.Tanh())
+        self.output = nn.Linear(2 * rank, 1)
         self.rank = rank
 
     def forward(self, source_hidden, query):
@@ -531,8 +536,10 @@ class ComposedRelationHead(nn.Module):
             float(all(not p["update_tokens"] for p in query["paths"] if not p["missing"])),
             missing / count, incomplete / count,
             float(query["operation"] == "array_index"), count / 8.0))))
-        return self.output(torch.cat((stacked.amin(dim=0), stacked.amax(dim=0),
-                                      description))).squeeze(-1)
+        conditioned = self.path_query(torch.cat((
+            stacked, description.expand(stacked.shape[0], -1)), dim=-1))
+        return self.output(torch.cat((conditioned.amin(dim=0),
+                                      conditioned.amax(dim=0)))).squeeze(-1)
 
 
 def relation_function_loss(hidden, relation_batch, head):
@@ -803,7 +810,8 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
     if program_audit is not None:
         config.update(program_dir=str(Path(program_dir).resolve()),
                       program_sha256=program_audit["program_sha256"],
-                      program_schema=program_audit["program_schema"])
+                      program_schema=program_audit["program_schema"],
+                      composed_head_version=COMPOSED_HEAD_VERSION)
     root.mkdir(parents=True, exist_ok=True)
     from .cfg_data import output_lock
     with output_lock(root / "experiment"):
@@ -1061,6 +1069,8 @@ def evaluate_fixed_relations(pretrain_dir: str, output_dir: str, *, batch_size: 
                 audit["program_schema"] != config.get("program_schema")):
             raise ValueError("composition query provenance differs from stage 1")
         valid_counts = Counter(audit["splits"]["valid"])
+    if mode == "composition_pretrain" and config.get("composed_head_version") != COMPOSED_HEAD_VERSION:
+        raise ValueError("incompatible composed query head checkpoint")
     checkpoint_path = stage1 / mode / "last.pt"
     complete = json.loads((checkpoint_path.parent / "complete.json").read_text())
     checkpoint_sha256 = file_sha256(checkpoint_path)

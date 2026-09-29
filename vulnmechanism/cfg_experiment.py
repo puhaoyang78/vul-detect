@@ -550,7 +550,9 @@ def run_experiment(args, base=None):
                 raise ValueError("pretraining must match original C and the specified one-epoch objective")
             if any(PRETRAIN_MODE[v] == "composition_pretrain" for v in args.variants):
                 from .cfg_program import PROGRAM_SCHEMA
-                if (not args.program_dir or pretrain_config.get("program_dir") !=
+                from .cfg_dependency import COMPOSED_HEAD_VERSION
+                if (pretrain_config.get("composed_head_version") != COMPOSED_HEAD_VERSION or
+                        not args.program_dir or pretrain_config.get("program_dir") !=
                         str(Path(args.program_dir).resolve()) or
                         pretrain_config.get("program_schema") != PROGRAM_SCHEMA):
                     raise ValueError("composition stage 2 requires matching current-schema phase-1 facts")
@@ -900,6 +902,7 @@ def parser():
     prepare_program_cmd.add_argument("--graphs", required=True)
     prepare_program_cmd.add_argument("--reference-run-dir", required=True)
     prepare_program_cmd.add_argument("--output-dir", required=True)
+    prepare_program_cmd.add_argument("--comparison-program-dir", help="prior train/valid query audit for coverage comparison")
     prepare_dep = sub.add_parser("prepare-dep", help="prepare scoped scalar relations from the saved Joern graph")
     prepare_dep.add_argument("--dataset", required=True)
     prepare_dep.add_argument("--graphs", required=True)
@@ -952,7 +955,9 @@ def main():
             reference_config = json.loads((Path(args.reference_run_dir) / "config.json").read_text())
             tokenizer = AutoTokenizer.from_pretrained(reference_config["model_path"], trust_remote_code=True)
             print(json.dumps(prepare_program(args.dataset, args.graphs, args.reference_run_dir,
-                                             args.output_dir, tokenizer), ensure_ascii=False), flush=True)
+                                             args.output_dir, tokenizer,
+                                             comparison_program_dir=args.comparison_program_dir),
+                             ensure_ascii=False), flush=True)
         elif args.command == "prepare-dep":
             from transformers import AutoTokenizer
             from .cfg_dependency import prepare_supervision
