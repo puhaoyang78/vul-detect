@@ -188,8 +188,8 @@ class AttributeCFGEncoder(nn.Module):
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
                 mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
                              "cfg_ddg", "cfg_ddg_shuffled", "cfg_jk_mean", "cfg_jk_max",
-                             "program_plain", "program_state", "cfg_hierarchical"} or
-                (mode == "cfg_hierarchical" and steps != 5) or
+                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context"} or
+                (mode in {"cfg_hierarchical", "region_local", "region_context"} and steps != 5) or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
         self.mode, self.steps = mode, steps
@@ -202,6 +202,12 @@ class AttributeCFGEncoder(nn.Module):
         # Allocate after every shared module so C/F/G share seeded initialization.
         if mode in {"cfg_ddg", "cfg_ddg_shuffled"}:
             self.ddg_message = nn.Linear(hidden_size, hidden_size)
+        if mode in {"region_local", "region_context"}:
+            # Linear's constructor consumes RNG even though W is then zeroed.
+            # Isolate it so shared modules and subsequent training keep C's stream.
+            with torch.random.fork_rng(devices=[]):
+                self.region_projection = nn.Linear(hidden_size, hidden_size, bias=False)
+                nn.init.zeros_(self.region_projection.weight)
         self.output_dim = 2 * hidden_size
 
     def forward(self, batch: GraphBatch, token_hidden: torch.Tensor | None = None) -> torch.Tensor:
@@ -233,7 +239,7 @@ class AttributeCFGEncoder(nn.Module):
             incoming = transformed.clone()
             if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled",
                              "cfg_jk_mean", "cfg_jk_max", "program_plain", "program_state",
-                             "cfg_hierarchical"} and src.numel():
+                             "cfg_hierarchical", "region_local", "region_context"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             if use_ddg and ddg_src.numel():
                 ddg_transformed = self.ddg_message(state)
@@ -245,7 +251,7 @@ class AttributeCFGEncoder(nn.Module):
             stacked = torch.stack(step_states, dim=0)
             state = stacked.mean(dim=0) if self.mode == "cfg_jk_mean" else stacked.amax(dim=0)
         ptr = batch.ptr
-        if self.mode == "cfg_hierarchical":
+        if self.mode in {"cfg_hierarchical", "region_local", "region_context"}:
             if batch.regions is None:
                 raise ValueError("hierarchical CFG requires the shared region partition")
             combined = torch.cat((state, x), dim=-1)
@@ -254,18 +260,32 @@ class AttributeCFGEncoder(nn.Module):
             for members in batch.regions.members:
                 indices = torch.tensor(members, device=state.device)
                 weights = gates[indices].softmax(dim=0).unsqueeze(-1)
-                summaries.append((weights * combined[indices]).sum(dim=0))
-            state, x = torch.stack(summaries).chunk(2, dim=-1)
+                values = combined if self.mode == "cfg_hierarchical" else state
+                summaries.append((weights * values[indices]).sum(dim=0))
+            node_state = state
+            pooled_regions = torch.stack(summaries)
+            if self.mode == "cfg_hierarchical":
+                region_initial, region_x = pooled_regions.chunk(2, dim=-1)
+            else:
+                region_initial = pooled_regions
+            state = region_initial
             src, dst = batch.regions.edges
             mask = src != dst
             src, dst = src[mask], dst[mask]
             for _ in range(3):
                 transformed = self.message(state)
                 incoming = transformed.clone()
-                if src.numel():
+                if self.mode != "region_local" and src.numel():
                     incoming.index_add_(0, dst, transformed[src])
                 state = self.update(incoming, state)
-            ptr = batch.regions.ptr
+            if self.mode == "cfg_hierarchical":
+                x, ptr = region_x, batch.regions.ptr
+            else:
+                node_to_region = torch.empty(x.shape[0], dtype=torch.long, device=x.device)
+                for region, members in enumerate(batch.regions.members):
+                    node_to_region[list(members)] = region
+                context = (state - region_initial)[node_to_region]
+                state = node_state + self.region_projection(context)
         combined = torch.cat((state, x), dim=-1)
         scores = self.pool_gate(combined).squeeze(-1)
         return torch.stack([(scores[a:b].softmax(dim=0).unsqueeze(-1) * combined[a:b]).sum(dim=0)

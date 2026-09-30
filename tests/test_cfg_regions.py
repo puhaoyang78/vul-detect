@@ -294,7 +294,8 @@ class PipelineTests(unittest.TestCase):
             exp.run_experiment(exp.parser().parse_args(["run", *common, "--output-dir", str(a), "--variants",
                 "dep_pretrain_cfg", "--pretrain-dir", str(p0), "--reference-run-dir", str(reference)]), base=base)
             for stage1, folder, variants in ((p0, root/"b", ["dep_pretrain_hierarchical"]),
-                    (p1, root/"cd", ["region_pretrain_cfg", "region_pretrain_hierarchical"])):
+                    (p1, root/"cd", ["region_pretrain_cfg", "region_pretrain_hierarchical"]),
+                    (p0, root/"context", ["region_local", "region_context"])):
                 loaded_before = len(base.loaded)
                 expected_adapter = torch.load(stage1/("dep_pretrain" if stage1 == p0 else "region_pretrain")/"last.pt",
                                                weights_only=False)["adapter_state"]
@@ -312,6 +313,12 @@ class PipelineTests(unittest.TestCase):
                     self.assertFalse(any("region_head" in k or "relation_head" in k for k in ckpt["task_state"]))
                     hashes.append(ckpt["model_config"]["pretrain_checkpoint_sha256"])
                 self.assertEqual(len(set(hashes)), 1)
+            context_comparison = exp.compare_run(root/"context", "valid", reference_root=a,
+                                                   reference_variant="dep_pretrain_cfg")
+            self.assertIn("changes_region_context_vs_local", context_comparison)
+            old_h = exp.compare_run(root/"context", "valid", reference_root=root/"b",
+                                     reference_variant="dep_pretrain_hierarchical")
+            self.assertEqual(set(old_h["changes_vs_old_H"]), {"region_local", "region_context"})
             # Test evaluation consumes a frozen valid-selected threshold, never selects it.
             exp.evaluate_run(exp.parser().parse_args(["eval", "--run-dir", str(reference), "--variants",
                 "cfg", "--split", "test", "--device", "cpu"]), base=base)
@@ -322,6 +329,16 @@ class PipelineTests(unittest.TestCase):
                     "--variants", "region_pretrain_cfg", "region_pretrain_hierarchical", "--split", "test",
                     "--device", "cpu"]), base=base)
             self.assertEqual(set(result["changes_vs_A"]), {"region_pretrain_cfg", "region_pretrain_hierarchical"})
+            with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
+                exp.evaluate_run(exp.parser().parse_args(["eval", "--run-dir", str(root/"context"),
+                    "--variants", "region_local", "region_context", "--split", "test", "--device", "cpu"]), base=base)
+            # An old H classifier cannot be substituted for a new variant.
+            (root/"context"/"region_context"/"best.pt").write_bytes(
+                (root/"b"/"dep_pretrain_hierarchical"/"best.pt").read_bytes())
+            with self.assertRaisesRegex(ValueError, "checkpoint/config"):
+                exp.evaluate_run(exp.parser().parse_args(["eval", "--run-dir", str(root/"context"),
+                    "--variants", "region_context", "--split", "test", "--device", "cpu",
+                    "--replace-predictions"]), base=base)
             invalid_path = cache/"train.regions.jsonl"
             invalid_path.write_text((cache/"valid.regions.jsonl").read_text())
             audit["train_targets_sha256"] = data.file_sha256(invalid_path)

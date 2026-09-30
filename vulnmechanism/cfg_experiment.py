@@ -27,10 +27,11 @@ JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
 PROGRAM_VARIANTS = ("dep_pretrain_program_plain", "dep_pretrain_program_state",
                     "composition_pretrain_program_state")
-REGION_VARIANTS = ("dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
+REGION_CONTEXT_VARIANTS = ("region_local", "region_context")
+REGION_VARIANTS = (*REGION_CONTEXT_VARIANTS, "dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
 PRETRAIN_CFG_VARIANTS = (*REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
                          "composition_pretrain_cfg")
-PRETRAIN_MODE = {"dep_pretrain_hierarchical": "dep_pretrain",
+PRETRAIN_MODE = {"region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
                  "region_pretrain_cfg": "region_pretrain",
                  "region_pretrain_hierarchical": "region_pretrain", "lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
                  "dep_pretrain_program_plain": "dep_pretrain",
@@ -91,7 +92,7 @@ def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
     graph_batch = collate_graphs([views[k] for k in keys], [encoded[k] for k in keys],
                                  device=device, alignments=alignments, ddg_edges=ddg_edges,
                                  programs=programs,
-                                 regions=[views[k]["regions"] for k in keys] if mode == "cfg_hierarchical" else None)
+                                 regions=[views[k]["regions"] for k in keys] if mode in {"cfg_hierarchical", *REGION_CONTEXT_VARIANTS} else None)
     return ids, mask, graph_batch
 
 
@@ -183,6 +184,21 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             log({"event": "parameters", "graph_encoder": sum(p.numel() for p in model.task_modules["cfg_encoder"].parameters()),
                  "graph_classifier": sum(p.numel() for p in model.task_modules["cfg_classifier"].parameters()),
                  "trainable_total": sum(p.numel() for p in trainable)})
+        if config["variant"] in REGION_CONTEXT_VARIANTS:
+            work = {}
+            for split, records in (("train", train), ("valid", valid)):
+                graphs = [views[r["sample_key"]] for r in records]
+                n = sum(len(g["node_ids"]) for g in graphs)
+                r = sum(len(g["regions"]["members"]) for g in graphs)
+                e = sum(sum(a != b for a, b in g["edges"]) for g in graphs)
+                cross = sum(sum(a != b for a, b in g["regions"]["edges"]) for g in graphs)
+                work[split] = {"nodes": n, "regions": r, "node_updates": 5*n,
+                    "region_updates": 3*r, "node_edge_messages": 5*e,
+                    "region_edge_messages": 3*cross if config["variant"] == "region_context" else 0,
+                    "self_messages": 5*n+3*r, "pool_gate_rows": 2*n,
+                    "projection_rows": n}
+            log({"event": "graph_compute", "node_steps": 5, "region_steps": 3,
+                 "additional_parameters": config["graph_hidden_size"]**2, "splits": work})
         for epoch in range(config["epochs"]):
             model.train()
             epoch_train = train_epochs[epoch]
@@ -355,7 +371,7 @@ def compare_run(root: str | Path, split: str = "valid",
     if reference is not None:
         candidate_config = json.loads((root / "config.json").read_text())
         reference_config = json.loads((reference / "config.json").read_text())
-        if reference_variant == "dep_pretrain_cfg":
+        if reference_variant in {"dep_pretrain_cfg", "dep_pretrain_hierarchical"}:
             declared = {"initialization_policy", "pretrain_run_dir", "pretrain_relations_sha256",
                         "reference_run_dir", "region_dir", "regions_sha256", "region_schema", "comparison_run_dir"}
             if ({k: v for k, v in candidate_config.items() if k not in declared} !=
@@ -445,9 +461,18 @@ def compare_run(root: str | Path, split: str = "valid",
             "both_fixed_at_0_5": paired_changes(rows[reference_variant], predictions,
                                                  base_threshold=0.5, candidate_threshold=0.5)}
             for variant, predictions in rows.items() if variant != reference_variant}
-    atomic_json(root / f"comparison.{split}.json", result)
+    if "region_local" in rows and "region_context" in rows:
+        result["changes_region_context_vs_local"] = {
+            "validation_selected_thresholds": paired_changes(rows["region_local"], rows["region_context"]),
+            "both_fixed_at_0_5": paired_changes(rows["region_local"], rows["region_context"],
+                                                 base_threshold=0.5, candidate_threshold=0.5)}
+    if reference_variant == "dep_pretrain_hierarchical" and reference_variant in rows:
+        result["changes_vs_old_H"] = {variant: paired_changes(rows[reference_variant], predictions)
+            for variant, predictions in rows.items() if variant != reference_variant}
+    comparison_name = f"comparison.{split}" + (".vs_old_H" if reference_variant == "dep_pretrain_hierarchical" else "")
+    atomic_json(root / f"{comparison_name}.json", result)
     fields = ["variant", "accuracy", "precision", "recall", "f1", "mcc", "auc", "tp", "fp", "tn", "fn", "threshold"]
-    with (root / f"comparison.{split}.csv").open("w", newline="") as handle:
+    with (root / f"{comparison_name}.csv").open("w", newline="") as handle:
         out = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         out.writeheader()
         for variant, values in result["metrics"].items():
@@ -941,7 +966,7 @@ def parser():
     compare = sub.add_parser("compare", help="recompute tables/error changes from saved predictions")
     compare.add_argument("--run-dir", required=True)
     compare.add_argument("--split", choices=("valid", "test"), default="valid")
-    compare.add_argument("--reference-variant", choices=("cfg", "dep_pretrain_cfg"), default="cfg")
+    compare.add_argument("--reference-variant", choices=("cfg", "dep_pretrain_cfg", "dep_pretrain_hierarchical"), default="cfg")
     compare.add_argument("--reference-run-dir", help="read saved A/B/C predictions from a matching prior run")
     audit = sub.add_parser("audit-alignment", help="audit cached CFG node/source alignment without Qwen")
     audit.add_argument("--dataset", required=True)
