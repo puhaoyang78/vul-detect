@@ -171,6 +171,40 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
                       region_batch, behavior).to(device)
 
 
+class BoundFactEncoder(nn.Module):
+    """Bind each value to its ordered AST role path before multiset pooling."""
+    def __init__(self, sizes, roles):
+        super().__init__()
+        self.values = nn.ModuleList(nn.Embedding(size,16) for size in sizes)
+        self.roles = nn.Embedding(roles,8)
+        self.path_gru = nn.GRU(8,8,batch_first=True)
+        self.bind = nn.ModuleList(nn.Sequential(nn.Linear(24,16),nn.ReLU(),nn.Linear(16,16)) for _ in sizes)
+    def forward(self, rows, disabled=()):
+        device=self.roles.weight.device
+        paths=list(dict.fromkeys(tuple(fact[1]) for row in rows for facts in row for fact in facts))
+        path_index={p:i for i,p in enumerate(paths)}
+        if not paths:
+            return self.roles.weight.new_zeros((len(rows),17*len(self.values)))
+        lengths=torch.tensor([len(p) for p in paths])
+        padded=torch.zeros((len(paths),int(lengths.max())),dtype=torch.long,device=device)
+        for i,path in enumerate(paths):padded[i,:len(path)]=torch.tensor(path,device=device)
+        packed=nn.utils.rnn.pack_padded_sequence(self.roles(padded),lengths,batch_first=True,enforce_sorted=False)
+        _,hidden=self.path_gru(packed);hidden=hidden.squeeze(0)
+        columns=[]
+        for family,(embedding,bind) in enumerate(zip(self.values,self.bind)):
+            facts=[(i,f) for i,row in enumerate(rows) for f in row[family] if f[2] and family not in disabled]
+            pooled=hidden.new_zeros((len(rows),16));counts=hidden.new_zeros((len(rows),1))
+            if facts:
+                indices=torch.tensor([i for i,_ in facts],device=device)
+                values=torch.tensor([f[0] for _,f in facts],device=device)
+                role_ids=torch.tensor([path_index[tuple(f[1])] for _,f in facts],device=device)
+                bound=bind(torch.cat((embedding(values),hidden[role_ids]),-1))
+                pooled.index_add_(0,indices,bound)
+                counts.index_add_(0,indices,counts.new_ones((len(facts),1)))
+            columns.append(torch.cat((pooled/counts.clamp_min(1),counts.log1p()),-1))
+        return torch.cat(columns,-1)
+
+
 class AttributeCFGEncoder(nn.Module):
     """B/C, D/E, F/G, and CFG round-readout variants share this encoder.
 
@@ -191,7 +225,7 @@ class AttributeCFGEncoder(nn.Module):
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
                 mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
                              "cfg_ddg", "cfg_ddg_shuffled", "cfg_jk_mean", "cfg_jk_max",
-                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked"} or
+                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked", "joint_nodes", "joint_edges", "joint", "joint_shuffled"} or
                 (mode in {"cfg_hierarchical", "region_local", "region_context"} and steps != 5) or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
@@ -226,6 +260,24 @@ class AttributeCFGEncoder(nn.Module):
                     self.edge_behavior = nn.ModuleList(nn.EmbeddingBag(size, 8, mode="mean") for size in behavior_sizes[8:])
                     self.edge_hidden = nn.Linear(2*hidden_size+32, 128)
                     self.edge_output = nn.Linear(128, hidden_size, bias=False)
+        if mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled"}:
+            from .cfg_behavior import FAMILIES
+            if steps != 5 or behavior_sizes is None or len(behavior_sizes) != 13 or set(disabled_families)-set(FAMILIES):
+                raise ValueError("joint model requires role-bound schema 2 and five steps")
+            self.disabled_families=set(disabled_families)
+            with torch.random.fork_rng(devices=[]):
+                if mode != "joint_edges":
+                    with torch.random.fork_rng(devices=[]):
+                        self.bound_nodes=BoundFactEncoder(behavior_sizes[:8],behavior_sizes[-1])
+                        self.node_residual=nn.Linear(8*17,hidden_size,bias=False)
+                        nn.init.zeros_(self.node_residual.weight)
+                if mode != "joint_nodes":
+                    self.bound_edges=BoundFactEncoder(behavior_sizes[8:12],behavior_sizes[-1])
+                    self.edge_projection=nn.Linear(4*17,32,bias=False)
+                    self.semantic_hidden=nn.Linear(2*hidden_size+32,128)
+                    self.semantic_output=nn.Linear(128,hidden_size,bias=False)
+                    nn.init.zeros_(self.semantic_output.weight)
+        self.diagnostics = {}
         self.output_dim = 2 * hidden_size
 
     def forward(self, batch: GraphBatch, token_hidden: torch.Tensor | None = None) -> torch.Tensor:
@@ -268,6 +320,32 @@ class AttributeCFGEncoder(nn.Module):
                     behavior_edges=embed(EDGE_FAMILIES,self.edge_behavior,expanded,self.mode=="behavior_masked")
                     alternative_edge=torch.tensor([i for i,alts in enumerate(alternatives) for _ in alts],device=x.device)
                     alternative_counts=torch.tensor([len(a) for a in alternatives],device=x.device).unsqueeze(-1)
+        original_x = x
+        semantic = None
+        if self.mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled"}:
+            from .cfg_behavior import NODE_FAMILIES, EDGE_FAMILIES
+            if batch.behavior is None or any(g.get("schema")!=2 for g in batch.behavior):
+                raise ValueError("joint model refuses unbound/old behavior cache")
+            nodes=[v for graph in batch.behavior for v in graph["nodes"]]
+            alternatives=[v for graph in batch.behavior for v in graph["edges"]]
+            if len(nodes)!=len(x) or len(alternatives)!=batch.edges.shape[1]:
+                raise ValueError("joint attributes/CFG mismatch")
+            if self.mode!="joint_edges":
+                delta=self.node_residual(self.bound_nodes(nodes,{i for i,f in enumerate(NODE_FAMILIES) if f in self.disabled_families}))
+                x=x+delta
+                self.diagnostics["node_residual_rms"]=delta.detach().square().mean().sqrt()
+            if self.mode!="joint_nodes" and alternatives:
+                expanded=[a for alts in alternatives for a in alts]
+                neutral=[graph["neutral"] for graph in batch.behavior for alts in graph["edges"] for _ in alts]
+                disabled={i for i,f in enumerate(EDGE_FAMILIES) if f in self.disabled_families}
+                # Mirror unavailable families in the neutral record; UNKNOWN is not ordinary.
+                neutral=[[[[fact[0],fact[1],int(any(f[2] for f in row[i]))] for fact in family]
+                          for i,family in enumerate(n)] for row,n in zip(expanded,neutral)]
+                semantic=self.edge_projection(self.bound_edges(expanded,disabled))
+                neutral_semantic=self.edge_projection(self.bound_edges(neutral,disabled))
+                alternative_edge=torch.tensor([i for i,alts in enumerate(alternatives) for _ in alts],device=x.device)
+                alternative_counts=torch.tensor([len(a) for a in alternatives],device=x.device).unsqueeze(-1)
+                semantic_available=x.new_tensor([any(f[2] for i,fs in enumerate(row) if i not in disabled for f in fs) for row in expanded]).unsqueeze(-1)
         state = x
         src, dst = batch.edges
         # Remove duplicate CFG self edges: every mode already receives one self message.
@@ -284,7 +362,7 @@ class AttributeCFGEncoder(nn.Module):
             incoming = transformed.clone()
             if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled",
                              "cfg_jk_mean", "cfg_jk_max", "program_plain", "program_state",
-                             "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked"} and src.numel():
+                             "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked", "joint_nodes", "joint_edges", "joint", "joint_shuffled"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             if behavior_edges is not None:
                 all_src,all_dst=batch.edges
@@ -295,6 +373,16 @@ class AttributeCFGEncoder(nn.Module):
                 residual=residual/alternative_counts
                 # Every explicit self-loop adds its attributes, not a second self message.
                 incoming.index_add_(0,all_dst,residual)
+            if semantic is not None:
+                all_src,all_dst=batch.edges
+                endpoints=torch.cat((state[all_src[alternative_edge]],state[all_dst[alternative_edge]]),-1)
+                actual=self.semantic_output(torch.relu(self.semantic_hidden(torch.cat((endpoints,semantic),-1))))
+                neutral=self.semantic_output(torch.relu(self.semantic_hidden(torch.cat((endpoints,neutral_semantic),-1))))
+                modulation=torch.tanh(actual-neutral)*semantic_available
+                residual=state.new_zeros((batch.edges.shape[1],state.shape[-1]))
+                residual.index_add_(0,alternative_edge,transformed[all_src[alternative_edge]]*modulation)
+                incoming.index_add_(0,all_dst,residual/alternative_counts)
+                self.diagnostics["edge_modulation_rms"]=modulation.detach().square().mean().sqrt()
             if use_ddg and ddg_src.numel():
                 ddg_transformed = self.ddg_message(state)
                 incoming.index_add_(0, ddg_dst, ddg_transformed[ddg_src])
@@ -304,6 +392,8 @@ class AttributeCFGEncoder(nn.Module):
         if step_states is not None:
             stacked = torch.stack(step_states, dim=0)
             state = stacked.mean(dim=0) if self.mode == "cfg_jk_mean" else stacked.amax(dim=0)
+        if self.mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled"}:
+            x = original_x
         ptr = batch.ptr
         if self.mode in {"cfg_hierarchical", "region_local", "region_context"}:
             if batch.regions is None:
@@ -495,7 +585,8 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
                                           "cfg_source_aux", "cfg_source_detach",
                                           "cfg_rotation_fixed", "cfg_rotation_rotating",
                                           "lm_pretrain_cfg", "dep_pretrain_cfg",
-                                          "composition_pretrain_cfg", "region_pretrain_cfg"} else
+                                          "composition_pretrain_cfg", "region_pretrain_cfg", "control_cfg"} else
+            "joint" if config["variant"] == "control_joint" else
             "cfg_hierarchical" if config["variant"] in {"dep_pretrain_hierarchical",
                                                          "region_pretrain_hierarchical"} else
             "program_plain" if config["variant"] == "dep_pretrain_program_plain" else

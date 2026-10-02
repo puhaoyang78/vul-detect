@@ -473,6 +473,34 @@ class DirectedRelationHead(nn.Module):
                 self.use(use_hidden.float())).sum(dim=-1) / self.rank**0.5 + self.bias
 
 
+class ControlRelationHead(nn.Module):
+    """A nonlinear query head; only source positions and the requested branch enter."""
+    def __init__(self, hidden_size, rank=32):
+        super().__init__()
+        self.condition=nn.Linear(hidden_size,rank,bias=False)
+        self.operation=nn.Linear(hidden_size,rank,bias=False)
+        self.case=nn.Linear(hidden_size,rank,bias=False)
+        self.branch=nn.Embedding(4,8)
+        self.predict=nn.Sequential(nn.Linear(3*rank+8,128),nn.ReLU(),nn.Linear(128,1))
+    def forward(self, hidden, queries):
+        device=hidden.device
+        def index(name):
+            result=torch.tensor([q[name] for q in queries],device=device,dtype=torch.long)
+            if (result<0).any() or (result>=len(hidden)).any():
+                raise ValueError("control token outside visible source")
+            return result
+        conditions=self.condition(hidden[index('condition_token')].float())
+        operations=self.operation(hidden[index('use_token')].float())
+        branches=torch.tensor([q['branch'] for q in queries],device=device)
+        cases=conditions.new_zeros(conditions.shape)
+        selected=[i for i,q in enumerate(queries) if q['case_token'] is not None]
+        if selected:
+            positions=torch.tensor([queries[i]['case_token'] for i in selected],device=device)
+            if (positions<0).any() or (positions>=len(hidden)).any():raise ValueError("case token outside source")
+            cases=cases.index_copy(0,torch.tensor(selected,device=device),self.case(hidden[positions].float()))
+        return self.predict(torch.cat((conditions,operations,cases,self.branch(branches)),-1)).squeeze(-1)
+
+
 COMPOSED_HEAD_VERSION = 2
 
 
@@ -555,7 +583,11 @@ def relation_function_loss(hidden, relation_batch, head):
             continue
         expected = torch.tensor([row["label"] for row in relations],
                                 dtype=torch.float32, device=hidden.device)
-        if isinstance(head, ComposedRelationHead):
+        if isinstance(head, ControlRelationHead):
+            descriptions=[{key:row[key] for key in ('condition_token','use_token','branch','case_token')}
+                          for row in relations]
+            predicted = head(hidden[index], descriptions)
+        elif isinstance(head, ComposedRelationHead):
             predicted = torch.stack([head(hidden[index], row) for row in relations])
         else:
             indices = [torch.tensor([row[f"{stem}_token"] for row in relations],
@@ -847,25 +879,25 @@ def _checked_program_queries(program_dir, records, builder, split="train"):
 def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, output_dir: str,
                                *, modes=("lm_pretrain", "dep_pretrain"), device="auto",
                                resume=False, base=None, program_dir=None, region_dir=None,
-                               reference_pretrain_dir=None):
+                               reference_pretrain_dir=None, control_dir=None):
     """One train-only source pass per mode; the relationship task shares Qwen's forward."""
     import gc
     import math
     import random
     import sys
     import torch
-    from tqdm.auto import tqdm
+    from .progress import training_bar as tqdm, print_table
 
     if not modes or len(modes) != len(set(modes)) or any(
-            mode not in {"lm_pretrain", "dep_pretrain", "composition_pretrain", "region_pretrain"} for mode in modes):
+            mode not in {"lm_pretrain", "dep_pretrain", "composition_pretrain", "region_pretrain", "control_pretrain"} for mode in modes):
         raise ValueError("unsupported source pretraining mode")
     if "region_pretrain" in modes and (len(modes) != 1 or not region_dir or not reference_pretrain_dir):
         raise ValueError("P1 needs its own mode run, --region-dir and --reference-pretrain-dir")
     if "composition_pretrain" in modes and (not program_dir or len(modes) != 1):
         raise ValueError("composition pretraining requires --program-dir and its own mode run")
-    if any(mode in {"lm_pretrain", "dep_pretrain", "region_pretrain"} for mode in modes) and not supervision_dir:
+    if any(mode in {"lm_pretrain", "dep_pretrain", "region_pretrain", "control_pretrain"} for mode in modes) and not supervision_dir:
         raise ValueError("existing source pretraining requires --supervision-dir")
-    from .cfg_experiment import _base_module, _save_torch, _tokenizer
+    from .cfg_experiment import _base_module, _save_torch, _tokenizer, _gradient_norm
     base = _base_module() if base is None else base
     reference = Path(reference_run_dir).resolve()
     c_config = json.loads((reference / "config.json").read_text())
@@ -879,7 +911,7 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
         raise ValueError("pretraining data or graph identity differs from original C")
     builder = _tokenizer(base, c_config)
     old_supervision = old_audit = None
-    if any(mode in {"lm_pretrain", "dep_pretrain", "region_pretrain"} for mode in modes):
+    if any(mode in {"lm_pretrain", "dep_pretrain", "region_pretrain", "control_pretrain"} for mode in modes):
         old_supervision, old_audit = _checked_relation_rows(supervision_dir, train, builder)
         if old_audit["reference_run_dir"] != str(reference) or (
                 old_audit["train_cohort_sha256"] != c_config["train_cohort_sha256"]):
@@ -904,6 +936,23 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                 complete["mode"] != "dep_pretrain" or
                 complete["checkpoint_sha256"] != file_sha256(p0_root / "dep_pretrain" / "last.pt")):
             raise ValueError("P1 must match the corrected P0 initialization/data/budget")
+    control_supervision={};control_audit=None
+    if "control_pretrain" in modes:
+        from .cfg_control import load_control
+        if len(modes)!=1 or not control_dir or not reference_pretrain_dir:
+            raise ValueError("control pretraining requires its cache and corrected P0 reference")
+        control_supervision,control_audit=load_control(control_dir,rows,c_config)
+        p0_root=Path(reference_pretrain_dir).resolve()
+        p0_config=json.loads((p0_root/"config.json").read_text())
+        complete=json.loads((p0_root/"dep_pretrain/complete.json").read_text())
+        if (p0_config["c_config"]!=c_config or p0_config["relations_sha256"]!=old_audit["relations_sha256"] or
+            p0_config.get("relation_accumulation_normalization")!="window_effective_functions" or
+            p0_config["pretrain_epochs"]!=1 or p0_config["relation_alpha"]!=1 or
+            complete["checkpoint_sha256"]!=file_sha256(p0_root/"dep_pretrain/last.pt")):
+            raise ValueError("control pretraining must match P0 data, initialization and budget")
+        for split in ("train","valid"):
+            labels={q['label'] for r in rows if r['split']==split for q in control_supervision.get(r['sample_key'],[])}
+            if labels!={0,1}:raise ValueError(f"control {split} needs reliable positive and negative queries")
     program_supervision = program_audit = None
     if "composition_pretrain" in modes:
         program_supervision, program_audit = _checked_program_queries(program_dir, train, builder)
@@ -930,6 +979,10 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
               "objective": ("source_clm_plus_optional_composed_relation"
                             if "composition_pretrain" in modes else
                             "source_clm_plus_optional_scoped_scalar_relation")}
+    if control_audit is not None:
+        config.update(control_dir=str(Path(control_dir).resolve()),control_schema=control_audit['schema'],
+                      control_queries_sha256=control_audit['queries_sha256'],control_alpha=1.0,
+                      reference_pretrain_dir=str(p0_root),objective="source_clm_plus_dependency_plus_control")
     if region_audit is not None:
         config.update(region_dir=str(Path(region_dir).resolve()),
                       region_schema=region_audit["region_schema"],
@@ -980,11 +1033,13 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             lm_weight = _load_qwen_lm_weight(c_config["model_path"], hidden_size, resolved_device)
             with torch.random.fork_rng(devices=[]):
                 head = (DirectedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
-                        if mode in {"dep_pretrain", "region_pretrain"} else
+                        if mode in {"dep_pretrain", "region_pretrain", "control_pretrain"} else
                         ComposedRelationHead(hidden_size, config["relation_rank"]).to(resolved_device)
                         if mode == "composition_pretrain" else None)
                 region_head = (RegionReconstructionHead(hidden_size, region_audit["vocabulary_sizes"]).to(resolved_device)
                                if mode == "region_pretrain" else None)
+            with torch.random.fork_rng(devices=[]):
+                control_head=ControlRelationHead(hidden_size,config["relation_rank"]).to(resolved_device) if mode=="control_pretrain" else None
             supervision = (program_supervision if mode == "composition_pretrain" else
                            old_supervision if old_supervision is not None else {})
             lora_parameters = [p for p in encoder.parameters() if p.requires_grad]
@@ -993,10 +1048,13 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                 groups.append({"params": list(head.parameters()), "lr": c_config["graph_learning_rate"]})
             if region_head is not None:
                 groups.append({"params": list(region_head.parameters()), "lr": c_config["graph_learning_rate"]})
+            if control_head is not None:
+                groups.append({"params":list(control_head.parameters()),"lr":c_config["graph_learning_rate"]})
             optimizer = torch.optim.AdamW(groups, weight_decay=c_config["weight_decay"])
             trainable = lora_parameters + (list(head.parameters()) if head is not None else [])
             if region_head is not None:
                 trainable += list(region_head.parameters())
+            if control_head is not None:trainable += list(control_head.parameters())
             order = list(range(len(train)))
             random.Random(c_config["seed"]).shuffle(order)
             batch_size = c_config["batch_size"]
@@ -1006,6 +1064,8 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                 order, train, supervision if head is not None else {}, batch_size, accumulation)
             region_window_counts = accumulation_window_counts(
                 order, train, region_supervision, batch_size, accumulation)
+            control_window_counts=accumulation_window_counts(order,train,control_supervision,batch_size,accumulation)
+            total_control=0.0;control_functions=0
             optimizer.zero_grad(set_to_none=True)
             total_lm = total_dep = total_region = 0.0
             region_functions = 0
@@ -1043,6 +1103,12 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                         loss = loss + (region_loss * (r/R) if R else 0)
                         total_region += float(region_loss.detach()) * r
                         region_functions += r
+                    if control_head is not None:
+                        control_batch=[control_supervision.get(row['sample_key'],[]) for row in batch]
+                        control_loss,_,_=relation_function_loss(hidden,control_batch,control_head)
+                        k_control=sum(bool(q) for q in control_batch);_,K_control=control_window_counts[batch_index]
+                        loss=loss+(control_loss*k_control/K_control if K_control else 0)
+                        total_control+=float(control_loss.detach())*k_control;control_functions+=k_control
                     if not torch.isfinite(loss):
                         raise ValueError(f"non-finite pretrain loss at batch {batch_index + 1}")
                     loss.backward()
@@ -1053,6 +1119,7 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                     positive_relations += sum(labels)
                     negative_relations += len(labels) - sum(labels)
                     if (batch_index + 1) % accumulation == 0 or batch_index + 1 == num_batches:
+                        lora_norm=_gradient_norm(lora_parameters) if control_head is not None else None
                         norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                         if not torch.isfinite(norm):
                             raise ValueError("non-finite pretrain gradient norm")
@@ -1073,9 +1140,12 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                             if region_head is not None:
                                 event.update(effective_region_functions_so_far=region_functions,
                                              region_loss_mean_so_far=total_region/region_functions if region_functions else 0)
+                            if control_head is not None:
+                                event.update(lora_grad_norm=lora_norm,control_loss_mean_so_far=total_control/control_functions if control_functions else 0,
+                                             effective_control_functions=control_functions)
                             history.write(json.dumps(event) + "\n")
                             history.flush()
-                            print(json.dumps(event), flush=True)
+                            # Step details are persisted above; keep the live bar on one line.
                     bar.set_postfix(loss=f"{float(loss.detach()):.4f}", step=optimizer_steps, refresh=False)
                     del hidden, lm, dep, loss, ids, mask, region_loss
                 from .cfg_metrics import metrics
@@ -1092,21 +1162,27 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                            "relation_positive": positive_relations,
                            "relation_negative": negative_relations,
                            "relation_metrics_train_online": relation_metrics}
+                print_table(f"{mode} · Pretraining complete", ["CLM", "Dependency", "Steps"],
+                            [[f"{summary['lm_loss']:.5f}", f"{summary['relation_loss']:.5f}", optimizer_steps]])
                 if region_head is not None:
                     summary.update(effective_region_functions=region_functions,
                                    region_loss=total_region/region_functions if region_functions else 0,
                                    region_head_parameters=sum(p.numel() for p in region_head.parameters()))
+                if control_head is not None:
+                    summary.update(control_loss=total_control/control_functions if control_functions else 0,
+                                   effective_control_functions=control_functions)
                 history.write(json.dumps({"event": "epoch", **summary}) + "\n")
                 history.flush()
             checkpoint = {"mode": mode, "pretrain_config": config, "summary": summary,
                           "adapter_state": base._cpu_state(base.get_peft_model_state_dict(encoder)),
                           **({"relation_head_state": base._cpu_state(head.state_dict())} if head else {}),
+                          **({"control_head_state": base._cpu_state(control_head.state_dict())} if control_head else {}),
                           **({"region_head_state": base._cpu_state(region_head.state_dict())} if region_head else {})}
             _save_torch(folder / "last.pt", checkpoint)
             atomic_json(folder / "complete.json", {"mode": mode,
                                                      "checkpoint_sha256": file_sha256(folder / "last.pt"),
                                                      "summary": summary})
-            del encoder, head, region_head, lm_weight, optimizer, checkpoint, lora_parameters, trainable, groups
+            del encoder, head, region_head, control_head, lm_weight, optimizer, checkpoint, lora_parameters, trainable, groups
             gc.collect()
             if resolved_device.type == "cuda":
                 torch.cuda.empty_cache()

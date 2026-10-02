@@ -23,7 +23,9 @@ from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
 from .cfg_rotation import ROTATION_VARIANTS, epoch_train_rows, load_selected, schedule_report
 
-from .cfg_behavior import VARIANTS as BEHAVIOR_VARIANTS
+from .cfg_behavior import VARIANTS as BEHAVIOR_VARIANTS, JOINT_VARIANTS
+CONTROL_VARIANTS = ("control_cfg", "control_joint")
+JOINT_EXPERIMENTS = (*JOINT_VARIANTS, *CONTROL_VARIANTS)
 
 JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
@@ -31,9 +33,9 @@ PROGRAM_VARIANTS = ("dep_pretrain_program_plain", "dep_pretrain_program_state",
                     "composition_pretrain_program_state")
 REGION_CONTEXT_VARIANTS = ("region_local", "region_context")
 REGION_VARIANTS = (*REGION_CONTEXT_VARIANTS, "dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
-PRETRAIN_CFG_VARIANTS = (*BEHAVIOR_VARIANTS, *REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
+PRETRAIN_CFG_VARIANTS = (*JOINT_EXPERIMENTS, *BEHAVIOR_VARIANTS, *REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
                          "composition_pretrain_cfg")
-PRETRAIN_MODE = {**{v: "dep_pretrain" for v in BEHAVIOR_VARIANTS}, "region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
+PRETRAIN_MODE = {**{v:"dep_pretrain" for v in JOINT_VARIANTS}, **{v:"control_pretrain" for v in CONTROL_VARIANTS}, **{v: "dep_pretrain" for v in BEHAVIOR_VARIANTS}, "region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
                  "region_pretrain_cfg": "region_pretrain",
                  "region_pretrain_hierarchical": "region_pretrain", "lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
                  "dep_pretrain_program_plain": "dep_pretrain",
@@ -91,10 +93,15 @@ def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
     ddg_edges = ([views[k]["ddg_shuffled_edges" if mode == "cfg_ddg_shuffled" else "ddg_edges"]
                   for k in keys] if mode in DDG_VARIANTS else None)
     programs = [views[k]["program"] for k in keys] if mode in {"program_plain", "program_state"} else None
+    behavior=[views[k]["behavior"] for k in keys] if mode in (*BEHAVIOR_VARIANTS,*JOINT_VARIANTS) else None
+    if mode == "joint_shuffled":
+        behavior=[dict(graph, edges=list(graph['edges'])) for graph in behavior]
+        for key,graph in zip(keys,behavior):
+            random.Random('42/edge-semantics/'+key).shuffle(graph['edges'])
     graph_batch = collate_graphs([views[k] for k in keys], [encoded[k] for k in keys],
                                  device=device, alignments=alignments, ddg_edges=ddg_edges,
                                  programs=programs,
-                                 behavior=[views[k]["behavior"] for k in keys] if mode in BEHAVIOR_VARIANTS else None,
+                                 behavior=behavior,
                                  regions=[views[k]["regions"] for k in keys] if mode in {"cfg_hierarchical", *REGION_CONTEXT_VARIANTS} else None)
     return ids, mask, graph_batch
 
@@ -113,8 +120,9 @@ def _graph_scores(model, rows, builder, views, encoded, *, batch_size, device, c
     import torch
     model.eval()
     values, source_values = [], []
+    from .progress import training_bar
     with torch.no_grad():
-        for start in range(0, len(rows), batch_size):
+        for start in training_bar(range(0, len(rows), batch_size), desc="Validation / evaluation"):
             inputs = _graph_inputs(model, rows[start:start+batch_size], builder, views, encoded, device,
                                    coverage=coverage)
             if include_source:
@@ -131,6 +139,35 @@ def _graph_scores(model, rows, builder, views, encoded, *, batch_size, device, c
     return (values, source_values) if include_source else values
 
 
+def _branch_diagnostics(model, rows, builder, views, encoded, *, batch_size, device, output):
+    """One eval encoder pass gives all three branches and unscaled classification BCE."""
+    import torch
+    from .progress import training_bar
+    model.eval();scores=[];sums={k:0.0 for k in ('source','graph','fusion')}
+    with torch.no_grad(), Path(output).open('x',encoding='utf-8') as out:
+        for start in training_bar(range(0,len(rows),batch_size),desc='Fixed classification diagnostics'):
+            batch=rows[start:start+batch_size]
+            source,graph=model.branch_logits(*_graph_inputs(model,batch,builder,views,encoded,device))
+            logits={'source':source,'graph':graph,'fusion':source+graph}
+            labels=torch.tensor([r['label'] for r in batch],device=device,dtype=torch.float32)
+            probabilities={}
+            for name,values in logits.items():
+                if not torch.isfinite(values).all():raise ValueError('nonfinite branch diagnostic')
+                sums[name]+=float(torch.nn.functional.binary_cross_entropy_with_logits(values.float(),labels,reduction='sum'))
+                probabilities[name]=torch.sigmoid(values.float()).tolist()
+            for i,row in enumerate(batch):
+                out.write(json.dumps({'sample_key':row['sample_key'],'split':row['split'],'label':row['label'],
+                    **{name:values[i] for name,values in probabilities.items()}})+'\n')
+            scores.extend(probabilities['fusion'])
+    return scores,{name:value/len(rows) for name,value in sums.items()}
+
+
+def _gradient_norm(parameters):
+    import torch
+    values=[p.grad.detach().float().norm(2) for p in parameters if p.grad is not None]
+    return float(torch.stack(values).norm(2)) if values else 0.0
+
+
 def _save_torch(path, checkpoint):
     import torch
     path = Path(path)
@@ -143,7 +180,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
                  initial_adapter_state=None):
     import torch
     from .cfg_network import build_model
-    from tqdm.auto import tqdm
+    from .progress import training_bar, show_training_event
 
     train = [r for r in rows if r["split"] == "train"]
     valid = [r for r in rows if r["split"] == "valid"]
@@ -175,15 +212,18 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
     if dual_alpha is not None:
         from .rdrop import binary_rdrop_loss
     coverage = {"train": Counter(), "valid": Counter()} if aligned else None
+    diagnostic_train=sorted(train,key=lambda r:r['sample_key'])
+    random.Random(42).shuffle(diagnostic_train)
+    diagnostic_train=diagnostic_train[:64]
     step = 0
     batch_size, accumulation = config["batch_size"], config["gradient_accumulation"]
     with (folder / "history.jsonl").open("x", encoding="utf-8") as history:
         def log(row):
             history.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
             history.flush()
-            print(json.dumps(row, ensure_ascii=False, allow_nan=False), flush=True)
+            show_training_event(row)
 
-        if config["variant"] in (*REGION_VARIANTS, *BEHAVIOR_VARIANTS):
+        if config["variant"] in (*REGION_VARIANTS, *BEHAVIOR_VARIANTS, *JOINT_EXPERIMENTS):
             log({"event": "parameters", "graph_encoder": sum(p.numel() for p in model.task_modules["cfg_encoder"].parameters()),
                  "graph_classifier": sum(p.numel() for p in model.task_modules["cfg_classifier"].parameters()),
                  "trainable_total": sum(p.numel() for p in trainable)})
@@ -202,6 +242,23 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
                     "projection_rows": n}
             log({"event": "graph_compute", "node_steps": 5, "region_steps": 3,
                  "additional_parameters": config["graph_hidden_size"]**2, "splits": work})
+        if config['variant'] in JOINT_EXPERIMENTS:
+            node_extension=config['variant'] in ('joint_nodes','joint','joint_shuffled','control_joint')
+            edge_extension=config['variant'] in ('joint_edges','joint','joint_shuffled','control_joint')
+            work={}
+            for split, records in (('train',train),('valid',valid)):
+                count=Counter()
+                for row in records:
+                    view=views[row['sample_key']];count['node_updates']+=5*len(view['node_ids'])
+                    count['base_messages']+=5*(len(view['node_ids'])+sum(u!=v for u,v in view['edges']))
+                    if node_extension:
+                        count['node_fact_rows']+=sum(len(f) for n in view['behavior']['nodes'] for f in n)
+                    if edge_extension:
+                        count['conditional_mlp_rows']+=10*sum(len(a) for a in view['behavior']['edges'])
+                        count['edge_fact_rows']+=sum(len(f) for a in view['behavior']['edges'] for e in a for f in e)
+                work[split]=dict(count)
+            log({'event':'graph_compute','node_steps':5,'splits':work,
+                 'scope':'one graph pass per function; includes both actual and neutral conditional MLP rows'})
         for epoch in range(config["epochs"]):
             model.train()
             epoch_train = train_epochs[epoch]
@@ -213,7 +270,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             total_bce = total_kl = window_bce = window_kl = 0.0
             total_source_bce = total_fusion_bce = window_source_bce = window_fusion_bce = 0.0
             optimizer_steps = 0
-            bar = tqdm(range(0, len(order), batch_size), total=num_batches,
+            bar = training_bar(range(0, len(order), batch_size), total=num_batches,
                        desc=f"{config['variant']} epoch {epoch+1}/{config['epochs']}",
                        file=sys.stdout, dynamic_ncols=True, mininterval=1)
             for batch_index, start in enumerate(bar):
@@ -259,6 +316,11 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
                     window_source_bce += source_value*len(batch)
                     window_fusion_bce += fusion_value*len(batch)
                 if (batch_index+1) % accumulation == 0 or batch_index+1 == num_batches:
+                    gradient_diagnostics={}
+                    if config['variant'] in JOINT_EXPERIMENTS and (step==0 or (step+1)%config['log_every']==0 or batch_index+1==num_batches):
+                        gradient_diagnostics={'lora_grad_norm':_gradient_norm(p for p in model.encoder.parameters() if p.requires_grad),
+                                              'graph_grad_norm':_gradient_norm(graph_parameters),
+                            **{k:float(v) for k,v in model.task_modules['cfg_encoder'].diagnostics.items()}}
                     norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                     if not torch.isfinite(norm):
                         raise ValueError("non-finite gradient norm")
@@ -269,6 +331,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
                     if step == 1 or step % config["log_every"] == 0 or batch_index+1 == num_batches:
                         log(dict(event="step", epoch=epoch+1, step=step, loss=window_loss/window_samples,
                                  source_lr=config["learning_rate"], graph_lr=config["graph_learning_rate"],
+                                 **gradient_diagnostics,
                                  **({"bce": window_bce/window_samples, "kl": window_kl/window_samples,
                                      "alpha": dual_alpha} if dual_alpha is not None else {}),
                                  **({"source_bce": window_source_bce/window_samples,
@@ -278,11 +341,21 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
                         window_bce = window_kl = 0.0
                         window_source_bce = window_fusion_bce = 0.0
                 bar.set_postfix(loss=f"{value:.4f}", step=step, refresh=False)
-            validation_scores = _graph_scores(
-                model, valid, builder, views, encoded, batch_size=batch_size, device=device,
-                coverage=coverage["valid"] if aligned and epoch == 0 else None,
-                include_source=source_supervision)
-            scores, source_scores = validation_scores if source_supervision else (validation_scores, None)
+            fixed_bce=None
+            if config['variant'] in JOINT_EXPERIMENTS:
+                scores,valid_bce=_branch_diagnostics(model,valid,builder,views,encoded,batch_size=batch_size,
+                    device=device,output=folder/f'epoch{epoch+1}.valid.branches.jsonl')
+                _,train_bce=_branch_diagnostics(model,diagnostic_train,builder,views,encoded,batch_size=batch_size,
+                    device=device,output=folder/f'epoch{epoch+1}.train.branches.jsonl')
+                fixed_bce={'train_diagnostic':train_bce,'valid':valid_bce,
+                           'train_diagnostic_keys':[r['sample_key'] for r in diagnostic_train]}
+                source_scores=None
+            else:
+                validation_scores = _graph_scores(
+                    model, valid, builder, views, encoded, batch_size=batch_size, device=device,
+                    coverage=coverage["valid"] if aligned and epoch == 0 else None,
+                    include_source=source_supervision)
+                scores, source_scores = validation_scores if source_supervision else (validation_scores, None)
             threshold, validation = select_threshold([r["label"] for r in valid], scores)
             source_threshold, source_validation = (select_threshold([r["label"] for r in valid], source_scores)
                                                    if source_supervision else (None, None))
@@ -297,6 +370,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             log(dict(event="epoch", variant=config["variant"], epoch=epoch+1,
                      train_loss=total_loss/len(train), optimizer_steps=optimizer_steps,
                      validation_threshold=threshold, validation=validation,
+                     **({"fixed_classification_bce":fixed_bce} if fixed_bce is not None else {}),
                      **({"source_validation_threshold": source_threshold,
                          "source_validation": source_validation} if source_supervision else {}),
                      **({"training_loss": training_loss} if training_loss is not None else {})))
@@ -481,7 +555,13 @@ def compare_run(root: str | Path, split: str = "valid",
         out.writeheader()
         for variant, values in result["metrics"].items():
             out.writerow(dict(variant=variant, **values))
-    print(json.dumps({k: v for k, v in result.items() if k != "changes_vs_baseline"}, ensure_ascii=False, indent=2))
+    from .progress import print_table
+    columns = ["Variant", "MCC", "F1", "AUC", "Accuracy", "Threshold"]
+    print_table(f"CFG · {split}", columns, [
+        [name] + [f"{values[k]:.4f}" if values.get(k) is not None else "—"
+                  for k in ("mcc", "f1", "auc", "accuracy", "threshold")]
+        for name, values in result["metrics"].items()])
+    print(f"Results: {root / (comparison_name + '.json')}")
     return result
 
 
@@ -650,6 +730,26 @@ def run_experiment(args, base=None):
                       behavior_vocabulary_sha256=ba["vocabulary_sha256"],
                       disabled_behavior_families=sorted(args.disable_behavior_family),
                       comparison_run_dir=str(Path(args.comparison_run_dir).resolve()))
+    if any(v in JOINT_EXPERIMENTS for v in args.variants):
+        from .cfg_behavior import load_behavior, BOUND_SCHEMA
+        if any(v not in JOINT_EXPERIMENTS for v in args.variants) or not args.comparison_run_dir:
+            raise ValueError("joint experiments need A and cannot mix legacy variants")
+        a_config=json.loads((Path(args.comparison_run_dir)/'config.json').read_text())
+        expected_p0=a_config['pretrain_run_dir']
+        if (pretrain_config.get('relation_accumulation_normalization')!='window_effective_functions' or
+            (any(v in JOINT_VARIANTS for v in args.variants) and str(pretrain_root)!=expected_p0) or
+            (any(v in CONTROL_VARIANTS for v in args.variants) and
+             (pretrain_config.get('reference_pretrain_dir')!=expected_p0 or pretrain_config.get('control_schema')!=1))):
+            raise ValueError("joint/control experiments must match corrected P0 or equal-budget control pretraining")
+        config['comparison_run_dir']=str(Path(args.comparison_run_dir).resolve())
+        if any(v!='control_cfg' for v in args.variants):
+            if not args.behavior_dir:raise ValueError('joint models need bound attributes')
+            bv,ba=load_behavior(args.behavior_dir,rows,views,reference)
+            if ba['schema']!=BOUND_SCHEMA:raise ValueError('joint model refuses old unbound attributes')
+            config.update(behavior_dir=str(Path(args.behavior_dir).resolve()),behavior_schema=ba['schema'],
+                          behavior_sha256=ba['attributes_sha256'],behavior_sizes=bv.sizes(),
+                          behavior_vocabulary_sha256=ba['vocabulary_sha256'],
+                          disabled_behavior_families=sorted(args.disable_behavior_family))
     if any(v in REGION_VARIANTS for v in args.variants):
         from .cfg_data import load_regions
         if not args.region_dir or not args.comparison_run_dir or args.graph_steps != 5:
@@ -729,9 +829,11 @@ def run_experiment(args, base=None):
         base = _base_module() if base is None else base
         device = base._resolve_device(args.device)
         builder = _tokenizer(base, config)
-        print(json.dumps(dict(event="cohort", splits=dict(Counter(r["split"] for r in rows)),
-                              vocabulary_sizes=vocab.sizes(), graph_hidden_size=args.graph_hidden_size,
-                              graph_steps=args.graph_steps, graph_scope="full_function_cfg")), flush=True)
+        from .progress import print_table
+        splits = Counter(r["split"] for r in rows)
+        print_table("CFG · Experiment", ["Train", "Valid", "Test", "Hidden", "Steps"],
+                    [[splits["train"], splits["valid"], splits["test"],
+                      args.graph_hidden_size, args.graph_steps]])
         for variant in args.variants:
             folder = root / variant
             complete = folder / "complete.json"
@@ -905,11 +1007,18 @@ def evaluate_run(args, base=None):
                 model.task_modules.load_state_dict(checkpoint["task_state"])
                 encoded = {r["sample_key"]: vocab.encode(views[r["sample_key"]]) for r in selected}
                 coverage = Counter() if variant.startswith("aligned_") else None
-                predictions = _graph_scores(model, selected, builder, views, encoded, batch_size=args.batch_size,
-                                            device=device, coverage=coverage,
-                                            include_source=variant in SOURCE_SUPERVISION_VARIANTS)
-                scores, source_scores = (predictions if variant in SOURCE_SUPERVISION_VARIANTS
-                                         else (predictions, None))
+                if variant in JOINT_EXPERIMENTS:
+                    branch_path=folder/f'{args.split}.branches.jsonl'
+                    if branch_path.exists() and args.replace_predictions:branch_path.unlink()
+                    scores,fixed_bce=_branch_diagnostics(model,selected,builder,views,encoded,
+                        batch_size=args.batch_size,device=device,output=branch_path)
+                    atomic_json(folder/f'{args.split}.bce.json',fixed_bce)
+                else:
+                    predictions = _graph_scores(model, selected, builder, views, encoded, batch_size=args.batch_size,
+                                                device=device, coverage=coverage,
+                                                include_source=variant in SOURCE_SUPERVISION_VARIANTS)
+                    scores, source_scores = (predictions if variant in SOURCE_SUPERVISION_VARIANTS
+                                             else (predictions, None))
                 del model
             threshold = float(checkpoint["decision_threshold"])
             summary = _prediction_outputs(folder, args.split, selected, scores, threshold, builder,
@@ -1038,12 +1147,13 @@ def parser():
     pretrain_dep = sub.add_parser("pretrain-dep", help="one-epoch train-only CLM and relation pretraining")
     pretrain_dep.add_argument("--reference-run-dir", required=True)
     pretrain_dep.add_argument("--supervision-dir", help="existing scoped relation supervision; required for old modes")
+    pretrain_dep.add_argument("--control-dir")
     pretrain_dep.add_argument("--region-dir", help="prepared H/P source-to-region targets")
     pretrain_dep.add_argument("--reference-pretrain-dir", help="corrected P0 run for equal-budget P1 provenance")
     pretrain_dep.add_argument("--program-dir", help="prepared composition queries and structural facts")
     pretrain_dep.add_argument("--output-dir", required=True)
     pretrain_dep.add_argument("--modes", nargs="+", choices=("lm_pretrain", "dep_pretrain",
-                                                       "composition_pretrain", "region_pretrain"),
+                                                       "composition_pretrain", "region_pretrain", "control_pretrain"),
                               default=["lm_pretrain", "dep_pretrain"])
     pretrain_dep.add_argument("--device", default="auto")
     pretrain_dep.add_argument("--resume", action="store_true")
@@ -1065,17 +1175,115 @@ def parser():
     behavior.add_argument("--reference-run-dir", required=True)
     behavior.add_argument("--output-dir", required=True)
     behavior.add_argument("--supplement-path")
+    behavior.add_argument("--bound", action="store_true")
+    control_eval=sub.add_parser("eval-control",help="fixed train/valid dependency and control evaluation")
+    control_eval.add_argument("--pretrain-dir",required=True)
+    control_eval.add_argument("--output-dir",required=True)
+    control_eval.add_argument("--device",default="auto")
+    control_eval.add_argument("--batch-size",type=int,default=1)
+    control = sub.add_parser("prepare-control", help="prepare verified branch-conditioned control relations")
+    control.add_argument("--reference-run-dir", required=True)
+    control.add_argument("--output-dir", required=True)
     supplement = sub.add_parser("supplement-behavior", help="incrementally export attributes without changing original CFG")
     supplement.add_argument("--reference-run-dir", required=True)
     supplement.add_argument("--output", required=True)
     supplement.add_argument("--joern-dir", default="/home/phy/joern")
     supplement.add_argument("--java-home", default="/home/phy/jdk21")
+    for name in ("abc", "behavior", "joint", "control"):
+        short = sub.add_parser(name, help="short commands using the saved original C settings")
+        short.add_argument("action", choices=("train", "valid", "test", "prepare", "supplement", "ablate", "pretrain", "relations"))
+        short.add_argument("selection", nargs="?", help="training variant or ablation family")
+        short.add_argument("--output-dir")
+        short.add_argument("--behavior-dir")
+        short.add_argument("--device", default="cuda:0")
+        short.add_argument("--show-command", action="store_true", help="print the resolved command without running it")
     return p
+
+
+def short_command(args):
+    """Expand convenience commands into the existing, validated formal CLI."""
+    roots={"abc":"results/cfg_abc_seed42","behavior":"results/cfg_behavior_seed42",
+           "joint":"results/cfg_joint_seed42","control":"results/cfg_control_cfg_seed42"}
+    run = Path(args.output_dir or roots[args.command])
+    reference = Path("results/cfg_abc_seed42")
+    a = Path("results/cfg_dep_cfg_windowfix_seed42")
+    variants = list({"abc":DEFAULT_VARIANTS,"behavior":BEHAVIOR_VARIANTS,
+                     "joint":JOINT_VARIANTS,"control":CONTROL_VARIANTS}[args.command])
+    if args.selection:
+        from .cfg_behavior import FAMILIES
+        if args.action == "ablate" or (args.action in ("valid", "test") and args.selection in FAMILIES):
+            if args.command not in ("behavior","joint") or args.selection not in FAMILIES:
+                raise ValueError("ablate requires one node/edge attribute family")
+            run = run.with_name(run.name + "_without_" + args.selection)
+            variants = ["behavior_joint" if args.command=="behavior" else "joint"]
+        elif args.command=="joint" and args.action in ("train","test") and args.selection in ("nodes","edges","joint","shuffled"):
+            variants=["joint" if args.selection=="joint" else "joint_"+args.selection]
+        elif args.command=="control" and args.action in ("train","test") and args.selection in ("cfg","joint"):
+            variants=["control_"+args.selection]
+        elif args.action in ("train", "test") and args.command == "behavior" and args.selection in ("nodes", "edges", "joint", "masked"):
+            variants = ["behavior_" + args.selection]
+        else:
+            raise ValueError("selection must name a behavior variant or an ablation family")
+    elif args.action == "ablate":
+        raise ValueError("specify the family to ablate, e.g. ./cfg behavior ablate guard")
+    saved = json.loads((run / "config.json").read_text()) if (run / "config.json").exists() else {}
+    behavior_dir = args.behavior_dir or saved.get("behavior_dir", "data/cfg_joint_seed42" if args.command in ("joint","control") else "data/cfg_behavior_seed42")
+    if args.action == "prepare":
+        if args.command=="control":
+            return ["prepare-control","--reference-run-dir",str(reference),"--output-dir","data/cfg_control_seed42"]
+        if args.command not in ("behavior","joint"):
+            raise ValueError("use the existing build command for original CFG preparation")
+        return ["prepare-behavior", "--reference-run-dir", str(reference), "--output-dir", behavior_dir]+(["--bound"] if args.command=="joint" else [])
+    if args.action in ("pretrain","relations"):
+        if args.command!="control":raise ValueError('pretrain/relations are control commands')
+        p0=Path('results/cfg_dep_pretrain_windowfix_seed42')
+        if args.action=="relations":
+            return ['eval-control','--pretrain-dir','results/cfg_control_pretrain_seed42',
+                    '--output-dir',args.output_dir or 'results/cfg_control_relations_seed42','--device',args.device]
+        p0_config=json.loads((p0/'config.json').read_text())
+        return ['pretrain-dep','--reference-run-dir',str(reference),'--reference-pretrain-dir',str(p0),
+                '--supervision-dir',p0_config['supervision_dir'],'--control-dir','data/cfg_control_seed42',
+                '--output-dir',args.output_dir or 'results/cfg_control_pretrain_seed42',
+                '--modes','control_pretrain','--device',args.device,'--resume']
+    if args.action == "supplement":
+        return ["supplement-behavior", "--reference-run-dir", str(reference),
+                "--output", "data/graphs/primevul_behavior_supplement.jsonl"]
+    if args.action == "valid":
+        return ["compare", "--run-dir", str(run), "--split", "valid"] + (
+            ["--reference-run-dir", str(a), "--reference-variant", "dep_pretrain_cfg"]
+            if args.command != "abc" else [])
+    if args.action == "test":
+        return ["eval", "--run-dir", str(run), "--split", "test", "--device", args.device,
+                "--variants", *variants]
+    settings = json.loads((reference / "config.json").read_text())
+    # Only translate flags already accepted by the canonical run parser. Never
+    # merge provenance/model metadata into training hyperparameters.
+    run_parser = parser()
+    defaults = run_parser.parse_args(["run", "--dataset", settings["dataset"],
+        "--graphs", settings["graphs"], "--output-dir", str(run)])
+    argv = ["run", "--output-dir", str(run), "--device", args.device, "--resume", "--variants", *variants]
+    for key, value in settings.items():
+        if key in vars(defaults) and key not in ("output_dir", "device", "resume", "variants", "command"):
+            argv.extend(["--" + key.replace("_", "-"), str(value)])
+    if args.command != "abc":
+        argv.extend(["--reference-run-dir", str(reference), "--comparison-run-dir", str(a),
+                     "--pretrain-dir", saved.get("pretrain_run_dir", "results/cfg_control_pretrain_seed42" if args.command=="control" else "results/cfg_dep_pretrain_windowfix_seed42"),
+                     "--behavior-dir", behavior_dir])
+    if args.action == "ablate":
+        argv.extend(["--disable-behavior-family", args.selection])
+    return argv
 
 
 def main():
     args = parser().parse_args()
     try:
+        if args.command in ("abc", "behavior", "joint", "control"):
+            argv = short_command(args)
+            if args.show_command:
+                import shlex
+                print(shlex.join(["python", "-m", "vulnmechanism.cfg_experiment", *argv]))
+                return 0
+            args = parser().parse_args(argv)
         if args.command == "build":
             report = build_graphs(args.dataset, args.output, source_dataset=args.source_dataset,
                                   joern_dir=args.joern_dir, java_home=args.java_home,
@@ -1099,8 +1307,18 @@ def main():
             supplement_behavior(args.reference_run_dir,args.output,args.joern_dir,args.java_home)
         elif args.command == "prepare-behavior":
             from .cfg_behavior import prepare_behavior
-            report=prepare_behavior(args.reference_run_dir,args.output_dir,args.supplement_path)
+            report=prepare_behavior(args.reference_run_dir,args.output_dir,args.supplement_path,bound=args.bound)
             print(json.dumps({"output":args.output_dir,"splits":report["splits"]}),flush=True)
+        elif args.command == "eval-control":
+            from .cfg_control import evaluate_control
+            print(json.dumps(evaluate_control(args.pretrain_dir,args.output_dir,device=args.device,batch_size=args.batch_size)))
+        elif args.command == "prepare-control":
+            from .cfg_control import prepare_control
+            from transformers import AutoTokenizer
+            config=json.loads((Path(args.reference_run_dir)/'config.json').read_text())
+            tokenizer=AutoTokenizer.from_pretrained(config['model_path'],trust_remote_code=True)
+            report=prepare_control(args.reference_run_dir,args.output_dir,tokenizer)
+            print(json.dumps(report['splits']))
         elif args.command == "prepare-regions":
             from .cfg_data import prepare_regions
             from transformers import AutoTokenizer
@@ -1130,7 +1348,7 @@ def main():
                 args.reference_run_dir, args.supervision_dir, args.output_dir,
                 modes=tuple(args.modes), device=args.device, resume=args.resume,
                 program_dir=args.program_dir, region_dir=args.region_dir,
-                reference_pretrain_dir=args.reference_pretrain_dir),
+                reference_pretrain_dir=args.reference_pretrain_dir, control_dir=args.control_dir),
                 ensure_ascii=False), flush=True)
         elif args.command == "audit-regions":
             from .cfg_region_diagnostics import audit_regions

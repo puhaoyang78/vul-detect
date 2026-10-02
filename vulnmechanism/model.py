@@ -17,7 +17,7 @@ from peft import (
 )
 from torch import nn
 from transformers import AutoModel, AutoTokenizer
-from tqdm.auto import tqdm
+from .progress import training_bar as tqdm
 
 from .benchmark_view import record_dataset, record_split
 from .dataset import DATASET_SCHEMA_VERSION

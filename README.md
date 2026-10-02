@@ -449,70 +449,52 @@ done
 再检查原CFG完全一致；不按相同文本或ID配对。补导只追加到新文件，失败立即停止，
 再次执行跳过已持久化项；不会修改原图。前端未提供的类型或宏语义不会因补导而自动恢复。
 
+从仓库目录直接执行，无需激活环境或预设变量。`cfg` 使用本机已安装的
+`/home/phy/miniconda3/envs/vul-detect/bin/python`，只转发到正式入口。
+训练参数逐项继承原C保存的 `config.json`；已有结果中的属性缓存路径继续复用。
+完成的变体经过原身份检查后跳过，中断的训练不会被静默覆盖或自动续训。
+
 ```bash
-PY=/home/phy/miniconda3/envs/vul-detect/bin/python
-REF=results/cfg_abc_seed42
-P0=results/cfg_dep_pretrain_windowfix_seed42
-A=results/cfg_dep_cfg_windowfix_seed42
-ATTR=data/cfg_behavior_seed42
-RUN=results/cfg_behavior_seed42
+# 四组训练；也可在 train 后指定 nodes / edges / joint / masked 单独训练。
+./cfg behavior train
+./cfg behavior valid
+./cfg behavior test
 
-# 基于已有缓存准备全量属性；输出目录须不存在。
-"$PY" -m vulnmechanism.cfg_experiment prepare-behavior \
-  --reference-run-dir "$REF" --output-dir "$ATTR"
+# 单家族消融和对应评价，例如关闭 guard。
+./cfg behavior ablate guard
+./cfg behavior valid guard
+./cfg behavior test guard
 
-# 需要补充原生关系/属性时执行；保留旧图，支持增量重入。
-"$PY" -m vulnmechanism.cfg_experiment supplement-behavior \
-  --reference-run-dir "$REF" \
-  --output data/graphs/primevul_behavior_supplement.jsonl
-# 使用补导属性准备另一个独立缓存，不覆盖已使用的缓存。
-"$PY" -m vulnmechanism.cfg_experiment prepare-behavior \
-  --reference-run-dir "$REF" --output-dir data/cfg_behavior_supplemented_seed42 \
-  --supplement-path data/graphs/primevul_behavior_supplement.jsonl
-
-COMMON=(--dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl
-  --model-path /home/phy/models/Qwen2.5-Coder-7B-Instruct --source-dataset primevul
-  --reference-run-dir "$REF" --pretrain-dir "$P0" --comparison-run-dir "$A"
-  --behavior-dir "$ATTR" --source-max-length 2048 --seed 42 --epochs 3
-  --batch-size 1 --gradient-accumulation 8 --learning-rate 0.0002
-  --graph-learning-rate 0.001 --weight-decay 0.01 --graph-hidden-size 128
-  --graph-steps 5 --lora-r 16 --lora-alpha 32 --lora-dropout 0.05 --device cuda:0)
-
-# 正式训练，仅由用户执行。原P0+C复用A的已有结果。
-"$PY" -m vulnmechanism.cfg_experiment run "${COMMON[@]}" --output-dir "$RUN" \
-  --variants behavior_nodes behavior_edges behavior_joint behavior_masked
-
-# 各家族关闭消融；独立结果目录，设置保持一致。
-for FAMILY in node_kind api datatype literal operator access_form access_mode operand_role \
-              branch guard transfer loop_role; do
-  "$PY" -m vulnmechanism.cfg_experiment run "${COMMON[@]}" \
-    --output-dir "results/cfg_behavior_without_${FAMILY}_seed42" \
-    --variants behavior_joint --disable-behavior-family "$FAMILY"
+# 全部家族消融，出错即停止循环。
+for family in node_kind api datatype literal operator access_form access_mode operand_role branch guard transfer loop_role; do
+  ./cfg behavior ablate "$family" || break
 done
 
-# 主实验：valid比较、保存的valid阈值评价test、相对A纠错/新增错误。
-"$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$RUN" --split valid \
-  --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
-"$PY" -m vulnmechanism.cfg_experiment eval --run-dir "$RUN" --split test \
-  --variants behavior_nodes behavior_edges behavior_joint behavior_masked --device cuda:0
-"$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$RUN" --split test \
-  --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
+# 原 ABC 仍可使用原脚本，也可使用统一入口。
+./cfg abc train
+./cfg abc valid
+./cfg abc test
 
-for FAMILY in node_kind api datatype literal operator access_form access_mode operand_role \
-              branch guard transfer loop_role; do
-  DIR="results/cfg_behavior_without_${FAMILY}_seed42"
-  "$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$DIR" --split valid \
-    --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
-  "$PY" -m vulnmechanism.cfg_experiment eval --run-dir "$DIR" --split test \
-    --variants behavior_joint --device cuda:0
-  "$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$DIR" --split test \
-    --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
-done
+# 仅查看展开后的正式命令，不加载模型、不训练。
+./cfg behavior train --show-command
 
-"$PY" -m unittest tests.test_cfg_behavior tests.test_cpg_resolution \
-  tests.test_cfg_regions tests.test_cfg_ablation tests.test_cfg_dependency \
-  tests.test_cfg_region_context -q
+# 已有缓存无需再准备。prepare 的输出目录必须不存在。
+./cfg behavior prepare
+./cfg behavior supplement
 ```
+
+每轮训练显示一条青色动态进度条，验证结束显示指标表；逐步JSON仍完整写入
+原 `history.jsonl`，不再逐行刷屏。输出重定向到文件时自动关闭动态条。
+`valid` 比较保存的预测，`test` 沿用保存的valid阈值并输出比较/纠错文件。
+旧长参数入口及原ABC脚本保留，仍可显式指定独立路径和参数。
+新结果目录可用 `--output-dir`，不同属性缓存可用 `--behavior-dir`。
+
+```bash
+./cfg behavior train --output-dir results/my_behavior --behavior-dir data/my_behavior
+./cfg behavior valid --output-dir results/my_behavior
+./cfg behavior test --output-dir results/my_behavior
+```
+
 
 属性准备输出 `attributes.jsonl`、train词表及 `audit.json`，后者记录train/valid的
 各家族至少一个已知分量的覆盖、包含未知字段的节点/边数、OOV token计数、
@@ -521,3 +503,110 @@ done
 结构边数以去重后的原C CFG为准；边家族覆盖按边计数，可选转移不增加拓扑边数。
 训练日志记录参数量；预测和纠错统计沿用原流程。未经过正式训练，不能由属性覆盖率
 或代码完整性推断分类性能改善。
+
+## 保留原C的联合抽象与数据/控制关系预训练
+
+正式短入口为 `./cfg joint ...` 和 `./cfg control ...`，仍调用同一个训练器。
+旧 `behavior_*`、原C、P0和已有结果保留作历史对照。新缓存使用角色绑定schema 2；
+新模型拒绝schema 1，不会把旧节点替换方案的权重当成残差模型加载。
+
+研究问题是函数标签对局部程序行为的监督不足。图侧保留原C定义抽象并补充局部操作、
+操作数角色及控制转移；源码侧在CLM和可靠定义—使用监督上增加明确的控制关系。
+两者都不直接判定操作安全，也不新增第三个分类分支。
+
+依据：[DeepDFA论文](https://arxiv.org/abs/2212.08108)及其
+[官方四类特征加载实现](https://github.com/ISU-PAAL/DeepDFA/blob/master/DDFA/sastvd/linevd/graphmogrifier.py)
+支持保留定义抽象，而不是用新增属性替换它。
+[PDBERT论文](https://arxiv.org/abs/2402.00657)及
+[官方双线性解码器](https://github.com/ZJU-CTAG/PDBERT/blob/main/pretrain/comp/nn/struct_decoder/directed/simple_separated_struct_decoder.py)
+采用语句级控制和token级数据依赖任务；本项目不是对其双向CodeBERT/MLM的等同复现。
+本实现维持Qwen因果注意力、CLM及操作结束token取点。
+[Joern规范](https://cpg.joern.io/#dominators)明确了支配、后支配与CDG方向。
+[2025年的PLM漏洞检测研究](https://arxiv.org/abs/2507.16887)也讨论了语义预训练和复杂依赖的局限；
+因此不以“首次使用控制流”作为创新，也不由辅助任务拟合直接推断漏洞检测效果。
+
+图侧只有一个新实现：
+
+- 保留原C四类组合词表和 `x_C`。八类新增事实按所属对象身份去重，保存局部操作、
+  有序相对AST角色路径、家族和值；对象ID不输入模型。角色路径GRU与家族值嵌入经
+  两层非线性映射绑定，再汇聚均值和 `log(1+事实数)`。不同对象上的相同事实保留次数。
+- `x = x_C + P_node(a)`，末层无偏置、零初始化；最终读出保留 `[h_final;x_C]`。
+- 边消息采用 `base * (1 + tanh(F(h_u,h_v,e)-F(h_u,h_v,e_neutral)))`。
+  `F`隐藏层128维，末层无偏置、零初始化；四家族投影成32维。
+  neutral为普通无条件转移、无guard、无特殊循环角色。未知分量掩蔽，部分未知不抹去
+  其他已知事实；全不可用或显式关闭时调节为零。完整可选转移分别计算后平均。
+- 自消息只有一次；显式自环仍接受属性调节。五轮GRU与两路logit相加保持不变。
+  五轮不代表等计算：每个可选转移每轮计算实际/中性两次MLP，还增加事实路径编码。
+- 初始化输出与原C相同。残差末层先学习，上游随后才有梯度；原有零初始化图分类头
+  还会推迟图编码器的首次学习。浮点梯度比较使用数值精度容差，不能把求和顺序造成的
+  一个double ULP差异解释为不同数学梯度。
+
+控制标签采用**面向可终止路径的边控制依赖**：对于原CFG边 `(c,s)`，当操作 `u`
+后支配 `s`，但不严格后支配 `c` 时，`u`控制依赖该边。要求唯一METHOD入口与
+METHOD_RETURN出口、所有入口可达节点都能到达出口、无未知CFG节点；不能满足时
+仅退出控制监督。不可达节点不删除出分类图。循环的非终止运行不是这一定义的目标。
+只有恢复出完整真假分支集合或case/default集合的决策才参与监督。
+同一分支描述若对应多条转移，要求各转移对查询答案一致，否则unknown。
+这不是将缺少CDG边当负例；负例来自完成的后支配计算。
+
+预测头只接受条件、操作的完整可见结束token及所询问分支描述；case通过可靠对齐的
+case标签结束表示描述，不能对齐则跳过。目标操作真实所属分支、节点ID、标签、
+推导原因均不进入头。头采用非线性交互，避免查询仅成为固定偏置。
+同输入冲突被排除，2048-token外或位置不可靠的点跳过。每函数最多64条，先按
+token位置规范排序，再固定seed采样；优先选择同条件/分支下邻近操作作正负对照，
+不重复填充。采样不依赖Joern编号或漏洞标签，train/valid准备后不再重新采样。
+
+新阶段1为 `CLM + dependency + control`，系数均为1，训练1 epoch。
+两类关系各自按函数内均值、累积窗口有效函数均值归一化；CLM保留原口径。
+新阶段1从原始Qwen开始，与P0共享源码、顺序、初始化、token预算和更新次数。
+新增头隔离初始化随机数；阶段2只加载LoRA。F/G复用一次新预训练。
+
+必要对照：A复用P0+原C；`joint_nodes / joint_edges / joint / joint_shuffled` 对应B/C/D/E；
+`control_cfg / control_joint` 对应F/G。E按固定seed在函数内打乱**完整边属性记录**，
+不拆散branch和guard，不改变拓扑、节点输入、属性分布或模型容量。
+
+每轮分类保存同一固定最多64个train样本和完整valid的eval模式BCE，以及同一次前向
+产生的source/graph/fusion分数。文件为 `epochN.{train,valid}.branches.jsonl`，BCE写入
+原history。train诊断成员在训练前固定，不按模型错误选择。源码分支是联合训练后的
+分支，不是独立源码baseline。裁剪前LoRA/图梯度范数与残差/调节幅度按原日志间隔记录。
+checkpoint及阈值仍只由融合valid MCC选择。
+固定关系评价保存逐查询logit/score、函数平均BCE、AUC/MCC、类别和独立函数覆盖；
+常量参照只由train的函数平均正例率估计，平滑固定为1e-6，不在valid调参。
+固定评价与在线训练均值分开记录，不跨不同目标比较总loss。
+
+```bash
+# 已准备好的目录直接复用；prepare不覆盖已有缓存。
+./cfg joint prepare
+./cfg control prepare
+
+# 必要时补导原生Joern属性；不改变原CFG，支持增量重入。
+./cfg joint supplement
+# 使用补导文件仍走同一个正式准备入口。
+./cfg prepare-behavior --reference-run-dir results/cfg_abc_seed42 --bound \
+  --supplement-path data/graphs/primevul_behavior_supplement.jsonl \
+  --output-dir data/cfg_joint_supplemented_seed42
+
+# 以下正式训练本轮不自动执行。
+./cfg control pretrain        # 一次新阶段1；从原始Qwen开始
+./cfg joint train             # B/C/D/E，复用有效P0
+./cfg control train           # F/G，复用同一个新LoRA
+
+./cfg joint valid
+./cfg control valid
+./cfg control relations       # 固定阶段1的train/valid关系评价和train-only常量参照
+
+# 方法冻结后：按已保存的valid阈值评价test并生成相对A纠错统计。
+./cfg joint test
+./cfg control test
+
+# 必要的单家族消融；不自动展开组合搜索。
+./cfg joint ablate guard
+./cfg joint valid guard
+./cfg joint test guard
+
+# 查看实际继承的参数，不启动模型。
+./cfg joint train --show-command
+./cfg control pretrain --show-command
+
+./cfg --help
+```

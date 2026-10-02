@@ -158,11 +158,16 @@ class LocalGraph:
         return self._syntax_parts[node].get(field)
     def body(self,node):
         control=self.prop(node).get('CONTROL_STRUCTURE_TYPE')
+        # Joern AST role slots, verified against braced/unbraced and declaration
+        # initializer exports; these are not CFG successor or source-line guesses.
         if control=='FOR':
-            blocks=[c for c in self.children(node) if self.kind(c)=='BLOCK']
-            return max(blocks,key=lambda c:self.prop(c).get('ORDER',-1)) if blocks else None
-        blocks=[c for c in self.children(node) if self.kind(c)=='BLOCK' and c!=self.condition(node)]
-        return min(blocks,key=lambda c:self.prop(c).get('ORDER',-1)) if blocks else None
+            children=[c for c in self.children(node) if self.kind(c)!='LOCAL']
+            candidate=max(children,key=lambda c:self.prop(c).get('ORDER',-1)) if children else None
+            return candidate if candidate not in (self.condition(node),self.syntax_part(node,'update')) else None
+        if control in ('IF','WHILE','SWITCH'):return self.ordered(node,2)
+        if control=='DO':return self.ordered(node,1)
+        blocks=[c for c in self.children(node) if self.kind(c)=='BLOCK']
+        return blocks[0] if len(blocks)==1 else None
     def condition(self,node):
         known=self.conditions.get(node, [])
         if len(known)==1:return known[0]
@@ -241,7 +246,7 @@ class LocalGraph:
         return 'READ'
 
 
-def node_features(g,root):
+def node_features(g,root,local=True):
     p=g.prop(root);kind=g.kind(root)
     features={f:[] for f in NODE_FAMILIES}
     features['node_kind']=[kind]
@@ -251,7 +256,7 @@ def node_features(g,root):
     if kind=='METHOD':features['node_kind'].append('entry')
     if kind=='METHOD_RETURN':features['node_kind'].append('exit')
     if any(root==g.condition(parent) for parent in g.parents[root]):features['node_kind'].append('condition')
-    for n in g.local(root):
+    for n in (g.local(root) if local else [root]):
         q=g.prop(n);k=g.kind(n);op=g.op(n);role='result' if n==root else g.role(n)
         if k in ('IDENTIFIER','CALL','LITERAL','METHOD_RETURN','METHOD_PARAMETER_IN'):
             features['datatype'].extend(type_features(q.get('TYPE_FULL_NAME'),role))
@@ -350,6 +355,8 @@ def extract_behavior(graph):
         cond=g.condition(root)
         if control in ('IF','WHILE','FOR','DO') and cond:
             body=g.body(root)
+            if body is None:
+                condition_rules[cond].append((None,None,True));continue
             other=[c for c in g.children(root) if g.prop(c).get('CONTROL_STRUCTURE_TYPE')=='ELSE']
             alternative=other[0] if control=='IF' and len(other)==1 else None
             positive=g.descendants(body)&used
@@ -368,6 +375,12 @@ def extract_behavior(graph):
             targets={}
             for n in g.descendants(root):
                 if g.kind(n)!='JUMP_TARGET':continue
+                ancestors=list(g.parents[n]);nearest=None
+                while len(ancestors)==1:
+                    parent=ancestors[0]
+                    if g.prop(parent).get('CONTROL_STRUCTURE_TYPE')=='SWITCH':nearest=parent;break
+                    ancestors=g.parents[parent]
+                if nearest!=root:continue
                 code=g.nodes[n]['code'].strip()
                 if re.match(r'^default\s*:',code):targets[n]=('default',[])
                 elif re.match(r'^case\b',code):targets[n]=('case',literal(re.sub(r'^case\s*|:\s*$','',code)))
@@ -378,6 +391,8 @@ def extract_behavior(graph):
     for (a,b),loop in zip(view['edges'],loops):
         u,v=ids[a],ids[b];branches=[]
         for positive,negative,has_else in condition_rules.get(u,()):
+            if positive is None:
+                branches.append(('UNKNOWN',[]));continue
             if v in positive:branches.append(('true',[]))
             if v in negative:branches.append(('false',[]))
             if v not in positive and v not in negative:
@@ -432,7 +447,7 @@ class BehaviorVocabulary:
     def sizes(self):return [len(self.values[f]) for f in FAMILIES]
 
 
-def prepare_behavior(reference_run_dir,output_dir,supplement_path=None):
+def prepare_behavior(reference_run_dir,output_dir,supplement_path=None, *, bound=False):
     root=Path(output_dir);reference=Path(reference_run_dir).resolve()
     if root.exists():raise FileExistsError(f'behavior output exists: {root}')
     config=json.loads((reference/'config.json').read_text())
@@ -451,7 +466,7 @@ def prepare_behavior(reference_run_dir,output_dir,supplement_path=None):
             graphs[key]=item['graph'];supplemented.add(key)
     features={};counts={s:Counter() for s in ('train','valid')};examples={s:[] for s in counts}
     for i,row in enumerate(records):
-        key=row['sample_key'];item=extract_behavior(graphs.pop(key));features[key]=item
+        key=row['sample_key'];item=(extract_bound_behavior if bound else extract_behavior)(graphs.pop(key));features[key]=item
         if row['split'] in counts:
             c=counts[row['split']];c.update(functions=1,nodes=len(item['nodes']),edges=len(item['edges']),supplemented_functions=int(key in supplemented))
             for values in item['nodes']:
@@ -468,11 +483,16 @@ def prepare_behavior(reference_run_dir,output_dir,supplement_path=None):
                 c['branch_edges']+=any(a[0][0] in ('true','false','case','default') for a in alternatives)
             if len(examples[row['split']])<2:examples[row['split']].append({'sample_key':key,'source':row['raw_source'],'attributes':item})
         if (i+1)%200==0:print(f'behavior_prepare={i+1}/{len(records)}',flush=True)
-    vocab=BehaviorVocabulary.fit([r for r in records if r['split']=='train'],features)
+    vocab=(BoundVocabulary if bound else BehaviorVocabulary).fit([r for r in records if r['split']=='train'],features)
     for row in records:
         if row['split'] not in counts:continue
         item=features[row['sample_key']];c=counts[row['split']]
-        for families,groups in ((NODE_FAMILIES,item['nodes']), (EDGE_FAMILIES,[v for alts in item['edges'] for v in alts])):
+        if bound:
+            node_groups=[[[f['value'] for f in facts] for facts in node] for node in item['node_facts']]
+            edge_groups=[[[f['value'] for f in facts] for facts in alt] for alts in item['edge_facts'] for alt in alts]
+        else:
+            node_groups=item['nodes'];edge_groups=[v for alts in item['edges'] for v in alts]
+        for families,groups in ((NODE_FAMILIES,node_groups), (EDGE_FAMILIES,edge_groups)):
             for values in groups:
                 for f,tokens in zip(families,values):
                     c[f+'_tokens']+=len(tokens)
@@ -482,24 +502,33 @@ def prepare_behavior(reference_run_dir,output_dir,supplement_path=None):
         for row in records:
             out.write(json.dumps({'sample_key':row['sample_key'],'split':row['split'],'source_sha256':source_hash(row['raw_source']),**features[row['sample_key']]})+'\n')
     atomic_json(root/'vocabulary.json',vocab.values)
-    report={'schema':SCHEMA,'reference_run_dir':str(reference),'c_config':config,
+    report={'schema':BOUND_SCHEMA if bound else SCHEMA,'reference_run_dir':str(reference),'c_config':config,
         'attributes_sha256':file_sha256(root/'attributes.jsonl'),'vocabulary_sha256':digest(vocab.values),
         'node_families':NODE_FAMILIES,'edge_families':EDGE_FAMILIES,'splits':counts,'examples':examples}
+    if bound:report['bound_coverage']=bound_coverage(root)
     atomic_json(root/'audit.json',report);return report
+
+
+def _attribute_rows(path):
+    """Keep the multi-gigabyte attribute sidecar off the Python heap."""
+    with Path(path).open() as handle:
+        for line in handle:
+            if line.strip():
+                yield json.loads(line)
 
 
 def load_behavior(directory,records,views,reference_run_dir):
     root=Path(directory);audit=json.loads((root/'audit.json').read_text());config=json.loads((Path(reference_run_dir)/'config.json').read_text())
-    values=json.loads((root/'vocabulary.json').read_text());vocab=BehaviorVocabulary(values)
-    if (audit['schema']!=SCHEMA or audit['c_config']!=config or cohort_hash(records)!=config['cohort_sha256'] or
+    values=json.loads((root/'vocabulary.json').read_text());vocab=(BoundVocabulary if audit['schema']==BOUND_SCHEMA else BehaviorVocabulary)(values)
+    if (audit['schema'] not in (SCHEMA, BOUND_SCHEMA) or audit['c_config']!=config or cohort_hash(records)!=config['cohort_sha256'] or
         audit['attributes_sha256']!=file_sha256(root/'attributes.jsonl') or audit['vocabulary_sha256']!=digest(values)):
         raise ValueError('behavior cache identity/schema mismatch')
     expected={r['sample_key']:r for r in records};seen=set()
-    for item in read_jsonl(root/'attributes.jsonl'):
+    for item in _attribute_rows(root/'attributes.jsonl'):
         key=item['sample_key'];row=expected.get(key)
         if row is None or key in seen or item['split']!=row['split'] or item['source_sha256']!=source_hash(row['raw_source']):raise ValueError('behavior source/split mismatch')
         view=views[key]
-        if item['schema']!=SCHEMA or item['node_ids']!=view['node_ids'] or item['cfg_edges']!=[list(e) for e in view['edges']] or len(item['nodes'])!=len(view['node_ids']) or len(item['edges'])!=len(view['edges']):raise ValueError('behavior CFG alignment mismatch')
+        if item['schema']!=audit['schema'] or item['node_ids']!=view['node_ids'] or item['cfg_edges']!=[list(e) for e in view['edges']] or len(item['nodes'])!=len(view['node_ids']) or len(item['edges'])!=len(view['edges']):raise ValueError('behavior CFG alignment mismatch')
         if any(len(v)!=8 or any(not ts for ts in v) for v in item['nodes']) or any(not alts or any(len(v)!=4 or any(not ts for ts in v) for v in alts) for alts in item['edges']):raise ValueError('incomplete behavior attributes')
         seen.add(key);view['behavior']=vocab.encode(item)
     if seen!=set(expected):raise ValueError('missing behavior functions')
@@ -566,3 +595,127 @@ def supplement_behavior(reference_run_dir, output_path, joern_dir='/home/phy/joe
                 import os
                 os.fsync(out.fileno())
                 print(f'behavior_supplement={key}',flush=True)
+
+# Role-bound residual representation; schema 1 remains a reproducible ablation.
+BOUND_SCHEMA = 2
+JOINT_VARIANTS = ('joint_nodes', 'joint_edges', 'joint', 'joint_shuffled')
+
+
+def bound_node_facts(g, root):
+    """Identity-deduplicated local facts. Object IDs are provenance, never features."""
+    allowed = set(g.local(root))
+    paths = {root: ['SELF']}
+    todo = [root]
+    while todo:
+        parent = todo.pop()
+        for child in g.children(parent):
+            if child not in allowed or child in paths:
+                continue
+            owner = g.op(parent) if str(g.prop(parent).get('NAME', '')).startswith('<operator>.') else g.kind(parent)
+            paths[child] = paths[parent] + [owner + '/' + g.role(child)]
+            todo.append(child)
+    result = [[] for _ in NODE_FAMILIES]
+    for node in g.local(root):
+        values = node_features(g, node, local=False)
+        for family, tokens in enumerate(values):
+            for token in sorted(set(tokens)):
+                if family == 4 and node != root:
+                    token = token.replace('root:', 'internal:', 1)
+                result[family].append({'object': node, 'path': paths.get(node, ['UNKNOWN']), 'value': token})
+    return result
+
+
+def extract_bound_behavior(graph):
+    item = extract_behavior(graph)
+    g = LocalGraph(graph)
+    item['schema'] = BOUND_SCHEMA
+    item['node_facts'] = [bound_node_facts(g, n) for n in item['node_ids']]
+    edge_facts = []
+    for (source, _), alternatives in zip(item['cfg_edges'], item['edges']):
+        bound = []
+        for values in alternatives:
+            families = [[{'object': None, 'path': ['SELF'], 'value': v} for v in ts] for ts in values]
+            if values[1] not in (['NONE'], ['UNKNOWN']):
+                families[1] = [dict(fact, value=NODE_FAMILIES[f]+':'+fact['value'])
+                    for f in (2,3,4,7) for fact in item['node_facts'][source][f]]
+                families[1] += [{'object': None, 'path': ['case'], 'value': t}
+                                for t in values[1] if t.startswith('case:')]
+            bound.append(families)
+        edge_facts.append(bound)
+    item['edge_facts'] = edge_facts
+    return item
+
+
+class BoundVocabulary:
+    def __init__(self, values):
+        if set(values) != set(FAMILIES) | {'roles'}:
+            raise ValueError('role-bound vocabulary required')
+        self.values = values
+        if any(v[:3] != list(SPECIAL) or len(v) != len(set(v)) for v in values.values()):
+            raise ValueError('invalid role-bound vocabulary')
+        self.indices = {f: {t:i for i,t in enumerate(ts)} for f,ts in values.items()}
+    @classmethod
+    def fit(cls, records, features, limit=2048):
+        if any(r['split'] != 'train' for r in records):
+            raise ValueError('bound vocabulary is train-only')
+        counts = {f: Counter() for f in (*FAMILIES, 'roles')}
+        for row in records:
+            item = features[row['sample_key']]
+            for families, groups in ((NODE_FAMILIES, item['node_facts']),
+                    (EDGE_FAMILIES, (a for alternatives in item['edge_facts'] for a in alternatives))):
+                for group in groups:
+                    for family, facts in zip(families, group):
+                        for fact in facts:
+                            counts[family][fact['value']] += 1
+                            counts['roles'].update(fact['path'])
+        return cls({f:list(SPECIAL)+['OUT_OF_VOCABULARY']+[t for t,_ in sorted(c.items(),key=lambda x:(-x[1],x[0]))
+                                    if t not in SPECIAL][:limit-4] for f,c in counts.items()})
+    def sizes(self):return [len(self.values[f]) for f in (*FAMILIES, 'roles')]
+    def encode(self, item):
+        def group(families, values):
+            encoded=[]
+            for family,facts in zip(families,values):
+                unknown_literals={fact.get('object') for fact in facts if
+                    (family=='literal' and fact['value']=='UNKNOWN') or
+                    (family=='guard' and fact['value'] in ('literal:UNKNOWN','case:UNKNOWN'))}
+                column=[]
+                for fact in facts:
+                    # An unparsed frontend literal (e.g. <global>) is not a
+                    # usable lexical category. Preserve provenance, mask input.
+                    unparsed_lexeme=('lexeme=' in fact['value'] and fact.get('object') in unknown_literals)
+                    available=('UNKNOWN' not in fact['value'] and
+                               not any(role=='UNKNOWN' or role.endswith('/UNKNOWN') for role in fact['path']) and
+                               not unparsed_lexeme)
+                    column.append([self.indices[family].get(fact['value'],3),
+                                   [self.indices['roles'].get(role,3) for role in fact['path']],int(available)])
+                encoded.append(column)
+            return encoded
+        neutral = [[{'path':['SELF'],'value':v}] for v in ('unconditional','NONE','ordinary','NONE')]
+        return {'schema':BOUND_SCHEMA, 'nodes':[group(NODE_FAMILIES,v) for v in item['node_facts']],
+                'edges':[[group(EDGE_FAMILIES,v) for v in alts] for alts in item['edge_facts']],
+                'neutral':group(EDGE_FAMILIES,neutral)}
+
+
+def bound_coverage(directory):
+    """Audit usable facts with the same masks as the encoder, on train/valid only."""
+    root=Path(directory)
+    vocab=BoundVocabulary(json.loads((root/'vocabulary.json').read_text()))
+    counters={s:Counter() for s in ('train','valid')}
+    for item in _attribute_rows(root/'attributes.jsonl'):
+        if item['split'] not in counters:continue
+        encoded=vocab.encode(item);c=counters[item['split']]
+        for families,raw,groups in ((NODE_FAMILIES,item['node_facts'],encoded['nodes']),
+                (EDGE_FAMILIES,[a for alts in item['edge_facts'] for a in alts],
+                 [a for alts in encoded['edges'] for a in alts])):
+            for values,ids in zip(raw,groups):
+                for family,facts,features in zip(families,values,ids):
+                    known=[bool(f[2]) and r['value'] not in SPECIAL and
+                           not r['value'].endswith(':NONE') and 'NOT_APPLICABLE' not in r['value']
+                           for r,f in zip(facts,features)]
+                    c[family+'_records']+=1
+                    c[family+'_usable_records']+=any(known)
+                    c[family+'_unavailable_records']+=any(not f[2] for f in features)
+                    c[family+'_facts']+=len(features)
+                    c[family+'_unavailable_facts']+=sum(not f[2] for f in features)
+                    c[family+'_oov_facts']+=sum(f[0]==3 for f in features)
+    return {s:dict(c) for s,c in counters.items()}

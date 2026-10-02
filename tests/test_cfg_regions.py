@@ -343,6 +343,38 @@ class PipelineTests(unittest.TestCase):
                     self.assertFalse(any("region_head" in k or "relation_head" in k for k in ckpt["task_state"]))
                     hashes.append(ckpt["model_config"]["pretrain_checkpoint_sha256"])
                 self.assertEqual(len(set(hashes)), 1)
+            # The new method keeps both historical H/P and unbound behavior as controls.
+            from vulnmechanism.cfg_control import prepare_control, evaluate_control
+            from vulnmechanism.cfg_behavior import JOINT_VARIANTS
+            bound=root/"bound";prepare_behavior(reference,bound,bound=True)
+            controls=root/"controls";prepare_control(reference,controls,CharTokenizer())
+            control_stage=root/"control_stage"
+            initial_before=len(base.initial);encoders_before=len(base.encoders)
+            with patch("vulnmechanism.cfg_dependency._load_qwen_lm_weight",return_value=torch.ones(32,4)):
+                out=pretrain_causal_dependency(reference,supervision,control_stage,modes=("control_pretrain",),
+                    base=base,control_dir=controls,reference_pretrain_dir=p0)
+            self.assertTrue(torch.equal(base.initial[initial_before],base.initial[0]))
+            self.assertEqual(base.encoders[encoders_before].calls,2)
+            self.assertEqual(out['control_pretrain']['optimizer_steps'],out0['dep_pretrain']['optimizer_steps'])
+            self.assertGreater(out['control_pretrain']['control_loss'],0)
+            self.assertGreater(out['control_pretrain']['effective_control_functions'],0)
+            fixed=evaluate_control(control_stage,root/"fixed_control",base=base,device='cpu')
+            self.assertEqual(set(fixed['train_only_priors']),{'control','dependency'})
+            self.assertGreater(fixed['splits']['valid']['control']['effective_functions'],0)
+            for stage,folder,variants in ((p0,root/"joint_run",list(JOINT_VARIANTS)),
+                    (control_stage,root/"control_run",['control_cfg','control_joint'])):
+                loaded_before=len(base.loaded)
+                exp.run_experiment(exp.parser().parse_args(['run',*common,'--output-dir',str(folder),
+                    '--variants',*variants,'--pretrain-dir',str(stage),'--reference-run-dir',str(reference),
+                    '--behavior-dir',str(bound),'--comparison-run-dir',str(a)]),base=base)
+                self.assertEqual(len(base.loaded)-loaded_before,len(variants))
+                for variant in variants:
+                    ckpt=torch.load(folder/variant/'best.pt',weights_only=False)
+                    self.assertFalse(any('control_head' in k for k in ckpt['task_state']))
+                    history=data.read_jsonl(folder/variant/'history.jsonl')
+                    epoch=next(r for r in history if r['event']=='epoch')
+                    self.assertEqual(set(epoch['fixed_classification_bce']['valid']),{'source','graph','fusion'})
+                    self.assertTrue((folder/variant/'epoch1.valid.branches.jsonl').exists())
             context_comparison = exp.compare_run(root/"context", "valid", reference_root=a,
                                                    reference_variant="dep_pretrain_cfg")
             self.assertIn("changes_region_context_vs_local", context_comparison)
@@ -366,6 +398,11 @@ class PipelineTests(unittest.TestCase):
                 exp.evaluate_run(exp.parser().parse_args(["eval", "--run-dir", str(root/"behavior_run"),
                     "--variants", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked",
                     "--split", "test", "--device", "cpu"]), base=base)
+                for folder, variants in ((root/'joint_run',list(JOINT_VARIANTS)),
+                        (root/'control_run',['control_cfg','control_joint'])):
+                    result=exp.evaluate_run(exp.parser().parse_args(['eval','--run-dir',str(folder),
+                        '--variants',*variants,'--split','test','--device','cpu']),base=base)
+                    self.assertEqual(set(result['changes_vs_A']),set(variants))
             # An old H classifier cannot be substituted for a new variant.
             (root/"context"/"region_context"/"best.pt").write_bytes(
                 (root/"b"/"dep_pretrain_hierarchical"/"best.pt").read_bytes())
