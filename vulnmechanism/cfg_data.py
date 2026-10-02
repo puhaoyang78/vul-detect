@@ -153,7 +153,8 @@ def validate_graph(graph: dict) -> None:
     for e in edges:
         if (not isinstance(e, dict) or e.get("source") not in seen or
                 e.get("target") not in seen or
-                e.get("kind") not in {"AST", "CFG", "CDG", "DDG"}):
+                not isinstance(e.get("kind"), str) or not e.get("kind") or
+                not isinstance(e.get("properties", {}), dict)):
             raise ValueError("invalid/dangling graph edge")
         kinds[e["kind"]] += 1
     if not kinds["AST"] or not kinds["CFG"]:
@@ -165,7 +166,8 @@ def serialize_graph(graph) -> dict:
         "nodes": [{"id": n.node_id, "label": n.label, "code": n.code,
                    "properties": dict(getattr(n, "properties", {}))}
                   for n in graph.nodes.values()],
-        "edges": [{"kind": e.kind, "source": e.source, "target": e.target}
+        "edges": [{"kind": e.kind, "source": e.source, "target": e.target,
+                   **({"properties": dict(e.properties)} if e.properties else {})}
                   for e in graph.edges],
     }
     validate_graph(result)

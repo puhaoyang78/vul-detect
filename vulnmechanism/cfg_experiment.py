@@ -23,15 +23,17 @@ from .cfg_data import (FEATURE_SCHEMA, AttributeVocabulary, abstract_cfg, atomic
 from .cfg_metrics import decision_boundary, metrics, paired_changes, select_threshold
 from .cfg_rotation import ROTATION_VARIANTS, epoch_train_rows, load_selected, schedule_report
 
+from .cfg_behavior import VARIANTS as BEHAVIOR_VARIANTS
+
 JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
 PROGRAM_VARIANTS = ("dep_pretrain_program_plain", "dep_pretrain_program_state",
                     "composition_pretrain_program_state")
 REGION_CONTEXT_VARIANTS = ("region_local", "region_context")
 REGION_VARIANTS = (*REGION_CONTEXT_VARIANTS, "dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
-PRETRAIN_CFG_VARIANTS = (*REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
+PRETRAIN_CFG_VARIANTS = (*BEHAVIOR_VARIANTS, *REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
                          "composition_pretrain_cfg")
-PRETRAIN_MODE = {"region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
+PRETRAIN_MODE = {**{v: "dep_pretrain" for v in BEHAVIOR_VARIANTS}, "region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
                  "region_pretrain_cfg": "region_pretrain",
                  "region_pretrain_hierarchical": "region_pretrain", "lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
                  "dep_pretrain_program_plain": "dep_pretrain",
@@ -92,6 +94,7 @@ def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
     graph_batch = collate_graphs([views[k] for k in keys], [encoded[k] for k in keys],
                                  device=device, alignments=alignments, ddg_edges=ddg_edges,
                                  programs=programs,
+                                 behavior=[views[k]["behavior"] for k in keys] if mode in BEHAVIOR_VARIANTS else None,
                                  regions=[views[k]["regions"] for k in keys] if mode in {"cfg_hierarchical", *REGION_CONTEXT_VARIANTS} else None)
     return ids, mask, graph_batch
 
@@ -180,7 +183,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             history.flush()
             print(json.dumps(row, ensure_ascii=False, allow_nan=False), flush=True)
 
-        if config["variant"] in REGION_VARIANTS:
+        if config["variant"] in (*REGION_VARIANTS, *BEHAVIOR_VARIANTS):
             log({"event": "parameters", "graph_encoder": sum(p.numel() for p in model.task_modules["cfg_encoder"].parameters()),
                  "graph_classifier": sum(p.numel() for p in model.task_modules["cfg_classifier"].parameters()),
                  "trainable_total": sum(p.numel() for p in trainable)})
@@ -373,7 +376,8 @@ def compare_run(root: str | Path, split: str = "valid",
         reference_config = json.loads((reference / "config.json").read_text())
         if reference_variant in {"dep_pretrain_cfg", "dep_pretrain_hierarchical"}:
             declared = {"initialization_policy", "pretrain_run_dir", "pretrain_relations_sha256",
-                        "reference_run_dir", "region_dir", "regions_sha256", "region_schema", "comparison_run_dir"}
+                        "reference_run_dir", "region_dir", "regions_sha256", "region_schema", "comparison_run_dir", "behavior_dir", "behavior_schema", "behavior_sha256",
+                        "behavior_sizes", "behavior_vocabulary_sha256", "disabled_behavior_families"}
             if ({k: v for k, v in candidate_config.items() if k not in declared} !=
                     {k: v for k, v in reference_config.items() if k not in declared} or
                     candidate_config.get("reference_run_dir") != reference_config.get("reference_run_dir") or
@@ -630,6 +634,22 @@ def run_experiment(args, base=None):
                           pretrain_run_dir=str(pretrain_root),
                           pretrain_relations_sha256=pretrain_config["relations_sha256"],
                           reference_run_dir=str(reference))
+    if any(v in BEHAVIOR_VARIANTS for v in args.variants):
+        from .cfg_behavior import load_behavior
+        if (not args.behavior_dir or not args.comparison_run_dir or args.graph_steps != 5 or
+                any(v not in BEHAVIOR_VARIANTS for v in args.variants)):
+            raise ValueError("behavior ablations need their cache, A, five steps and no mixed graph extensions")
+        a_config=json.loads((Path(args.comparison_run_dir)/"config.json").read_text())
+        if (pretrain_config.get("relation_accumulation_normalization") != "window_effective_functions" or
+                a_config.get("pretrain_run_dir") != str(pretrain_root) or
+                {k:a_config.get(k) for k in reference_config} != reference_config):
+            raise ValueError("behavior ablations must reuse A's corrected P0 and original C settings")
+        bv,ba=load_behavior(args.behavior_dir,rows,views,reference)
+        config.update(behavior_dir=str(Path(args.behavior_dir).resolve()), behavior_schema=ba["schema"],
+                      behavior_sha256=ba["attributes_sha256"], behavior_sizes=bv.sizes(),
+                      behavior_vocabulary_sha256=ba["vocabulary_sha256"],
+                      disabled_behavior_families=sorted(args.disable_behavior_family),
+                      comparison_run_dir=str(Path(args.comparison_run_dir).resolve()))
     if any(v in REGION_VARIANTS for v in args.variants):
         from .cfg_data import load_regions
         if not args.region_dir or not args.comparison_run_dir or args.graph_steps != 5:
@@ -814,6 +834,12 @@ def evaluate_run(args, base=None):
                            shuffle_seed=config["seed"] if "cfg_ddg_shuffled" in args.variants else None)
     if cohort_hash(rows) != config["cohort_sha256"] or file_sha256(config["graphs"]) != config["graph_file_sha256"]:
         raise ValueError("evaluation data/graphs differ from the recorded run")
+    if config.get("behavior_dir"):
+        from .cfg_behavior import load_behavior
+        bv,ba=load_behavior(config["behavior_dir"],rows,views,config["reference_run_dir"])
+        if (ba["schema"] != config["behavior_schema"] or ba["attributes_sha256"] != config["behavior_sha256"] or
+                ba["vocabulary_sha256"] != config["behavior_vocabulary_sha256"] or bv.sizes()!=config["behavior_sizes"]):
+            raise ValueError("evaluation behavior cache changed")
     if config.get("region_dir"):
         from .cfg_data import load_regions
         partitions, audit = load_regions(config["region_dir"], rows, config["reference_run_dir"], views)
@@ -929,6 +955,9 @@ def parser():
     run.add_argument("--pretrain-dir", help="completed train-only source pretraining run")
     run.add_argument("--region-dir", help="shared H/P region cache")
     run.add_argument("--comparison-run-dir", help="A: corrected dependency-pretrained C result")
+    from .cfg_behavior import FAMILIES as BEHAVIOR_FAMILIES
+    run.add_argument("--behavior-dir")
+    run.add_argument("--disable-behavior-family", nargs="*", choices=BEHAVIOR_FAMILIES, default=[])
     run.add_argument("--program-dir", help="prepared check/update/use facts for program graph variants")
     run.add_argument("--reference-run-dir", help="completed original C run; reuse its exact vocabulary and settings")
     run.add_argument("--source-dataset", choices=("primevul", "cleanvul"), default="primevul")
@@ -1032,6 +1061,15 @@ def parser():
         if command == "eval-regions":
             diagnostic.add_argument("--batch-size", type=int, default=1)
             diagnostic.add_argument("--device", default="auto")
+    behavior = sub.add_parser("prepare-behavior", help="prepare local node/edge attributes on original C CFG")
+    behavior.add_argument("--reference-run-dir", required=True)
+    behavior.add_argument("--output-dir", required=True)
+    behavior.add_argument("--supplement-path")
+    supplement = sub.add_parser("supplement-behavior", help="incrementally export attributes without changing original CFG")
+    supplement.add_argument("--reference-run-dir", required=True)
+    supplement.add_argument("--output", required=True)
+    supplement.add_argument("--joern-dir", default="/home/phy/joern")
+    supplement.add_argument("--java-home", default="/home/phy/jdk21")
     return p
 
 
@@ -1056,6 +1094,13 @@ def main():
                                        batch_size=args.batch_size)
             print(json.dumps({k: v for k, v in selection.items() if k != "selected_sample_keys"},
                              ensure_ascii=False), flush=True)
+        elif args.command == "supplement-behavior":
+            from .cfg_behavior import supplement_behavior
+            supplement_behavior(args.reference_run_dir,args.output,args.joern_dir,args.java_home)
+        elif args.command == "prepare-behavior":
+            from .cfg_behavior import prepare_behavior
+            report=prepare_behavior(args.reference_run_dir,args.output_dir,args.supplement_path)
+            print(json.dumps({"output":args.output_dir,"splits":report["splits"]}),flush=True)
         elif args.command == "prepare-regions":
             from .cfg_data import prepare_regions
             from transformers import AutoTokenizer

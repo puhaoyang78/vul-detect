@@ -16,13 +16,14 @@ class GraphBatch:
     ddg_edges: torch.Tensor | None = None  # [2, edges], reaching definition -> use
     program: ProgramBatch | None = None  # sparse check/update/use paths
     regions: RegionBatch | None = None
+    behavior: list | None = None
 
     def to(self, device) -> "GraphBatch":
         pairs = None if self.token_pairs is None else self.token_pairs.to(device)
         ddg = None if self.ddg_edges is None else self.ddg_edges.to(device)
         return GraphBatch(self.attributes.to(device), self.edges.to(device), self.ptr, pairs,
                           ddg, None if self.program is None else self.program.to(device),
-                          None if self.regions is None else self.regions.to(device))
+                          None if self.regions is None else self.regions.to(device), self.behavior)
 
 
 @dataclass
@@ -116,12 +117,13 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
                    alignments: list[list[tuple[int, int]]] | None = None,
                    ddg_edges: list[list[tuple[int, int]]] | None = None,
                    programs: list[dict] | None = None,
-                   regions: list[dict] | None = None) -> GraphBatch:
+                   regions: list[dict] | None = None, behavior: list[dict] | None = None) -> GraphBatch:
     if (not views or len(views) != len(encoded) or
             (alignments is not None and len(alignments) != len(views)) or
             (ddg_edges is not None and len(ddg_edges) != len(views)) or
             (programs is not None and len(programs) != len(views)) or
-            (regions is not None and len(regions) != len(views))):
+            (regions is not None and len(regions) != len(views)) or
+            (behavior is not None and len(behavior) != len(views))):
         raise ValueError("nonempty matching graph/attribute lists required")
     attributes, edges, ptr, token_pairs, ddg = [], [], [0], [], []
     for row, (view, values) in enumerate(zip(views, encoded)):
@@ -166,7 +168,7 @@ def collate_graphs(views: list[dict], encoded: list[list[list[int]]], device="cp
             torch.tensor(cross, dtype=torch.long).reshape(-1, 2).T.contiguous(), tuple(region_ptr))
     return GraphBatch(torch.tensor(attributes, dtype=torch.long), edge_tensor, tuple(ptr), pairs,
                       ddg_tensor, collate_programs(programs, device) if programs is not None else None,
-                      region_batch).to(device)
+                      region_batch, behavior).to(device)
 
 
 class AttributeCFGEncoder(nn.Module):
@@ -182,13 +184,14 @@ class AttributeCFGEncoder(nn.Module):
     These are learned summaries, not a sound static-analysis result.
     """
     def __init__(self, vocabulary_sizes: list[int], *, hidden_size: int = 128,
-                 steps: int = 5, mode: str = "cfg", source_hidden_size: int | None = None):
+                 steps: int = 5, mode: str = "cfg", source_hidden_size: int | None = None,
+                 behavior_sizes=None, disabled_families=()):
         super().__init__()
         if (len(vocabulary_sizes) != 4 or min(vocabulary_sizes) < 2 or
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
                 mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
                              "cfg_ddg", "cfg_ddg_shuffled", "cfg_jk_mean", "cfg_jk_max",
-                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context"} or
+                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked"} or
                 (mode in {"cfg_hierarchical", "region_local", "region_context"} and steps != 5) or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
@@ -208,6 +211,21 @@ class AttributeCFGEncoder(nn.Module):
             with torch.random.fork_rng(devices=[]):
                 self.region_projection = nn.Linear(hidden_size, hidden_size, bias=False)
                 nn.init.zeros_(self.region_projection.weight)
+        if mode.startswith("behavior_"):
+            from .cfg_behavior import FAMILIES
+            if steps != 5 or behavior_sizes is None or len(behavior_sizes) != 12 or set(disabled_families)-set(FAMILIES):
+                raise ValueError("behavior models require complete versioned attributes and five steps")
+            self.disabled_families = set(disabled_families)
+            with torch.random.fork_rng(devices=[]):
+                if mode != "behavior_edges":
+                    # Node ablation must not shift the shared edge-network initialization.
+                    with torch.random.fork_rng(devices=[]):
+                        self.node_behavior = nn.ModuleList(nn.EmbeddingBag(size, 16, mode="mean") for size in behavior_sizes[:8])
+                        self.node_projection = nn.Linear(128, hidden_size)
+                if mode != "behavior_nodes":
+                    self.edge_behavior = nn.ModuleList(nn.EmbeddingBag(size, 8, mode="mean") for size in behavior_sizes[8:])
+                    self.edge_hidden = nn.Linear(2*hidden_size+32, 128)
+                    self.edge_output = nn.Linear(128, hidden_size, bias=False)
         self.output_dim = 2 * hidden_size
 
     def forward(self, batch: GraphBatch, token_hidden: torch.Tensor | None = None) -> torch.Tensor:
@@ -223,6 +241,33 @@ class AttributeCFGEncoder(nn.Module):
                 counts = torch.bincount(pairs[:, 0], minlength=x.shape[0]).clamp_min(1).unsqueeze(-1)
                 node_source = node_source / counts
             x = x + self.source_projection(node_source)
+        behavior_edges = None
+        if self.mode.startswith("behavior_"):
+            from .cfg_behavior import NODE_FAMILIES, EDGE_FAMILIES
+            if batch.behavior is None:
+                raise ValueError("behavior model cannot load a cache without behavior attributes")
+            nodes = [v for graph in batch.behavior for v in graph["nodes"]]
+            alternatives = [alts for graph in batch.behavior for alts in graph["edges"]]
+            if len(nodes) != len(x) or len(alternatives) != batch.edges.shape[1] or any(not a for a in alternatives):
+                raise ValueError("behavior attributes do not match original CFG endpoints")
+            def embed(families, layers, rows, masked=False):
+                columns=[]
+                for i,(family,layer) in enumerate(zip(families,layers)):
+                    values,offsets=[],[]
+                    for row in rows:
+                        offsets.append(len(values))
+                        values.extend([0] if masked or family in self.disabled_families else row[i])
+                    columns.append(layer(torch.tensor(values,dtype=torch.long,device=x.device),
+                                         torch.tensor(offsets,dtype=torch.long,device=x.device)))
+                return torch.cat(columns,-1)
+            if self.mode != "behavior_edges":
+                x = self.node_projection(embed(NODE_FAMILIES,self.node_behavior,nodes))
+            if self.mode != "behavior_nodes":
+                expanded=[v for alts in alternatives for v in alts]
+                if expanded:
+                    behavior_edges=embed(EDGE_FAMILIES,self.edge_behavior,expanded,self.mode=="behavior_masked")
+                    alternative_edge=torch.tensor([i for i,alts in enumerate(alternatives) for _ in alts],device=x.device)
+                    alternative_counts=torch.tensor([len(a) for a in alternatives],device=x.device).unsqueeze(-1)
         state = x
         src, dst = batch.edges
         # Remove duplicate CFG self edges: every mode already receives one self message.
@@ -239,8 +284,17 @@ class AttributeCFGEncoder(nn.Module):
             incoming = transformed.clone()
             if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled",
                              "cfg_jk_mean", "cfg_jk_max", "program_plain", "program_state",
-                             "cfg_hierarchical", "region_local", "region_context"} and src.numel():
+                             "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
+            if behavior_edges is not None:
+                all_src,all_dst=batch.edges
+                terms=self.edge_output(torch.relu(self.edge_hidden(torch.cat((
+                    state[all_src[alternative_edge]],state[all_dst[alternative_edge]],behavior_edges),-1))))
+                residual=state.new_zeros((batch.edges.shape[1],state.shape[-1]))
+                residual.index_add_(0,alternative_edge,terms)
+                residual=residual/alternative_counts
+                # Every explicit self-loop adds its attributes, not a second self message.
+                incoming.index_add_(0,all_dst,residual)
             if use_ddg and ddg_src.numel():
                 ddg_transformed = self.ddg_message(state)
                 incoming.index_add_(0, ddg_dst, ddg_transformed[ddg_src])
@@ -383,7 +437,7 @@ class SourceGraphClassifier(nn.Module):
     a guarantee of unchanged predictions after optimization.
     """
     def __init__(self, source_model, vocabulary_sizes: list[int], *, hidden_size: int,
-                 steps: int, mode: str, device):
+                 steps: int, mode: str, device, behavior_sizes=None, disabled_families=()):
         super().__init__()
         self.encoder = source_model.encoder
         self.task_modules = source_model.task_modules
@@ -392,7 +446,8 @@ class SourceGraphClassifier(nn.Module):
             graph = graph_class(vocabulary_sizes, hidden_size=hidden_size, steps=steps, mode=mode,
                                 **({} if mode in {"program_plain", "program_state"} else
                                    {"source_hidden_size": self.task_modules["classifier"].in_features
-                                    if mode.startswith("aligned_") else None}))
+                                    if mode.startswith("aligned_") else None,
+                                    "behavior_sizes": behavior_sizes, "disabled_families": disabled_families}))
             head = nn.Linear(graph.output_dim, 1, bias=False)
             nn.init.zeros_(head.weight)
             self.task_modules["cfg_encoder"] = graph
@@ -449,4 +504,5 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
             else config["variant"])
     return SourceGraphClassifier(source, vocabulary_sizes,
                                  hidden_size=config["graph_hidden_size"], steps=config["graph_steps"],
-                                 mode=mode, device=device)
+                                 mode=mode, device=device, behavior_sizes=config.get("behavior_sizes"),
+                                 disabled_families=config.get("disabled_behavior_families", ()))

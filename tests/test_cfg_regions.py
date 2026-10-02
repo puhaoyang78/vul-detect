@@ -260,6 +260,35 @@ class PipelineTests(unittest.TestCase):
             cache = root/"regions"
             audit = data.prepare_regions(reference, cache, CharTokenizer())
             self.assertFalse((cache/"test.regions.jsonl").exists())
+            from vulnmechanism.cfg_behavior import prepare_behavior
+            from vulnmechanism.cfg_behavior import supplement_behavior
+            from vulnmechanism.cpg import FunctionGraph, GraphNode, GraphEdge
+            def fresh_graph():
+                return FunctionGraph("fixture", {
+                    "fresh-"+n["id"]:GraphNode("fresh-"+n["id"],n["label"],n["code"],n["properties"])
+                    for n in fixture["graph"]["nodes"]}, tuple(
+                    GraphEdge(e["kind"],"fresh-"+e["source"],"fresh-"+e["target"],
+                              {"test_attribute":"preserved"} if e["kind"]=="CFG" else {})
+                    for e in fixture["graph"]["edges"]))
+            supplement=root/"supplement.jsonl"
+            with patch("vulnmechanism.cpg.extract_function_cpg_batch", side_effect=lambda *a,**k:[fresh_graph()]):
+                supplement_behavior(reference,supplement)
+            with patch("vulnmechanism.cpg.extract_function_cpg_batch", side_effect=AssertionError("duplicate export")):
+                supplement_behavior(reference,supplement)
+            supplemented=data.read_jsonl(supplement)
+            self.assertEqual(len(supplemented),len(rows))
+            self.assertEqual({n["id"] for n in supplemented[0]["graph"]["nodes"]},
+                             {n["id"] for n in fixture["graph"]["nodes"]})
+            self.assertTrue(all(e["properties"]["test_attribute"]=="preserved"
+                                for e in supplemented[0]["graph"]["edges"] if e["kind"]=="CFG"))
+            changed=fresh_graph()
+            first_cfg=next(e for e in changed.edges if e.kind=="CFG")
+            changed=FunctionGraph(changed.function,changed.nodes,tuple(e for e in changed.edges if e is not first_cfg))
+            with patch("vulnmechanism.cpg.extract_function_cpg_batch", return_value=[changed]), \
+                    self.assertRaisesRegex(ValueError,"CFG changed"):
+                supplement_behavior(reference,root/"rejected.jsonl")
+            behavior_cache=root/"behavior"
+            prepare_behavior(reference,behavior_cache,supplement)
             partitions, _ = data.load_regions(cache, rows, reference)
             builder = InputBuilder(CharTokenizer(), source_max_length=2048, context_max_length=384)
             regions, _ = _checked_region_rows(cache, rows[:2], builder, partitions)
@@ -295,13 +324,14 @@ class PipelineTests(unittest.TestCase):
                 "dep_pretrain_cfg", "--pretrain-dir", str(p0), "--reference-run-dir", str(reference)]), base=base)
             for stage1, folder, variants in ((p0, root/"b", ["dep_pretrain_hierarchical"]),
                     (p1, root/"cd", ["region_pretrain_cfg", "region_pretrain_hierarchical"]),
-                    (p0, root/"context", ["region_local", "region_context"])):
+                    (p0, root/"context", ["region_local", "region_context"]),
+                    (p0, root/"behavior_run", ["behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked"])):
                 loaded_before = len(base.loaded)
                 expected_adapter = torch.load(stage1/("dep_pretrain" if stage1 == p0 else "region_pretrain")/"last.pt",
                                                weights_only=False)["adapter_state"]
                 result = exp.run_experiment(exp.parser().parse_args(["run", *common, "--output-dir", str(folder),
                     "--variants", *variants, "--pretrain-dir", str(stage1), "--reference-run-dir", str(reference),
-                    "--region-dir", str(cache), "--comparison-run-dir", str(a)]), base=base)
+                    "--region-dir", str(cache), "--behavior-dir", str(behavior_cache), "--comparison-run-dir", str(a)]), base=base)
                 self.assertEqual(len(base.loaded)-loaded_before, len(variants))
                 for loaded in base.loaded[loaded_before:]:
                     self.assertEqual(set(loaded), {"adapter.weight"})
@@ -332,6 +362,10 @@ class PipelineTests(unittest.TestCase):
             with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
                 exp.evaluate_run(exp.parser().parse_args(["eval", "--run-dir", str(root/"context"),
                     "--variants", "region_local", "region_context", "--split", "test", "--device", "cpu"]), base=base)
+            with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
+                exp.evaluate_run(exp.parser().parse_args(["eval", "--run-dir", str(root/"behavior_run"),
+                    "--variants", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked",
+                    "--split", "test", "--device", "cpu"]), base=base)
             # An old H classifier cannot be substituted for a new variant.
             (root/"context"/"region_context"/"best.pt").write_bytes(
                 (root/"b"/"dep_pretrain_hierarchical"/"best.pt").read_bytes())

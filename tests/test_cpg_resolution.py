@@ -166,7 +166,8 @@ class TargetResolutionTests(unittest.TestCase):
             self.assertEqual(nodes['0']['CONTENT'],source)
             self.assertEqual(nodes['1']['OFFSET'],0)
             self.assertIs(nodes['1']['IS_EXTERNAL'],False)
-            self.assertEqual(edges,[('AST','1','2')])
+            from vulnmechanism.cpg import GraphEdge
+            self.assertEqual(edges,[GraphEdge('AST','1','2')])
 
 
 if __name__ == '__main__':

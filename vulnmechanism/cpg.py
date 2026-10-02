@@ -42,6 +42,7 @@ class GraphEdge:
     kind: str
     source: str
     target: str
+    properties: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -91,9 +92,10 @@ def read_neo4jcsv(directory: Path):
                     raise CPGError(f"malformed node row in {header_path.name}")
                 node = {"kind": values[1]}
                 for field, value in zip(columns[2:], values[2:]):
-                    if not value:
-                        continue
                     name, _, kind = field.partition(":")
+                    if not value:
+                        node[name] = value
+                        continue
                     if kind in {"int", "long"} or name in {
                         "LINE_NUMBER", "LINE_NUMBER_END", "COLUMN_NUMBER", "COLUMN_NUMBER_END",
                         "OFFSET", "OFFSET_END", "ORDER",
@@ -106,10 +108,8 @@ def read_neo4jcsv(directory: Path):
                     else:
                         node[name] = value.replace("\\\\", "\\")
                 nodes[values[0]] = node
-    for kind in ("AST", "CFG", "CDG", "REACHING_DEF"):
-        header_path = directory / f"edges_{kind}_header.csv"
-        if not header_path.exists():
-            continue
+    for header_path in sorted(directory.glob("edges_*_header.csv")):
+        kind = header_path.name[len("edges_"):-len("_header.csv")]
         with header_path.open(encoding="utf-8", newline="") as handle:
             columns = next(csv.reader(handle))
         if columns[:3] != [":START_ID", ":END_ID", ":TYPE"]:
@@ -118,7 +118,18 @@ def read_neo4jcsv(directory: Path):
             for row in csv.reader(handle):
                 if len(row) != len(columns) or row[2] != kind:
                     raise CPGError(f"malformed edge row in {header_path.name}")
-                edges.append((kind, row[0], row[1]))
+                attributes = {}
+                for column, value in zip(columns[3:], row[3:]):
+                    name, _, datatype = column.partition(":")
+                    if datatype in {"int", "long"} and value:
+                        attributes[name] = int(value)
+                    elif datatype == "boolean" and value:
+                        if value not in {"true", "false"}:
+                            raise CPGError(f"invalid edge boolean {value!r}")
+                        attributes[name] = value == "true"
+                    else:
+                        attributes[name] = value.replace("\\\\", "\\")
+                edges.append(GraphEdge(kind, row[0], row[1], attributes))
     if not nodes:
         raise CPGError("Joern export contains no nodes")
     return nodes, edges
@@ -230,10 +241,11 @@ def resolve_target_graph(
         )
 
     method_id, method = selected[0]
+    edges = [edge if isinstance(edge, GraphEdge) else GraphEdge(*edge) for edge in edges]
     ast = defaultdict(list)
-    for kind, source_id, target_id in edges:
-        if kind == "AST":
-            ast[source_id].append(target_id)
+    for edge in edges:
+        if edge.kind == "AST":
+            ast[edge.source].append(edge.target)
     owned, pending = set(), [method_id]
     while pending:
         key = pending.pop()
@@ -292,9 +304,9 @@ def resolve_target_graph(
 
     edge_kinds = {"AST": "AST", "CFG": "CFG", "CDG": "CDG", "REACHING_DEF": "DDG"}
     graph_edges = tuple(
-        GraphEdge(edge_kinds[kind], str(source_id), str(target_id))
-        for kind, source_id, target_id in edges
-        if kind in edge_kinds and source_id in owned and target_id in owned
+        GraphEdge(edge_kinds.get(edge.kind, edge.kind), str(edge.source), str(edge.target), dict(edge.properties))
+        for edge in edges
+        if edge.source in owned and edge.target in owned
     )
     counts = Counter(edge.kind for edge in graph_edges)
     unknown = [key for key in owned if nodes[key].get("kind") == "UNKNOWN"]
@@ -333,6 +345,8 @@ def resolve_target_graph(
         warnings.append("hint_mismatch")
 
     quality = {
+        "attribute_export_version": 2,
+        "retained_relation_kinds": sorted(counts),
         "target_method_id": str(method_id),
         "target_name": native_name,
         "target_full_name": method.get("FULL_NAME"),

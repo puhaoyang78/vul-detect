@@ -1,0 +1,1598 @@
+{
+  "source": "void loops(int n) { for (;n;) { n--; } for (;;) { break; } for (int i=0;i<n;) { ++i; } while(n) {} do {} while(n); }",
+  "graph": {
+    "nodes": [
+      {
+        "id": "25769803776",
+        "label": "BLOCK",
+        "code": "{ for (;n;) { n--; } for (;;) { break; } for (int i=0;i<n;) { ++i; } while(n) {} do {} while(n); }",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{ for (;n;) { n--; } for (;;) { break; } for (int i=0;i<n;) { ++i; } while(n) {} do {} while(n); }",
+          "COLUMN_NUMBER": 19,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 0,
+          "OFFSET_END": 116,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803777",
+        "label": "BLOCK",
+        "code": "<empty>",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "<empty>",
+          "COLUMN_NUMBER": "",
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": "",
+          "OFFSET_END": "",
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "25769803778",
+        "label": "BLOCK",
+        "code": "{ n--; }",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{ n--; }",
+          "COLUMN_NUMBER": 31,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 30,
+          "OFFSET_END": 38,
+          "ORDER": 4,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803779",
+        "label": "BLOCK",
+        "code": "<empty>",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "<empty>",
+          "COLUMN_NUMBER": "",
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": "",
+          "OFFSET_END": "",
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "25769803780",
+        "label": "BLOCK",
+        "code": "{ break; }",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{ break; }",
+          "COLUMN_NUMBER": 49,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 48,
+          "OFFSET_END": 58,
+          "ORDER": 4,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803781",
+        "label": "BLOCK",
+        "code": "{ ++i; }",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{ ++i; }",
+          "COLUMN_NUMBER": 79,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 78,
+          "OFFSET_END": 86,
+          "ORDER": 5,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803782",
+        "label": "BLOCK",
+        "code": "{}",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{}",
+          "COLUMN_NUMBER": 97,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 96,
+          "OFFSET_END": 98,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803783",
+        "label": "BLOCK",
+        "code": "{}",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{}",
+          "COLUMN_NUMBER": 103,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 102,
+          "OFFSET_END": 104,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771072",
+        "label": "<operator>.postDecrement",
+        "code": "n--",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "n--",
+          "COLUMN_NUMBER": 33,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "METHOD_FULL_NAME": "<operator>.postDecrement",
+          "NAME": "<operator>.postDecrement",
+          "OFFSET": 32,
+          "OFFSET_END": 35,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "SIGNATURE": "",
+          "STATIC_RECEIVER": "",
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771073",
+        "label": "<operator>.assignment",
+        "code": "i=0",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "ARGUMENT_NAME": "",
+          "CODE": "i=0",
+          "COLUMN_NUMBER": 69,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "METHOD_FULL_NAME": "<operator>.assignment",
+          "NAME": "<operator>.assignment",
+          "OFFSET": 68,
+          "OFFSET_END": 71,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "SIGNATURE": "",
+          "STATIC_RECEIVER": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771074",
+        "label": "<operator>.lessThan",
+        "code": "i<n",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "i<n",
+          "COLUMN_NUMBER": 73,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "METHOD_FULL_NAME": "<operator>.lessThan",
+          "NAME": "<operator>.lessThan",
+          "OFFSET": 72,
+          "OFFSET_END": 75,
+          "ORDER": 3,
+          "POSSIBLE_TYPES": "",
+          "SIGNATURE": "",
+          "STATIC_RECEIVER": "",
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771075",
+        "label": "<operator>.preIncrement",
+        "code": "++i",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "++i",
+          "COLUMN_NUMBER": 81,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "METHOD_FULL_NAME": "<operator>.preIncrement",
+          "NAME": "<operator>.preIncrement",
+          "OFFSET": 80,
+          "OFFSET_END": 83,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "SIGNATURE": "",
+          "STATIC_RECEIVER": "",
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "47244640256",
+        "label": "CONTROL_STRUCTURE",
+        "code": "for (;n;)",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "for (;n;)",
+          "COLUMN_NUMBER": 21,
+          "CONTROL_STRUCTURE_TYPE": "FOR",
+          "LINE_NUMBER": 1,
+          "OFFSET": 20,
+          "OFFSET_END": 38,
+          "ORDER": 1,
+          "PARSER_TYPE_NAME": "CASTForStatement"
+        }
+      },
+      {
+        "id": "47244640257",
+        "label": "CONTROL_STRUCTURE",
+        "code": "for (;;)",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "for (;;)",
+          "COLUMN_NUMBER": 40,
+          "CONTROL_STRUCTURE_TYPE": "FOR",
+          "LINE_NUMBER": 1,
+          "OFFSET": 39,
+          "OFFSET_END": 58,
+          "ORDER": 2,
+          "PARSER_TYPE_NAME": "CASTForStatement"
+        }
+      },
+      {
+        "id": "47244640258",
+        "label": "CONTROL_STRUCTURE",
+        "code": "break;",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "break;",
+          "COLUMN_NUMBER": 51,
+          "CONTROL_STRUCTURE_TYPE": "BREAK",
+          "LINE_NUMBER": 1,
+          "OFFSET": 50,
+          "OFFSET_END": 56,
+          "ORDER": 1,
+          "PARSER_TYPE_NAME": "CASTBreakStatement"
+        }
+      },
+      {
+        "id": "47244640259",
+        "label": "CONTROL_STRUCTURE",
+        "code": "for (int i=0;i<n;)",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "for (int i=0;i<n;)",
+          "COLUMN_NUMBER": 60,
+          "CONTROL_STRUCTURE_TYPE": "FOR",
+          "LINE_NUMBER": 1,
+          "OFFSET": 59,
+          "OFFSET_END": 86,
+          "ORDER": 3,
+          "PARSER_TYPE_NAME": "CASTForStatement"
+        }
+      },
+      {
+        "id": "47244640260",
+        "label": "CONTROL_STRUCTURE",
+        "code": "while (n)",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "while (n)",
+          "COLUMN_NUMBER": 88,
+          "CONTROL_STRUCTURE_TYPE": "WHILE",
+          "LINE_NUMBER": 1,
+          "OFFSET": "",
+          "OFFSET_END": "",
+          "ORDER": 4,
+          "PARSER_TYPE_NAME": "<empty>"
+        }
+      },
+      {
+        "id": "47244640261",
+        "label": "CONTROL_STRUCTURE",
+        "code": "do {} while(n);",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "do {} while(n);",
+          "COLUMN_NUMBER": 100,
+          "CONTROL_STRUCTURE_TYPE": "DO",
+          "LINE_NUMBER": 1,
+          "OFFSET": 99,
+          "OFFSET_END": 114,
+          "ORDER": 5,
+          "PARSER_TYPE_NAME": "CASTDoStatement"
+        }
+      },
+      {
+        "id": "68719476736",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "n",
+          "COLUMN_NUMBER": 27,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 26,
+          "OFFSET_END": 27,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476737",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "ARGUMENT_NAME": "",
+          "CODE": "n",
+          "COLUMN_NUMBER": 33,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 32,
+          "OFFSET_END": 33,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476738",
+        "label": "IDENTIFIER",
+        "code": "i",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "ARGUMENT_NAME": "",
+          "CODE": "i",
+          "COLUMN_NUMBER": 69,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "i",
+          "OFFSET": 68,
+          "OFFSET_END": 69,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476739",
+        "label": "IDENTIFIER",
+        "code": "i",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "ARGUMENT_NAME": "",
+          "CODE": "i",
+          "COLUMN_NUMBER": 73,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "i",
+          "OFFSET": 72,
+          "OFFSET_END": 73,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476740",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "ARGUMENT_NAME": "",
+          "CODE": "n",
+          "COLUMN_NUMBER": 75,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 74,
+          "OFFSET_END": 75,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476741",
+        "label": "IDENTIFIER",
+        "code": "i",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "ARGUMENT_NAME": "",
+          "CODE": "i",
+          "COLUMN_NUMBER": 83,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "i",
+          "OFFSET": 82,
+          "OFFSET_END": 83,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476742",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "n",
+          "COLUMN_NUMBER": 94,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 93,
+          "OFFSET_END": 94,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476743",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "n",
+          "COLUMN_NUMBER": 112,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 111,
+          "OFFSET_END": 112,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "90194313216",
+        "label": "LITERAL",
+        "code": "0",
+        "properties": {
+          "kind": "LITERAL",
+          "ARGUMENT_INDEX": 2,
+          "ARGUMENT_NAME": "",
+          "CODE": "0",
+          "COLUMN_NUMBER": 71,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 70,
+          "OFFSET_END": 71,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "94489280512",
+        "label": "LOCAL",
+        "code": "int i",
+        "properties": {
+          "kind": "LOCAL",
+          "CLOSURE_BINDING_ID": "",
+          "CODE": "int i",
+          "COLUMN_NUMBER": 69,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 1,
+          "NAME": "i",
+          "OFFSET": 68,
+          "OFFSET_END": 71,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "107374182400",
+        "label": "METHOD",
+        "code": "loops",
+        "properties": {
+          "kind": "METHOD",
+          "AST_PARENT_FULL_NAME": "sample_0000.c:<global>",
+          "AST_PARENT_TYPE": "TYPE_DECL",
+          "CODE": "void loops(int n) { for (;n;) { n--; } for (;;) { break; } for (int i=0;i<n;) { ++i; } while(n) {} do {} while(n); }",
+          "COLUMN_NUMBER": 1,
+          "COLUMN_NUMBER_END": 116,
+          "FILENAME": "sample_0000.c",
+          "FULL_NAME": "loops",
+          "GENERIC_SIGNATURE": "<empty>",
+          "HASH": "",
+          "IS_EXTERNAL": false,
+          "LINE_NUMBER": 1,
+          "LINE_NUMBER_END": 1,
+          "NAME": "loops",
+          "OFFSET": 0,
+          "OFFSET_END": 116,
+          "ORDER": 1,
+          "SIGNATURE": "void(int)"
+        }
+      },
+      {
+        "id": "111669149696",
+        "label": "PARAM",
+        "code": "int n",
+        "properties": {
+          "kind": "METHOD_PARAMETER_IN",
+          "CLOSURE_BINDING_ID": "",
+          "CODE": "int n",
+          "COLUMN_NUMBER": 12,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 1,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 11,
+          "OFFSET_END": 16,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "115964116992",
+        "label": "METHOD_PARAMETER_OUT",
+        "code": "int n",
+        "properties": {
+          "kind": "METHOD_PARAMETER_OUT",
+          "CODE": "int n",
+          "COLUMN_NUMBER": 12,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 1,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": "",
+          "OFFSET_END": "",
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "124554051584",
+        "label": "METHOD_RETURN",
+        "code": "RET",
+        "properties": {
+          "kind": "METHOD_RETURN",
+          "CODE": "RET",
+          "COLUMN_NUMBER": 1,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "LINE_NUMBER": 1,
+          "OFFSET": 0,
+          "OFFSET_END": 116,
+          "ORDER": 3,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771072",
+        "target": "68719476737"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771073",
+        "target": "68719476738"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771073",
+        "target": "90194313216"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771074",
+        "target": "68719476739"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771075",
+        "target": "68719476741"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "47244640256"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "47244640257"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "47244640259"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "47244640260"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "47244640261"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803778",
+        "target": "30064771072"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803780",
+        "target": "47244640258"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803781",
+        "target": "30064771075"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771072",
+        "target": "68719476737"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771073",
+        "target": "68719476738"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771073",
+        "target": "90194313216"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771074",
+        "target": "68719476739"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771075",
+        "target": "68719476741"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640256",
+        "target": "25769803777"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640256",
+        "target": "68719476736"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640256",
+        "target": "25769803778"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640257",
+        "target": "25769803779"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640257",
+        "target": "25769803780"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640259",
+        "target": "94489280512"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640259",
+        "target": "30064771073"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640259",
+        "target": "30064771074"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640259",
+        "target": "25769803781"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640260",
+        "target": "68719476742"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640260",
+        "target": "25769803782"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640261",
+        "target": "25769803783"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640261",
+        "target": "68719476743"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "111669149696"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "25769803776"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "124554051584"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "115964116992"
+      },
+      {
+        "kind": "CDG",
+        "source": "30064771074",
+        "target": "68719476741"
+      },
+      {
+        "kind": "CDG",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "CDG",
+        "source": "30064771074",
+        "target": "30064771074"
+      },
+      {
+        "kind": "CDG",
+        "source": "30064771074",
+        "target": "30064771075"
+      },
+      {
+        "kind": "CDG",
+        "source": "30064771074",
+        "target": "68719476739"
+      },
+      {
+        "kind": "CDG",
+        "source": "68719476736",
+        "target": "30064771072"
+      },
+      {
+        "kind": "CDG",
+        "source": "68719476736",
+        "target": "68719476737"
+      },
+      {
+        "kind": "CDG",
+        "source": "68719476736",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CDG",
+        "source": "68719476743",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771072",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771073",
+        "target": "68719476739"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771074",
+        "target": "68719476741"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771074",
+        "target": "68719476742"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771075",
+        "target": "68719476739"
+      },
+      {
+        "kind": "CFG",
+        "source": "47244640258",
+        "target": "68719476738"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476736",
+        "target": "68719476737"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476736",
+        "target": "47244640258"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476737",
+        "target": "30064771072"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476738",
+        "target": "90194313216"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476739",
+        "target": "68719476740"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476740",
+        "target": "30064771074"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476741",
+        "target": "30064771075"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476742",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476743",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476743",
+        "target": "124554051584"
+      },
+      {
+        "kind": "CFG",
+        "source": "90194313216",
+        "target": "30064771073"
+      },
+      {
+        "kind": "CFG",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONDITION",
+        "source": "47244640256",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONDITION",
+        "source": "47244640259",
+        "target": "30064771074"
+      },
+      {
+        "kind": "CONDITION",
+        "source": "47244640260",
+        "target": "68719476742"
+      },
+      {
+        "kind": "CONDITION",
+        "source": "47244640261",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803776"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640256"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640257"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640259"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640260"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640261"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803777"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803778"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803779"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803780"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771073"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771074"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803781"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476742"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803782"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803783"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771072"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640258"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476738"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "90194313216"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476739"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476740"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771075"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476737"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476741"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771073",
+        "target": "68719476739"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771074",
+        "target": "68719476741"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771074",
+        "target": "68719476742"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "47244640258",
+        "target": "68719476738"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476736",
+        "target": "68719476737"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476736",
+        "target": "47244640258"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476737",
+        "target": "30064771072"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476738",
+        "target": "90194313216"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476739",
+        "target": "68719476740"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476740",
+        "target": "30064771074"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476741",
+        "target": "30064771075"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476742",
+        "target": "68719476743"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476743",
+        "target": "124554051584"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "90194313216",
+        "target": "30064771073"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "PARAMETER_LINK",
+        "source": "111669149696",
+        "target": "115964116992"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771072",
+        "target": "68719476737"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771073",
+        "target": "90194313216"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771075",
+        "target": "68719476741"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "47244640258",
+        "target": "68719476736"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476736",
+        "target": "30064771072"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476736",
+        "target": "107374182400"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476738",
+        "target": "47244640258"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476739",
+        "target": "30064771073"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476739",
+        "target": "30064771075"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476740",
+        "target": "68719476739"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476742",
+        "target": "30064771074"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476743",
+        "target": "68719476742"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "90194313216",
+        "target": "68719476738"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "124554051584",
+        "target": "68719476743"
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771073",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "i=0"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771074",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "i<n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771075",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "++i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476737",
+        "target": "30064771072",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476738",
+        "target": "30064771073",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476738",
+        "target": "68719476739",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476739",
+        "target": "68719476741",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476739",
+        "target": "68719476740",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476739",
+        "target": "30064771074",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476739",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "68719476739",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "30064771074",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476741",
+        "target": "30064771075",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476741",
+        "target": "68719476739",
+        "properties": {
+          "VARIABLE": "i"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "90194313216",
+        "target": "68719476738",
+        "properties": {
+          "VARIABLE": "0"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "90194313216",
+        "target": "30064771073",
+        "properties": {
+          "VARIABLE": "0"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476740",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "111669149696",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476739",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476736",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476741",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476742",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476737",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476743",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "90194313216",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "68719476737",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "68719476740",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "REF",
+        "source": "68719476736",
+        "target": "111669149696"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476737",
+        "target": "111669149696"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476738",
+        "target": "94489280512"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476739",
+        "target": "94489280512"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476740",
+        "target": "111669149696"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476741",
+        "target": "94489280512"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476742",
+        "target": "111669149696"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476743",
+        "target": "111669149696"
+      }
+    ]
+  },
+  "quality": {
+    "attribute_export_version": 2,
+    "retained_relation_kinds": [
+      "ARGUMENT",
+      "AST",
+      "CDG",
+      "CFG",
+      "CONDITION",
+      "CONTAINS",
+      "DDG",
+      "DOMINATE",
+      "PARAMETER_LINK",
+      "POST_DOMINATE",
+      "REF"
+    ],
+    "target_method_id": "107374182400",
+    "target_name": "loops",
+    "target_full_name": "loops",
+    "filename": "sample_0000.c",
+    "resolution_mode": "standalone_file_unique_method",
+    "source_occurrence_exact": true,
+    "source_token_match": true,
+    "unknown_nodes": 0,
+    "node_count": 32,
+    "edge_count": 164,
+    "edge_counts": {
+      "AST": 31,
+      "CFG": 18,
+      "CDG": 9,
+      "DDG": 30
+    },
+    "missing_relation_kinds": [],
+    "warnings": [],
+    "status": "accepted",
+    "reasons": [],
+    "preprocessing_version": 1,
+    "preprocessing_applied": false,
+    "original_source_sha256": "744c8ef372eb6b52e8700f3f0fec1660a90e9b144f124e1943a80c52b625e68d",
+    "parsed_source_sha256": "744c8ef372eb6b52e8700f3f0fec1660a90e9b144f124e1943a80c52b625e68d"
+  }
+}

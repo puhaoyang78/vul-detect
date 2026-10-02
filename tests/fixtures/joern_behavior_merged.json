@@ -1,0 +1,406 @@
+{
+  "source": "void merged_branches(int n) { if (n) {} else {} }",
+  "graph": {
+    "nodes": [
+      {
+        "id": "25769803776",
+        "label": "BLOCK",
+        "code": "{ if (n) {} else {} }",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{ if (n) {} else {} }",
+          "COLUMN_NUMBER": 29,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 0,
+          "OFFSET_END": 49,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803777",
+        "label": "BLOCK",
+        "code": "{}",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{}",
+          "COLUMN_NUMBER": 38,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 37,
+          "OFFSET_END": 39,
+          "ORDER": 2,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803778",
+        "label": "BLOCK",
+        "code": "{}",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "{}",
+          "COLUMN_NUMBER": 46,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "OFFSET": 45,
+          "OFFSET_END": 47,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "47244640256",
+        "label": "CONTROL_STRUCTURE",
+        "code": "if (n) {} else {}",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "if (n) {} else {}",
+          "COLUMN_NUMBER": 31,
+          "CONTROL_STRUCTURE_TYPE": "IF",
+          "LINE_NUMBER": 1,
+          "OFFSET": 30,
+          "OFFSET_END": 47,
+          "ORDER": 1,
+          "PARSER_TYPE_NAME": "CASTIfStatement"
+        }
+      },
+      {
+        "id": "47244640257",
+        "label": "CONTROL_STRUCTURE",
+        "code": "else",
+        "properties": {
+          "kind": "CONTROL_STRUCTURE",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "else",
+          "COLUMN_NUMBER": 46,
+          "CONTROL_STRUCTURE_TYPE": "ELSE",
+          "LINE_NUMBER": 1,
+          "OFFSET": 45,
+          "OFFSET_END": 47,
+          "ORDER": 3,
+          "PARSER_TYPE_NAME": "CASTCompoundStatement"
+        }
+      },
+      {
+        "id": "68719476736",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": -1,
+          "ARGUMENT_NAME": "",
+          "CODE": "n",
+          "COLUMN_NUMBER": 35,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 34,
+          "OFFSET_END": 35,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "107374182400",
+        "label": "METHOD",
+        "code": "merged_branches",
+        "properties": {
+          "kind": "METHOD",
+          "AST_PARENT_FULL_NAME": "sample_0000.c:<global>",
+          "AST_PARENT_TYPE": "TYPE_DECL",
+          "CODE": "void merged_branches(int n) { if (n) {} else {} }",
+          "COLUMN_NUMBER": 1,
+          "COLUMN_NUMBER_END": 49,
+          "FILENAME": "sample_0000.c",
+          "FULL_NAME": "merged_branches",
+          "GENERIC_SIGNATURE": "<empty>",
+          "HASH": "",
+          "IS_EXTERNAL": false,
+          "LINE_NUMBER": 1,
+          "LINE_NUMBER_END": 1,
+          "NAME": "merged_branches",
+          "OFFSET": 0,
+          "OFFSET_END": 49,
+          "ORDER": 1,
+          "SIGNATURE": "void(int)"
+        }
+      },
+      {
+        "id": "111669149696",
+        "label": "PARAM",
+        "code": "int n",
+        "properties": {
+          "kind": "METHOD_PARAMETER_IN",
+          "CLOSURE_BINDING_ID": "",
+          "CODE": "int n",
+          "COLUMN_NUMBER": 22,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 1,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 21,
+          "OFFSET_END": 26,
+          "ORDER": 1,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "115964116992",
+        "label": "METHOD_PARAMETER_OUT",
+        "code": "int n",
+        "properties": {
+          "kind": "METHOD_PARAMETER_OUT",
+          "CODE": "int n",
+          "COLUMN_NUMBER": 22,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 1,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": "",
+          "OFFSET_END": "",
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "124554051584",
+        "label": "METHOD_RETURN",
+        "code": "RET",
+        "properties": {
+          "kind": "METHOD_RETURN",
+          "CODE": "RET",
+          "COLUMN_NUMBER": 1,
+          "DYNAMIC_TYPE_HINT_FULL_NAME": "",
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "LINE_NUMBER": 1,
+          "OFFSET": 0,
+          "OFFSET_END": 49,
+          "ORDER": 3,
+          "POSSIBLE_TYPES": "",
+          "TYPE_FULL_NAME": "void"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "47244640256"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640256",
+        "target": "68719476736"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640256",
+        "target": "25769803777"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640256",
+        "target": "47244640257"
+      },
+      {
+        "kind": "AST",
+        "source": "47244640257",
+        "target": "25769803778"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "111669149696"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "25769803776"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "124554051584"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "115964116992"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476736",
+        "target": "124554051584"
+      },
+      {
+        "kind": "CFG",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONDITION",
+        "source": "47244640256",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803776"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640256"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803777"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "47244640257"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803778"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476736",
+        "target": "124554051584"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "PARAMETER_LINK",
+        "source": "111669149696",
+        "target": "115964116992"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476736",
+        "target": "107374182400"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "124554051584",
+        "target": "68719476736"
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476736",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "111669149696",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "REF",
+        "source": "68719476736",
+        "target": "111669149696"
+      }
+    ]
+  },
+  "quality": {
+    "attribute_export_version": 2,
+    "retained_relation_kinds": [
+      "AST",
+      "CFG",
+      "CONDITION",
+      "CONTAINS",
+      "DDG",
+      "DOMINATE",
+      "PARAMETER_LINK",
+      "POST_DOMINATE",
+      "REF"
+    ],
+    "target_method_id": "107374182400",
+    "target_name": "merged_branches",
+    "target_full_name": "merged_branches",
+    "filename": "sample_0000.c",
+    "resolution_mode": "standalone_file_unique_method",
+    "source_occurrence_exact": true,
+    "source_token_match": true,
+    "unknown_nodes": 0,
+    "node_count": 10,
+    "edge_count": 29,
+    "edge_counts": {
+      "AST": 9,
+      "CFG": 2,
+      "CDG": 0,
+      "DDG": 5
+    },
+    "missing_relation_kinds": [
+      "CDG"
+    ],
+    "warnings": [],
+    "status": "accepted",
+    "reasons": [],
+    "preprocessing_version": 1,
+    "preprocessing_applied": false,
+    "original_source_sha256": "5a5e4fe3ff1d7454e0e8cfdbc040988f5f9bfb40097ae2f56d6a48145cd28fa0",
+    "parsed_source_sha256": "5a5e4fe3ff1d7454e0e8cfdbc040988f5f9bfb40097ae2f56d6a48145cd28fa0"
+  }
+}

@@ -411,3 +411,113 @@ done
 先比较 valid 的 AUC/MCC/Accuracy/F1 与逐 epoch 曲线；该命令不评估 test。
 单 seed 结果仅用于筛选，后续再对 baseline 和候选用相同多 seed 复验。
 小规模 smoke 只验证执行、梯度、保存和重载，不代表分类性能提升。
+
+## 节点—边联合程序行为抽象（P0 分类消融）
+
+正式入口仍为 `python -m vulnmechanism.cfg_experiment`。原C及旧结果保留；新变体
+`behavior_nodes`、`behavior_edges`、`behavior_joint`、`behavior_masked` 分别开启节点、
+边、两者，以及两者但屏蔽全部边属性的同容量对照。均加载 P0 的阶段1 LoRA，图和
+分类头重新初始化，使用单次源码前向和融合 BCE；不启用区域、DDG 或额外分类分支。
+
+节点保持原C的集合，使用八个独立家族：`node_kind`（Joern种类及控制类型）、`api`
+（局部调用名称及分派方式）、`datatype`（带角色的类型、指针/数组层数及限定符）、
+`literal`（种类、词法信息、值及可确定的字符串长度）、`operator`（根/内部运算符）、
+`access_form`（标量/解引用/下标/字段/取地址）、`access_mode`（对象和地址计算操作数
+的读取、写入、读写、仅地址计算、不求值或未知）、`operand_role`（赋值、二元、一元、
+条件、接收者、实参、返回、下标、字段、转换的操作数角色）。局部遍历按节点身份去重，
+不穿过函数、控制体、语句块及嵌套函数引用。类型中的符号数组长度不作为名字特征，
+未知宽度不依据宿主平台填补。未表达的调用副作用、VLA求值或字符编码信息保留未知。
+
+边保持原C的端点和方向，四个家族为 `branch`、`guard`、`transfer`、`loop_role`。
+真假分支关联条件及分支AST，短路关联实际子条件；switch保留case/default。
+旧缓存缺少CONDITION关系时，使用具名语法字段与唯一直接AST子节点对应；
+无法唯一对应时保留未知，不固定取某个子节点序号。此恢复已用真实Joern夹具验证。
+循环回边由函数入口支配关系确认，SCC仅用于不可归约标志。
+条件摘要只描述当前决策边，不作为到达后续节点的已证明约束。
+同端点可选转移独立编码并平均，不合并为条件合取。
+显式异常只标注前端实际导出的连接，不补造throw到catch的边。
+
+所有家族分别保留 `NOT_APPLICABLE`、`NONE`、`UNKNOWN`。未知字段不会删除节点或函数。
+各家族词表仅由train拟合；语义UNKNOWN与词表外OOV在报告中分别计数。
+节点每家族16维均值嵌入后投影到128维；边每家族8维，合计32维。
+消息为 `original_message(h_u) + W2(ReLU(W1([h_u,h_v,e])))`，中间128维。
+保留5轮GRU、求和聚合和 `[h_final;x]` 读出。显式自环只增加属性残差，不重复自消息。
+`behavior_masked` 将各边家族统一映射到固定类别，连guard也屏蔽；网络和端点状态不变。
+`--disable-behavior-family` 可以屏蔽指定家族；原P0+C对照仍为 `dep_pretrain_cfg`。
+
+`cpg.py` 保留函数内所有导出关系和边属性。补导按唯一的根AST角色路径对应节点，
+再检查原CFG完全一致；不按相同文本或ID配对。补导只追加到新文件，失败立即停止，
+再次执行跳过已持久化项；不会修改原图。前端未提供的类型或宏语义不会因补导而自动恢复。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+REF=results/cfg_abc_seed42
+P0=results/cfg_dep_pretrain_windowfix_seed42
+A=results/cfg_dep_cfg_windowfix_seed42
+ATTR=data/cfg_behavior_seed42
+RUN=results/cfg_behavior_seed42
+
+# 基于已有缓存准备全量属性；输出目录须不存在。
+"$PY" -m vulnmechanism.cfg_experiment prepare-behavior \
+  --reference-run-dir "$REF" --output-dir "$ATTR"
+
+# 需要补充原生关系/属性时执行；保留旧图，支持增量重入。
+"$PY" -m vulnmechanism.cfg_experiment supplement-behavior \
+  --reference-run-dir "$REF" \
+  --output data/graphs/primevul_behavior_supplement.jsonl
+# 使用补导属性准备另一个独立缓存，不覆盖已使用的缓存。
+"$PY" -m vulnmechanism.cfg_experiment prepare-behavior \
+  --reference-run-dir "$REF" --output-dir data/cfg_behavior_supplemented_seed42 \
+  --supplement-path data/graphs/primevul_behavior_supplement.jsonl
+
+COMMON=(--dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl
+  --model-path /home/phy/models/Qwen2.5-Coder-7B-Instruct --source-dataset primevul
+  --reference-run-dir "$REF" --pretrain-dir "$P0" --comparison-run-dir "$A"
+  --behavior-dir "$ATTR" --source-max-length 2048 --seed 42 --epochs 3
+  --batch-size 1 --gradient-accumulation 8 --learning-rate 0.0002
+  --graph-learning-rate 0.001 --weight-decay 0.01 --graph-hidden-size 128
+  --graph-steps 5 --lora-r 16 --lora-alpha 32 --lora-dropout 0.05 --device cuda:0)
+
+# 正式训练，仅由用户执行。原P0+C复用A的已有结果。
+"$PY" -m vulnmechanism.cfg_experiment run "${COMMON[@]}" --output-dir "$RUN" \
+  --variants behavior_nodes behavior_edges behavior_joint behavior_masked
+
+# 各家族关闭消融；独立结果目录，设置保持一致。
+for FAMILY in node_kind api datatype literal operator access_form access_mode operand_role \
+              branch guard transfer loop_role; do
+  "$PY" -m vulnmechanism.cfg_experiment run "${COMMON[@]}" \
+    --output-dir "results/cfg_behavior_without_${FAMILY}_seed42" \
+    --variants behavior_joint --disable-behavior-family "$FAMILY"
+done
+
+# 主实验：valid比较、保存的valid阈值评价test、相对A纠错/新增错误。
+"$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$RUN" --split valid \
+  --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
+"$PY" -m vulnmechanism.cfg_experiment eval --run-dir "$RUN" --split test \
+  --variants behavior_nodes behavior_edges behavior_joint behavior_masked --device cuda:0
+"$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$RUN" --split test \
+  --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
+
+for FAMILY in node_kind api datatype literal operator access_form access_mode operand_role \
+              branch guard transfer loop_role; do
+  DIR="results/cfg_behavior_without_${FAMILY}_seed42"
+  "$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$DIR" --split valid \
+    --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
+  "$PY" -m vulnmechanism.cfg_experiment eval --run-dir "$DIR" --split test \
+    --variants behavior_joint --device cuda:0
+  "$PY" -m vulnmechanism.cfg_experiment compare --run-dir "$DIR" --split test \
+    --reference-run-dir "$A" --reference-variant dep_pretrain_cfg
+done
+
+"$PY" -m unittest tests.test_cfg_behavior tests.test_cpg_resolution \
+  tests.test_cfg_regions tests.test_cfg_ablation tests.test_cfg_dependency \
+  tests.test_cfg_region_context -q
+```
+
+属性准备输出 `attributes.jsonl`、train词表及 `audit.json`，后者记录train/valid的
+各家族至少一个已知分量的覆盖、包含未知字段的节点/边数、OOV token计数、
+非赋值节点覆盖和真实源码实例。含未知分量与含已知分量可同时成立，UNKNOWN比例不是
+整个家族缺失的比例；例如类型宽度未知不抹去已知的指针层数。
+结构边数以去重后的原C CFG为准；边家族覆盖按边计数，可选转移不增加拓扑边数。
+训练日志记录参数量；预测和纠错统计沿用原流程。未经过正式训练，不能由属性覆盖率
+或代码完整性推断分类性能改善。

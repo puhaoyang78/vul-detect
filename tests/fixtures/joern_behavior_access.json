@@ -1,0 +1,3661 @@
+{
+  "source": "int accesses(struct S *p, int *a, int n, int (*fp)(int)) {\n int x=1; { int x=2; a[x]+=n; }\n ++p->value; int q=(*p).value; int *z=&a[n];\n int y=*z; y += sizeof(x); y += sizeof(int);\n return fp((int)y) + q;\n}",
+  "graph": {
+    "nodes": [
+      {
+        "id": "25769803776",
+        "label": "BLOCK",
+        "code": "{\n int x=1; { int x=2; a[x]+=n; }\n ++p->value; int q=(*p).value; int *z=&a[n];\n int y=*z; y += sizeof(x); y += sizeof(int);\n return fp((int)y) + q;\n}",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "{\n int x=1; { int x=2; a[x]+=n; }\n ++p->value; int q=(*p).value; int *z=&a[n];\n int y=*z; y += sizeof(x); y += sizeof(int);\n return fp((int)y) + q;\n}",
+          "COLUMN_NUMBER": 58,
+          "LINE_NUMBER": 1,
+          "OFFSET": 0,
+          "OFFSET_END": 206,
+          "ORDER": 5,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "25769803777",
+        "label": "BLOCK",
+        "code": "{ int x=2; a[x]+=n; }",
+        "properties": {
+          "kind": "BLOCK",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "{ int x=2; a[x]+=n; }",
+          "COLUMN_NUMBER": 11,
+          "LINE_NUMBER": 2,
+          "OFFSET": 69,
+          "OFFSET_END": 90,
+          "ORDER": 3,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771072",
+        "label": "<operator>.assignment",
+        "code": "x=1",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "x=1",
+          "COLUMN_NUMBER": 6,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 2,
+          "METHOD_FULL_NAME": "<operator>.assignment",
+          "NAME": "<operator>.assignment",
+          "OFFSET": 64,
+          "OFFSET_END": 67,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771073",
+        "label": "<operator>.assignment",
+        "code": "x=2",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "x=2",
+          "COLUMN_NUMBER": 17,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 2,
+          "METHOD_FULL_NAME": "<operator>.assignment",
+          "NAME": "<operator>.assignment",
+          "OFFSET": 75,
+          "OFFSET_END": 78,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771074",
+        "label": "<operator>.assignmentPlus",
+        "code": "a[x]+=n",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "a[x]+=n",
+          "COLUMN_NUMBER": 22,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 2,
+          "METHOD_FULL_NAME": "<operator>.assignmentPlus",
+          "NAME": "<operator>.assignmentPlus",
+          "OFFSET": 80,
+          "OFFSET_END": 87,
+          "ORDER": 3,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771075",
+        "label": "<operator>.indirectIndexAccess",
+        "code": "a[x]",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "a[x]",
+          "COLUMN_NUMBER": 22,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 2,
+          "METHOD_FULL_NAME": "<operator>.indirectIndexAccess",
+          "NAME": "<operator>.indirectIndexAccess",
+          "OFFSET": 80,
+          "OFFSET_END": 84,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771076",
+        "label": "<operator>.preIncrement",
+        "code": "++p->value",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "++p->value",
+          "COLUMN_NUMBER": 2,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.preIncrement",
+          "NAME": "<operator>.preIncrement",
+          "OFFSET": 92,
+          "OFFSET_END": 102,
+          "ORDER": 4,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771077",
+        "label": "<operator>.indirectFieldAccess",
+        "code": "p->value",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "p->value",
+          "COLUMN_NUMBER": 4,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.indirectFieldAccess",
+          "NAME": "<operator>.indirectFieldAccess",
+          "OFFSET": 94,
+          "OFFSET_END": 102,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771078",
+        "label": "<operator>.assignment",
+        "code": "q=(*p).value",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "q=(*p).value",
+          "COLUMN_NUMBER": 18,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.assignment",
+          "NAME": "<operator>.assignment",
+          "OFFSET": 108,
+          "OFFSET_END": 120,
+          "ORDER": 6,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771079",
+        "label": "<operator>.fieldAccess",
+        "code": "(*p).value",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "(*p).value",
+          "COLUMN_NUMBER": 20,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.fieldAccess",
+          "NAME": "<operator>.fieldAccess",
+          "OFFSET": 110,
+          "OFFSET_END": 120,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771080",
+        "label": "<operator>.indirection",
+        "code": "*p",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "*p",
+          "COLUMN_NUMBER": 21,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.indirection",
+          "NAME": "<operator>.indirection",
+          "OFFSET": 111,
+          "OFFSET_END": 113,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771081",
+        "label": "<operator>.assignment",
+        "code": "*z=&a[n]",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "*z=&a[n]",
+          "COLUMN_NUMBER": 36,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.assignment",
+          "NAME": "<operator>.assignment",
+          "OFFSET": 126,
+          "OFFSET_END": 134,
+          "ORDER": 8,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771082",
+        "label": "<operator>.addressOf",
+        "code": "&a[n]",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "&a[n]",
+          "COLUMN_NUMBER": 39,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.addressOf",
+          "NAME": "<operator>.addressOf",
+          "OFFSET": 129,
+          "OFFSET_END": 134,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771083",
+        "label": "<operator>.indirectIndexAccess",
+        "code": "a[n]",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "a[n]",
+          "COLUMN_NUMBER": 40,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 3,
+          "METHOD_FULL_NAME": "<operator>.indirectIndexAccess",
+          "NAME": "<operator>.indirectIndexAccess",
+          "OFFSET": 130,
+          "OFFSET_END": 134,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771084",
+        "label": "<operator>.assignment",
+        "code": "y=*z",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "y=*z",
+          "COLUMN_NUMBER": 6,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 4,
+          "METHOD_FULL_NAME": "<operator>.assignment",
+          "NAME": "<operator>.assignment",
+          "OFFSET": 141,
+          "OFFSET_END": 145,
+          "ORDER": 10,
+          "TYPE_FULL_NAME": "void"
+        }
+      },
+      {
+        "id": "30064771085",
+        "label": "<operator>.indirection",
+        "code": "*z",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "*z",
+          "COLUMN_NUMBER": 8,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 4,
+          "METHOD_FULL_NAME": "<operator>.indirection",
+          "NAME": "<operator>.indirection",
+          "OFFSET": 143,
+          "OFFSET_END": 145,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771086",
+        "label": "<operator>.assignmentPlus",
+        "code": "y += sizeof(x)",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "y += sizeof(x)",
+          "COLUMN_NUMBER": 12,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 4,
+          "METHOD_FULL_NAME": "<operator>.assignmentPlus",
+          "NAME": "<operator>.assignmentPlus",
+          "OFFSET": 147,
+          "OFFSET_END": 161,
+          "ORDER": 11,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771087",
+        "label": "<operator>.sizeOf",
+        "code": "sizeof(x)",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "sizeof(x)",
+          "COLUMN_NUMBER": 17,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 4,
+          "METHOD_FULL_NAME": "<operator>.sizeOf",
+          "NAME": "<operator>.sizeOf",
+          "OFFSET": 152,
+          "OFFSET_END": 161,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771088",
+        "label": "<operator>.assignmentPlus",
+        "code": "y += sizeof(int)",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "y += sizeof(int)",
+          "COLUMN_NUMBER": 28,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 4,
+          "METHOD_FULL_NAME": "<operator>.assignmentPlus",
+          "NAME": "<operator>.assignmentPlus",
+          "OFFSET": 163,
+          "OFFSET_END": 179,
+          "ORDER": 12,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771089",
+        "label": "<operator>.sizeOf",
+        "code": "sizeof(int)",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "sizeof(int)",
+          "COLUMN_NUMBER": 33,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 4,
+          "METHOD_FULL_NAME": "<operator>.sizeOf",
+          "NAME": "<operator>.sizeOf",
+          "OFFSET": 168,
+          "OFFSET_END": 179,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771090",
+        "label": "<operator>.addition",
+        "code": "fp((int)y) + q",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "fp((int)y) + q",
+          "COLUMN_NUMBER": 9,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 5,
+          "METHOD_FULL_NAME": "<operator>.addition",
+          "NAME": "<operator>.addition",
+          "OFFSET": 189,
+          "OFFSET_END": 203,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "ANY"
+        }
+      },
+      {
+        "id": "30064771091",
+        "label": "<operator>.pointerCall",
+        "code": "fp((int)y)",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "fp((int)y)",
+          "COLUMN_NUMBER": 9,
+          "DISPATCH_TYPE": "DYNAMIC_DISPATCH",
+          "LINE_NUMBER": 5,
+          "METHOD_FULL_NAME": "<operator>.pointerCall",
+          "NAME": "<operator>.pointerCall",
+          "OFFSET": 189,
+          "OFFSET_END": 199,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "30064771092",
+        "label": "<operator>.cast",
+        "code": "(int)y",
+        "properties": {
+          "kind": "CALL",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "(int)y",
+          "COLUMN_NUMBER": 12,
+          "DISPATCH_TYPE": "STATIC_DISPATCH",
+          "LINE_NUMBER": 5,
+          "METHOD_FULL_NAME": "<operator>.cast",
+          "NAME": "<operator>.cast",
+          "OFFSET": 192,
+          "OFFSET_END": 198,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "55834574848",
+        "label": "FIELD_IDENTIFIER",
+        "code": "value",
+        "properties": {
+          "kind": "FIELD_IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CANONICAL_NAME": "value",
+          "CODE": "value",
+          "COLUMN_NUMBER": 4,
+          "LINE_NUMBER": 3,
+          "OFFSET": 94,
+          "OFFSET_END": 102,
+          "ORDER": 2
+        }
+      },
+      {
+        "id": "55834574849",
+        "label": "FIELD_IDENTIFIER",
+        "code": "value",
+        "properties": {
+          "kind": "FIELD_IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CANONICAL_NAME": "value",
+          "CODE": "value",
+          "COLUMN_NUMBER": 20,
+          "LINE_NUMBER": 3,
+          "OFFSET": 110,
+          "OFFSET_END": 120,
+          "ORDER": 2
+        }
+      },
+      {
+        "id": "68719476736",
+        "label": "IDENTIFIER",
+        "code": "x",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "x",
+          "COLUMN_NUMBER": 6,
+          "LINE_NUMBER": 2,
+          "NAME": "x",
+          "OFFSET": 64,
+          "OFFSET_END": 65,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476737",
+        "label": "IDENTIFIER",
+        "code": "x",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "x",
+          "COLUMN_NUMBER": 17,
+          "LINE_NUMBER": 2,
+          "NAME": "x",
+          "OFFSET": 75,
+          "OFFSET_END": 76,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476738",
+        "label": "IDENTIFIER",
+        "code": "a",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "a",
+          "COLUMN_NUMBER": 22,
+          "LINE_NUMBER": 2,
+          "NAME": "a",
+          "OFFSET": 80,
+          "OFFSET_END": 81,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "68719476739",
+        "label": "IDENTIFIER",
+        "code": "x",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "x",
+          "COLUMN_NUMBER": 24,
+          "LINE_NUMBER": 2,
+          "NAME": "x",
+          "OFFSET": 82,
+          "OFFSET_END": 83,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476740",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "n",
+          "COLUMN_NUMBER": 28,
+          "LINE_NUMBER": 2,
+          "NAME": "n",
+          "OFFSET": 86,
+          "OFFSET_END": 87,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476741",
+        "label": "IDENTIFIER",
+        "code": "p",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "p",
+          "COLUMN_NUMBER": 4,
+          "LINE_NUMBER": 3,
+          "NAME": "p",
+          "OFFSET": 94,
+          "OFFSET_END": 95,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "S*"
+        }
+      },
+      {
+        "id": "68719476742",
+        "label": "IDENTIFIER",
+        "code": "q",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "q",
+          "COLUMN_NUMBER": 18,
+          "LINE_NUMBER": 3,
+          "NAME": "q",
+          "OFFSET": 108,
+          "OFFSET_END": 109,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476743",
+        "label": "IDENTIFIER",
+        "code": "p",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "p",
+          "COLUMN_NUMBER": 22,
+          "LINE_NUMBER": 3,
+          "NAME": "p",
+          "OFFSET": 112,
+          "OFFSET_END": 113,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "S*"
+        }
+      },
+      {
+        "id": "68719476744",
+        "label": "IDENTIFIER",
+        "code": "z",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "z",
+          "COLUMN_NUMBER": 37,
+          "LINE_NUMBER": 3,
+          "NAME": "z",
+          "OFFSET": 127,
+          "OFFSET_END": 128,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "68719476745",
+        "label": "IDENTIFIER",
+        "code": "a",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "a",
+          "COLUMN_NUMBER": 40,
+          "LINE_NUMBER": 3,
+          "NAME": "a",
+          "OFFSET": 130,
+          "OFFSET_END": 131,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "68719476746",
+        "label": "IDENTIFIER",
+        "code": "n",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "n",
+          "COLUMN_NUMBER": 42,
+          "LINE_NUMBER": 3,
+          "NAME": "n",
+          "OFFSET": 132,
+          "OFFSET_END": 133,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476747",
+        "label": "IDENTIFIER",
+        "code": "y",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "y",
+          "COLUMN_NUMBER": 6,
+          "LINE_NUMBER": 4,
+          "NAME": "y",
+          "OFFSET": 141,
+          "OFFSET_END": 142,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476748",
+        "label": "IDENTIFIER",
+        "code": "z",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "z",
+          "COLUMN_NUMBER": 9,
+          "LINE_NUMBER": 4,
+          "NAME": "z",
+          "OFFSET": 144,
+          "OFFSET_END": 145,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "68719476749",
+        "label": "IDENTIFIER",
+        "code": "y",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "y",
+          "COLUMN_NUMBER": 12,
+          "LINE_NUMBER": 4,
+          "NAME": "y",
+          "OFFSET": 147,
+          "OFFSET_END": 148,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476750",
+        "label": "IDENTIFIER",
+        "code": "x",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "x",
+          "COLUMN_NUMBER": 24,
+          "LINE_NUMBER": 4,
+          "NAME": "x",
+          "OFFSET": 159,
+          "OFFSET_END": 160,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476751",
+        "label": "IDENTIFIER",
+        "code": "y",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "y",
+          "COLUMN_NUMBER": 28,
+          "LINE_NUMBER": 4,
+          "NAME": "y",
+          "OFFSET": 163,
+          "OFFSET_END": 164,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476752",
+        "label": "IDENTIFIER",
+        "code": "int",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "int",
+          "COLUMN_NUMBER": 40,
+          "LINE_NUMBER": 4,
+          "NAME": "int",
+          "OFFSET": 175,
+          "OFFSET_END": 178,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476753",
+        "label": "IDENTIFIER",
+        "code": "fp",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "fp",
+          "COLUMN_NUMBER": 9,
+          "LINE_NUMBER": 5,
+          "NAME": "fp",
+          "OFFSET": 189,
+          "OFFSET_END": 191,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476754",
+        "label": "IDENTIFIER",
+        "code": "y",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "y",
+          "COLUMN_NUMBER": 17,
+          "LINE_NUMBER": 5,
+          "NAME": "y",
+          "OFFSET": 197,
+          "OFFSET_END": 198,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "68719476755",
+        "label": "IDENTIFIER",
+        "code": "q",
+        "properties": {
+          "kind": "IDENTIFIER",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "q",
+          "COLUMN_NUMBER": 22,
+          "LINE_NUMBER": 5,
+          "NAME": "q",
+          "OFFSET": 202,
+          "OFFSET_END": 203,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "90194313216",
+        "label": "LITERAL",
+        "code": "1",
+        "properties": {
+          "kind": "LITERAL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "1",
+          "COLUMN_NUMBER": 8,
+          "LINE_NUMBER": 2,
+          "OFFSET": 66,
+          "OFFSET_END": 67,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "90194313217",
+        "label": "LITERAL",
+        "code": "2",
+        "properties": {
+          "kind": "LITERAL",
+          "ARGUMENT_INDEX": 2,
+          "CODE": "2",
+          "COLUMN_NUMBER": 19,
+          "LINE_NUMBER": 2,
+          "OFFSET": 77,
+          "OFFSET_END": 78,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "94489280512",
+        "label": "LOCAL",
+        "code": "int x",
+        "properties": {
+          "kind": "LOCAL",
+          "CODE": "int x",
+          "COLUMN_NUMBER": 6,
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 2,
+          "NAME": "x",
+          "OFFSET": 64,
+          "OFFSET_END": 67,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "94489280513",
+        "label": "LOCAL",
+        "code": "int x",
+        "properties": {
+          "kind": "LOCAL",
+          "CODE": "int x",
+          "COLUMN_NUMBER": 17,
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 2,
+          "NAME": "x",
+          "OFFSET": 75,
+          "OFFSET_END": 78,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "94489280514",
+        "label": "LOCAL",
+        "code": "int q",
+        "properties": {
+          "kind": "LOCAL",
+          "CODE": "int q",
+          "COLUMN_NUMBER": 18,
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 3,
+          "NAME": "q",
+          "OFFSET": 108,
+          "OFFSET_END": 120,
+          "ORDER": 5,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "94489280515",
+        "label": "LOCAL",
+        "code": "int *z",
+        "properties": {
+          "kind": "LOCAL",
+          "CODE": "int *z",
+          "COLUMN_NUMBER": 37,
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 3,
+          "NAME": "z",
+          "OFFSET": 126,
+          "OFFSET_END": 134,
+          "ORDER": 7,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "94489280516",
+        "label": "LOCAL",
+        "code": "int y",
+        "properties": {
+          "kind": "LOCAL",
+          "CODE": "int y",
+          "COLUMN_NUMBER": 6,
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 4,
+          "NAME": "y",
+          "OFFSET": 141,
+          "OFFSET_END": 145,
+          "ORDER": 9,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "94489280517",
+        "label": "LOCAL",
+        "code": "int",
+        "properties": {
+          "kind": "LOCAL",
+          "CODE": "int",
+          "COLUMN_NUMBER": 40,
+          "GENERIC_SIGNATURE": "<empty>",
+          "LINE_NUMBER": 4,
+          "NAME": "int",
+          "ORDER": 0,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "107374182400",
+        "label": "METHOD",
+        "code": "accesses",
+        "properties": {
+          "kind": "METHOD",
+          "AST_PARENT_FULL_NAME": "sample_0000.c:<global>",
+          "AST_PARENT_TYPE": "TYPE_DECL",
+          "CODE": "int accesses(struct S *p, int *a, int n, int (*fp)(int)) {\n int x=1; { int x=2; a[x]+=n; }\n ++p->value; int q=(*p).value; int *z=&a[n];\n int y=*z; y += sizeof(x); y += sizeof(int);\n return fp((int)y) + q;\n}",
+          "COLUMN_NUMBER": 1,
+          "COLUMN_NUMBER_END": 1,
+          "FILENAME": "sample_0000.c",
+          "FULL_NAME": "accesses",
+          "GENERIC_SIGNATURE": "<empty>",
+          "IS_EXTERNAL": false,
+          "LINE_NUMBER": 1,
+          "LINE_NUMBER_END": 6,
+          "NAME": "accesses",
+          "OFFSET": 0,
+          "OFFSET_END": 206,
+          "ORDER": 1,
+          "SIGNATURE": "int(S*,int*,int,int)"
+        }
+      },
+      {
+        "id": "111669149696",
+        "label": "PARAM",
+        "code": "struct S *p",
+        "properties": {
+          "kind": "METHOD_PARAMETER_IN",
+          "CODE": "struct S *p",
+          "COLUMN_NUMBER": 14,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 1,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "p",
+          "OFFSET": 13,
+          "OFFSET_END": 24,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "S*"
+        }
+      },
+      {
+        "id": "111669149697",
+        "label": "PARAM",
+        "code": "int *a",
+        "properties": {
+          "kind": "METHOD_PARAMETER_IN",
+          "CODE": "int *a",
+          "COLUMN_NUMBER": 27,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 2,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "a",
+          "OFFSET": 26,
+          "OFFSET_END": 32,
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "111669149698",
+        "label": "PARAM",
+        "code": "int n",
+        "properties": {
+          "kind": "METHOD_PARAMETER_IN",
+          "CODE": "int n",
+          "COLUMN_NUMBER": 35,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 3,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "OFFSET": 34,
+          "OFFSET_END": 39,
+          "ORDER": 3,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "111669149699",
+        "label": "PARAM",
+        "code": "int (*fp)(int)",
+        "properties": {
+          "kind": "METHOD_PARAMETER_IN",
+          "CODE": "int (*fp)(int)",
+          "COLUMN_NUMBER": 42,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 4,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "fp",
+          "OFFSET": 41,
+          "OFFSET_END": 55,
+          "ORDER": 4,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "115964116992",
+        "label": "METHOD_PARAMETER_OUT",
+        "code": "struct S *p",
+        "properties": {
+          "kind": "METHOD_PARAMETER_OUT",
+          "CODE": "struct S *p",
+          "COLUMN_NUMBER": 14,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 1,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "p",
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "S*"
+        }
+      },
+      {
+        "id": "115964116993",
+        "label": "METHOD_PARAMETER_OUT",
+        "code": "int *a",
+        "properties": {
+          "kind": "METHOD_PARAMETER_OUT",
+          "CODE": "int *a",
+          "COLUMN_NUMBER": 27,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 2,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "a",
+          "ORDER": 2,
+          "TYPE_FULL_NAME": "int*"
+        }
+      },
+      {
+        "id": "115964116994",
+        "label": "METHOD_PARAMETER_OUT",
+        "code": "int n",
+        "properties": {
+          "kind": "METHOD_PARAMETER_OUT",
+          "CODE": "int n",
+          "COLUMN_NUMBER": 35,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 3,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "n",
+          "ORDER": 3,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "115964116995",
+        "label": "METHOD_PARAMETER_OUT",
+        "code": "int (*fp)(int)",
+        "properties": {
+          "kind": "METHOD_PARAMETER_OUT",
+          "CODE": "int (*fp)(int)",
+          "COLUMN_NUMBER": 42,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "INDEX": 4,
+          "IS_VARIADIC": false,
+          "LINE_NUMBER": 1,
+          "NAME": "fp",
+          "ORDER": 4,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "124554051584",
+        "label": "METHOD_RETURN",
+        "code": "RET",
+        "properties": {
+          "kind": "METHOD_RETURN",
+          "CODE": "RET",
+          "COLUMN_NUMBER": 1,
+          "EVALUATION_STRATEGY": "BY_VALUE",
+          "LINE_NUMBER": 1,
+          "OFFSET": 0,
+          "OFFSET_END": 206,
+          "ORDER": 6,
+          "TYPE_FULL_NAME": "int"
+        }
+      },
+      {
+        "id": "141733920768",
+        "label": "RETURN",
+        "code": "return fp((int)y) + q;",
+        "properties": {
+          "kind": "RETURN",
+          "ARGUMENT_INDEX": -1,
+          "CODE": "return fp((int)y) + q;",
+          "COLUMN_NUMBER": 2,
+          "LINE_NUMBER": 5,
+          "OFFSET": 182,
+          "OFFSET_END": 204,
+          "ORDER": 13
+        }
+      },
+      {
+        "id": "176093659136",
+        "label": "TYPE_REF",
+        "code": "int",
+        "properties": {
+          "kind": "TYPE_REF",
+          "ARGUMENT_INDEX": 1,
+          "CODE": "int",
+          "COLUMN_NUMBER": 13,
+          "LINE_NUMBER": 5,
+          "OFFSET": 193,
+          "OFFSET_END": 196,
+          "ORDER": 1,
+          "TYPE_FULL_NAME": "int"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771072",
+        "target": "68719476736"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771072",
+        "target": "90194313216"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771073",
+        "target": "68719476737"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771073",
+        "target": "90194313217"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771074",
+        "target": "30064771075"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771075",
+        "target": "68719476738"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771075",
+        "target": "68719476739"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771076",
+        "target": "30064771077"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771077",
+        "target": "68719476741"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771077",
+        "target": "55834574848"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771078",
+        "target": "68719476742"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771078",
+        "target": "30064771079"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771079",
+        "target": "30064771080"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771079",
+        "target": "55834574849"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771080",
+        "target": "68719476743"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771081",
+        "target": "68719476744"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771081",
+        "target": "30064771082"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771082",
+        "target": "30064771083"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771083",
+        "target": "68719476745"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771083",
+        "target": "68719476746"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771084",
+        "target": "68719476747"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771084",
+        "target": "30064771085"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771085",
+        "target": "68719476748"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771086",
+        "target": "68719476749"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771086",
+        "target": "30064771087"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771087",
+        "target": "68719476750"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771088",
+        "target": "68719476751"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771088",
+        "target": "30064771089"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771089",
+        "target": "68719476752"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771090",
+        "target": "30064771091"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771090",
+        "target": "68719476755"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771091",
+        "target": "30064771092"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771092",
+        "target": "176093659136"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "30064771092",
+        "target": "68719476754"
+      },
+      {
+        "kind": "ARGUMENT",
+        "source": "141733920768",
+        "target": "30064771090"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "94489280512"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771072"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "25769803777"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771076"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "94489280514"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771078"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "94489280515"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771081"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "94489280516"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771084"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771086"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "30064771088"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "141733920768"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803776",
+        "target": "94489280517"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803777",
+        "target": "94489280513"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803777",
+        "target": "30064771073"
+      },
+      {
+        "kind": "AST",
+        "source": "25769803777",
+        "target": "30064771074"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771072",
+        "target": "68719476736"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771072",
+        "target": "90194313216"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771073",
+        "target": "68719476737"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771073",
+        "target": "90194313217"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771074",
+        "target": "30064771075"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771075",
+        "target": "68719476738"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771075",
+        "target": "68719476739"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771076",
+        "target": "30064771077"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771077",
+        "target": "68719476741"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771077",
+        "target": "55834574848"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771078",
+        "target": "68719476742"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771078",
+        "target": "30064771079"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771079",
+        "target": "30064771080"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771079",
+        "target": "55834574849"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771080",
+        "target": "68719476743"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771081",
+        "target": "68719476744"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771081",
+        "target": "30064771082"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771082",
+        "target": "30064771083"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771083",
+        "target": "68719476745"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771083",
+        "target": "68719476746"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771084",
+        "target": "68719476747"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771084",
+        "target": "30064771085"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771085",
+        "target": "68719476748"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771086",
+        "target": "68719476749"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771086",
+        "target": "30064771087"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771087",
+        "target": "68719476750"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771088",
+        "target": "68719476751"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771088",
+        "target": "30064771089"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771089",
+        "target": "68719476752"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771090",
+        "target": "30064771091"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771090",
+        "target": "68719476755"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771091",
+        "target": "68719476753"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771091",
+        "target": "30064771092"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771092",
+        "target": "176093659136"
+      },
+      {
+        "kind": "AST",
+        "source": "30064771092",
+        "target": "68719476754"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "111669149696"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "111669149697"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "111669149698"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "111669149699"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "25769803776"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "124554051584"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "115964116992"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "115964116993"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "115964116994"
+      },
+      {
+        "kind": "AST",
+        "source": "107374182400",
+        "target": "115964116995"
+      },
+      {
+        "kind": "AST",
+        "source": "141733920768",
+        "target": "30064771090"
+      },
+      {
+        "kind": "CFG",
+        "source": "25769803777",
+        "target": "68719476741"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771072",
+        "target": "68719476737"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771073",
+        "target": "68719476738"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771074",
+        "target": "25769803777"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771075",
+        "target": "68719476740"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771076",
+        "target": "68719476742"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771077",
+        "target": "30064771076"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771078",
+        "target": "68719476744"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771079",
+        "target": "30064771078"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771080",
+        "target": "55834574849"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771081",
+        "target": "68719476747"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771082",
+        "target": "30064771081"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771083",
+        "target": "30064771082"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771084",
+        "target": "68719476749"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771085",
+        "target": "30064771084"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771086",
+        "target": "68719476751"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771087",
+        "target": "30064771086"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771088",
+        "target": "68719476753"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771089",
+        "target": "30064771088"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771090",
+        "target": "141733920768"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771091",
+        "target": "68719476755"
+      },
+      {
+        "kind": "CFG",
+        "source": "30064771092",
+        "target": "30064771091"
+      },
+      {
+        "kind": "CFG",
+        "source": "55834574848",
+        "target": "30064771077"
+      },
+      {
+        "kind": "CFG",
+        "source": "55834574849",
+        "target": "30064771079"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476736",
+        "target": "90194313216"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476737",
+        "target": "90194313217"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476738",
+        "target": "68719476739"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476739",
+        "target": "30064771075"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476740",
+        "target": "30064771074"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476741",
+        "target": "55834574848"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476742",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476743",
+        "target": "30064771080"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476744",
+        "target": "68719476745"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476745",
+        "target": "68719476746"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476746",
+        "target": "30064771083"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476747",
+        "target": "68719476748"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476748",
+        "target": "30064771085"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476749",
+        "target": "68719476750"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476750",
+        "target": "30064771087"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476751",
+        "target": "68719476752"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476752",
+        "target": "30064771089"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476753",
+        "target": "176093659136"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476754",
+        "target": "30064771092"
+      },
+      {
+        "kind": "CFG",
+        "source": "68719476755",
+        "target": "30064771090"
+      },
+      {
+        "kind": "CFG",
+        "source": "90194313216",
+        "target": "30064771072"
+      },
+      {
+        "kind": "CFG",
+        "source": "90194313217",
+        "target": "30064771073"
+      },
+      {
+        "kind": "CFG",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CFG",
+        "source": "141733920768",
+        "target": "124554051584"
+      },
+      {
+        "kind": "CFG",
+        "source": "176093659136",
+        "target": "68719476754"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803776"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771072"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "25769803777"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771076"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771078"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771081"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771084"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771086"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771088"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "141733920768"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "90194313216"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771073"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771074"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771077"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476742"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771079"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476744"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771082"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476747"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771085"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476749"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771087"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476751"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771089"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771090"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476737"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "90194313217"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771075"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476740"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476741"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "55834574848"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771080"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "55834574849"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771083"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476748"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476750"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476752"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771091"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476755"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476738"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476739"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476743"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476745"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476746"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476753"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "30064771092"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "176093659136"
+      },
+      {
+        "kind": "CONTAINS",
+        "source": "107374182400",
+        "target": "68719476754"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "25769803777",
+        "target": "68719476741"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771072",
+        "target": "68719476737"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771073",
+        "target": "68719476738"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771074",
+        "target": "25769803777"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771075",
+        "target": "68719476740"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771076",
+        "target": "68719476742"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771077",
+        "target": "30064771076"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771078",
+        "target": "68719476744"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771079",
+        "target": "30064771078"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771080",
+        "target": "55834574849"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771081",
+        "target": "68719476747"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771082",
+        "target": "30064771081"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771083",
+        "target": "30064771082"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771084",
+        "target": "68719476749"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771085",
+        "target": "30064771084"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771086",
+        "target": "68719476751"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771087",
+        "target": "30064771086"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771088",
+        "target": "68719476753"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771089",
+        "target": "30064771088"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771090",
+        "target": "141733920768"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771091",
+        "target": "68719476755"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "30064771092",
+        "target": "30064771091"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "55834574848",
+        "target": "30064771077"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "55834574849",
+        "target": "30064771079"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476736",
+        "target": "90194313216"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476737",
+        "target": "90194313217"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476738",
+        "target": "68719476739"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476739",
+        "target": "30064771075"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476740",
+        "target": "30064771074"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476741",
+        "target": "55834574848"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476742",
+        "target": "68719476743"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476743",
+        "target": "30064771080"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476744",
+        "target": "68719476745"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476745",
+        "target": "68719476746"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476746",
+        "target": "30064771083"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476747",
+        "target": "68719476748"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476748",
+        "target": "30064771085"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476749",
+        "target": "68719476750"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476750",
+        "target": "30064771087"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476751",
+        "target": "68719476752"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476752",
+        "target": "30064771089"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476753",
+        "target": "176093659136"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476754",
+        "target": "30064771092"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "68719476755",
+        "target": "30064771090"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "90194313216",
+        "target": "30064771072"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "90194313217",
+        "target": "30064771073"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "107374182400",
+        "target": "68719476736"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "141733920768",
+        "target": "124554051584"
+      },
+      {
+        "kind": "DOMINATE",
+        "source": "176093659136",
+        "target": "68719476754"
+      },
+      {
+        "kind": "PARAMETER_LINK",
+        "source": "111669149696",
+        "target": "115964116992"
+      },
+      {
+        "kind": "PARAMETER_LINK",
+        "source": "111669149697",
+        "target": "115964116993"
+      },
+      {
+        "kind": "PARAMETER_LINK",
+        "source": "111669149698",
+        "target": "115964116994"
+      },
+      {
+        "kind": "PARAMETER_LINK",
+        "source": "111669149699",
+        "target": "115964116995"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "25769803777",
+        "target": "30064771074"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771072",
+        "target": "90194313216"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771073",
+        "target": "90194313217"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771074",
+        "target": "68719476740"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771075",
+        "target": "68719476739"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771076",
+        "target": "30064771077"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771077",
+        "target": "55834574848"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771078",
+        "target": "30064771079"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771079",
+        "target": "55834574849"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771080",
+        "target": "68719476743"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771081",
+        "target": "30064771082"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771082",
+        "target": "30064771083"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771083",
+        "target": "68719476746"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771084",
+        "target": "30064771085"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771085",
+        "target": "68719476748"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771086",
+        "target": "30064771087"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771087",
+        "target": "68719476750"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771088",
+        "target": "30064771089"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771089",
+        "target": "68719476752"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771090",
+        "target": "68719476755"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771091",
+        "target": "30064771092"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "30064771092",
+        "target": "68719476754"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "55834574848",
+        "target": "68719476741"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "55834574849",
+        "target": "30064771080"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476736",
+        "target": "107374182400"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476737",
+        "target": "30064771072"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476738",
+        "target": "30064771073"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476739",
+        "target": "68719476738"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476740",
+        "target": "30064771075"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476741",
+        "target": "25769803777"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476742",
+        "target": "30064771076"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476743",
+        "target": "68719476742"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476744",
+        "target": "30064771078"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476745",
+        "target": "68719476744"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476746",
+        "target": "68719476745"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476747",
+        "target": "30064771081"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476748",
+        "target": "68719476747"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476749",
+        "target": "30064771084"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476750",
+        "target": "68719476749"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476751",
+        "target": "30064771086"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476752",
+        "target": "68719476751"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476753",
+        "target": "30064771088"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476754",
+        "target": "176093659136"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "68719476755",
+        "target": "30064771091"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "90194313216",
+        "target": "68719476736"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "90194313217",
+        "target": "68719476737"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "124554051584",
+        "target": "141733920768"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "141733920768",
+        "target": "30064771090"
+      },
+      {
+        "kind": "POST_DOMINATE",
+        "source": "176093659136",
+        "target": "68719476753"
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771072",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "x=1"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771073",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "x=2"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771074",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "a[x]+=n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771075",
+        "target": "68719476745",
+        "properties": {
+          "VARIABLE": "a[x]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771075",
+        "target": "30064771074",
+        "properties": {
+          "VARIABLE": "a[x]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771075",
+        "target": "115964116993",
+        "properties": {
+          "VARIABLE": "a[x]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771075",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "a[x]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771076",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "++p->value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771077",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "p->value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771077",
+        "target": "30064771079",
+        "properties": {
+          "VARIABLE": "p->value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771077",
+        "target": "30064771076",
+        "properties": {
+          "VARIABLE": "p->value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771077",
+        "target": "68719476743",
+        "properties": {
+          "VARIABLE": "p->value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771077",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "p->value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771078",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "q=(*p).value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771079",
+        "target": "68719476742",
+        "properties": {
+          "VARIABLE": "(*p).value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771079",
+        "target": "30064771078",
+        "properties": {
+          "VARIABLE": "(*p).value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771079",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "(*p).value"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771081",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "*z=&a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771082",
+        "target": "68719476744",
+        "properties": {
+          "VARIABLE": "&a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771082",
+        "target": "30064771081",
+        "properties": {
+          "VARIABLE": "&a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771082",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "&a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771083",
+        "target": "30064771082",
+        "properties": {
+          "VARIABLE": "a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771083",
+        "target": "115964116993",
+        "properties": {
+          "VARIABLE": "a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771083",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "a[n]"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771084",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "y=*z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771085",
+        "target": "68719476747",
+        "properties": {
+          "VARIABLE": "*z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771085",
+        "target": "30064771084",
+        "properties": {
+          "VARIABLE": "*z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771085",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "*z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771086",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "y += sizeof(x)"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771088",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "y += sizeof(int)"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771090",
+        "target": "141733920768",
+        "properties": {
+          "VARIABLE": "fp((int)y) + q"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771090",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "fp((int)y) + q"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771091",
+        "target": "30064771090",
+        "properties": {
+          "VARIABLE": "fp((int)y)"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771091",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "fp((int)y)"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771092",
+        "target": "30064771091",
+        "properties": {
+          "VARIABLE": "(int)y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "30064771092",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "(int)y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476736",
+        "target": "30064771072",
+        "properties": {
+          "VARIABLE": "x"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476737",
+        "target": "68719476739",
+        "properties": {
+          "VARIABLE": "x"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476737",
+        "target": "30064771073",
+        "properties": {
+          "VARIABLE": "x"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "115964116994",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "68719476746",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "30064771075",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "30064771074",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476740",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476742",
+        "target": "30064771078",
+        "properties": {
+          "VARIABLE": "q"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476742",
+        "target": "68719476755",
+        "properties": {
+          "VARIABLE": "q"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476744",
+        "target": "68719476748",
+        "properties": {
+          "VARIABLE": "z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476744",
+        "target": "30064771081",
+        "properties": {
+          "VARIABLE": "z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476744",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "z"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476747",
+        "target": "68719476749",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476747",
+        "target": "30064771084",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476749",
+        "target": "68719476751",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476749",
+        "target": "30064771086",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476750",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "x"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476751",
+        "target": "30064771088",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476751",
+        "target": "68719476754",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476752",
+        "target": "176093659136",
+        "properties": {
+          "VARIABLE": "int"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476752",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "int"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476754",
+        "target": "30064771092",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476754",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "y"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476755",
+        "target": "30064771090",
+        "properties": {
+          "VARIABLE": "q"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "68719476755",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "q"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "90194313216",
+        "target": "68719476736",
+        "properties": {
+          "VARIABLE": "1"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "90194313216",
+        "target": "30064771072",
+        "properties": {
+          "VARIABLE": "1"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "90194313217",
+        "target": "68719476737",
+        "properties": {
+          "VARIABLE": "2"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "90194313217",
+        "target": "30064771073",
+        "properties": {
+          "VARIABLE": "2"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "90194313217",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476749",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476751",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476754",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476740",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476743",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "111669149699",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476746",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "25769803777",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476755",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "111669149698",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476741",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476753",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476738",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "111669149697",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476745",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476748",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "90194313216",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "68719476739",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "176093659136",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "107374182400",
+        "target": "111669149696",
+        "properties": {
+          "VARIABLE": ""
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "p"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "115964116992",
+        "properties": {
+          "VARIABLE": "p"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "68719476741",
+        "properties": {
+          "VARIABLE": "p"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "30064771077",
+        "properties": {
+          "VARIABLE": "p"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "68719476743",
+        "properties": {
+          "VARIABLE": "p"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149696",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "p"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "68719476745",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "30064771075",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "30064771083",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "68719476738",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "115964116993",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "115964116993",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149697",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "a"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149698",
+        "target": "115964116994",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149698",
+        "target": "68719476740",
+        "properties": {
+          "VARIABLE": "n"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149699",
+        "target": "115964116995",
+        "properties": {
+          "VARIABLE": "fp"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149699",
+        "target": "115964116995",
+        "properties": {
+          "VARIABLE": "fp"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "111669149699",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "fp"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "141733920768",
+        "target": "124554051584",
+        "properties": {
+          "VARIABLE": "<RET>"
+        }
+      },
+      {
+        "kind": "DDG",
+        "source": "176093659136",
+        "target": "30064771092",
+        "properties": {
+          "VARIABLE": "int"
+        }
+      },
+      {
+        "kind": "RECEIVER",
+        "source": "30064771091",
+        "target": "68719476753"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476736",
+        "target": "94489280512"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476737",
+        "target": "94489280513"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476738",
+        "target": "111669149697"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476739",
+        "target": "94489280513"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476740",
+        "target": "111669149698"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476741",
+        "target": "111669149696"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476742",
+        "target": "94489280514"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476743",
+        "target": "111669149696"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476744",
+        "target": "94489280515"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476745",
+        "target": "111669149697"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476746",
+        "target": "111669149698"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476747",
+        "target": "94489280516"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476748",
+        "target": "94489280515"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476749",
+        "target": "94489280516"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476750",
+        "target": "94489280512"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476751",
+        "target": "94489280516"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476752",
+        "target": "94489280517"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476753",
+        "target": "111669149699"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476754",
+        "target": "94489280516"
+      },
+      {
+        "kind": "REF",
+        "source": "68719476755",
+        "target": "94489280514"
+      }
+    ]
+  },
+  "quality": {
+    "attribute_export_version": 2,
+    "retained_relation_kinds": [
+      "ARGUMENT",
+      "AST",
+      "CFG",
+      "CONTAINS",
+      "DDG",
+      "DOMINATE",
+      "PARAMETER_LINK",
+      "POST_DOMINATE",
+      "RECEIVER",
+      "REF"
+    ],
+    "target_method_id": "107374182400",
+    "target_name": "accesses",
+    "target_full_name": "accesses",
+    "filename": "sample_0000.c",
+    "resolution_mode": "standalone_file_unique_method",
+    "source_occurrence_exact": true,
+    "source_token_match": true,
+    "unknown_nodes": 0,
+    "node_count": 65,
+    "edge_count": 428,
+    "edge_counts": {
+      "AST": 64,
+      "CFG": 49,
+      "CDG": 0,
+      "DDG": 107
+    },
+    "missing_relation_kinds": [
+      "CDG"
+    ],
+    "warnings": [],
+    "status": "accepted",
+    "reasons": [],
+    "preprocessing_version": 1,
+    "preprocessing_applied": false,
+    "original_source_sha256": "de8bd72c5e4eac9f8facadf0b77ffb02d38a64d0bf03234c51d12c8849fdf223",
+    "parsed_source_sha256": "de8bd72c5e4eac9f8facadf0b77ffb02d38a64d0bf03234c51d12c8849fdf223"
+  }
+}
