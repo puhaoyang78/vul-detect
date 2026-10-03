@@ -61,19 +61,39 @@ def cohort_hash(records: Iterable[dict]) -> str:
     return digest(sorted((identity(r) for r in records), key=lambda r: r["sample_key"]))
 
 
-def read_jsonl(path: str | Path) -> list[dict]:
-    rows = []
-    with Path(path).open(encoding="utf-8") as handle:
+def iter_jsonl(path: str | Path, *, description=None, expected_sha256=None):
+    """Parse, optionally checksum and report progress in one bounded-memory pass."""
+    from .progress import training_bar
+    import sys
+    path = Path(path)
+    checksum = hashlib.sha256() if expected_sha256 is not None else None
+    started = time.monotonic()
+    if description:
+        print(f"{description} · {path.name}", flush=True)
+    with path.open('rb') as handle, training_bar(None, total=path.stat().st_size,
+            desc=description or 'Read', unit='B', unit_scale=True,
+            bar_format='{desc}  {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} '
+                       '[{elapsed}<{remaining}, {rate_fmt}]',
+            disable=not description or not sys.stdout.isatty()) as progress:
         for number, line in enumerate(handle, 1):
+            if checksum is not None:checksum.update(line)
             if line.strip():
                 try:
-                    row = json.loads(line)
+                    row = json.loads(line.decode('utf-8'))
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"{path}:{number}: invalid JSON") from exc
                 if not isinstance(row, dict):
                     raise ValueError(f"{path}:{number}: expected an object")
-                rows.append(row)
-    return rows
+                yield row
+            progress.update(len(line))
+    if checksum is not None and checksum.hexdigest() != expected_sha256:
+        raise ValueError(f'{path}: cache identity/schema mismatch (SHA256)')
+    if description:
+        print(f"{description} · complete ({time.monotonic()-started:.1f}s)", flush=True)
+
+
+def read_jsonl(path: str | Path) -> list[dict]:
+    return list(iter_jsonl(path))
 
 
 def read_records(path: str | Path, source_dataset: str, *, splits=None) -> list[dict]:
@@ -174,10 +194,11 @@ def serialize_graph(graph) -> dict:
     return result
 
 
-def load_graphs(path: str | Path, records: list[dict], *, require_complete: bool = True) -> dict[str, dict]:
+def load_graphs(path: str | Path, records: list[dict], *, require_complete: bool = True,
+                as_cfg: bool = False) -> dict[str, dict]:
     expected = {r["sample_key"]: identity(r) for r in records}
     result = {}
-    for row in read_jsonl(path):
+    for row in iter_jsonl(path, description='Load CFG' if as_cfg else None):
         key = row.get("sample_key")
         if key not in expected or key in result:
             raise ValueError(f"unexpected/duplicate graph key {key!r}; use one sidecar per cohort")
@@ -196,8 +217,9 @@ def load_graphs(path: str | Path, records: list[dict], *, require_complete: bool
                 re.fullmatch(r"[0-9a-f]{64}", parsed_hash) is None or
                 (parsed_hash != original_hash) != applied):
             raise ValueError(f"{key}: invalid preprocessing audit metadata")
-        validate_graph(row.get("graph"))
-        result[key] = row["graph"]
+        # abstract_cfg performs this same validation before reading any fields.
+        if not as_cfg:validate_graph(row.get("graph"))
+        result[key] = abstract_cfg(row.get('graph')) if as_cfg else row["graph"]
     missing = sorted(set(expected) - set(result))
     if missing and require_complete:
         raise ValueError(f"{len(missing)} graphs missing (e.g. {missing[:5]}). "

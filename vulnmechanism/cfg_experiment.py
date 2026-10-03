@@ -190,6 +190,7 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
     train_views = {r["sample_key"]: views[r["sample_key"]]
                    for group in [*train_epochs, valid] for r in group}
     encoded = {k: vocab.encode(v) for k, v in train_views.items()}
+    print(f"{config['variant']} · load tokenizer and model on {device}", flush=True)
     builder = _tokenizer(base, config)
     base._seed_everything(config["seed"])
     model = build_model(base, config, vocab.sizes(), device, training=True)
@@ -620,10 +621,9 @@ def ddg_audit_report(rows: list[dict], views: dict[str, dict], seed: int) -> dic
 
 
 def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
+    print('Load source records', flush=True)
     rows = read_records(dataset, source_dataset)
-    graphs = load_graphs(graphs_path, rows)
-    views = {k: abstract_cfg(g) for k, g in graphs.items()}
-    del graphs
+    views = load_graphs(graphs_path, rows, as_cfg=True)
     if shuffle_seed is not None:
         for row in rows:
             key = row["sample_key"]
@@ -632,6 +632,7 @@ def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
 
 
 def run_experiment(args, base=None):
+    print(f'CFG experiment · device {args.device} · {", ".join(args.variants)}', flush=True)
     import torch
     if (any(v.startswith("aligned_") or v in DDG_VARIANTS or v in DUAL_FORWARD_ALPHA or
             v in JK_VARIANTS or v in SOURCE_SUPERVISION_VARIANTS or v in ROTATION_VARIANTS or
@@ -1225,7 +1226,7 @@ def short_command(args):
         else:
             raise ValueError("selection must name a behavior variant or an ablation family")
     elif args.action == "ablate":
-        raise ValueError("specify the family to ablate, e.g. ./cfg behavior ablate guard")
+        raise ValueError("specify the family to ablate, e.g. python scripts/cfg.py behavior ablate guard")
     saved = json.loads((run / "config.json").read_text()) if (run / "config.json").exists() else {}
     behavior_dir = args.behavior_dir or saved.get("behavior_dir", "data/cfg_joint_seed42" if args.command in ("joint","control") else "data/cfg_behavior_seed42")
     if args.action == "prepare":

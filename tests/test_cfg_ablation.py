@@ -270,6 +270,9 @@ class DataTests(unittest.TestCase):
             self.assertEqual(src.read_bytes(), before)
             exported = data.read_jsonl(out)
             self.assertEqual(len(data.load_graphs(out, rows)), 3)
+            original=data.load_graphs(out,rows)
+            self.assertEqual(data.load_graphs(out,rows,as_cfg=True),
+                             {key:data.abstract_cfg(graph) for key,graph in original.items()})
             self.assertTrue(all(
                 row["preprocessing_version"] == data.JOERN_SOURCE_PREPROCESSING_VERSION
                 for row in exported

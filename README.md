@@ -449,38 +449,41 @@ done
 再检查原CFG完全一致；不按相同文本或ID配对。补导只追加到新文件，失败立即停止，
 再次执行跳过已持久化项；不会修改原图。前端未提供的类型或宏语义不会因补导而自动恢复。
 
-从仓库目录直接执行，无需激活环境或预设变量。`cfg` 使用本机已安装的
-`/home/phy/miniconda3/envs/vul-detect/bin/python`，只转发到正式入口。
+从仓库目录用项目的 Python 环境直接执行，无需预设环境变量。
+`python scripts/cfg.py` 使用当前 Python，只转发到正式入口，不复制训练逻辑。
+启动时显示目标设备，随后以动态进度条显示CFG读取和属性编码的已处理字节、比例及预计剩余时间。
+这些准备工作在CPU上完成，之后才加载GPU模型；属性校验与读取合并为一次扫描，
+原图逐条转换为CFG，重复事实编码仅在函数内复用，数据校验和训练输入保持不变。
 训练参数逐项继承原C保存的 `config.json`；已有结果中的属性缓存路径继续复用。
 完成的变体经过原身份检查后跳过，中断的训练不会被静默覆盖或自动续训。
 
 ```bash
 # 四组训练；也可在 train 后指定 nodes / edges / joint / masked 单独训练。
-./cfg behavior train
-./cfg behavior valid
-./cfg behavior test
+python scripts/cfg.py behavior train
+python scripts/cfg.py behavior valid
+python scripts/cfg.py behavior test
 
 # 单家族消融和对应评价，例如关闭 guard。
-./cfg behavior ablate guard
-./cfg behavior valid guard
-./cfg behavior test guard
+python scripts/cfg.py behavior ablate guard
+python scripts/cfg.py behavior valid guard
+python scripts/cfg.py behavior test guard
 
 # 全部家族消融，出错即停止循环。
 for family in node_kind api datatype literal operator access_form access_mode operand_role branch guard transfer loop_role; do
-  ./cfg behavior ablate "$family" || break
+  python scripts/cfg.py behavior ablate "$family" || break
 done
 
 # 原 ABC 仍可使用原脚本，也可使用统一入口。
-./cfg abc train
-./cfg abc valid
-./cfg abc test
+python scripts/cfg.py abc train
+python scripts/cfg.py abc valid
+python scripts/cfg.py abc test
 
 # 仅查看展开后的正式命令，不加载模型、不训练。
-./cfg behavior train --show-command
+python scripts/cfg.py behavior train --show-command
 
 # 已有缓存无需再准备。prepare 的输出目录必须不存在。
-./cfg behavior prepare
-./cfg behavior supplement
+python scripts/cfg.py behavior prepare
+python scripts/cfg.py behavior supplement
 ```
 
 每轮训练显示一条青色动态进度条，验证结束显示指标表；逐步JSON仍完整写入
@@ -490,9 +493,9 @@ done
 新结果目录可用 `--output-dir`，不同属性缓存可用 `--behavior-dir`。
 
 ```bash
-./cfg behavior train --output-dir results/my_behavior --behavior-dir data/my_behavior
-./cfg behavior valid --output-dir results/my_behavior
-./cfg behavior test --output-dir results/my_behavior
+python scripts/cfg.py behavior train --output-dir results/my_behavior --behavior-dir data/my_behavior
+python scripts/cfg.py behavior valid --output-dir results/my_behavior
+python scripts/cfg.py behavior test --output-dir results/my_behavior
 ```
 
 
@@ -506,7 +509,7 @@ done
 
 ## 保留原C的联合抽象与数据/控制关系预训练
 
-正式短入口为 `./cfg joint ...` 和 `./cfg control ...`，仍调用同一个训练器。
+正式短入口为 `python scripts/cfg.py joint ...` 和 `python scripts/cfg.py control ...`，仍调用同一个训练器。
 旧 `behavior_*`、原C、P0和已有结果保留作历史对照。新缓存使用角色绑定schema 2；
 新模型拒绝schema 1，不会把旧节点替换方案的权重当成残差模型加载。
 
@@ -576,37 +579,37 @@ checkpoint及阈值仍只由融合valid MCC选择。
 
 ```bash
 # 已准备好的目录直接复用；prepare不覆盖已有缓存。
-./cfg joint prepare
-./cfg control prepare
+python scripts/cfg.py joint prepare
+python scripts/cfg.py control prepare
 
 # 必要时补导原生Joern属性；不改变原CFG，支持增量重入。
-./cfg joint supplement
+python scripts/cfg.py joint supplement
 # 使用补导文件仍走同一个正式准备入口。
-./cfg prepare-behavior --reference-run-dir results/cfg_abc_seed42 --bound \
+python scripts/cfg.py prepare-behavior --reference-run-dir results/cfg_abc_seed42 --bound \
   --supplement-path data/graphs/primevul_behavior_supplement.jsonl \
   --output-dir data/cfg_joint_supplemented_seed42
 
 # 以下正式训练本轮不自动执行。
-./cfg control pretrain        # 一次新阶段1；从原始Qwen开始
-./cfg joint train             # B/C/D/E，复用有效P0
-./cfg control train           # F/G，复用同一个新LoRA
+python scripts/cfg.py control pretrain        # 一次新阶段1；从原始Qwen开始
+python scripts/cfg.py joint train             # B/C/D/E，复用有效P0
+python scripts/cfg.py control train           # F/G，复用同一个新LoRA
 
-./cfg joint valid
-./cfg control valid
-./cfg control relations       # 固定阶段1的train/valid关系评价和train-only常量参照
+python scripts/cfg.py joint valid
+python scripts/cfg.py control valid
+python scripts/cfg.py control relations       # 固定阶段1的train/valid关系评价和train-only常量参照
 
 # 方法冻结后：按已保存的valid阈值评价test并生成相对A纠错统计。
-./cfg joint test
-./cfg control test
+python scripts/cfg.py joint test
+python scripts/cfg.py control test
 
 # 必要的单家族消融；不自动展开组合搜索。
-./cfg joint ablate guard
-./cfg joint valid guard
-./cfg joint test guard
+python scripts/cfg.py joint ablate guard
+python scripts/cfg.py joint valid guard
+python scripts/cfg.py joint test guard
 
 # 查看实际继承的参数，不启动模型。
-./cfg joint train --show-command
-./cfg control pretrain --show-command
+python scripts/cfg.py joint train --show-command
+python scripts/cfg.py control pretrain --show-command
 
-./cfg --help
+python scripts/cfg.py --help
 ```

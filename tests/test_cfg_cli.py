@@ -1,6 +1,8 @@
 import io
 import json
 import random
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -12,6 +14,36 @@ from vulnmechanism.progress import TrainingProgress, training_bar, show_training
 
 
 class ShortCommandTests(unittest.TestCase):
+    def test_streamed_read_progress_checksum_and_errors(self):
+        from vulnmechanism.cfg_data import iter_jsonl,read_jsonl,file_sha256
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'cache.jsonl'
+            path.write_bytes('{"value":"读取"}\r\n\n{"value":2}'.encode('utf-8'))
+            expected=read_jsonl(path);checksum=file_sha256(path)
+            before=random.getstate()
+            with redirect_stdout(io.StringIO()) as output:
+                actual=list(iter_jsonl(path,description='Load attributes',expected_sha256=checksum))
+            self.assertEqual(actual,expected)
+            self.assertEqual(random.getstate(),before)
+            self.assertIn('complete',output.getvalue())
+            self.assertNotIn('\r',output.getvalue())
+            with self.assertRaisesRegex(ValueError,'SHA256'):
+                list(iter_jsonl(path,expected_sha256='0'*64))
+            path.write_text('{}\n[1]\n')
+            with self.assertRaisesRegex(ValueError,':2: expected an object'):
+                read_jsonl(path)
+            path.write_text('{}\ninvalid\n')
+            with self.assertRaisesRegex(ValueError,':2: invalid JSON'):
+                read_jsonl(path)
+
+    def test_python_script_entrypoint_outside_repository(self):
+        script=Path(__file__).resolve().parents[1]/'scripts'/'cfg.py'
+        with tempfile.TemporaryDirectory() as tmp:
+            result=subprocess.run([sys.executable,str(script),'--help'],cwd=tmp,
+                                  capture_output=True,text=True,check=True)
+        self.assertIn('joint',result.stdout)
+        self.assertIn('control',result.stdout)
+
     def test_joint_control_commands_keep_shared_settings_and_stage_roles(self):
         config=dict(dataset='d',graphs='g',source_max_length=2048,epochs=3,seed=42,
                     supervision_dir='saved_dependencies')

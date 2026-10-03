@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 from .cfg_data import (abstract_cfg, atomic_json, cohort_hash, digest, file_sha256,
-                       read_records, source_hash, read_jsonl, load_graphs)
+                       read_records, source_hash, read_jsonl, iter_jsonl, load_graphs)
 
 SCHEMA = 1
 NODE_FAMILIES = ('node_kind', 'api', 'datatype', 'literal', 'operator', 'access_form', 'access_mode', 'operand_role')
@@ -511,20 +511,18 @@ def prepare_behavior(reference_run_dir,output_dir,supplement_path=None, *, bound
 
 def _attribute_rows(path):
     """Keep the multi-gigabyte attribute sidecar off the Python heap."""
-    with Path(path).open() as handle:
-        for line in handle:
-            if line.strip():
-                yield json.loads(line)
+    yield from iter_jsonl(path)
 
 
 def load_behavior(directory,records,views,reference_run_dir):
     root=Path(directory);audit=json.loads((root/'audit.json').read_text());config=json.loads((Path(reference_run_dir)/'config.json').read_text())
     values=json.loads((root/'vocabulary.json').read_text());vocab=(BoundVocabulary if audit['schema']==BOUND_SCHEMA else BehaviorVocabulary)(values)
     if (audit['schema'] not in (SCHEMA, BOUND_SCHEMA) or audit['c_config']!=config or cohort_hash(records)!=config['cohort_sha256'] or
-        audit['attributes_sha256']!=file_sha256(root/'attributes.jsonl') or audit['vocabulary_sha256']!=digest(values)):
+        audit['vocabulary_sha256']!=digest(values)):
         raise ValueError('behavior cache identity/schema mismatch')
     expected={r['sample_key']:r for r in records};seen=set()
-    for item in _attribute_rows(root/'attributes.jsonl'):
+    for item in iter_jsonl(root/'attributes.jsonl', description='Load attributes',
+                          expected_sha256=audit['attributes_sha256']):
         key=item['sample_key'];row=expected.get(key)
         if row is None or key in seen or item['split']!=row['split'] or item['source_sha256']!=source_hash(row['raw_source']):raise ValueError('behavior source/split mismatch')
         view=views[key]
@@ -672,22 +670,31 @@ class BoundVocabulary:
                                     if t not in SPECIAL][:limit-4] for f,c in counts.items()})
     def sizes(self):return [len(self.values[f]) for f in (*FAMILIES, 'roles')]
     def encode(self, item):
+        # The same operand facts recur at enclosing operations and guards.
+        # Memoization is function-local: no cross-function growth or vocabulary changes.
+        paths={};encoded_facts={};role_indices=self.indices['roles']
         def group(families, values):
             encoded=[]
             for family,facts in zip(families,values):
                 unknown_literals={fact.get('object') for fact in facts if
                     (family=='literal' and fact['value']=='UNKNOWN') or
-                    (family=='guard' and fact['value'] in ('literal:UNKNOWN','case:UNKNOWN'))}
+                    (family=='guard' and fact['value'] in ('literal:UNKNOWN','case:UNKNOWN'))} if family in ('literal','guard') else set()
                 column=[]
                 for fact in facts:
                     # An unparsed frontend literal (e.g. <global>) is not a
                     # usable lexical category. Preserve provenance, mask input.
                     unparsed_lexeme=('lexeme=' in fact['value'] and fact.get('object') in unknown_literals)
-                    available=('UNKNOWN' not in fact['value'] and
-                               not any(role=='UNKNOWN' or role.endswith('/UNKNOWN') for role in fact['path']) and
-                               not unparsed_lexeme)
-                    column.append([self.indices[family].get(fact['value'],3),
-                                   [self.indices['roles'].get(role,3) for role in fact['path']],int(available)])
+                    path=tuple(fact['path']);key=(family,fact['value'],path,unparsed_lexeme)
+                    feature=encoded_facts.get(key)
+                    if feature is None:
+                        if path not in paths:
+                            paths[path]=([role_indices.get(role,3) for role in path],
+                                         not any(role=='UNKNOWN' or role.endswith('/UNKNOWN') for role in path))
+                        role_ids,path_known=paths[path]
+                        available='UNKNOWN' not in fact['value'] and path_known and not unparsed_lexeme
+                        feature=[self.indices[family].get(fact['value'],3),role_ids,int(available)]
+                        encoded_facts[key]=feature
+                    column.append(feature)
                 encoded.append(column)
             return encoded
         neutral = [[{'path':['SELF'],'value':v}] for v in ('unconditional','NONE','ordinary','NONE')]
