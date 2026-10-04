@@ -613,3 +613,60 @@ python scripts/cfg.py control pretrain --show-command
 
 python scripts/cfg.py --help
 ```
+
+## 结构引导的判别性源码聚合
+
+本轮检验“结构在源码形成函数表示之前参与计算是否更有效”，不把晚期分数融合
+视为已证实的瓶颈。复用P0、原节点—边联合图和原两路分类头；不增加对齐、预训练、
+分类分支或损失。原平均池化 `joint` 及原P0+C参照不改写。
+
+唯一新读出为32维加性注意力：`s_t = vᵀ tanh(W_h h_t + W_g g + b)`，
+对原attention_mask内的token归一化，并加权形成原源码分类头的输入。
+`g`是联合图现有256维读出，图到权重到分类BCE的路径不detach。
+范围完全沿用原平均池化，包括原有前缀、特殊token，padding排除；不新增token标注。
+不构造token×节点矩阵。最终仍是source logit与graph logit相加。
+
+三组比较：
+
+- `joint`：原平均池化，直接复用 `results/cfg_joint_seed42/joint` 的已完成结果。
+- `joint_source_pool`：相同注意力网络，以固定全1向量替代g，只依赖源码学习权重。
+- `joint_structure_pool`：使用当前函数的真实图摘要g。
+
+固定条件对照和结构条件模型具有完全相同的模块、初始化、参数量及投影运算量。
+固定条件只表示可学习的全局偏置，因此二者的有效输入维度不同，不宣称有效表达能力相同。
+采用带偏置的条件投影：小模型反例显示，无偏置tanh对正负对称输入会退化，不能
+学会所需的结构条件化选择；加入偏置后同一四样本拟合通过。
+
+评分向量v零初始化，初始均匀权重；用“原平均表示＋相对均匀权重的增量”计算，
+保持原混合精度平均读出的数值初始化。实数算术下等价于注意力加权和；混合精度下
+保留原均值的舍入误差。第一步上游投影梯度为零，v更新后上游开始学习。
+初始化隔离随机数，保留共有LoRA、图和分类头的初始化及训练随机流。
+新增聚合器跟随原源码参数组学习率；图组、裁剪、累积、BCE、3 epochs和valid选模不变。
+
+Qwen隐藏维度3584时，两组各增加122,944个参数；2048 token时各增加234,954,752次
+投影乘加，另有tanh、归一化及加权汇聚。投影预算相同，但不等于原平均池化的计算量；
+真实GPU耗时和峰值显存尚未测量。
+
+source/graph/fusion逐样本诊断、未缩放BCE及原分类指标保留；注意力熵和最大权重写入
+分支诊断，裁剪前聚合器梯度范数写入原history。结构条件模型的source分数已含结构信息，
+不能将它解释成独立源码baseline。注意力权重也不作为漏洞位置真值。
+
+新结果写入 `results/cfg_pool_seed42`。启动时严格核对复用的平均模型配置、P0、checkpoint
+及valid预测；配置不匹配则拒绝复用，不复制或覆盖历史模型。
+比较文件同时含原P0+C、复用的平均池化、两种可学习池化，并输出相对原C、平均池化及
+两种可学习池化之间的纠错/新增错误。test仅按已保存的融合valid阈值评价。
+
+```bash
+# 平均池化已经完成：自动校验并复用，无需重复训练。
+python scripts/cfg.py pool train             # 训练两种可学习池化，形成三组对照
+# 也可以单独执行：
+python scripts/cfg.py pool train source
+python scripts/cfg.py pool train structure
+
+python scripts/cfg.py pool valid             # 三组与原P0+C比较
+python scripts/cfg.py pool test              # 方法冻结后，使用保存的valid阈值
+python scripts/cfg.py pool train --show-command
+```
+
+本轮只运行回归和CPU小模型训练/保存/重载/评价，不启动正式Qwen训练。
+已有valid汇总仅提示需验证的假设，拟合成功不能代替真实分类增益。

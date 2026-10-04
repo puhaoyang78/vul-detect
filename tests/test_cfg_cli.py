@@ -59,6 +59,18 @@ class ShortCommandTests(unittest.TestCase):
         self.assertEqual(stage.reference_pretrain_dir,joint.pretrain_dir)
         self.assertEqual((joint.seed,joint.epochs,joint.source_max_length),(42,3,2048))
 
+    def test_pool_command_reuses_mean_and_p0_with_new_output(self):
+        config=dict(dataset='d',graphs='g',source_max_length=2048,epochs=3,seed=42)
+        with patch.object(Path,'exists',return_value=False),patch.object(Path,'read_text',return_value=json.dumps(config)):
+            args=parser().parse_args(short_command(parser().parse_args(['pool','train'])))
+            single=parser().parse_args(short_command(parser().parse_args(['pool','train','structure'])))
+        self.assertEqual(args.variants,['joint_source_pool','joint_structure_pool'])
+        self.assertEqual(single.variants,['joint_structure_pool'])
+        self.assertEqual(args.pool_reference_dir,'results/cfg_joint_seed42')
+        self.assertEqual(args.output_dir,'results/cfg_pool_seed42')
+        self.assertEqual(args.behavior_dir,'data/cfg_joint_seed42')
+        self.assertEqual(args.pretrain_dir,'results/cfg_dep_pretrain_windowfix_seed42')
+
     def test_short_training_preserves_saved_hyperparameters(self):
         config = dict(dataset='data/input.jsonl', graphs='data/graphs.jsonl',
                       source_max_length=2048, epochs=3, seed=42, batch_size=1,

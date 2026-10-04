@@ -362,11 +362,13 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(set(fixed['train_only_priors']),{'control','dependency'})
             self.assertGreater(fixed['splits']['valid']['control']['effective_functions'],0)
             for stage,folder,variants in ((p0,root/"joint_run",list(JOINT_VARIANTS)),
-                    (control_stage,root/"control_run",['control_cfg','control_joint'])):
+                    (control_stage,root/"control_run",['control_cfg','control_joint']),
+                    (p0,root/'pool_run',list(exp.POOL_VARIANTS))):
                 loaded_before=len(base.loaded)
                 exp.run_experiment(exp.parser().parse_args(['run',*common,'--output-dir',str(folder),
                     '--variants',*variants,'--pretrain-dir',str(stage),'--reference-run-dir',str(reference),
-                    '--behavior-dir',str(bound),'--comparison-run-dir',str(a)]),base=base)
+                    '--behavior-dir',str(bound),'--comparison-run-dir',str(a),
+                    *(['--pool-reference-dir',str(root/'joint_run')] if folder.name=='pool_run' else [])]),base=base)
                 self.assertEqual(len(base.loaded)-loaded_before,len(variants))
                 for variant in variants:
                     ckpt=torch.load(folder/variant/'best.pt',weights_only=False)
@@ -375,6 +377,12 @@ class PipelineTests(unittest.TestCase):
                     epoch=next(r for r in history if r['event']=='epoch')
                     self.assertEqual(set(epoch['fixed_classification_bce']['valid']),{'source','graph','fusion'})
                     self.assertTrue((folder/variant/'epoch1.valid.branches.jsonl').exists())
+                if folder.name=='pool_run':
+                    comparison=exp.compare_run(folder,'valid',reference_root=a,reference_variant='dep_pretrain_cfg')
+                    self.assertEqual(set(comparison['changes_pool_vs_mean']),set(exp.POOL_VARIANTS))
+                    self.assertIn('changes_structure_vs_source_pool',comparison)
+                    self.assertEqual(comparison['metrics']['joint'],
+                        exp.compare_run(root/'joint_run','valid',reference_root=a,reference_variant='dep_pretrain_cfg')['metrics']['joint'])
             context_comparison = exp.compare_run(root/"context", "valid", reference_root=a,
                                                    reference_variant="dep_pretrain_cfg")
             self.assertIn("changes_region_context_vs_local", context_comparison)
@@ -399,10 +407,11 @@ class PipelineTests(unittest.TestCase):
                     "--variants", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked",
                     "--split", "test", "--device", "cpu"]), base=base)
                 for folder, variants in ((root/'joint_run',list(JOINT_VARIANTS)),
-                        (root/'control_run',['control_cfg','control_joint'])):
+                        (root/'control_run',['control_cfg','control_joint']),
+                        (root/'pool_run',list(exp.POOL_VARIANTS))):
                     result=exp.evaluate_run(exp.parser().parse_args(['eval','--run-dir',str(folder),
                         '--variants',*variants,'--split','test','--device','cpu']),base=base)
-                    self.assertEqual(set(result['changes_vs_A']),set(variants))
+                    self.assertEqual(set(result['changes_vs_A']),set(variants)|({'joint'} if folder.name=='pool_run' else set()))
             # An old H classifier cannot be substituted for a new variant.
             (root/"context"/"region_context"/"best.pt").write_bytes(
                 (root/"b"/"dep_pretrain_hierarchical"/"best.pt").read_bytes())

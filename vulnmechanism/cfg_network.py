@@ -519,15 +519,55 @@ class ProgramCFGEncoder(AttributeCFGEncoder):
         return base + torch.stack(additions)
 
 
+POOL_VARIANTS = ('joint_source_pool', 'joint_structure_pool')
+
+
+class ConditionalSourcePool(nn.Module):
+    """One additive attention readout; fixed conditioning is the source-only control."""
+    def __init__(self, source_size, graph_size, *, structural, rank=32):
+        super().__init__()
+        self.structural = structural
+        self.tokens = nn.Linear(source_size, rank, bias=False)
+        self.condition = nn.Linear(graph_size, rank)
+        self.score = nn.Linear(rank, 1, bias=False)
+        nn.init.zeros_(self.score.weight)
+        self.diagnostics = {}
+
+    def weights(self, hidden, mask, graph):
+        valid = mask.bool()
+        if not valid.any(dim=1).all():
+            raise ValueError('source pooling requires at least one visible token')
+        condition = graph if self.structural else torch.ones_like(graph)
+        scores = self.score(torch.tanh(self.tokens(hidden.float()) +
+                           self.condition(condition.float()).unsqueeze(1))).squeeze(-1)
+        scores = scores.masked_fill(~valid, -torch.inf)
+        numerator = (scores-scores.max(dim=1,keepdim=True).values).exp()
+        return numerator/numerator.sum(dim=1,keepdim=True)
+
+    def forward(self, hidden, mask, graph, mean):
+        weights = self.weights(hidden, mask, graph)
+        with torch.no_grad():
+            self.diagnostics = {
+                'pool_entropy':-(weights*weights.clamp_min(1e-30).log()).sum(dim=1),
+                'pool_max_weight':weights.max(dim=1).values}
+        uniform = mask.float()/mask.float().sum(dim=1,keepdim=True)
+        # Retain the original (including mixed-precision) mean exactly at startup.
+        # In real arithmetic this equals the attention-weighted token sum.
+        correction = torch.einsum('bt,bth->bh',weights-uniform,hidden.float())
+        return mean + correction
+
+
 class SourceGraphClassifier(nn.Module):
-    """A full-width source head plus a graph head = linear classification of concat.
+    """Full-width source and graph heads with optional structure-conditioned source readout.
 
     The graph-head weights start at zero; initially the logits equal the source
-    baseline exactly. Both source LoRA and graph modules are trained. This is NOT
+    baseline exactly, including the zero-score initialization of learned pooling.
+    Both source LoRA and graph modules are trained. This is NOT
     a guarantee of unchanged predictions after optimization.
     """
     def __init__(self, source_model, vocabulary_sizes: list[int], *, hidden_size: int,
-                 steps: int, mode: str, device, behavior_sizes=None, disabled_families=()):
+                 steps: int, mode: str, device, behavior_sizes=None, disabled_families=(),
+                 source_pool='mean'):
         super().__init__()
         self.encoder = source_model.encoder
         self.task_modules = source_model.task_modules
@@ -542,6 +582,13 @@ class SourceGraphClassifier(nn.Module):
             nn.init.zeros_(head.weight)
             self.task_modules["cfg_encoder"] = graph
             self.task_modules["cfg_classifier"] = head
+        if source_pool != 'mean':
+            if source_pool not in ('source','structure') or mode != 'joint':
+                raise ValueError('learned source pooling requires the joint graph')
+            with torch.random.fork_rng(devices=[]):
+                self.task_modules['source_pool'] = ConditionalSourcePool(
+                    self.task_modules['classifier'].in_features,graph.output_dim,
+                    structural=source_pool=='structure')
         self.to(device)
 
     def _branch_outputs(self, input_ids, attention_mask, graph_batch: GraphBatch):
@@ -549,8 +596,10 @@ class SourceGraphClassifier(nn.Module):
                               use_cache=False).last_hidden_state
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = ((hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)).float()
-        source_logit = self.task_modules["classifier"](pooled).squeeze(-1)
         graph_vector = self.task_modules["cfg_encoder"](graph_batch, hidden)
+        if 'source_pool' in self.task_modules:
+            pooled = self.task_modules['source_pool'](hidden,attention_mask,graph_vector,pooled)
+        source_logit = self.task_modules["classifier"](pooled).squeeze(-1)
         graph_logit = self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
         return pooled, graph_vector, source_logit, graph_logit
 
@@ -586,7 +635,7 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
                                           "cfg_rotation_fixed", "cfg_rotation_rotating",
                                           "lm_pretrain_cfg", "dep_pretrain_cfg",
                                           "composition_pretrain_cfg", "region_pretrain_cfg", "control_cfg"} else
-            "joint" if config["variant"] == "control_joint" else
+            "joint" if config["variant"] in ('control_joint', *POOL_VARIANTS) else
             "cfg_hierarchical" if config["variant"] in {"dep_pretrain_hierarchical",
                                                          "region_pretrain_hierarchical"} else
             "program_plain" if config["variant"] == "dep_pretrain_program_plain" else
@@ -596,4 +645,5 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
     return SourceGraphClassifier(source, vocabulary_sizes,
                                  hidden_size=config["graph_hidden_size"], steps=config["graph_steps"],
                                  mode=mode, device=device, behavior_sizes=config.get("behavior_sizes"),
-                                 disabled_families=config.get("disabled_behavior_families", ()))
+                                 disabled_families=config.get("disabled_behavior_families", ()),
+                                 source_pool={'joint_source_pool':'source','joint_structure_pool':'structure'}.get(config['variant'],'mean'))

@@ -24,8 +24,10 @@ from .cfg_metrics import decision_boundary, metrics, paired_changes, select_thre
 from .cfg_rotation import ROTATION_VARIANTS, epoch_train_rows, load_selected, schedule_report
 
 from .cfg_behavior import VARIANTS as BEHAVIOR_VARIANTS, JOINT_VARIANTS
+from .cfg_network import POOL_VARIANTS
+
 CONTROL_VARIANTS = ("control_cfg", "control_joint")
-JOINT_EXPERIMENTS = (*JOINT_VARIANTS, *CONTROL_VARIANTS)
+JOINT_EXPERIMENTS = (*JOINT_VARIANTS, *CONTROL_VARIANTS, *POOL_VARIANTS)
 
 JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
 SOURCE_SUPERVISION_VARIANTS = ("cfg_source_aux", "cfg_source_detach")
@@ -35,7 +37,7 @@ REGION_CONTEXT_VARIANTS = ("region_local", "region_context")
 REGION_VARIANTS = (*REGION_CONTEXT_VARIANTS, "dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
 PRETRAIN_CFG_VARIANTS = (*JOINT_EXPERIMENTS, *BEHAVIOR_VARIANTS, *REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
                          "composition_pretrain_cfg")
-PRETRAIN_MODE = {**{v:"dep_pretrain" for v in JOINT_VARIANTS}, **{v:"control_pretrain" for v in CONTROL_VARIANTS}, **{v: "dep_pretrain" for v in BEHAVIOR_VARIANTS}, "region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
+PRETRAIN_MODE = {**{v:"dep_pretrain" for v in (*JOINT_VARIANTS, *POOL_VARIANTS)}, **{v:"control_pretrain" for v in CONTROL_VARIANTS}, **{v: "dep_pretrain" for v in BEHAVIOR_VARIANTS}, "region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
                  "region_pretrain_cfg": "region_pretrain",
                  "region_pretrain_hierarchical": "region_pretrain", "lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
                  "dep_pretrain_program_plain": "dep_pretrain",
@@ -157,7 +159,9 @@ def _branch_diagnostics(model, rows, builder, views, encoded, *, batch_size, dev
                 probabilities[name]=torch.sigmoid(values.float()).tolist()
             for i,row in enumerate(batch):
                 out.write(json.dumps({'sample_key':row['sample_key'],'split':row['split'],'label':row['label'],
-                    **{name:values[i] for name,values in probabilities.items()}})+'\n')
+                    **{name:values[i] for name,values in probabilities.items()},
+                    **({k:float(v[i]) for k,v in model.task_modules['source_pool'].diagnostics.items()}
+                       if 'source_pool' in model.task_modules else {})})+'\n')
             scores.extend(probabilities['fusion'])
     return scores,{name:value/len(rows) for name,value in sums.items()}
 
@@ -228,6 +232,14 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             log({"event": "parameters", "graph_encoder": sum(p.numel() for p in model.task_modules["cfg_encoder"].parameters()),
                  "graph_classifier": sum(p.numel() for p in model.task_modules["cfg_classifier"].parameters()),
                  "trainable_total": sum(p.numel() for p in trainable)})
+        if config['variant'] in POOL_VARIANTS:
+            pool=model.task_modules['source_pool']
+            log({'event':'source_pool_compute','parameters':sum(p.numel() for p in pool.parameters()),
+                 'rank':pool.tokens.out_features,'token_projection_macs':pool.tokens.weight.numel(),
+                 'condition_projection_macs_per_function':pool.condition.weight.numel(),
+                 'score_macs_per_token':pool.score.weight.numel(),
+                 'condition':'graph' if pool.structural else 'fixed_ones',
+                 'learning_rate':config['learning_rate']})
         if config["variant"] in REGION_CONTEXT_VARIANTS:
             work = {}
             for split, records in (("train", train), ("valid", valid)):
@@ -244,8 +256,8 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             log({"event": "graph_compute", "node_steps": 5, "region_steps": 3,
                  "additional_parameters": config["graph_hidden_size"]**2, "splits": work})
         if config['variant'] in JOINT_EXPERIMENTS:
-            node_extension=config['variant'] in ('joint_nodes','joint','joint_shuffled','control_joint')
-            edge_extension=config['variant'] in ('joint_edges','joint','joint_shuffled','control_joint')
+            node_extension=config['variant'] in ('joint_nodes','joint','joint_shuffled','control_joint',*POOL_VARIANTS)
+            edge_extension=config['variant'] in ('joint_edges','joint','joint_shuffled','control_joint',*POOL_VARIANTS)
             work={}
             for split, records in (('train',train),('valid',valid)):
                 count=Counter()
@@ -322,6 +334,8 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
                         gradient_diagnostics={'lora_grad_norm':_gradient_norm(p for p in model.encoder.parameters() if p.requires_grad),
                                               'graph_grad_norm':_gradient_norm(graph_parameters),
                             **{k:float(v) for k,v in model.task_modules['cfg_encoder'].diagnostics.items()}}
+                        if 'source_pool' in model.task_modules:
+                            gradient_diagnostics['pool_grad_norm']=_gradient_norm(model.task_modules['source_pool'].parameters())
                     norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                     if not torch.isfinite(norm):
                         raise ValueError("non-finite gradient norm")
@@ -446,13 +460,17 @@ def compare_run(root: str | Path, split: str = "valid",
     if (root / "readout_config.json").exists() and split != "valid":
         raise ValueError("frozen C readout screening is valid-only; test was not extracted")
     reference = Path(reference_root) if reference_root is not None else None
+    run_config=json.loads((root/'config.json').read_text()) if (root/'config.json').exists() else {}
+    mean_reference=run_config.get('pool_reference_run_dir')
+    if mean_reference:
+        _check_pool_reference(run_config,mean_reference)
     if reference is not None:
         candidate_config = json.loads((root / "config.json").read_text())
         reference_config = json.loads((reference / "config.json").read_text())
         if reference_variant in {"dep_pretrain_cfg", "dep_pretrain_hierarchical"}:
             declared = {"initialization_policy", "pretrain_run_dir", "pretrain_relations_sha256",
                         "reference_run_dir", "region_dir", "regions_sha256", "region_schema", "comparison_run_dir", "behavior_dir", "behavior_schema", "behavior_sha256",
-                        "behavior_sizes", "behavior_vocabulary_sha256", "disabled_behavior_families"}
+                        "behavior_sizes", "behavior_vocabulary_sha256", "disabled_behavior_families", "pool_reference_run_dir"}
             if ({k: v for k, v in candidate_config.items() if k not in declared} !=
                     {k: v for k, v in reference_config.items() if k not in declared} or
                     candidate_config.get("reference_run_dir") != reference_config.get("reference_run_dir") or
@@ -482,6 +500,7 @@ def compare_run(root: str | Path, split: str = "valid",
     for variant in COMPARISON_VARIANTS:
         folder = reference if reference is not None and (
             variant == reference_variant or reference_variant == "cfg" and variant in DEFAULT_VARIANTS) else root
+        if variant=='joint' and mean_reference:folder=Path(mean_reference)
         path = folder / variant / f"{split}.predictions.jsonl"
         if not path.is_file():
             continue
@@ -545,6 +564,11 @@ def compare_run(root: str | Path, split: str = "valid",
             "validation_selected_thresholds": paired_changes(rows["region_local"], rows["region_context"]),
             "both_fixed_at_0_5": paired_changes(rows["region_local"], rows["region_context"],
                                                  base_threshold=0.5, candidate_threshold=0.5)}
+    if mean_reference:
+        if 'joint' not in rows:raise FileNotFoundError('mean-pooling reference predictions missing for requested split')
+        result['changes_pool_vs_mean']={v:paired_changes(rows['joint'],rows[v]) for v in POOL_VARIANTS if v in rows}
+        if all(v in rows for v in POOL_VARIANTS):
+            result['changes_structure_vs_source_pool']=paired_changes(rows[POOL_VARIANTS[0]],rows[POOL_VARIANTS[1]])
     if reference_variant == "dep_pretrain_hierarchical" and reference_variant in rows:
         result["changes_vs_old_H"] = {variant: paired_changes(rows[reference_variant], predictions)
             for variant, predictions in rows.items() if variant != reference_variant}
@@ -629,6 +653,22 @@ def _prepare(dataset, graphs_path, source_dataset, *, shuffle_seed=None):
             key = row["sample_key"]
             views[key]["ddg_shuffled_edges"] = shuffle_ddg_edges(views[key], shuffle_seed, key)
     return rows, views
+
+
+def _check_pool_reference(config, directory):
+    """Reuse the actual mean run only under identical data, initialization and settings."""
+    root=Path(directory)
+    original=json.loads((root/'config.json').read_text())
+    if {k:v for k,v in config.items() if k!='pool_reference_run_dir'} != original:
+        raise ValueError('pooling mean reference configuration differs')
+    model_config=json.loads((root/'joint/config.json').read_text())
+    complete=json.loads((root/'joint/complete.json').read_text())
+    if ({k:v for k,v in model_config.items() if k not in ('variant','pretrain_checkpoint_sha256')}!=original or
+            model_config['variant']!='joint' or complete['config_sha256']!=digest(model_config) or
+            complete['checkpoint_sha256']!=file_sha256(root/'joint/best.pt') or
+            complete['validation_predictions_sha256']!=file_sha256(root/'joint/valid.predictions.jsonl') or
+            model_config['pretrain_checkpoint_sha256']!=file_sha256(Path(original['pretrain_run_dir'])/'dep_pretrain/last.pt')):
+        raise ValueError('pooling mean reference identity mismatch')
 
 
 def run_experiment(args, base=None):
@@ -738,7 +778,7 @@ def run_experiment(args, base=None):
         a_config=json.loads((Path(args.comparison_run_dir)/'config.json').read_text())
         expected_p0=a_config['pretrain_run_dir']
         if (pretrain_config.get('relation_accumulation_normalization')!='window_effective_functions' or
-            (any(v in JOINT_VARIANTS for v in args.variants) and str(pretrain_root)!=expected_p0) or
+            (any(v in (*JOINT_VARIANTS,*POOL_VARIANTS) for v in args.variants) and str(pretrain_root)!=expected_p0) or
             (any(v in CONTROL_VARIANTS for v in args.variants) and
              (pretrain_config.get('reference_pretrain_dir')!=expected_p0 or pretrain_config.get('control_schema')!=1))):
             raise ValueError("joint/control experiments must match corrected P0 or equal-budget control pretraining")
@@ -797,6 +837,11 @@ def run_experiment(args, base=None):
         config.update(program_dir=str(Path(args.program_dir).resolve()),
                       program_sha256=program_audit["program_sha256"],
                       program_schema=program_audit["program_schema"])
+    if any(v in POOL_VARIANTS for v in args.variants):
+        if not args.pool_reference_dir or any(v not in POOL_VARIANTS for v in args.variants):
+            raise ValueError('pooling experiments require a completed mean reference and only pooling variants')
+        _check_pool_reference(config,args.pool_reference_dir)
+        config['pool_reference_run_dir']=str(Path(args.pool_reference_dir).resolve())
     root.mkdir(parents=True, exist_ok=True)
     with output_lock(root / "experiment"):
         meta = root / "config.json"
@@ -1067,6 +1112,7 @@ def parser():
     run.add_argument("--comparison-run-dir", help="A: corrected dependency-pretrained C result")
     from .cfg_behavior import FAMILIES as BEHAVIOR_FAMILIES
     run.add_argument("--behavior-dir")
+    run.add_argument("--pool-reference-dir", help="completed joint mean-pooling run to reuse")
     run.add_argument("--disable-behavior-family", nargs="*", choices=BEHAVIOR_FAMILIES, default=[])
     run.add_argument("--program-dir", help="prepared check/update/use facts for program graph variants")
     run.add_argument("--reference-run-dir", help="completed original C run; reuse its exact vocabulary and settings")
@@ -1190,7 +1236,7 @@ def parser():
     supplement.add_argument("--output", required=True)
     supplement.add_argument("--joern-dir", default="/home/phy/joern")
     supplement.add_argument("--java-home", default="/home/phy/jdk21")
-    for name in ("abc", "behavior", "joint", "control"):
+    for name in ("abc", "behavior", "joint", "control", "pool"):
         short = sub.add_parser(name, help="short commands using the saved original C settings")
         short.add_argument("action", choices=("train", "valid", "test", "prepare", "supplement", "ablate", "pretrain", "relations"))
         short.add_argument("selection", nargs="?", help="training variant or ablation family")
@@ -1204,12 +1250,15 @@ def parser():
 def short_command(args):
     """Expand convenience commands into the existing, validated formal CLI."""
     roots={"abc":"results/cfg_abc_seed42","behavior":"results/cfg_behavior_seed42",
-           "joint":"results/cfg_joint_seed42","control":"results/cfg_control_cfg_seed42"}
+           "joint":"results/cfg_joint_seed42","control":"results/cfg_control_cfg_seed42",
+           "pool":"results/cfg_pool_seed42"}
     run = Path(args.output_dir or roots[args.command])
     reference = Path("results/cfg_abc_seed42")
     a = Path("results/cfg_dep_cfg_windowfix_seed42")
     variants = list({"abc":DEFAULT_VARIANTS,"behavior":BEHAVIOR_VARIANTS,
-                     "joint":JOINT_VARIANTS,"control":CONTROL_VARIANTS}[args.command])
+                     "joint":JOINT_VARIANTS,"control":CONTROL_VARIANTS,"pool":POOL_VARIANTS}[args.command])
+    if args.command=="pool" and args.action not in ("train","valid","test"):
+        raise ValueError("pool supports train, valid and test; it reuses P0 and the existing graph cache")
     if args.selection:
         from .cfg_behavior import FAMILIES
         if args.action == "ablate" or (args.action in ("valid", "test") and args.selection in FAMILIES):
@@ -1217,6 +1266,8 @@ def short_command(args):
                 raise ValueError("ablate requires one node/edge attribute family")
             run = run.with_name(run.name + "_without_" + args.selection)
             variants = ["behavior_joint" if args.command=="behavior" else "joint"]
+        elif args.command=="pool" and args.action in ("train","test") and args.selection in ("source","structure"):
+            variants=["joint_"+args.selection+"_pool"]
         elif args.command=="joint" and args.action in ("train","test") and args.selection in ("nodes","edges","joint","shuffled"):
             variants=["joint" if args.selection=="joint" else "joint_"+args.selection]
         elif args.command=="control" and args.action in ("train","test") and args.selection in ("cfg","joint"):
@@ -1228,7 +1279,7 @@ def short_command(args):
     elif args.action == "ablate":
         raise ValueError("specify the family to ablate, e.g. python scripts/cfg.py behavior ablate guard")
     saved = json.loads((run / "config.json").read_text()) if (run / "config.json").exists() else {}
-    behavior_dir = args.behavior_dir or saved.get("behavior_dir", "data/cfg_joint_seed42" if args.command in ("joint","control") else "data/cfg_behavior_seed42")
+    behavior_dir = args.behavior_dir or saved.get("behavior_dir", "data/cfg_joint_seed42" if args.command in ("joint","control","pool") else "data/cfg_behavior_seed42")
     if args.action == "prepare":
         if args.command=="control":
             return ["prepare-control","--reference-run-dir",str(reference),"--output-dir","data/cfg_control_seed42"]
@@ -1270,6 +1321,8 @@ def short_command(args):
         argv.extend(["--reference-run-dir", str(reference), "--comparison-run-dir", str(a),
                      "--pretrain-dir", saved.get("pretrain_run_dir", "results/cfg_control_pretrain_seed42" if args.command=="control" else "results/cfg_dep_pretrain_windowfix_seed42"),
                      "--behavior-dir", behavior_dir])
+    if args.command == "pool":
+        argv.extend(["--pool-reference-dir", saved.get("pool_reference_run_dir", "results/cfg_joint_seed42")])
     if args.action == "ablate":
         argv.extend(["--disable-behavior-family", args.selection])
     return argv
@@ -1278,7 +1331,7 @@ def short_command(args):
 def main():
     args = parser().parse_args()
     try:
-        if args.command in ("abc", "behavior", "joint", "control"):
+        if args.command in ("abc", "behavior", "joint", "control", "pool"):
             argv = short_command(args)
             if args.show_command:
                 import shlex
