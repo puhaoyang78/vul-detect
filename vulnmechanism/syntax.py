@@ -119,6 +119,58 @@ def parse_function(
     return ParsedFunction(name=name, parameters=_parameters(node, source))
 
 
+def function_readout_span(source_text: str, language: str) -> tuple[int, int]:
+    """Character extent of one complete outer function, including its signature.
+
+    An omitted return type is a common input-fragment grammar: parse a synthetic
+    type, but never send it to the encoder or infer a program type from it.
+    Ambiguous/incomplete boundaries are errors, not an all-source fallback.
+    Errors inside a bounded body do not by themselves invalidate its extent.
+    """
+    raw = source_text.encode('utf-8')
+    for prefix in (b'', b'int '):
+        encoded = prefix + raw
+        root = parser_for(language).parse(encoded).root_node
+        functions = []
+
+        def collect(node):
+            if node.type == 'function_definition':
+                functions.append(node)
+                return  # Nested methods/lambdas belong to the outer function.
+            for child in node.named_children:
+                collect(child)
+
+        collect(root)
+        if len(functions) != 1:
+            continue
+        function = functions[0]
+        declarator = function.child_by_field_name('declarator')
+        body = function.child_by_field_name('body')
+        if declarator is None or body is None:
+            continue
+        name = identifier(declarator, encoded)
+        if not name or name in {'if', 'for', 'while', 'switch', 'catch', 'sizeof'}:
+            continue  # Error recovery can misparse an inner control statement as a function.
+        if prefix:
+            kind = function.child_by_field_name('type')
+            if (function.start_byte != 0 or kind is None or kind.end_byte != 3
+                    or encoded[4:declarator.start_byte].strip()):
+                continue
+        if (not body.children or body.children[0].type != '{'
+                or body.children[-1].type != '}'
+                or body.children[0].is_missing or body.children[-1].is_missing):
+            raise ValueError('incomplete function body boundary')
+        start, end = function.start_byte, function.end_byte
+        parent = function.parent
+        while parent is not None and parent.type == 'template_declaration':
+            start = parent.start_byte
+            parent = parent.parent
+        start = max(0, start - len(prefix))
+        end -= len(prefix)
+        return len(raw[:start].decode('utf-8')), len(raw[:end].decode('utf-8'))
+    raise ValueError('cannot establish one complete function boundary')
+
+
 def single_function_language(source_text: str, file_name: str = "") -> str | None:
     """Infer C vs C++ only when a standalone function can be parsed unambiguously."""
     encoded = source_text.encode("utf-8")

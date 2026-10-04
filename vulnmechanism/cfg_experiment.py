@@ -1098,6 +1098,8 @@ def parser():
     transfer.add_argument('--output-dir',default='results/cfg_transfer_diagnostic_seed42')
     transfer.add_argument('--prepare-only',action='store_true')
     transfer.add_argument('--readout-check',action='store_true',help='fixed common-prefix readout intervention on selected samples')
+    transfer.add_argument('--scope-check',action='store_true',help='audit single-input function masks and evaluate fixed readout factors')
+    transfer.add_argument('--boundary-check',action='store_true',help='independent terminal-token confirmation of scope diagnosis')
     transfer.add_argument('--summarize-only',action='store_true',help='recompute statistics from fixed saved responses')
     transfer.add_argument('--device',default='cuda:0')
     build = sub.add_parser("build", help="export a resumable graph sidecar; preserve old data")
@@ -1338,7 +1340,15 @@ def main():
     args = parser().parse_args()
     try:
         if args.command=='diagnose-transfer':
-            from .cfg_transfer_diagnostics import prepare,evaluate,readout_intervention,saved_analysis,position_reference,summarize
+            from .cfg_transfer_diagnostics import prepare,evaluate,readout_intervention,saved_analysis,position_reference,summarize,scope_diagnosis,summarize_scope
+            if args.scope_check or args.boundary_check:
+                if args.readout_check or (args.scope_check and args.boundary_check) or (args.summarize_only and args.prepare_only):
+                    raise ValueError('scope check cannot be combined with other diagnoses')
+                if args.summarize_only:
+                    summarize_scope(args.output_dir,boundary_check=args.boundary_check)
+                    return 0
+                scope_diagnosis(args.output_dir,device=args.device,prepare_only=args.prepare_only,boundary_check=args.boundary_check)
+                return 0
             if sum((args.prepare_only,args.readout_check,args.summarize_only))>1:raise ValueError('choose one diagnostic action')
             if args.readout_check:
                 readout_intervention(args.output_dir,device=args.device)

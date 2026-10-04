@@ -591,21 +591,27 @@ class SourceGraphClassifier(nn.Module):
                     structural=source_pool=='structure')
         self.to(device)
 
-    def _branch_outputs(self, input_ids, attention_mask, graph_batch: GraphBatch):
+    def _branch_outputs(self, input_ids, attention_mask, graph_batch: GraphBatch, pooling_mask=None):
+        readout_mask = attention_mask if pooling_mask is None else pooling_mask
+        if (readout_mask.shape != attention_mask.shape or
+                not ((readout_mask == 0) | (readout_mask == 1)).all() or
+                (readout_mask.bool() & ~attention_mask.bool()).any() or
+                not readout_mask.any(dim=1).all()):
+            raise ValueError('pooling mask must select nonempty visible token sets')
         hidden = self.encoder(input_ids=input_ids, attention_mask=attention_mask,
                               use_cache=False).last_hidden_state
-        mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
+        mask = readout_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = ((hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)).float()
         graph_vector = self.task_modules["cfg_encoder"](graph_batch, hidden)
         if 'source_pool' in self.task_modules:
-            pooled = self.task_modules['source_pool'](hidden,attention_mask,graph_vector,pooled)
+            pooled = self.task_modules['source_pool'](hidden,readout_mask,graph_vector,pooled)
         source_logit = self.task_modules["classifier"](pooled).squeeze(-1)
         graph_logit = self.task_modules["cfg_classifier"](graph_vector).squeeze(-1)
         return pooled, graph_vector, source_logit, graph_logit
 
-    def branch_logits(self, input_ids, attention_mask, graph_batch: GraphBatch):
+    def branch_logits(self, input_ids, attention_mask, graph_batch: GraphBatch, pooling_mask=None):
         """Return source and graph logits from one encoder forward."""
-        _, _, source_logit, graph_logit = self._branch_outputs(input_ids, attention_mask, graph_batch)
+        _, _, source_logit, graph_logit = self._branch_outputs(input_ids, attention_mask, graph_batch, pooling_mask)
         return source_logit, graph_logit
 
     def representations(self, input_ids, attention_mask, graph_batch: GraphBatch):
@@ -614,8 +620,8 @@ class SourceGraphClassifier(nn.Module):
             input_ids, attention_mask, graph_batch)
         return pooled, graph_vector, source_logit + graph_logit
 
-    def forward(self, input_ids, attention_mask, graph_batch: GraphBatch):
-        source_logit, graph_logit = self.branch_logits(input_ids, attention_mask, graph_batch)
+    def forward(self, input_ids, attention_mask, graph_batch: GraphBatch, pooling_mask=None):
+        source_logit, graph_logit = self.branch_logits(input_ids, attention_mask, graph_batch, pooling_mask)
         return source_logit + graph_logit
 
 

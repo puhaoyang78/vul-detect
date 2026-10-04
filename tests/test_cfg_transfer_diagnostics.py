@@ -14,6 +14,15 @@ class Builder:
         return list(range(len(source)))
 
 class TransferTests(unittest.TestCase):
+    def test_scope_summary_refuses_partial_responses(self):
+        from vulnmechanism.cfg_transfer_diagnostics import summarize_scope
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'function_readout';root.mkdir()
+            protocol=dict(models={'m':{}}, cases=[dict(sample_key='a',case=c) for c in ('original','newline')])
+            (root/'protocol.json').write_text(json.dumps(protocol))
+            (root/'responses.jsonl').write_text(json.dumps(dict(model='m',sample_key='a',case='original'))+'\n')
+            with self.assertRaisesRegex(ValueError,'incomplete or duplicated'):summarize_scope(tmp)
+
     def test_fixed_evaluation_no_grad_no_parameter_update(self):
         import torch
         from vulnmechanism.cfg_transfer_diagnostics import fixed_logits

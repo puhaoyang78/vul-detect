@@ -704,3 +704,60 @@ baseline/C/P0+C/control+C/结构池化分别2/1/2/0/3次标签翻转。
 风险与安全措辞之间没有标签翻转，不能把现象简单归因于“漏洞关键词诱导”。
 结果说明当前读出存在可重复的无关尾部文本敏感性；不证明去掉注释就能提高完整valid性能。
 详细响应、独立函数统计、人工源码审查及未知状态保存在上述目录。
+
+### 单输入函数范围与末尾边界确认（2026-10-04）
+
+分类器现在接受独立的 `pooling_mask`；不传时原读出不变，编码器仍使用原
+`attention_mask`。`InputBuilder.source_function_batch` 使用Tree-sitter函数范围，
+将字节坐标转换为字符坐标后映射到原token；不改变任务前缀、源码token、2048源码预算或EOS。
+签名、模板声明、函数体和内部注释仍在范围内。缺失返回类型的片段只在解析时补合成类型，
+不改变模型输入，也不推断真实类型。不完整或歧义边界明确报错，不删除成员、不返回零向量或回退旧池化。
+错误恢复可能把 `else if` 当成函数，因此控制语句不能充当函数范围。
+
+本轮考察两个读出候选：完整函数范围；以及在该范围上排除纯末尾右花括号token。
+第二项仅排除在函数范围内只含 `}` 和空白的末尾token；含运算符、常量等内容的混合token保留。
+这是边界位置的直接汇聚干预，不是删除注释，也没有添加新的注意力模块或损失。
+原结构条件化注意力、图传播和P0权重不变；排除直接汇聚不表示消除对其他隐藏表示的影响。
+
+两批各32个train/valid函数，互不重叠，也排除此前16个开发函数；各split按标签各选8个，
+在读取响应前保存成员和全部扰动。每批含原始、换行、短/长块注释、行注释、内部注释共192个输入。
+第二批的 `primevul:208675` 曾进入旧近邻源码审查，不能算全新函数；已保留该样本及全部结果，没有在看到响应后替换。
+两个固定模型共完成768次Qwen前向，eval/no_grad，无参数更新。所有阈值保持原checkpoint值。
+
+第二批valid确认集（16函数）上的平均绝对logit差：
+
+| 固定模型/读出 | 仅换行 | 短尾注释 | 长尾注释 | 内部注释 |
+| --- | ---: | ---: | ---: | ---: |
+| P0+C / 原读出 | 1.22149 | 1.03900 | 0.60940 | 0.24364 |
+| P0+C / 函数范围且排除纯末尾token | 0 | 0.00286 | 0.01051 | 0.33613 |
+| 结构池化 / 原读出 | 4.42799 | 3.86561 | 3.45658 | 0.36442 |
+| 结构池化 / 仅函数范围 | 3.62962 | 3.63978 | 3.63502 | 0.42733 |
+| 结构池化 / 函数范围且排除纯末尾token | 0 | 0.01056 | 0.01790 | 0.43725 |
+
+该批结构池化在原始valid确认输入上的正确数为12→13/16，但train确认集为15→13/16；
+内部注释在valid确认集仍引起2次翻转。这些是固定模型干预，不能当成重训后的完整valid成绩。
+尾部扰动后的共同token隐状态并非总是逐位一致，长度相关数值差异尚未定位；图logit最大差约1.2e-7。
+新规则不是恒定输出：该valid确认集原始logit标准差为3.86→4.17。
+已有完整741条valid成绩仍为A：MCC 0.49346/AUC 0.82083，结构池化：MCC 0.52027/AUC 0.81594；
+本轮没有生成新的完整valid分类成绩。
+
+最终边界核查为train 5862/5886、valid 734/741，31个输入未可靠恢复。
+例如valid `primevul:379917` 混有上一函数尾部，而目标函数 `iscsi_destroy_flashnode_conn` 只剩签名及左花括号。
+这不是模型token截断，不能在保留原输入的前提下恢复缺失函数体。
+没有用子集训练、样本特判或旧读出回退绕过这些成员，因此正式训练0次、test终验0次。
+关键代码token保留及小模型拟合已验证，但现有自然近邻缺少安全配对依据，真实关键差异的正确响应仍未验收。
+目前只保留读出诊断能力，不将候选登记为正式训练方法或宣称分类净收益。
+
+```bash
+python scripts/cfg.py diagnose-transfer --scope-check --prepare-only
+python scripts/cfg.py diagnose-transfer --scope-check
+python scripts/cfg.py diagnose-transfer --boundary-check --prepare-only
+python scripts/cfg.py diagnose-transfer --boundary-check
+python scripts/cfg.py diagnose-transfer --boundary-check --summarize-only
+python -m unittest tests.test_cfg_function_readout tests.test_cfg_source_pool tests.test_cfg_alignment tests.test_cfg_transfer_diagnostics -q
+```
+
+结果位于 `results/cfg_transfer_diagnostic_seed42/function_readout/`。
+`protocol[.boundary].json` 保存源码、成员、范围缺项和输入规则；`responses[.boundary].jsonl`
+保存原阈值下逐项logit及共同前缀隐状态差；`summary[.boundary].json` 保存分类指标、未缩放BCE、
+纠错/新增错误和扰动统计。已有推理响应拒绝覆盖，`--summarize-only` 不重新运行Qwen。

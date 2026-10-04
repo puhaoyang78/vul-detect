@@ -293,6 +293,32 @@ class InputBuilder:
         )
         return source_ids, source_mask, mechanism_ids, mechanism_mask
 
+    def source_function_batch(self, records, *, device, exclude_boundary_token=False):
+        """Unchanged encoder input, independent complete-function readout mask.
+
+        Any token overlapping the function participates, including a token that
+        also contains boundary whitespace. Interior comments stay in the span.
+        EOS and the task prefix are encoder context, not direct readout sites.
+        """
+        from .syntax import function_readout_span
+        ids, attention, offsets = self.source_alignment_batch(records, device=device)
+        pooling = torch.zeros_like(attention)
+        for index, (record, positions) in enumerate(zip(records, offsets)):
+            start, end = function_readout_span(
+                str(record['raw_source']), str(record.get('resolved_language') or record['language']))
+            for token, (left, right) in enumerate(positions, start=len(self.source_prefix)):
+                if left < end and right > start and right > left:
+                    pooling[index, token] = 1
+                    # A pure terminal delimiter can merge with trailing whitespace
+                    # without changing the program. Never discard a mixed token
+                    # containing an operator, literal, name, or other code.
+                    if (exclude_boundary_token and left <= end - 1 < right
+                            and str(record['raw_source'])[max(left, start):min(right, end)].strip() == '}'):
+                        pooling[index, token] = 0
+        if not pooling.any(dim=1).all():
+            raise ValueError('target function has no visible tokens in the unchanged source window')
+        return ids, attention, pooling
+
 
 def _build_lora_encoder(
     model_path: str,

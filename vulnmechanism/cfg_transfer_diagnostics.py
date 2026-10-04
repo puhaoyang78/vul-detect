@@ -371,3 +371,275 @@ def readout_intervention(output, *, device='cuda:0'):
         mean_absolute_trimmed_delta=sum(abs(r['trimmed_delta']) for r in result)/len(result),per_function=result)
     atomic_json(root/'readout_intervention.json',report)
     return report
+
+
+def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_check=False):
+    """Single-input range candidate and fixed readout-factor interventions.
+
+    Unresolved members remain explicit blockers, never a reduced training cohort.
+    Confirmation membership is saved before loading any classifier checkpoint.
+    """
+    import torch
+    from .syntax import function_readout_span
+    from .cfg_experiment import _base_module, _tokenizer, _graph_inputs
+    from .cfg_network import build_model
+    from .cfg_behavior import BoundVocabulary, extract_bound_behavior
+    from .progress import training_bar
+    parent = Path(output)
+    prior = json.loads((parent / 'protocol.json').read_text())
+    root = parent / 'function_readout'
+    base = _base_module()
+    builder = _tokenizer(base, prior['c_config'])
+    rows = read_records(prior['c_config']['dataset'], prior['c_config']['source_dataset'],
+                        splits=('train', 'valid'))
+    by_key = {r['sample_key']: r for r in rows}
+    if not (root / 'protocol.json').exists():
+        counts = {split: Counter() for split in ('train', 'valid')}
+        unresolved, candidates = [], defaultdict(list)
+        excluded = set(prior['selected_comment_functions'])
+        suffixes = {'newline': '\n', 'tail_short': '\n/* Documentation ends here. */\n',
+                    'tail_long': '\n/* This note accompanies the source listing.\n'
+                                 '   It describes formatting and contains no executable statements.\n'
+                                 '   End of the extracted function listing. */\n',
+                    'tail_line': '\n// A supplementary note for readers of this listing.\n'}
+        for row in training_bar(sorted(rows, key=lambda r: r['sample_key']), desc='Check function boundaries'):
+            split = row['split']; counts[split]['members'] += 1
+            source = row['raw_source']; language = row.get('resolved_language') or row['language']
+            try:
+                ids, attention, pooling = builder.source_function_batch([row], device='cpu')
+                legacy, legacy_mask = builder.sequence_batch([row], variant='baseline', excluded_groups=(), device='cpu')
+                if not torch.equal(ids, legacy) or not torch.equal(attention, legacy_mask):
+                    raise RuntimeError('readout candidate changed encoder input')
+            except ValueError as exc:
+                counts[split]['unresolved'] += 1
+                unresolved.append(dict(sample_key=row['sample_key'], split=split, reason=str(exc),
+                                       function_name=row['function_name'], raw_source=source))
+                continue
+            counts[split]['resolved'] += 1
+            counts[split]['visible_function_tokens'] += int(pooling.sum())
+            counts[split]['source_truncated'] += int(len(builder._encode(source)) > builder.source_max_length)
+            if row['sample_key'] in excluded or '#' in source or '\\\n' in source or '??/' in source:
+                continue
+            try:
+                tree = executable_tree(source, language)
+                raw = source.encode(); parsed = parser_for(language).parse(raw).root_node
+                function = next(n for n in parsed.named_children if n.type == 'function_definition')
+                body = function.child_by_field_name('body')
+                point = len(raw[:body.start_byte + 1].decode())
+                changes = {name: source + suffix for name, suffix in suffixes.items()}
+                changes['internal'] = source[:point] + '\n/* A note inside the function body. */\n' + source[point:]
+                for changed in changes.values():
+                    if executable_tree(changed, language) != tree:
+                        raise ValueError('transformation changed executable AST')
+                    if len(builder._encode(changed)) > builder.source_max_length:
+                        raise ValueError('transformation exceeds unchanged token window')
+            except (ValueError, StopIteration):
+                continue
+            candidates[(split, row['label'])].append((row, changes))
+        rng = random.Random(42); cases = []
+        for split in ('train', 'valid'):
+            for label in (0, 1):
+                group = candidates[(split, label)]
+                for row, changes in rng.sample(group, min(8, len(group))):
+                    for name, source in {'original': row['raw_source'], **changes}.items():
+                        cases.append(dict(sample_key=row['sample_key'], split=split, label=label,
+                                          case=name, raw_source=source))
+        protocol = dict(seed=42, coverage={s: dict(c) for s, c in counts.items()}, unresolved=unresolved,
+                        selection='sorted keys; random42; 8 per split/label; exclude previous 16; before checkpoint responses',
+                        eligible={str(k): len(v) for k, v in candidates.items()},
+                        cases=cases, models={k: prior['models'][k] for k in ('P0_C', 'structure_pool')},
+                        input_policy='identical task prefix/source tokenization/2048 source budget/EOS',
+                        candidate='complete AST function span; overlap tokens; retain internal comments; exclude task prefix and EOS',
+                        graph_policy='executable AST identical; non-aligned graph encoders use unchanged attributes/topology; coordinates are not inputs',
+                        training_allowed=not unresolved,
+                        critical_difference_status='No new verified vulnerability-flip pairs; prior near-neighbours are not safety ground truth')
+        root.mkdir(exist_ok=True)
+        atomic_json(root / 'protocol.json', protocol)
+    protocol = json.loads((root / 'protocol.json').read_text())
+    suffix = '.boundary' if boundary_check else ''
+    if boundary_check:
+        boundary_path = root / 'protocol.boundary.json'
+        if not boundary_path.exists():
+            used = {c['sample_key'] for c in protocol['cases']} | set(prior['selected_comment_functions'])
+            candidates = sorted(rows, key=lambda r: r['sample_key'])
+            random.Random(42).shuffle(candidates)
+            selected = Counter(); cases = []
+            for row in candidates:
+                group = (row['split'], row['label'])
+                if selected[group] == 8 or row['sample_key'] in used: continue
+                source = row['raw_source']; lang = row.get('resolved_language') or row['language']
+                if '#' in source or '\\\n' in source or '??/' in source: continue
+                try:
+                    original_tree = executable_tree(source, lang)
+                    builder.source_function_batch([row], device='cpu', exclude_boundary_token=True)
+                    raw = source.encode(); parsed = parser_for(lang).parse(raw).root_node
+                    function = next(n for n in parsed.named_children if n.type == 'function_definition')
+                    point = len(raw[:function.child_by_field_name('body').start_byte + 1].decode())
+                    changes = dict(original=source, newline=source+'\n',
+                        tail_short=source+'\n/* An additional explanatory note. */\n',
+                        tail_long=source+'\n/* Formatting information for the reader.\n'
+                                         '   No executable statements follow this function.\n'
+                                         '   This is the end of this source excerpt. */\n',
+                        tail_line=source+'\n// End of the source excerpt for documentation purposes.\n',
+                        internal=source[:point]+'\n/* Explanatory text inside this function. */\n'+source[point:])
+                    for changed in changes.values():
+                        if (executable_tree(changed, lang) != original_tree or
+                                len(builder._encode(changed)) > builder.source_max_length):
+                            raise ValueError('ineligible confirmation transformation')
+                except (ValueError, StopIteration): continue
+                selected[group] += 1
+                cases.extend(dict(sample_key=row['sample_key'],split=row['split'],label=row['label'],
+                                  case=name,raw_source=changed) for name,changed in changes.items())
+                if sum(selected.values()) == 32: break
+            if sum(selected.values()) != 32: raise ValueError('insufficient independent confirmation cases')
+            boundary_protocol = dict(protocol, cases=cases,
+                selection='shuffle sorted train/valid keys with seed42; first 8 eligible per split/label; exclude previous 16 and first scope cohort',
+                candidate='function range, excluding a pure terminal-delimiter token; keep mixed operator/content tokens')
+            atomic_json(boundary_path, boundary_protocol)
+        protocol = json.loads(boundary_path.read_text())
+    from .progress import print_table
+    print_table('Function readout coverage', ['Split', 'Members', 'Resolved', 'Unresolved'],
+                [[split, counts['members'], counts.get('resolved', 0), counts.get('unresolved', 0)]
+                 for split, counts in protocol['coverage'].items()])
+    if prepare_only:
+        return protocol['coverage']
+    if (root / f'responses{suffix}.jsonl').exists():
+        raise FileExistsError('fixed scope responses already exist')
+    resolved = base._resolve_device(device)
+    keys = {c['sample_key'] for c in protocol['cases']}; graphs = {}
+    config = prior['c_config']
+    if file_sha256(config['graphs']) != config['graph_file_sha256']:
+        raise ValueError('original graph cache changed')
+    for row in iter_jsonl(config['graphs'], description='Read scope diagnostic graphs'):
+        if row['sample_key'] in keys:
+            if row['source_sha256'] != source_hash(by_key[row['sample_key']]['raw_source']):
+                raise ValueError('source and graph do not match')
+            graphs[row['sample_key']] = row['graph']
+    if set(graphs) != keys:
+        raise ValueError('missing diagnostic graphs')
+    with (root / f'responses{suffix}.jsonl').open('x') as output_file:
+        for name, entry in protocol['models'].items():
+            path = Path(entry['directory']) / entry['variant'] / 'best.pt'
+            if file_sha256(path) != entry['checkpoint_sha256']:
+                raise ValueError('fixed checkpoint changed')
+            checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+            config = checkpoint['model_config']; vocab = AttributeVocabulary(checkpoint['vocabulary'])
+            views = {k: abstract_cfg(g) for k, g in graphs.items()}
+            if config.get('behavior_dir'):
+                values = json.loads((Path(config['behavior_dir']) / 'vocabulary.json').read_text())
+                if digest(values) != config['behavior_vocabulary_sha256']:
+                    raise ValueError('attribute vocabulary changed')
+                bv = BoundVocabulary(values)
+                for k in views:
+                    views[k]['behavior'] = bv.encode(extract_bound_behavior(graphs[k]))
+            encoded = {k: vocab.encode(v) for k, v in views.items()}
+            model = build_model(base, config, vocab.sizes(), resolved, training=False)
+            base.set_peft_model_state_dict(model.encoder, checkpoint['adapter_state'])
+            model.task_modules.load_state_dict(checkpoint['task_state']); model.eval()
+            captured = {}
+            hook = model.encoder.register_forward_hook(lambda module, inputs, out: captured.update(hidden=out.last_hidden_state))
+            graph_hook = model.task_modules['cfg_encoder'].register_forward_hook(lambda module, inputs, out: captured.update(graph=out))
+            try:
+                with torch.no_grad():
+                    for case in training_bar(protocol['cases'], desc=f'Fixed scope factors · {name}'):
+                        row = dict(by_key[case['sample_key']], raw_source=case['raw_source'])
+                        inputs = _graph_inputs(model, [row], builder, views, encoded, resolved)
+                        ids, attention, function_mask = builder.source_function_batch([row], device=resolved)
+                        if not torch.equal(ids, inputs[0]) or not torch.equal(attention, inputs[1]):
+                            raise ValueError('diagnostic encoder input changed')
+                        source, graph_logit = model.branch_logits(*inputs)
+                        hidden = captured['hidden']; graph = captured['graph']
+                        if case['case'] == 'original':
+                            original_ids = ids[0].cpu().tolist()
+                            original_hidden = hidden[0].cpu()
+                        current_ids = ids[0].cpu().tolist()
+                        common = 0
+                        for left, right in zip(original_ids, current_ids):
+                            if left != right: break
+                            common += 1
+                        common_difference = (original_hidden[:common].float() - hidden[0, :common].float().cpu()).abs()
+                        eos = int(attention.sum()) - 1
+                        no_eos = attention.clone(); no_eos[:, eos] = 0
+                        source_only = no_eos.clone(); source_only[:, :len(builder.source_prefix)] = 0
+                        function_eos = function_mask.clone(); function_eos[:, eos] = 1
+                        masks = dict(full=attention, no_eos=no_eos, source=source_only,
+                                     function=function_mask, function_eos=function_eos)
+                        if boundary_check:
+                            _, _, core_mask = builder.source_function_batch([row], device=resolved, exclude_boundary_token=True)
+                            masks['function_core'] = core_mask
+                        values = {}
+                        for rule, mask in masks.items():
+                            typed = mask.unsqueeze(-1).to(hidden.dtype)
+                            mean = ((hidden * typed).sum(1) / typed.sum(1)).float()
+                            pooled = model.task_modules['source_pool'](hidden, mask, graph, mean) if 'source_pool' in model.task_modules else mean
+                            z = float((model.task_modules['classifier'](pooled).squeeze(-1) + graph_logit).item())
+                            values[rule] = dict(logit=z, tokens=int(mask.sum()), score=1 / (1 + math.exp(-z)))
+                        if abs(values['full']['logit'] - float((source + graph_logit).item())) > 1e-6:
+                            raise ValueError('original readout regression')
+                        record = dict(sample_key=case['sample_key'], split=case['split'], label=case['label'],
+                                      case=case['case'], model=name, threshold=float(checkpoint['decision_threshold']),
+                                      graph_logit=float(graph_logit.item()), readouts=values,
+                                      common_token_prefix=common,
+                                      common_hidden_max_difference=float(common_difference.max()),
+                                      common_hidden_mean_difference=float(common_difference.mean()))
+                        output_file.write(json.dumps(record) + '\n'); output_file.flush()
+            finally:
+                hook.remove(); graph_hook.remove()
+            del model, checkpoint, captured
+            gc.collect()
+            if resolved.type == 'cuda': torch.cuda.empty_cache()
+    return summarize_scope(output, boundary_check=boundary_check)
+
+
+def summarize_scope(output, *, boundary_check=False):
+    root = Path(output) / 'function_readout'
+    suffix = '.boundary' if boundary_check else ''
+    protocol = json.loads((root / f'protocol{suffix}.json').read_text())
+    records = read_jsonl(root / f'responses{suffix}.jsonl')
+    expected = {(model, c['sample_key'], c['case']) for model in protocol['models'] for c in protocol['cases']}
+    actual = {(r['model'], r['sample_key'], r['case']) for r in records}
+    if actual != expected or len(records) != len(expected):
+        raise ValueError('scope responses are incomplete or duplicated')
+    original_graph = {(r['model'], r['sample_key']): r['graph_logit']
+                      for r in records if r['case'] == 'original'}
+    graph_delta = max(abs(r['graph_logit'] - original_graph[r['model'], r['sample_key']]) for r in records)
+    summaries = {}
+    for name in protocol['models']:
+        for split in ('train', 'valid'):
+            group = [r for r in records if r['model'] == name and r['split'] == split]
+            originals = {r['sample_key']: r for r in group if r['case'] == 'original'}
+            for rule in records[0]['readouts']:
+                result = {}
+                from .cfg_metrics import metrics
+                scores = [r['readouts'][rule]['score'] for r in originals.values()]
+                labels = [r['label'] for r in originals.values()]
+                result['selected_originals'] = metrics(labels, scores, next(iter(originals.values()))['threshold'])
+                zs = [r['readouts'][rule]['logit'] for r in originals.values()]
+                result['selected_originals']['logit_std'] = (sum((z-sum(zs)/len(zs))**2 for z in zs)/len(zs))**.5
+                result['selected_changes'] = {'corrected': [], 'introduced': []}
+                for key, r in originals.items():
+                    before = (r['readouts']['full']['score'] >= r['threshold']) == bool(r['label'])
+                    after = (r['readouts'][rule]['score'] >= r['threshold']) == bool(r['label'])
+                    if before != after:
+                        result['selected_changes']['corrected' if after else 'introduced'].append(key)
+                result['selected_originals']['bce'] = sum(
+                    max(r['readouts'][rule]['logit'], 0) - r['label'] * r['readouts'][rule]['logit']
+                    + math.log1p(math.exp(-abs(r['readouts'][rule]['logit']))) for r in originals.values()) / len(originals)
+                for case in ('newline', 'tail_short', 'tail_long', 'tail_line', 'internal'):
+                    changes = [r for r in group if r['case'] == case]
+                    result[case] = dict(functions=len(changes),
+                        mean_absolute_logit_delta=sum(abs(r['readouts'][rule]['logit'] - originals[r['sample_key']]['readouts'][rule]['logit']) for r in changes) / len(changes),
+                        flips=sum((r['readouts'][rule]['score'] >= r['threshold']) != (originals[r['sample_key']]['readouts'][rule]['score'] >= r['threshold']) for r in changes))
+                summaries[f'{name}/{split}/{rule}'] = result
+    full_valid = {}
+    for name, entry in protocol['models'].items():
+        folder = Path(entry['directory']) / entry['variant']
+        complete = json.loads((folder / 'complete.json').read_text())
+        if file_sha256(folder / 'valid.predictions.jsonl') != complete['validation_predictions_sha256']:
+            raise ValueError('saved validation predictions changed')
+        full_valid[name] = complete['validation']
+    atomic_json(root / f'summary{suffix}.json', dict(fixed_intervention=True, parameter_updates=0,
+                full_cohort_training_blocked=not protocol['training_allowed'],
+                graph_logit_max_delta=graph_delta,
+                coverage=protocol['coverage'], original_full_valid=full_valid, results=summaries))
+    return summaries
