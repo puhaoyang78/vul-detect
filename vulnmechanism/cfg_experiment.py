@@ -1094,6 +1094,12 @@ def evaluate_run(args, base=None):
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
+    transfer = sub.add_parser('diagnose-transfer', help='bounded fixed-model train/valid transfer diagnosis')
+    transfer.add_argument('--output-dir',default='results/cfg_transfer_diagnostic_seed42')
+    transfer.add_argument('--prepare-only',action='store_true')
+    transfer.add_argument('--readout-check',action='store_true',help='fixed common-prefix readout intervention on selected samples')
+    transfer.add_argument('--summarize-only',action='store_true',help='recompute statistics from fixed saved responses')
+    transfer.add_argument('--device',default='cuda:0')
     build = sub.add_parser("build", help="export a resumable graph sidecar; preserve old data")
     build.add_argument("--dataset", required=True)
     build.add_argument("--output", required=True)
@@ -1331,6 +1337,19 @@ def short_command(args):
 def main():
     args = parser().parse_args()
     try:
+        if args.command=='diagnose-transfer':
+            from .cfg_transfer_diagnostics import prepare,evaluate,readout_intervention,saved_analysis,position_reference,summarize
+            if sum((args.prepare_only,args.readout_check,args.summarize_only))>1:raise ValueError('choose one diagnostic action')
+            if args.readout_check:
+                readout_intervention(args.output_dir,device=args.device)
+                return 0
+            if args.summarize_only:
+                saved_analysis(args.output_dir);position_reference(args.output_dir);summarize(args.output_dir)
+                return 0
+            if not Path(args.output_dir).exists():prepare(args.output_dir)
+            if not args.prepare_only:evaluate(args.output_dir,device=args.device)
+            print(f'Diagnostic results: {args.output_dir}')
+            return 0
         if args.command in ("abc", "behavior", "joint", "control", "pool"):
             argv = short_command(args)
             if args.show_command:

@@ -670,3 +670,37 @@ python scripts/cfg.py pool train --show-command
 
 本轮只运行回归和CPU小模型训练/保存/重载/评价，不启动正式Qwen训练。
 已有valid汇总仅提示需验证的假设，拟合成功不能代替真实分类增益。
+
+## 固定模型的辅助任务迁移诊断
+
+正式入口 `diagnose-transfer` 只做固定checkpoint推理，不训练、改阈值或生成新漏洞标签。
+使用现有源码baseline、C、P0+C、control+C和结构池化模型；不读取test预测来设计诊断。
+先固定valid样本并保存 `protocol.json` 和 `cases.jsonl`，再查看响应：
+
+- 注释检查：按标签各随机选8个可完整解析且不截断的函数，seed=42；追加中性、风险措辞、
+  安全措辞三种等token长度注释，验证可执行AST和原源码位置不变。因此复用不变的原图，
+  用正式提取/编码函数同步生成模型输入。注释不是指令，不赋予任何新漏洞标签。
+- 自然近邻：valid内同名、恰好两条且标签相反、字符相似度至少0.70的全部函数组。
+  不是经过证明的修复对；单独记录可见范围、原标签判别、源码diff和缺失上下文。
+- 控制任务位置参照：只从train统计分支、相对位置符号及固定距离分箱，Laplace平滑1；
+  valid阈值固定0.5，不将该参照当成编码器能力证明。
+- 读出干预：同一结构池化checkpoint，在原始/追加中性注释的输入上，只汇聚共同token前缀。
+  两侧同时排除变化的边界和EOS，不更改编码器attention_mask或任何权重。
+  这是机制诊断，不是新的正式分类方法；保留长度相关数值差异，不声称隐状态总是逐位相同。
+
+```bash
+python scripts/cfg.py diagnose-transfer --prepare-only  # 先固定样本
+python scripts/cfg.py diagnose-transfer                 # 固定模型推理，默认cuda:0
+python scripts/cfg.py diagnose-transfer --readout-check # 固定读出干预
+python scripts/cfg.py diagnose-transfer --summarize-only # 仅重算持久化响应的统计
+```
+
+默认输出 `results/cfg_transfer_diagnostic_seed42`；已有响应不自动覆盖。
+本轮已完成390次固定分类前向和32次读出干预，无参数更新。
+原始分数复现最大误差约1.5e-8，注释变体的图logit不变。16个函数上，中性注释导致
+baseline/C/P0+C/control+C/结构池化分别2/1/2/0/3次标签翻转。
+结构池化平均绝对logit变化5.2403；共同前缀读出后降至0.00364。
+原始前缀中有5个样本仍出现隐状态数值差异，尚未进一步定位底层长度相关计算路径。
+风险与安全措辞之间没有标签翻转，不能把现象简单归因于“漏洞关键词诱导”。
+结果说明当前读出存在可重复的无关尾部文本敏感性；不证明去掉注释就能提高完整valid性能。
+详细响应、独立函数统计、人工源码审查及未知状态保存在上述目录。
