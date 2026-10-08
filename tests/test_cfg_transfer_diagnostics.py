@@ -23,6 +23,27 @@ class TransferTests(unittest.TestCase):
             (root/'responses.jsonl').write_text(json.dumps(dict(model='m',sample_key='a',case='original'))+'\n')
             with self.assertRaisesRegex(ValueError,'incomplete or duplicated'):summarize_scope(tmp)
 
+    def test_original_valid_summary_is_covered_subset_at_fixed_threshold(self):
+        from vulnmechanism.cfg_transfer_diagnostics import summarize_scope
+        from vulnmechanism.cfg_data import file_sha256
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'function_readout';root.mkdir();folder=Path(tmp)/'m';folder.mkdir()
+            (folder/'valid.predictions.jsonl').write_text('original full valid')
+            (folder/'complete.json').write_text(json.dumps(dict(validation={},
+                validation_predictions_sha256=file_sha256(folder/'valid.predictions.jsonl'))))
+            protocol=dict(models={'m':dict(directory=tmp,variant='m')},
+                cases=[dict(sample_key='a',case='original'),dict(sample_key='b',case='original')],
+                coverage={'valid':dict(members=3,resolved=2,unresolved=1)},training_allowed=False)
+            (root/'protocol.valid.json').write_text(json.dumps(protocol))
+            records=[dict(model='m',sample_key=k,case='original',split='valid',label=y,threshold=.5,
+                graph_logit=0,readouts={name:dict(score=score,logit=z) for name,score,z in
+                    [('full',.7,1.),('function_core',.3,-1.)]}) for k,y in [('a',0),('b',1)]]
+            (root/'responses.valid.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in records))
+            report=summarize_scope(tmp,original_valid=True)
+            self.assertEqual(report['m/valid/function_core']['selected_changes'],{'corrected':['a'],'introduced':['b']})
+            self.assertEqual(report['m/valid/full']['selected_originals']['samples'],2)
+            self.assertNotIn('m/train/full',report)
+
     def test_fixed_evaluation_no_grad_no_parameter_update(self):
         import torch
         from vulnmechanism.cfg_transfer_diagnostics import fixed_logits

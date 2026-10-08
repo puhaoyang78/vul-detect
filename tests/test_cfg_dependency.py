@@ -476,6 +476,24 @@ class StageTests(unittest.TestCase):
             self.assertEqual(result["lm_pretrain"]["effective_relation_functions"], 0)
             self.assertTrue((root / "stage1" / "lm_pretrain" / "last.pt").exists())
             self.assertTrue((root / "stage1" / "dep_pretrain" / "last.pt").exists())
+            control={row['sample_key']:[dict(condition_token=offset,use_token=offset+2,branch=b,
+                        case_token=None,label=b) for b in (0,1)] for row in (train,valid)}
+            with patch('vulnmechanism.cfg_control.load_control',return_value=(control,{'schema':1,'queries_sha256':'tiny'})), \
+                 patch('vulnmechanism.cfg_dependency._load_qwen_lm_weight',return_value=lm_weight):
+                result=pretrain_causal_dependency(str(reference),str(supervision),str(root/'project'),
+                    modes=('control_pretrain',),base=base,control_dir=str(root/'control'),
+                    reference_pretrain_dir=str(root/'stage1'),control_gradient_policy='project')
+            self.assertEqual(base.encoders[-1].calls,1)
+            self.assertEqual(result['control_pretrain']['optimizer_steps'],1)
+            saved=torch.load(root/'project/control_pretrain/last.pt',weights_only=False)
+            fresh=TinyEncoder();base.set_peft_model_state_dict(fresh,saved['adapter_state'])
+            self.assertFalse(torch.equal(base.initial[-1],fresh.adapter.weight))
+            head=DirectedRelationHead(4,32);head.load_state_dict(saved['relation_head_state'])
+            predictions,summary=_fixed_relation_predictions(fresh,head,builder,[train],
+                {train['sample_key']:relations},1,torch.device('cpu'))
+            self.assertEqual(len(predictions),2)
+            self.assertTrue(0 <= summary['fixed_model']['accuracy'] <= 1)
+
 
     def test_stage1_window_logging_uses_effective_functions(self):
         with tempfile.TemporaryDirectory() as temporary:

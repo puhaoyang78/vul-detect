@@ -373,7 +373,7 @@ def readout_intervention(output, *, device='cuda:0'):
     return report
 
 
-def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_check=False):
+def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_check=False, original_valid=False):
     """Single-input range candidate and fixed readout-factor interventions.
 
     Unresolved members remain explicit blockers, never a reduced training cohort.
@@ -456,7 +456,7 @@ def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_che
         root.mkdir(exist_ok=True)
         atomic_json(root / 'protocol.json', protocol)
     protocol = json.loads((root / 'protocol.json').read_text())
-    suffix = '.boundary' if boundary_check else ''
+    suffix = '.valid' if original_valid else '.boundary' if boundary_check else ''
     if boundary_check:
         boundary_path = root / 'protocol.boundary.json'
         if not boundary_path.exists():
@@ -497,6 +497,21 @@ def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_che
                 candidate='function range, excluding a pure terminal-delimiter token; keep mixed operator/content tokens')
             atomic_json(boundary_path, boundary_protocol)
         protocol = json.loads(boundary_path.read_text())
+    if original_valid:
+        excluded = {r['sample_key'] for r in protocol['unresolved'] if r['split'] == 'valid'}
+        cases = []
+        for row in rows:
+            if row['split'] != 'valid' or row['sample_key'] in excluded:
+                continue
+            builder.source_function_batch([row], device='cpu', exclude_boundary_token=True)
+            cases.append(dict(sample_key=row['sample_key'], split='valid', label=row['label'],
+                              case='original', raw_source=row['raw_source']))
+        protocol = dict(protocol, cases=cases, selection='all original valid with reliable function range; unresolved explicitly retained in coverage',
+                        candidate='function range excluding pure terminal delimiter token')
+        path = root / 'protocol.valid.json'
+        if path.exists() and json.loads(path.read_text()) != protocol:
+            raise ValueError('fixed valid scope protocol changed')
+        if not path.exists(): atomic_json(path, protocol)
     from .progress import print_table
     print_table('Function readout coverage', ['Split', 'Members', 'Resolved', 'Unresolved'],
                 [[split, counts['members'], counts.get('resolved', 0), counts.get('unresolved', 0)]
@@ -564,9 +579,10 @@ def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_che
                         function_eos = function_mask.clone(); function_eos[:, eos] = 1
                         masks = dict(full=attention, no_eos=no_eos, source=source_only,
                                      function=function_mask, function_eos=function_eos)
-                        if boundary_check:
+                        if boundary_check or original_valid:
                             _, _, core_mask = builder.source_function_batch([row], device=resolved, exclude_boundary_token=True)
                             masks['function_core'] = core_mask
+                        if original_valid: masks = {k:masks[k] for k in ('full','function_core')}
                         values = {}
                         for rule, mask in masks.items():
                             typed = mask.unsqueeze(-1).to(hidden.dtype)
@@ -588,12 +604,12 @@ def scope_diagnosis(output, *, device='cuda:0', prepare_only=False, boundary_che
             del model, checkpoint, captured
             gc.collect()
             if resolved.type == 'cuda': torch.cuda.empty_cache()
-    return summarize_scope(output, boundary_check=boundary_check)
+    return summarize_scope(output, boundary_check=boundary_check, original_valid=original_valid)
 
 
-def summarize_scope(output, *, boundary_check=False):
+def summarize_scope(output, *, boundary_check=False, original_valid=False):
     root = Path(output) / 'function_readout'
-    suffix = '.boundary' if boundary_check else ''
+    suffix = '.valid' if original_valid else '.boundary' if boundary_check else ''
     protocol = json.loads((root / f'protocol{suffix}.json').read_text())
     records = read_jsonl(root / f'responses{suffix}.jsonl')
     expected = {(model, c['sample_key'], c['case']) for model in protocol['models'] for c in protocol['cases']}
@@ -607,6 +623,7 @@ def summarize_scope(output, *, boundary_check=False):
     for name in protocol['models']:
         for split in ('train', 'valid'):
             group = [r for r in records if r['model'] == name and r['split'] == split]
+            if not group: continue
             originals = {r['sample_key']: r for r in group if r['case'] == 'original'}
             for rule in records[0]['readouts']:
                 result = {}
@@ -625,7 +642,7 @@ def summarize_scope(output, *, boundary_check=False):
                 result['selected_originals']['bce'] = sum(
                     max(r['readouts'][rule]['logit'], 0) - r['label'] * r['readouts'][rule]['logit']
                     + math.log1p(math.exp(-abs(r['readouts'][rule]['logit']))) for r in originals.values()) / len(originals)
-                for case in ('newline', 'tail_short', 'tail_long', 'tail_line', 'internal'):
+                for case in (() if original_valid else ('newline', 'tail_short', 'tail_long', 'tail_line', 'internal')):
                     changes = [r for r in group if r['case'] == case]
                     result[case] = dict(functions=len(changes),
                         mean_absolute_logit_delta=sum(abs(r['readouts'][rule]['logit'] - originals[r['sample_key']]['readouts'][rule]['logit']) for r in changes) / len(changes),

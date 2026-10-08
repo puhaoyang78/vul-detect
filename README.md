@@ -761,3 +761,249 @@ python -m unittest tests.test_cfg_function_readout tests.test_cfg_source_pool te
 `protocol[.boundary].json` 保存源码、成员、范围缺项和输入规则；`responses[.boundary].jsonl`
 保存原阈值下逐项logit及共同前缀隐状态差；`summary[.boundary].json` 保存分类指标、未缩放BCE、
 纠错/新增错误和扰动统计。已有推理响应拒绝覆盖，`--summarize-only` 不重新运行Qwen。
+
+## 2026-10-04—10-08：程序消息传输与保留原任务的语义学习
+
+本轮固定原P0+C为A（`results/cfg_dep_cfg_windowfix_seed42`），只用train/valid开发。
+原阶段1为1轮，分类3轮，seed=42，源码2048 token；不修改原始分类数据或标签。
+新阶段1最多2次、分类最多8次。已有同协议结果复用，test仅在最终方案确定后终验。
+
+研究依据与第一轮假设：
+
+- [DeepDFA](https://arxiv.org/pdf/2212.08108)将定义抽象与CFG上的聚合/更新对应，
+  [官方特征加载](https://github.com/ISU-PAAL/DeepDFA/blob/master/DDFA/sastvd/linevd/graphmogrifier.py)
+  使用API、类型、字面量、运算符。这里保留原C的定义路径，同时检验局部行为对消息的增量。
+  `joint_transport`复用现有schema-2角色绑定节点/边及全部参数，将旧联合模型的
+  `m * tanh(F(actual)-F(neutral))`残差改为` tanh(F(actual)-F(neutral))`。
+  因而在原消息某维为零时也能引入行为分量。保持原C自消息、五轮GRU、原属性读出、
+  零初始化和未知掩蔽。不是GEN/KILL静态分析器，也不是仅增加容量。
+  `joint_transport_shuffled`只打乱函数内完整边属性记录，参数、边数和计算形式相同。
+  旧`joint`保持原实现，是同容量的乘法消息对照；短入口旧默认运行集合保持不变。
+- [PDBERT](https://arxiv.org/html/2402.00657v1)从源码预测数据/控制依赖，并分别评价辅助任务
+  和下游任务；双向CodeBERT不能直接等同于本项目的因果Qwen。现有控制预训练在valid上的
+  数据依赖AUC为0.53117（P0为0.72180），控制AUC为0.90649，位置参照为0.77311。
+  这些证据支持检验任务干扰，但不证明干扰是唯一原因。
+  本轮借鉴[梯度投影](https://arxiv.org/abs/2001.06782)，保持同一源码前向、原CLM/定义—使用
+  及控制任务、原采样和有效函数归一化。在累积窗口内分别累计LoRA的原任务梯度g与控制梯度a，
+  若内积为负，使用`g + a - (a·g)/(g·g)*g`，否则使用`g+a`。
+  原任务g为CLM与定义—使用之和，不能保证其中每项能力不下降；Adam有限步更新也不受一阶
+  正交性质保证。头使用各自原梯度，最后沿用原梯度裁剪及AdamW。
+  `--control-gradient-policy project`启用；默认`sum`完全保留旧路径。
+  更新次数相同，但两次反向增加计算，不能称为等FLOPs比较；不是新提出的通用优化算法。
+
+原定义—使用监督train覆盖1000/5886函数，其中248个函数同时有正负关系；valid覆盖114/741，
+其中26个同时有两类。控制监督覆盖4737/5886和619/741。关系头只读可见token表示及查询分支，
+不读图答案；两端表示的联合预测可见性以较晚端点为界，不要求较早位置看到后文。
+角色、字面量、类型绑定与原输入路径不变。是否产生分类净收益必须由本轮完整分类检验。
+
+固定读出对照使用`diagnose-transfer --original-valid`：仅比较原始valid中734个范围可靠成员，
+原读出与唯一候选（函数范围并排除纯终止符token）共享权重、成员、阈值和一次编码。
+其余7条保留为缺失覆盖；不补分数，不作为741条完整valid结果，也不阻塞M1/M2。
+
+```bash
+conda run -n vul-detect python -m unittest tests.test_cfg_joint_control tests.test_cfg_dependency tests.test_cfg_function_readout tests.test_cfg_transfer_diagnostics tests.test_cfg_source_pool tests.test_cfg_cli -q
+conda run -n vul-detect python scripts/cfg.py diagnose-transfer --original-valid --device cuda:1
+conda run -n vul-detect python scripts/cfg.py pretrain-dep \
+  --reference-run-dir results/cfg_abc_seed42 --supervision-dir data/cfg_dep_seed42 \
+  --control-dir data/cfg_control_seed42 --reference-pretrain-dir results/cfg_dep_pretrain_windowfix_seed42 \
+  --control-gradient-policy project --modes control_pretrain \
+  --output-dir results/cfg_project_pretrain_seed42 --device cuda:0
+conda run -n vul-detect python scripts/cfg.py run \
+  --dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl \
+  --reference-run-dir results/cfg_abc_seed42 --comparison-run-dir results/cfg_dep_cfg_windowfix_seed42 \
+  --pretrain-dir results/cfg_dep_pretrain_windowfix_seed42 --behavior-dir data/cfg_joint_seed42 \
+  --variants joint_transport joint_transport_shuffled --output-dir results/cfg_transport_seed42 --device cuda:1
+```
+
+固定读出已完成（同权重、同阈值，734/741 valid，7条无候选预测）：
+
+| 固定模型/读出 | BCE | AUC | MCC | Accuracy | Precision | Recall | F1 | 纠正/新增错误 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| P0+C/原读出 | .766767 | .819932 | .491190 | .745232 | .759312 | .720109 | .739191 | — |
+| P0+C/候选 | .755264 | .817964 | .476850 | .738420 | .740437 | .736413 | .738420 | 6/11 |
+| 结构池化/原读出 | .704482 | .815589 | .518482 | .758856 | .745501 | .788043 | .766182 | — |
+| 结构池化/候选 | .755424 | .807318 | .465799 | .728883 | .693364 | .823370 | .752795 | 13/35 |
+
+候选在两种固定模型上均降低MCC/AUC，没有分类净收益，暂停M3，不消耗正式分类训练预算。
+此结果保存在原诊断目录的`function_readout/{protocol,responses,summary}.valid.*`；不是完整valid结果。
+
+阶段1实际完成：`cfg_project_pretrain_seed42/control_pretrain/last.pt`，5886函数、736次更新，
+412/736个窗口触发投影，定义—使用4658条（1000函数），控制4737函数；编码器逻辑前向5886次、
+反向11772次（另含梯度检查点重算）。在线CLM/定义—使用/控制均值为1.082193/2.805210/0.509394。
+在线指标不是固定模型能力评价，不由这些loss判断下游收益。
+
+阶段1固定train/valid评价已完成（`results/cfg_project_relations_seed42/metrics.json`）：
+
+| 阶段1/任务 | train函数均值BCE | train AUC | valid函数均值BCE | valid AUC | valid MCC（0.5） |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 旧控制预训练/定义—使用 | 1.997748 | .537149 | 2.611069 | .531169 | -.003376 |
+| 投影版/定义—使用 | .443504 | .886028 | .419751 | .888525 | .500553 |
+| 旧控制预训练/控制 | .331774 | .914984 | .346517 | .906488 | .650546 |
+| 投影版/控制 | .355946 | .903670 | .362637 | .899598 | .607418 |
+
+P0原定义—使用valid AUC为.721801。投影版恢复了当前关系头与编码器组合的任务表现，
+但不能仅由此断言编码器产生了下游迁移增益。train/valid的成员、查询及阈值未改。
+另查原随机顺序下184/736个累积窗口没有定义—使用监督，故投影不是对所有历史语义能力的保持约束。
+
+```bash
+conda run -n vul-detect python scripts/cfg.py eval-control \
+  --pretrain-dir results/cfg_project_pretrain_seed42 --output-dir results/cfg_project_relations_seed42 --device cuda:0
+conda run -n vul-detect python scripts/cfg.py run \
+  --dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl \
+  --reference-run-dir results/cfg_abc_seed42 --comparison-run-dir results/cfg_dep_cfg_windowfix_seed42 \
+  --pretrain-dir results/cfg_project_pretrain_seed42 --variants control_cfg \
+  --output-dir results/cfg_project_cfg_seed42 --device cuda:0
+```
+
+捷径边界：对同一use同时有已证实正负定义的227条valid查询（26个函数），P0、旧控制预训练、
+投影版AUC分别为.776794/.693620/.841228；仅选择最后出现的定义达到.847368。
+因此定义—使用头变好仍不能证明超越位置捷径，不能将.888525的全查询AUC直接解释为上下文推理。
+
+与旧负结果的区别：`behavior_edges`已经尝试过加性边MLP，本轮不宣称首次加性消息。
+该旧版本采用schema-1未绑定的边家族嵌入；`joint_transport`采用schema-2角色绑定事实、
+实际/中性消息差、未知掩蔽及保留原C的节点残差，并与原`joint`严格同参数量。
+所以本轮检验的是已有绑定表示下乘法限制的影响，不把更名或加性公式本身作为论文创新。
+
+本轮实际完成1次阶段1、6个全量分类运行，全部正常结束；A与原P0+joint复用已有同协议结果。
+六个新分类均为5886个原train成员、3轮、每轮736次优化更新。测试集761个成员均完成评价，
+没有修改数据、标签、成员、输入预算或优化设置。新增候选各自保留完整3轮history、固定分支BCE、
+最佳checkpoint和逐条预测；B打乱选中epoch 3，其余五个新运行选中epoch 2。
+
+完整valid（741个原成员；E为test前选定候选；各阈值仅由valid决定）：
+
+| 配置 | 阈值 | BCE | AUC | MCC | Accuracy | Precision | Recall | F1 | 纠正/新增（相对A） |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| A：P0+原C | 0.30 | 0.763567 | 0.820834 | 0.493458 | 0.746289 | 0.762040 | 0.721180 | 0.741047 | 0/0 |
+| 原P0+joint | 0.26 | 0.646659 | 0.813724 | 0.495732 | 0.747638 | 0.737245 | 0.774799 | 0.755556 | 37/36 |
+| B：P0+传输 | 0.39 | 0.816024 | 0.808974 | 0.482011 | 0.738192 | 0.780564 | 0.667560 | 0.719653 | 21/27 |
+| B打乱 | 0.30 | 0.729469 | 0.813491 | 0.512641 | 0.755735 | 0.774286 | 0.726542 | 0.749654 | 51/44 |
+| C：M2+原C | 0.09 | 0.818745 | 0.807655 | 0.496712 | 0.747638 | 0.730198 | 0.790885 | 0.759331 | 29/28 |
+| D：M2+传输 | 0.11 | 0.862815 | 0.817782 | 0.514915 | 0.757085 | 0.771831 | 0.734584 | 0.752747 | 26/18 |
+| D打乱 | 0.18 | 0.696296 | 0.819064 | 0.514138 | 0.757085 | 0.757333 | 0.761394 | 0.759358 | 28/20 |
+| E：M2+原joint | 0.31 | 0.735600 | 0.825431 | 0.517230 | 0.755735 | 0.800000 | 0.686327 | 0.738817 | 31/24 |
+
+完整test（761个原成员；E为test前选定候选；各阈值仅由valid决定）：
+
+| 配置 | 阈值 | BCE | AUC | MCC | Accuracy | Precision | Recall | F1 | 纠正/新增（相对A） |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| A：P0+原C | 0.30 | 0.658639 | 0.839496 | 0.527317 | 0.763469 | 0.751938 | 0.776000 | 0.763780 | 0/0 |
+| 原P0+joint | 0.26 | 0.567564 | 0.838701 | 0.492449 | 0.743758 | 0.712264 | 0.805333 | 0.755945 | 27/42 |
+| B：P0+传输 | 0.39 | 0.687877 | 0.832642 | 0.480274 | 0.739816 | 0.755043 | 0.698667 | 0.725762 | 21/39 |
+| B打乱 | 0.30 | 0.712049 | 0.818142 | 0.492761 | 0.746386 | 0.752778 | 0.722667 | 0.737415 | 44/57 |
+| C：M2+原C | 0.09 | 0.699759 | 0.831959 | 0.506685 | 0.750329 | 0.715618 | 0.818667 | 0.763682 | 20/30 |
+| D：M2+传输 | 0.11 | 0.735650 | 0.839102 | 0.526022 | 0.762155 | 0.741294 | 0.794667 | 0.767053 | 18/19 |
+| D打乱 | 0.18 | 0.615468 | 0.839295 | 0.542323 | 0.770039 | 0.746305 | 0.808000 | 0.775928 | 25/20 |
+| E：M2+原joint | 0.31 | 0.675074 | 0.837651 | 0.505890 | 0.752957 | 0.759003 | 0.730667 | 0.744565 | 19/27 |
+
+统一固定阈值0.5的MCC（同一选中模型，无再训练、无再选点）：
+
+| 配置 | valid | test |
+| --- | ---: | ---: |
+| A：P0+原C | 0.480797 | 0.499180 |
+| 原P0+joint | 0.454756 | 0.507206 |
+| B：P0+传输 | 0.459138 | 0.473752 |
+| B打乱 | 0.473276 | 0.488083 |
+| C：M2+原C | 0.447055 | 0.462549 |
+| D：M2+传输 | 0.456147 | 0.475155 |
+| D打乱 | 0.468412 | 0.483953 |
+| E：M2+原joint | 0.482831 | 0.490853 |
+
+BCE均未缩放；新运行valid来自选中epoch的固定logit评价，test来自`test.bce.json`。
+A的BCE由保存的概率重算，已核查无0/1端点；这与直接保存logit的数值来源有区别。
+`comparison.{valid,test}.json`保留逐条纠错身份及统一0.5阈值对照，不只保留最好的一轮。
+
+本轮判断：
+
+- **M1传输公式不采用。** B相对A的valid/test净正确数为−6/−18，打乱版本反而更好。
+  D相对A的valid净增8条，但同M2打乱版本也净增8条，两者MCC仅差.000777；
+  原乘法joint的valid MCC还更高。正确关系传输的增益没有被同容量对照支持。
+  原C与原joint继续作为既有实验对照，不能把新增公式写成已验证的程序抽象贡献。
+- **M2保留实现及研究结果，不认定已获得相对A的稳定分类净收益。** 定义—使用辅助能力恢复，
+  C在valid只净增1条（少FN 26、多FP 25），test净少10条。E的valid MCC相对A增加.023771、
+  test下降.021427，test纠正19条、新增27条。E相对同表示的P0+joint，valid/test MCC增加
+  .021498/.013441，净正确数增加6/7条；但test少FP 35同时多FN 28，F1下降，仍未超过A。
+  这是依赖基础表示和操作点的改善，不能写成全面增强漏洞语义。
+- **不按test改选。** D的test净少1条；D打乱净增5条、MCC增加.015006，但它是预定负控制。
+  不将打乱版本事后改选为最终方法，也不将其收益归因于正确程序关系。
+- **M3暂停。** 原始valid覆盖范围内的固定读出对照没有分类净收益，未启动额外分类训练。
+
+C第3轮train BCE从.365662升至.583511，valid AUC降至.762006；日志无非有限值或执行异常。
+保留退化结果，不用改学习率、加轮数或换loss追分。辅助关系准确、可迁移能力、分类使用和主任务收益
+仍是四个不同命题；本轮只充分支持辅助任务恢复，以及上述有限的分类操作点变化。
+没有固定CLM能力复验，不能声称全部原P0能力都被保持；更不能把梯度投影本身当成新的通用优化贡献。
+
+参数与计算：原C图编码器377,985参数，joint/传输及各自打乱版本均596,993，增加219,008；
+含分类头的总可训练参数由10,474,370增至10,693,378。传输与原joint同容量、同连接和同MLP调用数。
+每个train图传播pass仍为6,568,640节点更新、13,547,435条基础消息；额外绑定事实/MLP计算不记为免费。
+M2不增加最终编码器参数，沿用相同数据、采样、epoch及736次阶段1更新，但每函数两次逻辑反向，
+不是等FLOPs实验。没有消费剩余1次阶段1和2个分类预算去做无依据搜索。
+
+**本轮test前固定决策（2026-10-08）**：停止新增训练，实际完成1次阶段1、6次分类。
+按既有valid融合MCC规则，非打乱候选中选定“投影M2+原joint”（`cfg_project_joint_seed42/control_joint`），
+而不保留新增M1传输作为论文模块；M3暂停。该候选仅有单seed、依赖读出阈值的valid信号，
+尚不宣称普遍改善或完整原能力保持。阶段1权重、各分类best.pt与阈值全部固定。
+终验范围预先确定为A、B、B打乱、C、D、D打乱、M2+原joint，并复用原P0+joint作为同表示对照。
+各自固定阈值依次为.30/.39/.30/.09/.11/.18/.31；原P0+joint沿用其已保存valid阈值。
+所有候选均保留，test之后不重新挑选、改方法或调阈值。test曾被历史多轮查看，
+本次只能称固定终验，不能称从未使用的独立确认集。
+
+终验已按上述固定决策完成；未依据test修改任何方法、checkpoint或阈值。
+
+进一步核查的核心问题是：**关系任务是否给出了漏洞标签需要的判别信息，并实际迁移到分类器？**
+这不是“关系头答得对”或“图结构更完整”可以替代的命题。使用原train/valid保存产物，未新增训练：
+
+- 对完全一致的600条定义—使用valid查询（114函数），比较P0与投影阶段1的函数均值Brier分数。
+  102个函数的辅助Brier改善，但A→C仅纠正其中3条分类错误，又引入4条；辅助与分类Brier改善
+  的函数级Pearson相关为.076292。80个新关系查询全部答对的函数中，仍有23个分类错误。
+  此处分类器保持原C，用于隔离阶段1变化；Brier避免旧概率恰为0/1时伪造有限BCE。
+- 同一个E固定模型，源码分支valid AUC为.829016，融合后为.825431；沿用融合阈值.31时，
+  融合相对源码分支纠正16条、引入11条，净增5条。图可以改变判别操作点，但这个结果不能
+  证明提升了排序，也不能由移除读出分支反推训练期间图完全无用。
+- 原诊断预先定义的7对同名、近似源码、相反标签成员全部保留，源码差异均在2048范围内。
+  E正确排序4/7、两边同时分类正确0/7；A为3/7、1/7。它们没有核验过的修复对来源，
+  部分依赖调用者或库契约，不能据此赋予局部安全标签，也不足以证明所有程序语义都不可学。
+
+这些观测支持“辅助目标与下游判别之间尚有未验证的迁移环节”，不能单独断言是任务无关、
+编码器未学会、分类器未使用或标签上下文不足中的哪一个。更深的问题因而应明确为：
+在不扩大输入和数据的约束下，新增程序学习到底要改善哪一种可观察的漏洞判别能力，
+以及现有标签和上下文是否足够检验它。此轮不再用另一个高辅助分数或偶然的分类高点替代回答。
+逐函数关联及7对成员记录已追加到原诊断`results/cfg_transfer_diagnostic_seed42/saved_analysis.json`
+的`project_iteration`字段，保留原分析；没有改写原分类数据或生成新安全标签。
+
+剩余分类命令（其余预训练、B/C及辅助评价命令见上文）：
+
+```bash
+conda run -n vul-detect python scripts/cfg.py run \
+  --dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl \
+  --reference-run-dir results/cfg_abc_seed42 --comparison-run-dir results/cfg_dep_cfg_windowfix_seed42 \
+  --pretrain-dir results/cfg_project_pretrain_seed42 --behavior-dir data/cfg_joint_seed42 \
+  --variants control_transport --output-dir results/cfg_project_transport_seed42 --device cuda:0
+conda run -n vul-detect python scripts/cfg.py run \
+  --dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl \
+  --reference-run-dir results/cfg_abc_seed42 --comparison-run-dir results/cfg_dep_cfg_windowfix_seed42 \
+  --pretrain-dir results/cfg_project_pretrain_seed42 --behavior-dir data/cfg_joint_seed42 \
+  --variants control_transport_shuffled --output-dir results/cfg_project_transport_shuffled_seed42 --device cuda:0
+conda run -n vul-detect python scripts/cfg.py run \
+  --dataset data/function_dataset.jsonl --graphs data/graphs/primevul_cfg.jsonl \
+  --reference-run-dir results/cfg_abc_seed42 --comparison-run-dir results/cfg_dep_cfg_windowfix_seed42 \
+  --pretrain-dir results/cfg_project_pretrain_seed42 --behavior-dir data/cfg_joint_seed42 \
+  --variants control_joint --output-dir results/cfg_project_joint_seed42 --device cuda:1
+```
+
+固定终验命令如下，全部已经实际执行。已有预测时入口拒绝覆盖；复现新训练应选新的结果目录，
+不要用`--replace-predictions`覆盖本轮结果。
+
+```bash
+conda run -n vul-detect python scripts/cfg.py eval --run-dir results/cfg_transport_seed42 --variants joint_transport joint_transport_shuffled --split test --device cuda:0
+conda run -n vul-detect python scripts/cfg.py eval --run-dir results/cfg_project_cfg_seed42 --variants control_cfg --split test --device cuda:0
+conda run -n vul-detect python scripts/cfg.py eval --run-dir results/cfg_project_transport_seed42 --variants control_transport --split test --device cuda:1
+conda run -n vul-detect python scripts/cfg.py eval --run-dir results/cfg_project_transport_shuffled_seed42 --variants control_transport_shuffled --split test --device cuda:0
+conda run -n vul-detect python scripts/cfg.py eval --run-dir results/cfg_project_joint_seed42 --variants control_joint --split test --device cuda:1
+```
+
+验证：相关6个测试模块共77项通过，包含原C/P0路径、共享初始化、角色绑定/未知、单次逻辑编码、
+LoRA梯度、窗口归一化、梯度投影、小模型前后向/保存/加载/评价、读出覆盖及旧CLI默认集合。
+初次扩展variant导致旧短CLI默认集合回归，已在正式训练前修复并复验；无遗留失败。
+新增M2打乱别名后再次77项通过（30.235s）。最终逐条重算8个配置的valid/test指标，
+核对741/761唯一成员、身份、浮点阈值决策、valid/test隔离和共用训练设置；六个新history均完整3轮。
+交互中断发生在首批终验数据加载阶段，已确认进程不存在且无预测后重跑未完成评价；没有重复训练。

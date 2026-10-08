@@ -876,10 +876,36 @@ def _checked_program_queries(program_dir, records, builder, split="train"):
     return dict(result), audit
 
 
+def accumulate_task_gradients(parameters, accumulator):
+    """Move one task's microbatch gradients into its window sum."""
+    for p, total in zip(parameters, accumulator):
+        if p.grad is not None:
+            total.add_(p.grad.detach())
+            p.grad = None
+
+
+def project_auxiliary_gradient(parameters, primary, auxiliary):
+    """Keep the primary window gradient; remove only opposing auxiliary component.
+
+    Projection is global over LoRA, before clipping/Adam. It is not a guarantee
+    about finite optimizer steps or preservation of either individual task.
+    """
+    dot = sum((a.double()*b.double()).sum() for a,b in zip(primary,auxiliary))
+    norm = sum(a.double().square().sum() for a in primary)
+    aux_norm = sum(a.double().square().sum() for a in auxiliary)
+    if not torch.isfinite(dot + norm + aux_norm):
+        raise ValueError('non-finite task gradient')
+    coefficient = (dot / norm if norm > 0 and dot < 0 else dot.new_zeros(()))
+    for p, a, b in zip(parameters, primary, auxiliary):
+        p.grad = a + b - coefficient.to(a.dtype)*a
+    return dict(gradient_dot=float(dot), primary_grad_norm=float(norm.sqrt()),
+                auxiliary_grad_norm=float(aux_norm.sqrt()), projected=bool(dot < 0 and norm > 0))
+
+
 def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, output_dir: str,
                                *, modes=("lm_pretrain", "dep_pretrain"), device="auto",
                                resume=False, base=None, program_dir=None, region_dir=None,
-                               reference_pretrain_dir=None, control_dir=None):
+                               reference_pretrain_dir=None, control_dir=None, control_gradient_policy="sum"):
     """One train-only source pass per mode; the relationship task shares Qwen's forward."""
     import gc
     import math
@@ -979,6 +1005,10 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
               "objective": ("source_clm_plus_optional_composed_relation"
                             if "composition_pretrain" in modes else
                             "source_clm_plus_optional_scoped_scalar_relation")}
+    if control_gradient_policy not in {"sum", "project"} or (control_gradient_policy != "sum" and control_audit is None):
+        raise ValueError('gradient projection requires control pretraining')
+    if control_gradient_policy != "sum":
+        config['control_gradient_policy'] = control_gradient_policy
     if control_audit is not None:
         config.update(control_dir=str(Path(control_dir).resolve()),control_schema=control_audit['schema'],
                       control_queries_sha256=control_audit['queries_sha256'],control_alpha=1.0,
@@ -1067,6 +1097,10 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
             control_window_counts=accumulation_window_counts(order,train,control_supervision,batch_size,accumulation)
             total_control=0.0;control_functions=0
             optimizer.zero_grad(set_to_none=True)
+            project = control_gradient_policy == "project"
+            primary_gradients = [torch.zeros_like(p) for p in lora_parameters] if project else []
+            auxiliary_gradients = [torch.zeros_like(p) for p in lora_parameters] if project else []
+            projected_steps = 0
             total_lm = total_dep = total_region = 0.0
             region_functions = 0
             total_functions = effective_functions = 0
@@ -1107,11 +1141,18 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                         control_batch=[control_supervision.get(row['sample_key'],[]) for row in batch]
                         control_loss,_,_=relation_function_loss(hidden,control_batch,control_head)
                         k_control=sum(bool(q) for q in control_batch);_,K_control=control_window_counts[batch_index]
-                        loss=loss+(control_loss*k_control/K_control if K_control else 0)
+                        auxiliary_loss=control_loss*k_control/K_control if K_control else control_loss*0
+                        if not project: loss=loss+auxiliary_loss
                         total_control+=float(control_loss.detach())*k_control;control_functions+=k_control
                     if not torch.isfinite(loss):
                         raise ValueError(f"non-finite pretrain loss at batch {batch_index + 1}")
-                    loss.backward()
+                    if project:
+                        loss.backward(retain_graph=True)
+                        accumulate_task_gradients(lora_parameters, primary_gradients)
+                        auxiliary_loss.backward()
+                        accumulate_task_gradients(lora_parameters, auxiliary_gradients)
+                    else:
+                        loss.backward()
                     total_lm += float(lm.detach()) * m
                     total_dep += float(dep.detach()) * k
                     total_functions += m
@@ -1119,6 +1160,10 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                     positive_relations += sum(labels)
                     negative_relations += len(labels) - sum(labels)
                     if (batch_index + 1) % accumulation == 0 or batch_index + 1 == num_batches:
+                        if project:
+                            projection = project_auxiliary_gradient(lora_parameters, primary_gradients, auxiliary_gradients)
+                            projected_steps += int(projection['projected'])
+                            for total in (*primary_gradients, *auxiliary_gradients): total.zero_()
                         lora_norm=_gradient_norm(lora_parameters) if control_head is not None else None
                         norm = torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                         if not torch.isfinite(norm):
@@ -1143,6 +1188,7 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                             if control_head is not None:
                                 event.update(lora_grad_norm=lora_norm,control_loss_mean_so_far=total_control/control_functions if control_functions else 0,
                                              effective_control_functions=control_functions)
+                            if project: event.update(projection, projected_steps=projected_steps)
                             history.write(json.dumps(event) + "\n")
                             history.flush()
                             # Step details are persisted above; keep the live bar on one line.
@@ -1168,6 +1214,8 @@ def pretrain_causal_dependency(reference_run_dir: str, supervision_dir: str, out
                     summary.update(effective_region_functions=region_functions,
                                    region_loss=total_region/region_functions if region_functions else 0,
                                    region_head_parameters=sum(p.numel() for p in region_head.parameters()))
+                if project: summary.update(control_gradient_policy='project', projected_steps=projected_steps,
+                                           encoder_backward_passes=2*num_batches)
                 if control_head is not None:
                     summary.update(control_loss=total_control/control_functions if control_functions else 0,
                                    effective_control_functions=control_functions)

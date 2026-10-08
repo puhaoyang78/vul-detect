@@ -225,7 +225,7 @@ class AttributeCFGEncoder(nn.Module):
                 hidden_size < 4 or hidden_size % 4 or steps <= 0 or
                 mode not in {"attributes", "cfg", "aligned_attributes", "aligned_cfg",
                              "cfg_ddg", "cfg_ddg_shuffled", "cfg_jk_mean", "cfg_jk_max",
-                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked", "joint_nodes", "joint_edges", "joint", "joint_shuffled"} or
+                             "program_plain", "program_state", "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked", "joint_nodes", "joint_edges", "joint", "joint_shuffled", "joint_transport", "joint_transport_shuffled"} or
                 (mode in {"cfg_hierarchical", "region_local", "region_context"} and steps != 5) or
                 (mode.startswith("aligned_") and (source_hidden_size is None or source_hidden_size <= 0))):
             raise ValueError("invalid graph encoder configuration")
@@ -260,7 +260,7 @@ class AttributeCFGEncoder(nn.Module):
                     self.edge_behavior = nn.ModuleList(nn.EmbeddingBag(size, 8, mode="mean") for size in behavior_sizes[8:])
                     self.edge_hidden = nn.Linear(2*hidden_size+32, 128)
                     self.edge_output = nn.Linear(128, hidden_size, bias=False)
-        if mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled"}:
+        if mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled", "joint_transport", "joint_transport_shuffled"}:
             from .cfg_behavior import FAMILIES
             if steps != 5 or behavior_sizes is None or len(behavior_sizes) != 13 or set(disabled_families)-set(FAMILIES):
                 raise ValueError("joint model requires role-bound schema 2 and five steps")
@@ -322,7 +322,7 @@ class AttributeCFGEncoder(nn.Module):
                     alternative_counts=torch.tensor([len(a) for a in alternatives],device=x.device).unsqueeze(-1)
         original_x = x
         semantic = None
-        if self.mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled"}:
+        if self.mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled", "joint_transport", "joint_transport_shuffled"}:
             from .cfg_behavior import NODE_FAMILIES, EDGE_FAMILIES
             if batch.behavior is None or any(g.get("schema")!=2 for g in batch.behavior):
                 raise ValueError("joint model refuses unbound/old behavior cache")
@@ -362,7 +362,7 @@ class AttributeCFGEncoder(nn.Module):
             incoming = transformed.clone()
             if self.mode in {"cfg", "aligned_cfg", "cfg_ddg", "cfg_ddg_shuffled",
                              "cfg_jk_mean", "cfg_jk_max", "program_plain", "program_state",
-                             "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked", "joint_nodes", "joint_edges", "joint", "joint_shuffled"} and src.numel():
+                             "cfg_hierarchical", "region_local", "region_context", "behavior_nodes", "behavior_edges", "behavior_joint", "behavior_masked", "joint_nodes", "joint_edges", "joint", "joint_shuffled", "joint_transport", "joint_transport_shuffled"} and src.numel():
                 incoming.index_add_(0, dst, transformed[src])
             if behavior_edges is not None:
                 all_src,all_dst=batch.edges
@@ -380,7 +380,11 @@ class AttributeCFGEncoder(nn.Module):
                 neutral=self.semantic_output(torch.relu(self.semantic_hidden(torch.cat((endpoints,neutral_semantic),-1))))
                 modulation=torch.tanh(actual-neutral)*semantic_available
                 residual=state.new_zeros((batch.edges.shape[1],state.shape[-1]))
-                residual.index_add_(0,alternative_edge,transformed[all_src[alternative_edge]]*modulation)
+                # Transport can introduce semantic components even when the base
+                # message is zero; legacy joint only rescales that message.
+                terms = (modulation if self.mode in {"joint_transport", "joint_transport_shuffled"}
+                         else transformed[all_src[alternative_edge]]*modulation)
+                residual.index_add_(0,alternative_edge,terms)
                 incoming.index_add_(0,all_dst,residual/alternative_counts)
                 self.diagnostics["edge_modulation_rms"]=modulation.detach().square().mean().sqrt()
             if use_ddg and ddg_src.numel():
@@ -392,7 +396,7 @@ class AttributeCFGEncoder(nn.Module):
         if step_states is not None:
             stacked = torch.stack(step_states, dim=0)
             state = stacked.mean(dim=0) if self.mode == "cfg_jk_mean" else stacked.amax(dim=0)
-        if self.mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled"}:
+        if self.mode in {"joint_nodes", "joint_edges", "joint", "joint_shuffled", "joint_transport", "joint_transport_shuffled"}:
             x = original_x
         ptr = batch.ptr
         if self.mode in {"cfg_hierarchical", "region_local", "region_context"}:
@@ -641,6 +645,8 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
                                           "cfg_rotation_fixed", "cfg_rotation_rotating",
                                           "lm_pretrain_cfg", "dep_pretrain_cfg",
                                           "composition_pretrain_cfg", "region_pretrain_cfg", "control_cfg"} else
+            "joint_transport" if config["variant"] == "control_transport" else
+            "joint_transport_shuffled" if config["variant"] == "control_transport_shuffled" else
             "joint" if config["variant"] in ('control_joint', *POOL_VARIANTS) else
             "cfg_hierarchical" if config["variant"] in {"dep_pretrain_hierarchical",
                                                          "region_pretrain_hierarchical"} else

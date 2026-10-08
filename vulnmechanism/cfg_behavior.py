@@ -596,7 +596,7 @@ def supplement_behavior(reference_run_dir, output_path, joern_dir='/home/phy/joe
 
 # Role-bound residual representation; schema 1 remains a reproducible ablation.
 BOUND_SCHEMA = 2
-JOINT_VARIANTS = ('joint_nodes', 'joint_edges', 'joint', 'joint_shuffled')
+JOINT_VARIANTS = ('joint_nodes', 'joint_edges', 'joint', 'joint_shuffled', 'joint_transport', 'joint_transport_shuffled')
 
 
 def bound_node_facts(g, root):

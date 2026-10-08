@@ -136,6 +136,58 @@ class JointControlTests(unittest.TestCase):
         neutral_loop=copy.deepcopy(self_loop);neutral_loop.behavior[0]['edges'][-1]=[copy.deepcopy(encoded['neutral'])]
         self.assertFalse(torch.allclose(model(self_loop),model(neutral_loop)))
 
+    def test_transport_introduces_message_at_zero_base_and_reloads(self):
+        transport=self.model('joint_transport');legacy=self.model('joint')
+        self.assertEqual(sum(p.numel() for p in transport.parameters()),sum(p.numel() for p in legacy.parameters()))
+        batch=self.batch();neutral=copy.deepcopy(batch)
+        neutral.behavior[0]['edges']=[[copy.deepcopy(neutral.behavior[0]['neutral'])] for _ in neutral.behavior[0]['edges']]
+        for model in (transport,legacy):
+            with torch.no_grad():
+                model.message.weight.zero_();model.message.bias.zero_()
+                model.semantic_output.weight.fill_(.05)
+        self.assertTrue(torch.equal(legacy(batch),legacy(neutral)))
+        self.assertFalse(torch.allclose(transport(batch),transport(neutral)))
+        transport(batch).square().sum().backward()
+        self.assertGreater(transport.semantic_output.weight.grad.abs().sum().item(),0)
+        buffer=io.BytesIO();torch.save(transport.state_dict(),buffer);buffer.seek(0)
+        restored=self.model('joint_transport');restored.load_state_dict(torch.load(buffer,weights_only=True))
+        self.assertTrue(torch.equal(transport(batch),restored(batch)))
+
+    def test_transport_classifier_single_forward_train_save_load_evaluate(self):
+        from types import SimpleNamespace
+        from tests.test_cfg_dependency import TinyEncoder
+        from vulnmechanism.cfg_network import build_model
+        def make():
+            source=SimpleNamespace(encoder=TinyEncoder(),task_modules=torch.nn.ModuleDict({'classifier':torch.nn.Linear(4,1)}))
+            base=SimpleNamespace(SequenceVulnerabilityClassifier=lambda *args,**kwargs:source)
+            config=dict(variant='control_transport_shuffled',model_path='tiny',lora_r=2,lora_alpha=2,
+                        lora_dropout=0.,graph_hidden_size=8,graph_steps=5,behavior_sizes=self.vocab.sizes())
+            return build_model(base,config,[3]*4,torch.device('cpu'),training=True)
+        model=make();ids=torch.tensor([[2,3,4]]);mask=torch.ones_like(ids);batch=self.batch()
+        self.assertEqual(model.task_modules['cfg_encoder'].mode,'joint_transport_shuffled')
+        optimizer=torch.optim.AdamW(model.parameters(),lr=.01)
+        for _ in range(2):
+            optimizer.zero_grad();logits=model(ids,mask,batch)
+            torch.nn.functional.binary_cross_entropy_with_logits(logits,torch.ones(1)).backward();optimizer.step()
+        self.assertEqual(model.encoder.calls,2)
+        self.assertGreater(model.encoder.adapter.weight.grad.abs().sum().item(),0)
+        model.eval();buffer=io.BytesIO();torch.save(model.state_dict(),buffer);buffer.seek(0)
+        restored=make();restored.load_state_dict(torch.load(buffer,weights_only=True));restored.eval()
+        with torch.no_grad():torch.testing.assert_close(model(ids,mask,batch),restored(ids,mask,batch))
+
+    def test_projected_gradients_accumulate_before_projection(self):
+        from vulnmechanism.cfg_dependency import accumulate_task_gradients,project_auxiliary_gradient
+        p=torch.nn.Parameter(torch.tensor([1.,2.]));a=[torch.zeros_like(p)];b=[torch.zeros_like(p)]
+        for primary,aux in (([1.,0.],[-2.,1.]),([0.,1.],[0.,-2.])):
+            p.grad=torch.tensor(primary);accumulate_task_gradients([p],a)
+            p.grad=torch.tensor(aux);accumulate_task_gradients([p],b)
+        stats=project_auxiliary_gradient([p],a,b)
+        self.assertTrue(stats['projected'])
+        torch.testing.assert_close(p.grad,torch.tensor([.5,1.5]))
+        self.assertGreaterEqual(float(((p.grad-a[0])*a[0]).sum()),0)
+        project_auxiliary_gradient([p],[torch.zeros_like(p)],b)
+        torch.testing.assert_close(p.grad,b[0])
+
     def test_renumbering_batch_isolation_and_control_sampling(self):
         changed=copy.deepcopy(self.graph);mapping={n['id']:str(900000-i) for i,n in enumerate(changed['nodes'])}
         for n in changed['nodes']:n['id']=mapping[n['id']]

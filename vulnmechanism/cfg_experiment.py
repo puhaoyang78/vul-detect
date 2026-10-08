@@ -26,7 +26,7 @@ from .cfg_rotation import ROTATION_VARIANTS, epoch_train_rows, load_selected, sc
 from .cfg_behavior import VARIANTS as BEHAVIOR_VARIANTS, JOINT_VARIANTS
 from .cfg_network import POOL_VARIANTS
 
-CONTROL_VARIANTS = ("control_cfg", "control_joint")
+CONTROL_VARIANTS = ("control_cfg", "control_joint", "control_transport", "control_transport_shuffled")
 JOINT_EXPERIMENTS = (*JOINT_VARIANTS, *CONTROL_VARIANTS, *POOL_VARIANTS)
 
 JK_VARIANTS = ("cfg_jk_mean", "cfg_jk_max")
@@ -96,7 +96,7 @@ def _graph_inputs(model, batch, builder, views, encoded, device, coverage=None):
                   for k in keys] if mode in DDG_VARIANTS else None)
     programs = [views[k]["program"] for k in keys] if mode in {"program_plain", "program_state"} else None
     behavior=[views[k]["behavior"] for k in keys] if mode in (*BEHAVIOR_VARIANTS,*JOINT_VARIANTS) else None
-    if mode == "joint_shuffled":
+    if mode in {"joint_shuffled", "joint_transport_shuffled"}:
         behavior=[dict(graph, edges=list(graph['edges'])) for graph in behavior]
         for key,graph in zip(keys,behavior):
             random.Random('42/edge-semantics/'+key).shuffle(graph['edges'])
@@ -256,8 +256,8 @@ def _train_graph(base, config, rows, views, vocab, folder, device, *, epoch_rows
             log({"event": "graph_compute", "node_steps": 5, "region_steps": 3,
                  "additional_parameters": config["graph_hidden_size"]**2, "splits": work})
         if config['variant'] in JOINT_EXPERIMENTS:
-            node_extension=config['variant'] in ('joint_nodes','joint','joint_shuffled','control_joint',*POOL_VARIANTS)
-            edge_extension=config['variant'] in ('joint_edges','joint','joint_shuffled','control_joint',*POOL_VARIANTS)
+            node_extension=config['variant'] in ('joint_nodes','joint','joint_shuffled','control_joint','joint_transport','joint_transport_shuffled','control_transport','control_transport_shuffled',*POOL_VARIANTS)
+            edge_extension=config['variant'] in ('joint_edges','joint','joint_shuffled','control_joint','joint_transport','joint_transport_shuffled','control_transport','control_transport_shuffled',*POOL_VARIANTS)
             work={}
             for split, records in (('train',train),('valid',valid)):
                 count=Counter()
@@ -1098,6 +1098,7 @@ def parser():
     transfer.add_argument('--output-dir',default='results/cfg_transfer_diagnostic_seed42')
     transfer.add_argument('--prepare-only',action='store_true')
     transfer.add_argument('--readout-check',action='store_true',help='fixed common-prefix readout intervention on selected samples')
+    transfer.add_argument('--original-valid',action='store_true',help='fixed readout comparison over all covered original valid members')
     transfer.add_argument('--scope-check',action='store_true',help='audit single-input function masks and evaluate fixed readout factors')
     transfer.add_argument('--boundary-check',action='store_true',help='independent terminal-token confirmation of scope diagnosis')
     transfer.add_argument('--summarize-only',action='store_true',help='recompute statistics from fixed saved responses')
@@ -1203,6 +1204,7 @@ def parser():
     pretrain_dep.add_argument("--reference-run-dir", required=True)
     pretrain_dep.add_argument("--supervision-dir", help="existing scoped relation supervision; required for old modes")
     pretrain_dep.add_argument("--control-dir")
+    pretrain_dep.add_argument("--control-gradient-policy", choices=("sum", "project"), default="sum")
     pretrain_dep.add_argument("--region-dir", help="prepared H/P source-to-region targets")
     pretrain_dep.add_argument("--reference-pretrain-dir", help="corrected P0 run for equal-budget P1 provenance")
     pretrain_dep.add_argument("--program-dir", help="prepared composition queries and structural facts")
@@ -1264,7 +1266,7 @@ def short_command(args):
     reference = Path("results/cfg_abc_seed42")
     a = Path("results/cfg_dep_cfg_windowfix_seed42")
     variants = list({"abc":DEFAULT_VARIANTS,"behavior":BEHAVIOR_VARIANTS,
-                     "joint":JOINT_VARIANTS,"control":CONTROL_VARIANTS,"pool":POOL_VARIANTS}[args.command])
+                     "joint":JOINT_VARIANTS[:4],"control":CONTROL_VARIANTS[:2],"pool":POOL_VARIANTS}[args.command])
     if args.command=="pool" and args.action not in ("train","valid","test"):
         raise ValueError("pool supports train, valid and test; it reuses P0 and the existing graph cache")
     if args.selection:
@@ -1341,13 +1343,13 @@ def main():
     try:
         if args.command=='diagnose-transfer':
             from .cfg_transfer_diagnostics import prepare,evaluate,readout_intervention,saved_analysis,position_reference,summarize,scope_diagnosis,summarize_scope
-            if args.scope_check or args.boundary_check:
+            if args.scope_check or args.boundary_check or args.original_valid:
                 if args.readout_check or (args.scope_check and args.boundary_check) or (args.summarize_only and args.prepare_only):
                     raise ValueError('scope check cannot be combined with other diagnoses')
                 if args.summarize_only:
-                    summarize_scope(args.output_dir,boundary_check=args.boundary_check)
+                    summarize_scope(args.output_dir,boundary_check=args.boundary_check,original_valid=args.original_valid)
                     return 0
-                scope_diagnosis(args.output_dir,device=args.device,prepare_only=args.prepare_only,boundary_check=args.boundary_check)
+                scope_diagnosis(args.output_dir,device=args.device,prepare_only=args.prepare_only,boundary_check=args.boundary_check,original_valid=args.original_valid)
                 return 0
             if sum((args.prepare_only,args.readout_check,args.summarize_only))>1:raise ValueError('choose one diagnostic action')
             if args.readout_check:
@@ -1431,7 +1433,8 @@ def main():
                 args.reference_run_dir, args.supervision_dir, args.output_dir,
                 modes=tuple(args.modes), device=args.device, resume=args.resume,
                 program_dir=args.program_dir, region_dir=args.region_dir,
-                reference_pretrain_dir=args.reference_pretrain_dir, control_dir=args.control_dir),
+                reference_pretrain_dir=args.reference_pretrain_dir, control_dir=args.control_dir,
+                control_gradient_policy=args.control_gradient_policy),
                 ensure_ascii=False), flush=True)
         elif args.command == "audit-regions":
             from .cfg_region_diagnostics import audit_regions
