@@ -55,6 +55,7 @@ def _train(args):
             lora_dropout=args.lora_dropout,
             fusion_dim=args.fusion_dim,
             fusion_heads=args.fusion_heads,
+            classifier_head=args.classifier_head,
             excluded_groups=args.exclude_groups,
             seed=args.seed,
             device=args.device,
@@ -123,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--context-max-length", type=int, default=384)
     train.add_argument("--fusion-dim", type=int, default=256)
     train.add_argument("--fusion-heads", type=int, default=8)
+    train.add_argument("--classifier-head", choices=("linear", "mlp4", "prototype4"), default="linear")
     train.add_argument(
         "--exclude-groups",
         type=_mechanism_groups,

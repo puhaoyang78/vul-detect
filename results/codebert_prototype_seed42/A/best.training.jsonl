@@ -1,0 +1,29 @@
+{"event": "step", "epoch": 1, "step": 1, "loss": 0.6752216145396233, "learning_rate": 0.0002, "samples_seen": 8}
+{"event": "step", "epoch": 1, "step": 100, "loss": 0.6136752359305668, "learning_rate": 0.0002, "samples_seen": 800}
+{"event": "step", "epoch": 1, "step": 200, "loss": 0.5690897786710412, "learning_rate": 0.0002, "samples_seen": 1600}
+{"event": "step", "epoch": 1, "step": 300, "loss": 0.542141072517261, "learning_rate": 0.0002, "samples_seen": 2400}
+{"event": "step", "epoch": 1, "step": 400, "loss": 0.5115238506090827, "learning_rate": 0.0002, "samples_seen": 3200}
+{"event": "step", "epoch": 1, "step": 500, "loss": 0.5362629117281176, "learning_rate": 0.0002, "samples_seen": 4000}
+{"event": "step", "epoch": 1, "step": 600, "loss": 0.49146121875266546, "learning_rate": 0.0002, "samples_seen": 4800}
+{"event": "step", "epoch": 1, "step": 700, "loss": 0.4710295133187901, "learning_rate": 0.0002, "samples_seen": 5600}
+{"event": "step", "epoch": 1, "step": 736, "loss": 0.45812264355746185, "learning_rate": 0.0002, "samples_seen": 5886}
+{"event": "epoch", "variant": "codebert_source", "excluded_groups": [], "epoch": 1, "train_loss": 0.5300139844220738, "optimizer_steps": 736, "validation_threshold": 0.31, "validation": {"accuracy": 0.7192982456140351, "precision": 0.6941176470588235, "recall": 0.7908847184986595, "f1": 0.7393483709273182, "mcc": 0.4424266715321727, "auc": 0.7727517775964564}}
+{"event": "step", "epoch": 2, "step": 800, "loss": 0.480235146823361, "learning_rate": 0.0002, "samples_seen": 512}
+{"event": "step", "epoch": 2, "step": 900, "loss": 0.49605747837980746, "learning_rate": 0.0002, "samples_seen": 1312}
+{"event": "step", "epoch": 2, "step": 1000, "loss": 0.4271093945676694, "learning_rate": 0.0002, "samples_seen": 2112}
+{"event": "step", "epoch": 2, "step": 1100, "loss": 0.45214926527580246, "learning_rate": 0.0002, "samples_seen": 2912}
+{"event": "step", "epoch": 2, "step": 1200, "loss": 0.4628918998548761, "learning_rate": 0.0002, "samples_seen": 3712}
+{"event": "step", "epoch": 2, "step": 1300, "loss": 0.4621665929234587, "learning_rate": 0.0002, "samples_seen": 4512}
+{"event": "step", "epoch": 2, "step": 1400, "loss": 0.47008088026195766, "learning_rate": 0.0002, "samples_seen": 5312}
+{"event": "step", "epoch": 2, "step": 1472, "loss": 0.4539906877297454, "learning_rate": 0.0002, "samples_seen": 5886}
+{"event": "epoch", "variant": "codebert_source", "excluded_groups": [], "epoch": 2, "train_loss": 0.46259521898424943, "optimizer_steps": 736, "validation_threshold": 0.17, "validation": {"accuracy": 0.7314439946018894, "precision": 0.7071428571428572, "recall": 0.7962466487935657, "f1": 0.7490542244640604, "mcc": 0.46617631743370996, "auc": 0.7854499358899638}}
+{"event": "step", "epoch": 3, "step": 1500, "loss": 0.42556595491727683, "learning_rate": 0.0002, "samples_seen": 224}
+{"event": "step", "epoch": 3, "step": 1600, "loss": 0.42368588313576766, "learning_rate": 0.0002, "samples_seen": 1024}
+{"event": "step", "epoch": 3, "step": 1700, "loss": 0.4567733643215615, "learning_rate": 0.0002, "samples_seen": 1824}
+{"event": "step", "epoch": 3, "step": 1800, "loss": 0.44139131481875665, "learning_rate": 0.0002, "samples_seen": 2624}
+{"event": "step", "epoch": 3, "step": 1900, "loss": 0.4625081297405995, "learning_rate": 0.0002, "samples_seen": 3424}
+{"event": "step", "epoch": 3, "step": 2000, "loss": 0.41644560802786146, "learning_rate": 0.0002, "samples_seen": 4224}
+{"event": "step", "epoch": 3, "step": 2100, "loss": 0.4168838718230836, "learning_rate": 0.0002, "samples_seen": 5024}
+{"event": "step", "epoch": 3, "step": 2200, "loss": 0.4151611263351515, "learning_rate": 0.0002, "samples_seen": 5824}
+{"event": "step", "epoch": 3, "step": 2208, "loss": 0.23599050027288257, "learning_rate": 0.0002, "samples_seen": 5886}
+{"event": "epoch", "variant": "codebert_source", "excluded_groups": [], "epoch": 3, "train_loss": 0.43089324218155184, "optimizer_steps": 736, "validation_threshold": 0.34, "validation": {"accuracy": 0.7327935222672065, "precision": 0.7249357326478149, "recall": 0.7560321715817694, "f1": 0.7401574803149606, "mcc": 0.4658418039295315, "auc": 0.7890124140342697}}

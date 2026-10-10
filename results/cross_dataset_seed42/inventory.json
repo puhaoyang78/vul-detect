@@ -1,0 +1,4257 @@
+{
+  "raw_rows": 353873,
+  "raw_labels": {
+    "True": 17975,
+    "False": 335898
+  },
+  "native_split_fields": {},
+  "c_cpp_counts": {
+    "train/rows": 228001,
+    "train/positive": 12368,
+    "test/rows": 25774,
+    "test/positive": 1266,
+    "valid/rows": 100098,
+    "valid/positive": 4341
+  },
+  "exclusions": {},
+  "projects": 1062,
+  "historical_projects": 916,
+  "project_counts": {
+    "qemu": {
+      "1": 203,
+      "0": 3848
+    },
+    "ffmpeg": {
+      "1": 395,
+      "0": 5016
+    },
+    "h2o": {
+      "1": 15,
+      "0": 261
+    },
+    "elric1/knc": {
+      "1": 2,
+      "0": 13
+    },
+    "ArtifexSoftware/ghostpdl": {
+      "1": 127,
+      "0": 1658
+    },
+    "libjpeg-turbo": {
+      "1": 28,
+      "0": 116
+    },
+    "igraph": {
+      "1": 2,
+      "0": 21
+    },
+    "torvalds/linux": {
+      "1": 3610,
+      "0": 84624
+    },
+    "vim": {
+      "1": 277,
+      "0": 5611
+    },
+    "nginx/njs": {
+      "1": 68,
+      "0": 1127
+    },
+    "LibreDWG/libredwg": {
+      "1": 26,
+      "0": 1427
+    },
+    "harfbuzz": {
+      "1": 34,
+      "0": 559
+    },
+    "ethereum/solidity": {
+      "1": 1,
+      "0": 145
+    },
+    "protobuf-c": {
+      "1": 5,
+      "0": 81
+    },
+    "redis": {
+      "1": 74,
+      "0": 1423
+    },
+    "fwdillema/totd": {
+      "1": 3,
+      "0": 12
+    },
+    "davea42/libdwarf-code": {
+      "1": 9,
+      "0": 56
+    },
+    "syoyo/tinyexr": {
+      "1": 15,
+      "0": 272
+    },
+    "GNOME/gimp": {
+      "1": 44,
+      "0": 400
+    },
+    "gpac": {
+      "1": 499,
+      "0": 9433
+    },
+    "DCMTK/dcmtk": {
+      "1": 5,
+      "0": 92
+    },
+    "u-boot": {
+      "1": 15,
+      "0": 105
+    },
+    "libtiff": {
+      "1": 71,
+      "0": 720
+    },
+    "bfabiszewski/libmobi": {
+      "1": 13,
+      "0": 130
+    },
+    "lua": {
+      "1": 27,
+      "0": 419
+    },
+    "hpjansson/chafa": {
+      "1": 3,
+      "0": 23
+    },
+    "kernel/git/netdev/net": {
+      "1": 94,
+      "0": 3344
+    },
+    "xen-project/xen": {
+      "1": 585,
+      "0": 6290
+    },
+    "AttorneyOnline/akashi": {
+      "1": 2,
+      "0": 27
+    },
+    "DaveGamble/cJSON": {
+      "1": 6,
+      "0": 201
+    },
+    "memcached": {
+      "1": 16,
+      "0": 351
+    },
+    "ImageMagick": {
+      "1": 465,
+      "0": 3373
+    },
+    "facebookincubator/fizz": {
+      "1": 5,
+      "0": 73
+    },
+    "facebook/hhvm": {
+      "1": 80,
+      "0": 2068
+    },
+    "facebook/wangle": {
+      "1": 2,
+      "0": 8
+    },
+    "php/php-src": {
+      "1": 452,
+      "0": 3056
+    },
+    "facebook/fbthrift": {
+      "1": 6,
+      "0": 260
+    },
+    "capstone-engine/capstone": {
+      "1": 2,
+      "0": 32
+    },
+    "memononen/nanosvg": {
+      "1": 2,
+      "0": 109
+    },
+    "heimdal": {
+      "1": 5,
+      "0": 92
+    },
+    "miniupnp": {
+      "1": 12,
+      "0": 136
+    },
+    "poppler": {
+      "1": 84,
+      "0": 2508
+    },
+    "wireshark": {
+      "1": 796,
+      "0": 19762
+    },
+    "JayXon/Leanify": {
+      "1": 3,
+      "0": 5
+    },
+    "libreswan": {
+      "1": 8,
+      "0": 32
+    },
+    "kernel/git/gregkh/tty": {
+      "1": 3,
+      "0": 35
+    },
+    "kernel/git/tip/tip": {
+      "1": 39,
+      "0": 998
+    },
+    "drm/drm-misc": {
+      "1": 1,
+      "0": 4
+    },
+    "containers/bubblewrap": {
+      "1": 3,
+      "0": 46
+    },
+    "GNOME/gvfs": {
+      "1": 11,
+      "0": 72
+    },
+    "GNOME/glib": {
+      "1": 51,
+      "0": 634
+    },
+    "kernel/git/broonie/sound": {
+      "1": 1,
+      "0": 78
+    },
+    "kernel/git/sunxi/linux": {
+      "1": 1,
+      "0": 33
+    },
+    "kernel/git/mkp/scsi": {
+      "1": 5,
+      "0": 140
+    },
+    "google/google-api-cpp-client": {
+      "1": 1,
+      "0": 51
+    },
+    "netblue30/firejail": {
+      "1": 7,
+      "0": 51
+    },
+    "godotengine/godot": {
+      "1": 9,
+      "0": 33
+    },
+    "kernel/git/powerpc/linux": {
+      "1": 5,
+      "0": 65
+    },
+    "kernel/git/davem/sparc": {
+      "1": 1,
+      "0": 60
+    },
+    "Yubico/pam-u2f": {
+      "1": 4,
+      "0": 7
+    },
+    "neovim": {
+      "1": 1,
+      "0": 79
+    },
+    "radareorg/radare2": {
+      "1": 223,
+      "0": 3987
+    },
+    "ArtifexSoftware/mujs": {
+      "1": 29,
+      "0": 382
+    },
+    "znc": {
+      "1": 18,
+      "0": 800
+    },
+    "netdata": {
+      "1": 2,
+      "0": 15
+    },
+    "bash": {
+      "1": 2,
+      "0": 10
+    },
+    "libgd": {
+      "1": 33,
+      "0": 269
+    },
+    "gpg/libgcrypt": {
+      "1": 7,
+      "0": 49
+    },
+    "libexpat": {
+      "1": 29,
+      "0": 423
+    },
+    "cesanta/mongoose": {
+      "1": 13,
+      "0": 1427
+    },
+    "binutils-gdb": {
+      "1": 122,
+      "0": 2495
+    },
+    "uclouvain/openjpeg": {
+      "1": 52,
+      "0": 662
+    },
+    "libming": {
+      "1": 50,
+      "0": 305
+    },
+    "Uninett/mod_auth_mellon": {
+      "1": 11,
+      "0": 117
+    },
+    "Exiv2/exiv2": {
+      "1": 78,
+      "0": 1230
+    },
+    "GNOME/libxslt": {
+      "1": 17,
+      "0": 176
+    },
+    "ImageMagick/ImageMagick6": {
+      "1": 17,
+      "0": 300
+    },
+    "linuxdeepin/deepin-clone": {
+      "1": 6,
+      "0": 61
+    },
+    "ArtifexSoftware/mupdf": {
+      "1": 79,
+      "0": 1702
+    },
+    "squid-cache/squid": {
+      "1": 16,
+      "0": 190
+    },
+    "jackaudio/jack2": {
+      "1": 2,
+      "0": 12
+    },
+    "michaelrsweet/codedoc": {
+      "1": 4,
+      "0": 54
+    },
+    "kkos/oniguruma": {
+      "1": 15,
+      "0": 594
+    },
+    "dbry/WavPack": {
+      "1": 24,
+      "0": 82
+    },
+    "kyz/libmspack": {
+      "1": 5,
+      "0": 35
+    },
+    "archivesunleashed/graphpass": {
+      "1": 1,
+      "0": 27
+    },
+    "OP-TEE/optee_os": {
+      "1": 26,
+      "0": 225
+    },
+    "mz-automation/libiec61850": {
+      "1": 15,
+      "0": 131
+    },
+    "phaag/nfdump": {
+      "1": 5,
+      "0": 28
+    },
+    "Matroska-Org/libebml": {
+      "1": 9,
+      "0": 66
+    },
+    "libssh2": {
+      "1": 4,
+      "0": 45
+    },
+    "univention/univention-corporate-server": {
+      "1": 1,
+      "0": 1
+    },
+    "qbittorrent/qBittorrent": {
+      "1": 7,
+      "0": 104
+    },
+    "lewdlime/abcm2ps": {
+      "1": 6,
+      "0": 111
+    },
+    "sleuthkit": {
+      "1": 6,
+      "0": 147
+    },
+    "OISF/suricata": {
+      "1": 21,
+      "0": 286
+    },
+    "OpenIDC/mod_auth_openidc": {
+      "1": 13,
+      "0": 173
+    },
+    "GNOME/pango": {
+      "1": 2,
+      "0": 11
+    },
+    "proftpd": {
+      "1": 10,
+      "0": 387
+    },
+    "haproxy": {
+      "1": 7,
+      "0": 147
+    },
+    "jerryscript-project/jerryscript": {
+      "1": 55,
+      "0": 778
+    },
+    "facebook/proxygen": {
+      "1": 17,
+      "0": 378
+    },
+    "facebook/zstd": {
+      "1": 8,
+      "0": 304
+    },
+    "upx": {
+      "1": 67,
+      "0": 411
+    },
+    "troglobit/ssdp-responder": {
+      "1": 1,
+      "0": 28
+    },
+    "freetype/freetype2": {
+      "1": 93,
+      "0": 1041
+    },
+    "Sigil-Ebook/Sigil": {
+      "1": 3,
+      "0": 53
+    },
+    "stephane/libmodbus": {
+      "1": 2,
+      "0": 53
+    },
+    "milkytracker/MilkyTracker": {
+      "1": 4,
+      "0": 83
+    },
+    "schismtracker": {
+      "1": 6,
+      "0": 5
+    },
+    "opencv": {
+      "1": 55,
+      "0": 342
+    },
+    "3proxy": {
+      "1": 1,
+      "0": 7
+    },
+    "adplug": {
+      "1": 14,
+      "0": 109
+    },
+    "enferex/pdfresurrect": {
+      "1": 13,
+      "0": 27
+    },
+    "nothings/stb": {
+      "1": 16,
+      "0": 350
+    },
+    "kernel/git/tiwai/sound": {
+      "1": 5,
+      "0": 167
+    },
+    "RIOT-OS/RIOT": {
+      "1": 35,
+      "0": 165
+    },
+    "knik0/faad2": {
+      "1": 20,
+      "0": 143
+    },
+    "swoole/swoole-src": {
+      "1": 8,
+      "0": 129
+    },
+    "openbsd/src": {
+      "1": 38,
+      "0": 886
+    },
+    "wolfSSL/wolfssl": {
+      "1": 21,
+      "0": 3426
+    },
+    "nmap": {
+      "1": 1,
+      "0": 40
+    },
+    "zephyrproject-rtos/zephyr": {
+      "1": 15,
+      "0": 189
+    },
+    "WebAssembly/binaryen": {
+      "1": 27,
+      "0": 541
+    },
+    "mandovinnie/Lute-Tab": {
+      "1": 1,
+      "0": 51
+    },
+    "Haivision/srt": {
+      "1": 9,
+      "0": 51
+    },
+    "fontforge": {
+      "1": 15,
+      "0": 820
+    },
+    "ROBOTIS-GIT/DynamixelSDK": {
+      "1": 2,
+      "0": 40
+    },
+    "NVIDIA-Genomics-Research/GenomeWorks": {
+      "1": 7,
+      "0": 3
+    },
+    "OpenSC": {
+      "1": 29,
+      "0": 610
+    },
+    "OpenSC/pam_p11": {
+      "1": 1,
+      "0": 15
+    },
+    "m6w6/ext-http": {
+      "1": 3,
+      "0": 59
+    },
+    "k-takata/Onigmo": {
+      "1": 2,
+      "0": 45
+    },
+    "lexborisov/myhtml": {
+      "1": 1,
+      "0": 113
+    },
+    "sysstat": {
+      "1": 11,
+      "0": 152
+    },
+    "openssl": {
+      "1": 301,
+      "0": 2369
+    },
+    "miniupnp/ngiflib": {
+      "1": 20,
+      "0": 9
+    },
+    "rockcarry/ffjpeg": {
+      "1": 7,
+      "0": 69
+    },
+    "GNOME/file-roller": {
+      "1": 6,
+      "0": 455
+    },
+    "plutinosoft/Platinum": {
+      "1": 2,
+      "0": 6
+    },
+    "krb5": {
+      "1": 78,
+      "0": 720
+    },
+    "libexif": {
+      "1": 13,
+      "0": 84
+    },
+    "zcash": {
+      "1": 3,
+      "0": 14
+    },
+    "the-tcpdump-group/tcpdump": {
+      "1": 180,
+      "0": 436
+    },
+    "the-tcpdump-group/libpcap": {
+      "1": 7,
+      "0": 19
+    },
+    "koral--/android-gif-drawable": {
+      "1": 2,
+      "0": 2
+    },
+    "OpenMPT/openmpt": {
+      "1": 4,
+      "0": 35
+    },
+    "FreeRDP": {
+      "1": 110,
+      "0": 1615
+    },
+    "GNOME/libsoup": {
+      "1": 2,
+      "0": 57
+    },
+    "libtom/libtomcrypt": {
+      "1": 2
+    },
+    "envoyproxy/envoy": {
+      "1": 76,
+      "0": 1111
+    },
+    "OISF/libhtp": {
+      "1": 2,
+      "0": 39
+    },
+    "axiomatic-systems/Bento4": {
+      "1": 42,
+      "0": 405
+    },
+    "gpg/boa": {
+      "1": 5,
+      "0": 17
+    },
+    "tbeu/matio": {
+      "1": 8,
+      "0": 86
+    },
+    "libvips": {
+      "1": 7,
+      "0": 85
+    },
+    "GNUAspell/aspell": {
+      "1": 10,
+      "0": 98
+    },
+    "OSGeo/gdal": {
+      "1": 4,
+      "0": 39
+    },
+    "slicer69/doas": {
+      "1": 3,
+      "0": 8
+    },
+    "file": {
+      "1": 42,
+      "0": 215
+    },
+    "libidn/libidn2": {
+      "1": 1,
+      "0": 7
+    },
+    "libarchive": {
+      "1": 54,
+      "0": 831
+    },
+    "LibVNC/libvncserver": {
+      "1": 28,
+      "0": 257
+    },
+    "TurboVNC/turbovnc": {
+      "1": 1,
+      "0": 32
+    },
+    "mooltipass/moolticute": {
+      "1": 1,
+      "0": 12
+    },
+    "achernya/hesiod": {
+      "1": 2,
+      "0": 9
+    },
+    "atheme": {
+      "1": 7,
+      "0": 80
+    },
+    "pjsip/pjproject": {
+      "1": 84,
+      "0": 821
+    },
+    "pcmacdon/jsish": {
+      "1": 74,
+      "0": 855
+    },
+    "polkit": {
+      "1": 27,
+      "0": 129
+    },
+    "juce-framework/JUCE": {
+      "1": 2,
+      "0": 29
+    },
+    "minetest": {
+      "1": 3,
+      "0": 48
+    },
+    "Fstark-prog/jhead": {
+      "1": 2,
+      "0": 14
+    },
+    "tensorflow": {
+      "1": 411,
+      "0": 3600
+    },
+    "VirusTotal/yara": {
+      "1": 27,
+      "0": 255
+    },
+    "mruby": {
+      "1": 30,
+      "0": 831
+    },
+    "ruby/cgi": {
+      "1": 2,
+      "0": 12
+    },
+    "FISCO-BCOS": {
+      "1": 9,
+      "0": 169
+    },
+    "ruven/iipsrv": {
+      "1": 8,
+      "0": 31
+    },
+    "arangodb": {
+      "1": 13,
+      "0": 60
+    },
+    "michaelrsweet/htmldoc": {
+      "1": 30,
+      "0": 134
+    },
+    "ccxvii/mujs": {
+      "1": 23,
+      "0": 332
+    },
+    "accel-ppp": {
+      "1": 3,
+      "0": 34
+    },
+    "sprinfall/webcc": {
+      "1": 8,
+      "0": 63
+    },
+    "stefanberger/swtpm": {
+      "1": 1,
+      "0": 27
+    },
+    "MonetDB": {
+      "1": 13,
+      "0": 634
+    },
+    "umlaeute/v4l2loopback": {
+      "1": 2,
+      "0": 88
+    },
+    "CrowCpp/Crow": {
+      "1": 18,
+      "0": 120
+    },
+    "Samsung/mTower": {
+      "1": 23,
+      "0": 222
+    },
+    "contiki-ng": {
+      "1": 39,
+      "0": 188
+    },
+    "tats/w3m": {
+      "1": 44,
+      "0": 496
+    },
+    "wkhtmltopdf": {
+      "1": 1,
+      "0": 6
+    },
+    "MisterTea/EternalTerminal": {
+      "1": 18,
+      "0": 8
+    },
+    "nu774/fdkaac": {
+      "1": 6,
+      "0": 28
+    },
+    "qemu-project/qemu": {
+      "1": 22,
+      "0": 1207
+    },
+    "appneta/tcpreplay": {
+      "1": 47,
+      "0": 163
+    },
+    "babelouest/rhonabwy": {
+      "1": 3,
+      "0": 97
+    },
+    "rpm-software-management/rpm": {
+      "1": 13,
+      "0": 126
+    },
+    "latchset/mod_auth_mellon": {
+      "1": 1,
+      "0": 43
+    },
+    "AcademySoftwareFoundation/openexr": {
+      "1": 23,
+      "0": 365
+    },
+    "opencryptoki": {
+      "1": 2,
+      "0": 56
+    },
+    "DPDK/dpdk": {
+      "1": 4,
+      "0": 119
+    },
+    "openvswitch/ovs": {
+      "1": 4,
+      "0": 713
+    },
+    "libvirt": {
+      "1": 5,
+      "0": 642
+    },
+    "util-linux": {
+      "1": 19,
+      "0": 175
+    },
+    "glibc": {
+      "1": 27,
+      "0": 149
+    },
+    "gnutls": {
+      "1": 13,
+      "0": 152
+    },
+    "hughsie/colord": {
+      "1": 1,
+      "0": 12
+    },
+    "rizinorg/rizin": {
+      "1": 24,
+      "0": 470
+    },
+    "samba-team/samba": {
+      "1": 4,
+      "0": 64
+    },
+    "nbdkit/libnbd": {
+      "1": 9,
+      "0": 61
+    },
+    "openscad": {
+      "1": 3,
+      "0": 16
+    },
+    "ZLMediaKit": {
+      "1": 1,
+      "0": 37
+    },
+    "LibRaw": {
+      "1": 86,
+      "0": 1245
+    },
+    "kernel/git/deller/linux-fbdev": {
+      "1": 2,
+      "0": 46
+    },
+    "syoyo/tinygltf": {
+      "1": 7,
+      "0": 229
+    },
+    "fribidi": {
+      "1": 3,
+      "0": 9
+    },
+    "Singular": {
+      "1": 1,
+      "0": 4
+    },
+    "systemd": {
+      "1": 40,
+      "0": 924
+    },
+    "libconfuse": {
+      "1": 1,
+      "0": 99
+    },
+    "DanBloomberg/leptonica": {
+      "1": 23,
+      "0": 260
+    },
+    "lief-project/LIEF": {
+      "1": 6,
+      "0": 171
+    },
+    "JonMagon/KDiskMark": {
+      "1": 1,
+      "0": 15
+    },
+    "wocommunity/wonder": {
+      "1": 14,
+      "0": 116
+    },
+    "scylladb": {
+      "1": 1,
+      "0": 90
+    },
+    "tensorflow/tflite-micro": {
+      "1": 2,
+      "0": 3
+    },
+    "tinyproxy": {
+      "1": 2,
+      "0": 31
+    },
+    "kernel/git/bpf/bpf": {
+      "1": 15,
+      "0": 620
+    },
+    "wayland": {
+      "1": 5,
+      "0": 49
+    },
+    "open5gs": {
+      "1": 22,
+      "0": 180
+    },
+    "wazuh": {
+      "1": 2,
+      "0": 1
+    },
+    "notepad-plus-plus": {
+      "1": 2,
+      "0": 125
+    },
+    "cloudbase/ovs": {
+      "1": 1,
+      "0": 94
+    },
+    "fwupd": {
+      "1": 1,
+      "0": 86
+    },
+    "Nheko-Reborn/nheko": {
+      "1": 1,
+      "0": 21
+    },
+    "flipperdevices/flipperzero-firmware": {
+      "1": 1,
+      "0": 34
+    },
+    "Lora-net/LoRaMac-node": {
+      "1": 5,
+      "0": 194
+    },
+    "dbus": {
+      "1": 14,
+      "0": 573
+    },
+    "facebook/hermes": {
+      "1": 44,
+      "0": 940
+    },
+    "mkj/dropbear": {
+      "1": 13,
+      "0": 53
+    },
+    "kernel/git/wireless/wireless": {
+      "1": 7,
+      "0": 237
+    },
+    "jasper-software/jasper": {
+      "1": 62,
+      "0": 529
+    },
+    "kernel/git/pabeni/net-next": {
+      "1": 2,
+      "0": 111
+    },
+    "kernel/git/bpf/bpf-next": {
+      "1": 12,
+      "0": 996
+    },
+    "kernel/git/netfilter/nf-next": {
+      "1": 1,
+      "0": 152
+    },
+    "kernel/git/klassert/ipsec-next": {
+      "1": 9,
+      "0": 813
+    },
+    "xorg/xserver": {
+      "1": 46,
+      "0": 1309
+    },
+    "OSGeo/shapelib": {
+      "1": 1,
+      "0": 9
+    },
+    "Matthias-Wandel/jhead": {
+      "1": 3,
+      "0": 27
+    },
+    "kernel/git/bluetooth/bluetooth-next": {
+      "1": 9,
+      "0": 247
+    },
+    "STMicroelectronics/stm32_mw_usb_host": {
+      "1": 1,
+      "0": 15
+    },
+    "bluez": {
+      "1": 24,
+      "0": 608
+    },
+    "Softmotions/iowow": {
+      "1": 1,
+      "0": 130
+    },
+    "eclipse/omr": {
+      "1": 1,
+      "0": 124
+    },
+    "hzeller/timg": {
+      "1": 3,
+      "0": 28
+    },
+    "justdan96/tsMuxer": {
+      "1": 16,
+      "0": 247
+    },
+    "julianhille/MuhammaraJS": {
+      "1": 4,
+      "0": 163
+    },
+    "galkahana/HummusJS": {
+      "1": 11,
+      "0": 132
+    },
+    "strukturag/libde265": {
+      "1": 30,
+      "0": 317
+    },
+    "sudo-project/sudo": {
+      "1": 19,
+      "0": 22
+    },
+    "pixman": {
+      "1": 2,
+      "0": 44
+    },
+    "DIPlib/diplib": {
+      "1": 6,
+      "0": 8
+    },
+    "jfisteus/html2xhtml": {
+      "1": 5,
+      "0": 50
+    },
+    "facebook/redex": {
+      "1": 1,
+      "0": 10
+    },
+    "libreoffice/filters": {
+      "1": 2,
+      "0": 10
+    },
+    "connman": {
+      "1": 17,
+      "0": 377
+    },
+    "gnash": {
+      "1": 3,
+      "0": 46
+    },
+    "libreoffice/core": {
+      "1": 11,
+      "0": 430
+    },
+    "kvm/qemu-kvm": {
+      "1": 10,
+      "0": 468
+    },
+    "mobile-shell/mosh": {
+      "1": 1,
+      "0": 13
+    },
+    "GNOME/gdk-pixbuf": {
+      "1": 30,
+      "0": 104
+    },
+    "accountsservice": {
+      "1": 10,
+      "0": 121
+    },
+    "aosp-mirror/platform_bionic": {
+      "1": 3,
+      "0": 22
+    },
+    "bmuller/mod_auth_openid": {
+      "1": 1,
+      "0": 15
+    },
+    "sipa/bitcoin": {
+      "1": 2,
+      "0": 74
+    },
+    "gypsy": {
+      "1": 2,
+      "0": 8
+    },
+    "nodejs/node-v0.x-archive": {
+      "1": 1,
+      "0": 23
+    },
+    "darold/squidclamav": {
+      "1": 1,
+      "0": 34
+    },
+    "jabberd2": {
+      "1": 4,
+      "0": 45
+    },
+    "pediapress/pyfribidi": {
+      "1": 1
+    },
+    "GNOME/libgdata": {
+      "1": 2,
+      "0": 63
+    },
+    "chromium": {
+      "1": 845,
+      "0": 22113
+    },
+    "taglib": {
+      "1": 4,
+      "0": 99
+    },
+    "GNOME/gnome-keyring": {
+      "1": 2,
+      "0": 45
+    },
+    "davidben/nspluginwrapper": {
+      "1": 5,
+      "0": 257
+    },
+    "GNOME/evince": {
+      "1": 14,
+      "0": 111
+    },
+    "libreoffice/binfilter": {
+      "1": 3,
+      "0": 19
+    },
+    "GNOME/libxml2": {
+      "1": 89,
+      "0": 1415
+    },
+    "weechat": {
+      "1": 8,
+      "0": 210
+    },
+    "android": {
+      "1": 519,
+      "0": 6955
+    },
+    "libofx": {
+      "1": 3,
+      "0": 9
+    },
+    "ruby/openssl": {
+      "1": 8,
+      "0": 40
+    },
+    "xorg/lib/libXfont": {
+      "1": 5,
+      "0": 60
+    },
+    "evan/ccsv": {
+      "1": 1,
+      "0": 1
+    },
+    "aircrack-ng": {
+      "1": 3,
+      "0": 76
+    },
+    "pbatard/rufus": {
+      "1": 3,
+      "0": 45
+    },
+    "FransUrbo/zfs": {
+      "1": 1,
+      "0": 16
+    },
+    "shadowsocks/shadowsocks-libev": {
+      "1": 2,
+      "0": 15
+    },
+    "wget": {
+      "1": 12,
+      "0": 167
+    },
+    "brianmario/yajl-ruby": {
+      "1": 1,
+      "0": 5
+    },
+    "teknoraver/aacplusenc": {
+      "1": 3
+    },
+    "cyrusimap/cyrus-imapd": {
+      "1": 2,
+      "0": 167
+    },
+    "akrennmair/newsbeuter": {
+      "1": 3,
+      "0": 71
+    },
+    "apache/httpd": {
+      "1": 9,
+      "0": 479
+    },
+    "torproject/tor": {
+      "1": 9,
+      "0": 433
+    },
+    "mjg59/linux": {
+      "1": 4,
+      "0": 148
+    },
+    "GNOME/nautilus": {
+      "1": 4,
+      "0": 361
+    },
+    "libsndfile": {
+      "1": 19,
+      "0": 242
+    },
+    "kernel/git/jberg/mac80211": {
+      "1": 1,
+      "0": 252
+    },
+    "rofl0r/proxychains-ng": {
+      "1": 1,
+      "0": 2
+    },
+    "inspircd": {
+      "1": 9,
+      "0": 154
+    },
+    "randombit/botan": {
+      "1": 18,
+      "0": 65
+    },
+    "wesnoth": {
+      "1": 4,
+      "0": 110
+    },
+    "dbus/dbus-glib": {
+      "1": 1,
+      "0": 69
+    },
+    "GNOME/evolution": {
+      "1": 2,
+      "0": 232
+    },
+    "libtom/libtommath": {
+      "1": 8
+    },
+    "snapcore/snapd": {
+      "1": 2,
+      "0": 10
+    },
+    "python/cpython": {
+      "1": 24,
+      "0": 701
+    },
+    "tar": {
+      "1": 8,
+      "0": 95
+    },
+    "libxsmm": {
+      "1": 10,
+      "0": 10
+    },
+    "caryll/otfcc": {
+      "1": 3,
+      "0": 14
+    },
+    "brackeen/ok-file-formats": {
+      "1": 17,
+      "0": 164
+    },
+    "alandekok/freeradius-server": {
+      "1": 5,
+      "0": 73
+    },
+    "GNOME/gnome-online-accounts": {
+      "1": 4,
+      "0": 25
+    },
+    "owasp-modsecurity/ModSecurity": {
+      "1": 8,
+      "0": 241
+    },
+    "gsliepen/tinc": {
+      "1": 1,
+      "0": 11
+    },
+    "curl": {
+      "1": 20,
+      "0": 415
+    },
+    "Cisco-Talos/clamav": {
+      "1": 19,
+      "0": 86
+    },
+    "kernel/git/linville/wireless": {
+      "1": 3,
+      "0": 206
+    },
+    "LawnGnome/php-radius": {
+      "1": 1,
+      "0": 34
+    },
+    "bitcoin": {
+      "1": 9,
+      "0": 498
+    },
+    "mongodb/mongo-python-driver": {
+      "1": 1,
+      "0": 21
+    },
+    "spice": {
+      "1": 3,
+      "0": 346
+    },
+    "vadz/libtiff": {
+      "1": 32,
+      "0": 459
+    },
+    "phusion/passenger": {
+      "1": 7,
+      "0": 84
+    },
+    "Mbed-TLS/mbedtls": {
+      "1": 11,
+      "0": 225
+    },
+    "xinetd-org/xinetd": {
+      "1": 1,
+      "0": 15
+    },
+    "OpenVPN/openvpn": {
+      "1": 3,
+      "0": 152
+    },
+    "hercules-team/augeas": {
+      "1": 5,
+      "0": 159
+    },
+    "apache/subversion": {
+      "1": 1,
+      "0": 57
+    },
+    "GNOME/gnumeric": {
+      "1": 1,
+      "0": 55
+    },
+    "xorg/app/xdm": {
+      "1": 1,
+      "0": 1
+    },
+    "MapServer": {
+      "1": 6,
+      "0": 170
+    },
+    "cisco/libsrtp": {
+      "1": 3,
+      "0": 28
+    },
+    "mm2/Little-CMS": {
+      "1": 5,
+      "0": 349
+    },
+    "maekitalo/tntnet": {
+      "1": 2,
+      "0": 10
+    },
+    "systemtap": {
+      "1": 4,
+      "0": 214
+    },
+    "akheron/jansson": {
+      "1": 10,
+      "0": 109
+    },
+    "jktjkt/trojita": {
+      "1": 1,
+      "0": 15
+    },
+    "postgres": {
+      "1": 7,
+      "0": 113
+    },
+    "bonzini/qemu": {
+      "1": 10,
+      "0": 19
+    },
+    "kvm": {
+      "1": 2,
+      "0": 69
+    },
+    "json-c": {
+      "1": 9,
+      "0": 53
+    },
+    "radvd-project/radvd": {
+      "1": 1,
+      "0": 8
+    },
+    "fish-shell": {
+      "1": 4,
+      "0": 112
+    },
+    "adaptivecomputing/torque": {
+      "1": 1
+    },
+    "GNOME/vte": {
+      "1": 3,
+      "0": 142
+    },
+    "libguestfs": {
+      "1": 1,
+      "0": 12
+    },
+    "corosync": {
+      "1": 1,
+      "0": 18
+    },
+    "ueno/libfep": {
+      "1": 2,
+      "0": 22
+    },
+    "monkey": {
+      "1": 5,
+      "0": 33
+    },
+    "cherokee/webserver": {
+      "1": 9,
+      "0": 178
+    },
+    "openthread/wpantund": {
+      "1": 1,
+      "0": 13
+    },
+    "GNOME/evolution-data-server": {
+      "1": 7,
+      "0": 388
+    },
+    "ilanschnell/bsdiff4": {
+      "1": 1,
+      "0": 7
+    },
+    "CauldronDevelopmentLLC/cbang": {
+      "1": 2,
+      "0": 11
+    },
+    "dinhvh/libetpan": {
+      "1": 4,
+      "0": 432
+    },
+    "GNOME/balsa": {
+      "1": 2,
+      "0": 200
+    },
+    "google/asylo": {
+      "1": 15,
+      "0": 198
+    },
+    "net-snmp": {
+      "1": 10,
+      "0": 323
+    },
+    "openzfs/zfs": {
+      "1": 6,
+      "0": 147
+    },
+    "KDE/ark": {
+      "1": 1,
+      "0": 17
+    },
+    "libproxy": {
+      "1": 2,
+      "0": 18
+    },
+    "zeromq/libzmq": {
+      "1": 25,
+      "0": 127
+    },
+    "linux4sam/at91bootstrap": {
+      "1": 3,
+      "0": 1
+    },
+    "antirez/kilo": {
+      "1": 1,
+      "0": 34
+    },
+    "irontec/sngrep": {
+      "1": 3,
+      "0": 39
+    },
+    "kohler/gifsicle": {
+      "1": 8,
+      "0": 126
+    },
+    "obgm/libcoap": {
+      "1": 3,
+      "0": 107
+    },
+    "xorg/lib/libX11": {
+      "1": 32,
+      "0": 39
+    },
+    "kichik/nsis": {
+      "1": 4,
+      "0": 116
+    },
+    "AcademySoftwareFoundation/OpenImageIO": {
+      "1": 5,
+      "0": 38
+    },
+    "scipy": {
+      "1": 2,
+      "0": 32
+    },
+    "xbmc": {
+      "1": 6,
+      "0": 26
+    },
+    "PX4/PX4-Autopilot": {
+      "1": 2,
+      "0": 73
+    },
+    "latchset/tang": {
+      "1": 3,
+      "0": 18
+    },
+    "OpenIDC/cjose": {
+      "1": 1,
+      "0": 48
+    },
+    "esnet/iperf": {
+      "1": 1,
+      "0": 158
+    },
+    "openenclave": {
+      "1": 1,
+      "0": 14
+    },
+    "yasm": {
+      "1": 2,
+      "0": 98
+    },
+    "yarolig/didiwiki": {
+      "1": 2,
+      "0": 18
+    },
+    "OpenedHand/didiwiki": {
+      "1": 1,
+      "0": 1
+    },
+    "skia": {
+      "1": 17,
+      "0": 469
+    },
+    "ruby": {
+      "1": 7,
+      "0": 159
+    },
+    "git": {
+      "1": 25,
+      "0": 615
+    },
+    "kamailio": {
+      "1": 3,
+      "0": 25
+    },
+    "python-pillow/Pillow": {
+      "1": 19,
+      "0": 69
+    },
+    "pdfium": {
+      "1": 48,
+      "0": 859
+    },
+    "jmacd/xdelta-gpl": {
+      "1": 1,
+      "0": 62
+    },
+    "hexchat": {
+      "1": 1,
+      "0": 40
+    },
+    "varnish/Varnish-Cache": {
+      "1": 3,
+      "0": 41
+    },
+    "libtasn1": {
+      "1": 5,
+      "0": 41
+    },
+    "jqlang/jq": {
+      "1": 5,
+      "0": 163
+    },
+    "GNOME/librsvg": {
+      "1": 13,
+      "0": 389
+    },
+    "kazu-yamamoto/pgpdump": {
+      "1": 1,
+      "0": 12
+    },
+    "dosfstools": {
+      "1": 3,
+      "0": 22
+    },
+    "libimobiledevice": {
+      "1": 2,
+      "0": 11
+    },
+    "ocaml": {
+      "1": 4,
+      "0": 66
+    },
+    "jpirko/libndp": {
+      "1": 4,
+      "0": 94
+    },
+    "quassel": {
+      "1": 10,
+      "0": 107
+    },
+    "ckolivas/cgminer": {
+      "1": 4,
+      "0": 96
+    },
+    "sgminer-dev/sgminer": {
+      "1": 4,
+      "0": 90
+    },
+    "luke-jr/bfgminer": {
+      "1": 1,
+      "0": 22
+    },
+    "facebook/folly": {
+      "1": 10,
+      "0": 161
+    },
+    "saitoha/libsixel": {
+      "1": 19,
+      "0": 299
+    },
+    "mate-desktop/mate-screensaver": {
+      "1": 10,
+      "0": 180
+    },
+    "irssi": {
+      "1": 1,
+      "0": 50
+    },
+    "FRRouting/frr": {
+      "1": 39,
+      "0": 397
+    },
+    "openssh/openssh-portable": {
+      "1": 24,
+      "0": 277
+    },
+    "svgpp": {
+      "1": 2,
+      "0": 106
+    },
+    "sass/libsass": {
+      "1": 25,
+      "0": 308
+    },
+    "cairo": {
+      "1": 2,
+      "0": 67
+    },
+    "labapart/gattlib": {
+      "1": 2,
+      "0": 35
+    },
+    "mc2-project/opaque-sql": {
+      "1": 11,
+      "0": 4
+    },
+    "mumble-voip/mumble": {
+      "1": 10,
+      "0": 192
+    },
+    "ZoneMinder/zoneminder": {
+      "1": 1,
+      "0": 6
+    },
+    "opencontainers/runc": {
+      "1": 4,
+      "0": 32
+    },
+    "eclipse-wakaama/wakaama": {
+      "1": 1,
+      "0": 57
+    },
+    "gnulib": {
+      "1": 2,
+      "0": 56
+    },
+    "mksdev/podofo": {
+      "1": 1,
+      "0": 8
+    },
+    "Yubico/libu2f-host": {
+      "1": 1,
+      "0": 13
+    },
+    "fluent/fluent-bit": {
+      "1": 13,
+      "0": 47
+    },
+    "shellinabox": {
+      "1": 4,
+      "0": 107
+    },
+    "kernel/git/jack/linux-fs": {
+      "1": 1,
+      "0": 20
+    },
+    "flatpak": {
+      "1": 28,
+      "0": 1086
+    },
+    "cockpit-project/cockpit": {
+      "1": 4,
+      "0": 117
+    },
+    "rpm-software-management/libcomps": {
+      "1": 4,
+      "0": 99
+    },
+    "ceph/civetweb": {
+      "1": 1,
+      "0": 284
+    },
+    "lh3/bwa": {
+      "1": 1,
+      "0": 11
+    },
+    "domoticz": {
+      "1": 1,
+      "0": 117
+    },
+    "hoene/libmysofa": {
+      "1": 9,
+      "0": 56
+    },
+    "teeworlds": {
+      "1": 10,
+      "0": 240
+    },
+    "MediaArea/MediaInfoLib": {
+      "1": 2,
+      "0": 136
+    },
+    "GNOME/gnome-desktop": {
+      "1": 1,
+      "0": 17
+    },
+    "dropbox/lepton": {
+      "1": 13,
+      "0": 255
+    },
+    "strukturag/libheif": {
+      "1": 15,
+      "0": 306
+    },
+    "illumos/illumos-gate": {
+      "1": 5,
+      "0": 71
+    },
+    "madler/pigz": {
+      "1": 1,
+      "0": 60
+    },
+    "grep": {
+      "1": 1,
+      "0": 12
+    },
+    "ext2/e2fsprogs": {
+      "1": 3,
+      "0": 16
+    },
+    "kmatheussen/das_watchdog": {
+      "1": 1,
+      "0": 18
+    },
+    "libuv": {
+      "1": 18,
+      "0": 102
+    },
+    "rawstudio": {
+      "1": 2,
+      "0": 117
+    },
+    "NetworkBlockDevice/nbd": {
+      "1": 2,
+      "0": 76
+    },
+    "kohler/t1utils": {
+      "1": 7,
+      "0": 52
+    },
+    "bblanchon/ArduinoJson": {
+      "1": 1,
+      "0": 5
+    },
+    "weidai11/cryptopp": {
+      "1": 8,
+      "0": 202
+    },
+    "htacg/tidy-html5": {
+      "1": 5,
+      "0": 37
+    },
+    "lxc": {
+      "1": 17,
+      "0": 280
+    },
+    "ClusterLabs/pacemaker": {
+      "1": 4,
+      "0": 196
+    },
+    "libidn": {
+      "1": 8,
+      "0": 32
+    },
+    "bittorrent/bootstrap-dht": {
+      "1": 6,
+      "0": 30
+    },
+    "tillkamppeter/ippusbxd": {
+      "1": 2,
+      "0": 7
+    },
+    "sektioneins/suhosin": {
+      "1": 2,
+      "0": 4
+    },
+    "samtools/htslib": {
+      "1": 2,
+      "0": 213
+    },
+    "uNetworking/uWebSockets": {
+      "1": 3,
+      "0": 17
+    },
+    "AOMediaCodec/libavif": {
+      "1": 1,
+      "0": 74
+    },
+    "ntop/nDPI": {
+      "1": 12,
+      "0": 261
+    },
+    "SELinuxProject/selinux": {
+      "1": 8,
+      "0": 340
+    },
+    "projectacrn/acrn-hypervisor": {
+      "1": 23,
+      "0": 481
+    },
+    "tcltk/tcl": {
+      "1": 2,
+      "0": 8
+    },
+    "mhammond/pywin32": {
+      "1": 6,
+      "0": 31
+    },
+    "espruino/Espruino": {
+      "1": 45,
+      "0": 943
+    },
+    "varnishcache/varnish-cache": {
+      "1": 5,
+      "0": 44
+    },
+    "radareorg/radare2-extras": {
+      "1": 2,
+      "0": 2
+    },
+    "open62541": {
+      "1": 3,
+      "0": 39
+    },
+    "libass": {
+      "1": 13,
+      "0": 275
+    },
+    "qpdf": {
+      "1": 13,
+      "0": 376
+    },
+    "unicorn-engine/unicorn": {
+      "1": 12,
+      "0": 292
+    },
+    "barebox": {
+      "1": 2,
+      "0": 28
+    },
+    "wez/atomicparsley": {
+      "1": 6,
+      "0": 15
+    },
+    "FillZpp/sys-info-rs": {
+      "1": 4,
+      "0": 9
+    },
+    "owntone/owntone-server": {
+      "1": 1,
+      "0": 56
+    },
+    "qt/qtbase": {
+      "1": 2,
+      "0": 62
+    },
+    "kernel/git/bluetooth/bluetooth": {
+      "1": 1,
+      "0": 41
+    },
+    "nextcloud/desktop": {
+      "1": 27,
+      "0": 516
+    },
+    "GNOME/libgfbgraph": {
+      "1": 1,
+      "0": 24
+    },
+    "GNOME/libgda": {
+      "1": 1,
+      "0": 23
+    },
+    "GNOME/grilo": {
+      "1": 1,
+      "0": 33
+    },
+    "sonicdoe/detect-character-encoding": {
+      "1": 2,
+      "0": 1
+    },
+    "plougher/squashfs-tools": {
+      "1": 9,
+      "0": 35
+    },
+    "libjxl": {
+      "1": 6,
+      "0": 33
+    },
+    "kernel/git/tytso/ext4": {
+      "1": 9,
+      "0": 394
+    },
+    "inetutils": {
+      "1": 1,
+      "0": 16
+    },
+    "jedisct1/pure-ftpd": {
+      "1": 6,
+      "0": 137
+    },
+    "babelouest/ulfius": {
+      "1": 2,
+      "0": 42
+    },
+    "babelouest/glewlwyd": {
+      "1": 4,
+      "0": 151
+    },
+    "unicode-org/icu": {
+      "1": 3,
+      "0": 132
+    },
+    "apache/openoffice": {
+      "1": 2,
+      "0": 45
+    },
+    "esphome": {
+      "1": 2,
+      "0": 14
+    },
+    "cloudwu/rudp": {
+      "1": 1,
+      "0": 25
+    },
+    "redis/hiredis": {
+      "1": 35,
+      "0": 159
+    },
+    "libav": {
+      "1": 3,
+      "0": 16
+    },
+    "collectd": {
+      "1": 3,
+      "0": 127
+    },
+    "hfiref0x/LightFTP": {
+      "1": 1,
+      "0": 51
+    },
+    "open-iscsi/tcmu-runner": {
+      "1": 6,
+      "0": 95
+    },
+    "root-project/root": {
+      "1": 1,
+      "0": 33
+    },
+    "ThomasDickey/lynx-snapshots": {
+      "1": 1,
+      "0": 31
+    },
+    "xrootd": {
+      "1": 1,
+      "0": 24
+    },
+    "neutrinolabs/xrdp": {
+      "1": 1,
+      "0": 4
+    },
+    "aubio": {
+      "1": 4,
+      "0": 26
+    },
+    "xorg/lib/libXcursor": {
+      "1": 4,
+      "0": 62
+    },
+    "ceph": {
+      "1": 15,
+      "0": 321
+    },
+    "Mindwerks/wildmidi": {
+      "1": 2,
+      "0": 35
+    },
+    "bro": {
+      "1": 4,
+      "0": 29
+    },
+    "electron": {
+      "1": 11,
+      "0": 375
+    },
+    "pocoproject/poco": {
+      "1": 5,
+      "0": 20
+    },
+    "IJHack/QtPass": {
+      "1": 3,
+      "0": 10
+    },
+    "transmission": {
+      "1": 7,
+      "0": 302
+    },
+    "spice/linux/vd_agent": {
+      "1": 1,
+      "0": 9
+    },
+    "MariaDB/server": {
+      "1": 10,
+      "0": 650
+    },
+    "dovecot/core": {
+      "1": 2,
+      "0": 29
+    },
+    "gdraheim/zziplib": {
+      "1": 17,
+      "0": 80
+    },
+    "unbit/uwsgi": {
+      "1": 1,
+      "0": 138
+    },
+    "ImageMagick/rsvg": {
+      "1": 1,
+      "0": 7
+    },
+    "fmtlib/fmt": {
+      "1": 1,
+      "0": 206
+    },
+    "apple/cups": {
+      "1": 2,
+      "0": 53
+    },
+    "ewxrjk/sftpserver": {
+      "1": 1,
+      "0": 6
+    },
+    "EliasOenal/multimon-ng": {
+      "1": 1,
+      "0": 26
+    },
+    "jsummers/deark": {
+      "1": 3,
+      "0": 151
+    },
+    "NixOS/patchelf": {
+      "1": 1,
+      "0": 47
+    },
+    "yrutschle/sslh": {
+      "1": 1,
+      "0": 20
+    },
+    "GNOME/gvdb": {
+      "1": 1,
+      "0": 25
+    },
+    "RamseyK/httpserver": {
+      "1": 2,
+      "0": 22
+    },
+    "ghostlander/Phoenixcoin": {
+      "1": 7,
+      "0": 142
+    },
+    "vooon/ntpd_driver": {
+      "1": 1,
+      "0": 5
+    },
+    "flar2/ElementalX-N9": {
+      "1": 3,
+      "0": 103
+    },
+    "Ziftr/primecoin": {
+      "1": 1,
+      "0": 47
+    },
+    "pfmonville/enigmaX": {
+      "1": 5,
+      "0": 16
+    },
+    "ghostlander/Halcyon": {
+      "1": 1,
+      "0": 76
+    },
+    "sternenseemann/sternenblog": {
+      "1": 1,
+      "0": 10
+    },
+    "holdennb/CollabCal": {
+      "1": 2,
+      "0": 8
+    },
+    "MusicPlayerDaemon/MPD": {
+      "1": 1,
+      "0": 13
+    },
+    "libsdl-org/SDL": {
+      "1": 3,
+      "0": 52
+    },
+    "FreeRADIUS/freeradius-server": {
+      "1": 4,
+      "0": 28
+    },
+    "AenBleidd/FiND": {
+      "1": 1,
+      "0": 2
+    },
+    "tpm2-software/tpm2-tss": {
+      "1": 2,
+      "0": 21
+    },
+    "assimp": {
+      "1": 2,
+      "0": 56
+    },
+    "GNS3/dynamips": {
+      "1": 1,
+      "0": 85
+    },
+    "xiph/opusfile": {
+      "1": 2,
+      "0": 71
+    },
+    "onnx": {
+      "1": 1,
+      "0": 19
+    },
+    "editorconfig/editorconfig-core-c": {
+      "1": 1
+    },
+    "SSSD/sssd": {
+      "1": 4,
+      "0": 42
+    },
+    "HDFGroup/hdf5": {
+      "1": 2,
+      "0": 13
+    },
+    "michaelrsweet/pdfio": {
+      "1": 8,
+      "0": 103
+    },
+    "timescale/timescaledb": {
+      "1": 9,
+      "0": 155
+    },
+    "gssapi/gss-ntlmssp": {
+      "1": 7,
+      "0": 42
+    },
+    "virtualsquare/picotcp": {
+      "1": 8,
+      "0": 232
+    },
+    "mpv-player/mpv": {
+      "1": 2,
+      "0": 33
+    },
+    "tsl0922/ttyd": {
+      "1": 1,
+      "0": 7
+    },
+    "moby/hyperkit": {
+      "1": 5,
+      "0": 64
+    },
+    "rtcwcoop": {
+      "1": 2,
+      "0": 8
+    },
+    "emacs": {
+      "1": 6,
+      "0": 113
+    },
+    "gluster/glusterfs": {
+      "1": 2,
+      "0": 157
+    },
+    "AFLplusplus": {
+      "1": 1,
+      "0": 1
+    },
+    "UIKit0/libplist": {
+      "1": 1,
+      "0": 5
+    },
+    "airtower-luna/mod_gnutls": {
+      "1": 2,
+      "0": 11
+    },
+    "COVESA/dlt-daemon": {
+      "1": 5,
+      "0": 183
+    },
+    "colinbourassa/crasm": {
+      "1": 2,
+      "0": 41
+    },
+    "drogonframework/drogon": {
+      "1": 1,
+      "0": 15
+    },
+    "USBGuard/usbguard": {
+      "1": 3,
+      "0": 11
+    },
+    "kernel/git/netfilter/nf": {
+      "1": 1,
+      "0": 29
+    },
+    "kennylevinsen/seatd": {
+      "1": 1
+    },
+    "spice/usbredir": {
+      "1": 1,
+      "0": 57
+    },
+    "wireapp/wire-avs": {
+      "1": 8,
+      "0": 333
+    },
+    "stepmania": {
+      "1": 5,
+      "0": 49
+    },
+    "merbanan/rtl_433": {
+      "1": 2,
+      "0": 10
+    },
+    "nbdkit": {
+      "1": 2,
+      "0": 10
+    },
+    "foxcpp/maddy": {
+      "1": 2,
+      "0": 2
+    },
+    "Venemo/node-lmdb": {
+      "1": 1,
+      "0": 20
+    },
+    "kernel/git/mszeredi/fuse": {
+      "1": 1,
+      "0": 9
+    },
+    "yuezk/GlobalProtect-openconnect": {
+      "1": 7,
+      "0": 52
+    },
+    "kiwix/libkiwix": {
+      "1": 1,
+      "0": 26
+    },
+    "swaywm/swaylock": {
+      "1": 3,
+      "0": 28
+    },
+    "containers/crun": {
+      "1": 1,
+      "0": 6
+    },
+    "Seagate/cortx-s3server": {
+      "1": 1,
+      "0": 11
+    },
+    "libsixel": {
+      "1": 7,
+      "0": 49
+    },
+    "tildearrow/furnace": {
+      "1": 1,
+      "0": 1
+    },
+    "muttmua/mutt": {
+      "1": 9,
+      "0": 177
+    },
+    "ckolivas/lrzip": {
+      "1": 2,
+      "0": 35
+    },
+    "389ds/389-ds-base": {
+      "1": 5,
+      "0": 157
+    },
+    "vgropp/bwm-ng": {
+      "1": 1,
+      "0": 7
+    },
+    "GNOME/epiphany": {
+      "1": 2,
+      "0": 29
+    },
+    "kravietz/pam_tacplus": {
+      "1": 5,
+      "0": 17
+    },
+    "coreboot": {
+      "1": 3,
+      "0": 34
+    },
+    "piastry/cifs-utils": {
+      "1": 2,
+      "0": 22
+    },
+    "GNOME/mutter": {
+      "1": 1,
+      "0": 33
+    },
+    "libxmljs": {
+      "1": 2,
+      "0": 15
+    },
+    "TryGhost/node-sqlite3": {
+      "1": 1,
+      "0": 43
+    },
+    "pistacheio/pistache": {
+      "1": 3,
+      "0": 38
+    },
+    "ompl": {
+      "1": 2,
+      "0": 29
+    },
+    "ARMmbed/mbed-os": {
+      "1": 2,
+      "0": 12
+    },
+    "albertodemichelis/squirrel": {
+      "1": 2,
+      "0": 96
+    },
+    "freifunk-gluon/ecdsautils": {
+      "1": 2,
+      "0": 5
+    },
+    "keepkey/keepkey-firmware": {
+      "1": 15,
+      "0": 77
+    },
+    "brave/brave-core": {
+      "1": 4,
+      "0": 62
+    },
+    "admesh": {
+      "1": 3,
+      "0": 26
+    },
+    "Moddable-OpenSource/moddable": {
+      "1": 17,
+      "0": 616
+    },
+    "PCRE2Project/pcre2": {
+      "1": 2,
+      "0": 90
+    },
+    "tindy2013/subconverter": {
+      "1": 10,
+      "0": 54
+    },
+    "openrazer": {
+      "1": 4,
+      "0": 90
+    },
+    "wasm3": {
+      "1": 2,
+      "0": 12
+    },
+    "sparklemotion/nokogiri": {
+      "1": 11,
+      "0": 53
+    },
+    "gost-engine/engine": {
+      "1": 5,
+      "0": 4
+    },
+    "thorfdbg/libjpeg": {
+      "1": 11,
+      "0": 119
+    },
+    "OpenPrinting/cups": {
+      "1": 1,
+      "0": 4
+    },
+    "ONLYOFFICE/core": {
+      "1": 13,
+      "0": 24
+    },
+    "wolkykim/qdecoder": {
+      "1": 1,
+      "0": 14
+    },
+    "libcdio": {
+      "1": 1,
+      "0": 22
+    },
+    "lurcher/unixODBC": {
+      "1": 8,
+      "0": 22
+    },
+    "arvidn/libtorrent": {
+      "1": 4,
+      "0": 50
+    },
+    "googlefonts/sfntly": {
+      "1": 2,
+      "0": 27
+    },
+    "linux-audit/audit-kernel": {
+      "1": 7,
+      "0": 168
+    },
+    "fontconfig": {
+      "1": 1,
+      "0": 40
+    },
+    "perl5-dbi/DBD-mysql": {
+      "1": 6,
+      "0": 66
+    },
+    "GNOME/eog": {
+      "1": 2,
+      "0": 7
+    },
+    "PowerDNS/pdns": {
+      "1": 16,
+      "0": 146
+    },
+    "charybdis-ircd/charybdis": {
+      "1": 1,
+      "0": 5
+    },
+    "openSUSE/libstorage-ng": {
+      "1": 6,
+      "0": 30
+    },
+    "mongodb/mongo": {
+      "1": 2,
+      "0": 88
+    },
+    "GNOME/libgsf": {
+      "1": 1,
+      "0": 19
+    },
+    "xorg/lib/libXv": {
+      "1": 2,
+      "0": 21
+    },
+    "xorg/lib/libXfixes": {
+      "1": 1,
+      "0": 19
+    },
+    "xorg/lib/libXi": {
+      "1": 10,
+      "0": 8
+    },
+    "xorg/lib/libXrender": {
+      "1": 2,
+      "0": 18
+    },
+    "xorg/lib/libXtst": {
+      "1": 2,
+      "0": 19
+    },
+    "xorg/lib/libXvMC": {
+      "1": 1,
+      "0": 9
+    },
+    "mysql/mysql-server": {
+      "1": 15,
+      "0": 146
+    },
+    "SchedMD/slurm": {
+      "1": 1,
+      "0": 115
+    },
+    "libimobiledevice/libplist": {
+      "1": 5,
+      "0": 57
+    },
+    "libbsd": {
+      "1": 2,
+      "0": 3
+    },
+    "ntop/ntopng": {
+      "1": 4,
+      "0": 420
+    },
+    "BelledonneCommunications/bzrtp": {
+      "1": 1,
+      "0": 7
+    },
+    "gstreamer/gst-plugins-bad": {
+      "1": 3,
+      "0": 61
+    },
+    "NetworkManager": {
+      "1": 6,
+      "0": 383
+    },
+    "sddm": {
+      "1": 13,
+      "0": 104
+    },
+    "abrt": {
+      "1": 24,
+      "0": 60
+    },
+    "abrt/libreport": {
+      "1": 10,
+      "0": 142
+    },
+    "lxc/lxcfs": {
+      "1": 8,
+      "0": 71
+    },
+    "Matroska-Org/libmatroska": {
+      "1": 1,
+      "0": 39
+    },
+    "cisco/openh264": {
+      "1": 3,
+      "0": 24
+    },
+    "libguestfs/hivex": {
+      "1": 4,
+      "0": 17
+    },
+    "Ettercap/ettercap": {
+      "1": 6,
+      "0": 40
+    },
+    "udisks": {
+      "1": 4,
+      "0": 282
+    },
+    "ensc/irssi-proxy": {
+      "1": 5,
+      "0": 35
+    },
+    "beanstalkd": {
+      "1": 1,
+      "0": 60
+    },
+    "freetype/freetype2-demos": {
+      "1": 5,
+      "0": 79
+    },
+    "mono": {
+      "1": 11,
+      "0": 840
+    },
+    "apache/httpd-mod_fcgid": {
+      "1": 1,
+      "0": 4
+    },
+    "xorg/app/xrdb": {
+      "1": 7,
+      "0": 27
+    },
+    "evilnet/nefarious2": {
+      "1": 1,
+      "0": 1
+    },
+    "mjg59/pupnp-code": {
+      "1": 1,
+      "0": 22
+    },
+    "virglrenderer": {
+      "1": 23,
+      "0": 456
+    },
+    "Yeraze/ytnef": {
+      "1": 4,
+      "0": 27
+    },
+    "bitlbee": {
+      "1": 2,
+      "0": 17
+    },
+    "Opendigitalradio/ODR-PadEnc": {
+      "1": 1,
+      "0": 18
+    },
+    "JACoders/OpenJK": {
+      "1": 5,
+      "0": 243
+    },
+    "iortcw": {
+      "1": 14,
+      "0": 824
+    },
+    "ioquake/ioq3": {
+      "1": 14,
+      "0": 437
+    },
+    "spice/libcacard": {
+      "1": 1,
+      "0": 14
+    },
+    "libevent": {
+      "1": 3,
+      "0": 213
+    },
+    "LocutusOfBorg/ettercap": {
+      "1": 3,
+      "0": 18
+    },
+    "devttys0/sasquatch": {
+      "1": 1,
+      "0": 3
+    },
+    "erlang/otp": {
+      "1": 4,
+      "0": 21
+    },
+    "antlarr/audiofile": {
+      "1": 8,
+      "0": 66
+    },
+    "Tatsh/pngdefry": {
+      "1": 1,
+      "0": 9
+    },
+    "libgit2": {
+      "1": 20,
+      "0": 484
+    },
+    "relan/exfat": {
+      "1": 1,
+      "0": 10
+    },
+    "TigerVNC/tigervnc": {
+      "1": 20,
+      "0": 168
+    },
+    "jsummers/imageworsener": {
+      "1": 31,
+      "0": 309
+    },
+    "cesanta/mongoose-os": {
+      "1": 1,
+      "0": 552
+    },
+    "LibreOffice/core": {
+      "1": 4,
+      "0": 123
+    },
+    "derf/feh": {
+      "1": 1,
+      "0": 13
+    },
+    "fragglet/lhasa": {
+      "1": 2,
+      "0": 21
+    },
+    "newlib-cygwin": {
+      "1": 5,
+      "0": 19
+    },
+    "grpc": {
+      "1": 11,
+      "0": 188
+    },
+    "telegramdesktop/tdesktop": {
+      "1": 1,
+      "0": 10
+    },
+    "avahi": {
+      "1": 3,
+      "0": 98
+    },
+    "matthiaskramm/swftools": {
+      "1": 1,
+      "0": 38
+    },
+    "stoth68000/media-tree": {
+      "1": 1,
+      "0": 4
+    },
+    "LibRaw/LibRaw-demosaic-pack-GPL2": {
+      "1": 2,
+      "0": 14
+    },
+    "pgbouncer": {
+      "1": 2,
+      "0": 18
+    },
+    "kornelski/pngquant": {
+      "1": 1,
+      "0": 18
+    },
+    "fbb-git/yodl": {
+      "1": 1
+    },
+    "npat-efault/picocom": {
+      "1": 2,
+      "0": 24
+    },
+    "zherczeg/jerryscript": {
+      "1": 1,
+      "0": 8
+    },
+    "fosnola/libstaroffice": {
+      "1": 1,
+      "0": 21
+    },
+    "cornelisnetworks/opa-fm": {
+      "1": 5,
+      "0": 66
+    },
+    "vslavik/winsparkle": {
+      "1": 2,
+      "0": 9
+    },
+    "grub": {
+      "1": 3,
+      "0": 13
+    },
+    "eclipse/mosquitto": {
+      "1": 10,
+      "0": 75
+    },
+    "YanVugenfirer/kvm-guest-drivers-windows": {
+      "1": 14,
+      "0": 181
+    },
+    "blueness/sthttpd": {
+      "1": 1,
+      "0": 56
+    },
+    "GNOME/gnome-session": {
+      "1": 5,
+      "0": 58
+    },
+    "chakra-core/ChakraCore": {
+      "1": 5,
+      "0": 735
+    },
+    "marcobambini/gravity": {
+      "1": 10,
+      "0": 238
+    },
+    "Icinga/icinga2": {
+      "1": 2,
+      "0": 6
+    },
+    "exempi": {
+      "1": 16,
+      "0": 316
+    },
+    "jcupitt/libvips": {
+      "1": 1,
+      "0": 36
+    },
+    "adrienverge/openfortivpn": {
+      "1": 3,
+      "0": 8
+    },
+    "zhaozg/lua-openssl": {
+      "1": 1,
+      "0": 20
+    },
+    "sctplab/usrsctp": {
+      "1": 2,
+      "0": 116
+    },
+    "osquery": {
+      "1": 5,
+      "0": 60
+    },
+    "meetecho/janus-gateway": {
+      "1": 15,
+      "0": 243
+    },
+    "GNOME/gthumb": {
+      "1": 2,
+      "0": 18
+    },
+    "michaelforney/samurai": {
+      "1": 5,
+      "0": 58
+    },
+    "sqlite": {
+      "1": 22,
+      "0": 557
+    },
+    "cyrusimap/cyrus-sasl": {
+      "1": 1,
+      "0": 50
+    },
+    "CendioOssman/tigervnc": {
+      "1": 12,
+      "0": 91
+    },
+    "ros/ros_comm": {
+      "1": 16,
+      "0": 80
+    },
+    "SerenityOS/serenity": {
+      "1": 11,
+      "0": 112
+    },
+    "xfs/xfs-linux": {
+      "1": 4,
+      "0": 99
+    },
+    "pnggroup/libpng": {
+      "1": 1,
+      "0": 39
+    },
+    "EOSIO/eos": {
+      "1": 9,
+      "0": 25
+    },
+    "Monetra/mstdlib": {
+      "1": 7,
+      "0": 23
+    },
+    "resiprocate": {
+      "1": 3,
+      "0": 102
+    },
+    "neomutt": {
+      "1": 30,
+      "0": 321
+    },
+    "stachenov/quazip": {
+      "1": 1,
+      "0": 20
+    },
+    "GNOME/NetworkManager-vpnc": {
+      "1": 1,
+      "0": 33
+    },
+    "GNOME/gdm": {
+      "1": 9,
+      "0": 223
+    },
+    "xorg/lib/libXdmcp": {
+      "1": 1,
+      "0": 4
+    },
+    "xorg/lib/libICE": {
+      "1": 1,
+      "0": 2
+    },
+    "szukw000/openjpeg": {
+      "1": 8,
+      "0": 206
+    },
+    "lavv17/lftp": {
+      "1": 1,
+      "0": 31
+    },
+    "simsong/tcpflow": {
+      "1": 6,
+      "0": 76
+    },
+    "cisco/thor": {
+      "1": 1,
+      "0": 4
+    },
+    "Legrandin/pycryptodome": {
+      "1": 2,
+      "0": 5
+    },
+    "intel/openlldp": {
+      "1": 1,
+      "0": 8
+    },
+    "xkbcommon/libxkbcommon": {
+      "1": 9,
+      "0": 108
+    },
+    "elfutils": {
+      "1": 3,
+      "0": 138
+    },
+    "apache/trafficserver": {
+      "1": 18,
+      "0": 799
+    },
+    "mongodb/mongo-c-driver": {
+      "1": 1,
+      "0": 48
+    },
+    "wernsey/bitmap": {
+      "1": 26,
+      "0": 117
+    },
+    "logological/gpp": {
+      "1": 1,
+      "0": 63
+    },
+    "WAVM": {
+      "1": 2,
+      "0": 11
+    },
+    "storaged-project/udisks": {
+      "1": 1
+    },
+    "kermitt2/pdfalto": {
+      "1": 4,
+      "0": 155
+    },
+    "TeX-Live/texlive-source": {
+      "1": 3,
+      "0": 135
+    },
+    "xelerance/Openswan": {
+      "1": 1,
+      "0": 1
+    },
+    "coreutils/gnulib": {
+      "1": 1,
+      "0": 14
+    },
+    "pganalyze/libpg_query": {
+      "1": 1,
+      "0": 5
+    },
+    "igrr/axtls-8266": {
+      "1": 2,
+      "0": 5
+    },
+    "acassen/keepalived": {
+      "1": 21,
+      "0": 428
+    },
+    "ansilove/libansilove": {
+      "1": 1
+    },
+    "ossec/ossec-hids": {
+      "1": 4,
+      "0": 4
+    },
+    "knik0/faac": {
+      "1": 1,
+      "0": 4
+    },
+    "Perl/perl5": {
+      "1": 4,
+      "0": 346
+    },
+    "michaelrsweet/mxml": {
+      "1": 1,
+      "0": 24
+    },
+    "brave/muon": {
+      "1": 1,
+      "0": 34
+    },
+    "lldpd": {
+      "1": 8,
+      "0": 42
+    },
+    "Maximus5/ConEmu": {
+      "1": 2,
+      "0": 106
+    },
+    "webmproject/libvpx": {
+      "1": 5,
+      "0": 225
+    },
+    "ovn-org/ovn": {
+      "1": 1,
+      "0": 327
+    },
+    "facebook/tac_plus": {
+      "1": 2,
+      "0": 10
+    },
+    "lipnitsk/libcue": {
+      "1": 1,
+      "0": 38
+    },
+    "nodejs/node": {
+      "1": 5,
+      "0": 409
+    },
+    "alibaba/tengine": {
+      "1": 2,
+      "0": 68
+    },
+    "nghttp2": {
+      "1": 6,
+      "0": 60
+    },
+    "tiann/KernelSU": {
+      "1": 8,
+      "0": 3
+    },
+    "wargio/naxsi": {
+      "1": 1,
+      "0": 17
+    },
+    "madler/zlib": {
+      "1": 1,
+      "0": 37
+    },
+    "SeleniumHQ/selenium": {
+      "1": 1,
+      "0": 16
+    },
+    "eProsima/Fast-DDS": {
+      "1": 3,
+      "0": 21
+    },
+    "zchunk": {
+      "1": 5,
+      "0": 51
+    },
+    "exfatprogs": {
+      "1": 3,
+      "0": 45
+    },
+    "rmagick": {
+      "1": 1,
+      "0": 53
+    },
+    "eclipse-openj9/openj9": {
+      "1": 27,
+      "0": 840
+    },
+    "openNDS": {
+      "1": 3,
+      "0": 35
+    },
+    "zlib-ng/minizip-ng": {
+      "1": 2,
+      "0": 10
+    },
+    "bytecodealliance/wasm-micro-runtime": {
+      "1": 3,
+      "0": 206
+    },
+    "facebookincubator/katran": {
+      "1": 2,
+      "0": 11
+    },
+    "xorg/lib/libXpm": {
+      "1": 2,
+      "0": 4
+    },
+    "GStreamer/gst-plugins-ugly": {
+      "1": 1,
+      "0": 71
+    },
+    "profanity-im/profanity": {
+      "1": 1,
+      "0": 24
+    },
+    "psi-im/iris": {
+      "1": 1,
+      "0": 131
+    },
+    "pycrypto": {
+      "1": 1,
+      "0": 6
+    },
+    "verdammelt/tnef": {
+      "1": 10,
+      "0": 17
+    },
+    "avast/retdec": {
+      "1": 1,
+      "0": 12
+    },
+    "yhirose/cpp-peglib": {
+      "1": 4,
+      "0": 279
+    },
+    "FreeRTOS/FreeRTOS-Kernel": {
+      "1": 6,
+      "0": 86
+    },
+    "leozide/leocad": {
+      "1": 10,
+      "0": 124
+    },
+    "418sec/mjs": {
+      "1": 1,
+      "0": 9
+    },
+    "mity/md4c": {
+      "1": 7,
+      "0": 207
+    },
+    "FluidSynth/fluidsynth": {
+      "1": 4,
+      "0": 33
+    },
+    "klibc": {
+      "1": 4,
+      "0": 38
+    },
+    "GoogleCloudPlatform/iot-device-sdk-embedded-c": {
+      "1": 1,
+      "0": 3
+    },
+    "c-ares": {
+      "1": 3,
+      "0": 47
+    },
+    "CESNET/libyang": {
+      "1": 50,
+      "0": 610
+    },
+    "kmackay/micro-ecc": {
+      "1": 3,
+      "0": 67
+    },
+    "solokeys/solo1": {
+      "1": 2,
+      "0": 51
+    },
+    "cacalabs/libcaca": {
+      "1": 7,
+      "0": 22
+    },
+    "KDE/messagelib": {
+      "1": 1,
+      "0": 186
+    },
+    "mintty": {
+      "1": 1,
+      "0": 45
+    },
+    "nginx": {
+      "1": 3,
+      "0": 11
+    },
+    "tedd-an/test-bluez": {
+      "1": 1,
+      "0": 137
+    },
+    "mackron/miniaudio": {
+      "1": 8,
+      "0": 2081
+    },
+    "roehling/postsrsd": {
+      "1": 2,
+      "0": 32
+    },
+    "aawc/unrar": {
+      "1": 22,
+      "0": 127
+    },
+    "darktable-org/rawspeed": {
+      "1": 1,
+      "0": 2
+    },
+    "libressl/portable": {
+      "1": 3,
+      "0": 4
+    },
+    "arendst/Tasmota": {
+      "1": 1,
+      "0": 12
+    },
+    "drachtio/drachtio-server": {
+      "1": 7,
+      "0": 139
+    },
+    "ipxe": {
+      "1": 1,
+      "0": 67
+    },
+    "oracle/linux-uek": {
+      "1": 2,
+      "0": 160
+    },
+    "ayttm": {
+      "1": 1,
+      "0": 4
+    },
+    "Zerocoin/libzerocoin": {
+      "1": 1,
+      "0": 3
+    },
+    "awesomized/libmemcached": {
+      "1": 2,
+      "0": 7
+    },
+    "lwindolf/liferea": {
+      "1": 2,
+      "0": 69
+    },
+    "merces/libpe": {
+      "1": 2,
+      "0": 1
+    },
+    "Stellarium/stellarium": {
+      "1": 4,
+      "0": 41
+    },
+    "OpenSIPS/opensips": {
+      "1": 9,
+      "0": 137
+    },
+    "liblouis": {
+      "1": 12,
+      "0": 112
+    },
+    "cifsd-team/ksmbd": {
+      "1": 4,
+      "0": 171
+    },
+    "musescore/MuseScore": {
+      "1": 1,
+      "0": 19
+    },
+    "Netatalk/netatalk": {
+      "1": 1,
+      "0": 2
+    },
+    "dlundquist/sniproxy": {
+      "1": 1,
+      "0": 17
+    },
+    "eteran/edb-debugger": {
+      "1": 1,
+      "0": 14
+    },
+    "kspalaiologos/bzip3": {
+      "1": 9,
+      "0": 32
+    },
+    "screen": {
+      "1": 1,
+      "0": 4
+    },
+    "raysan5/raylib": {
+      "1": 4,
+      "0": 194
+    },
+    "shadow-maint/shadow": {
+      "1": 2,
+      "0": 27
+    },
+    "kernel/git/will/kvmtool": {
+      "1": 1,
+      "0": 31
+    },
+    "zmanda/amanda": {
+      "1": 3
+    },
+    "podofo": {
+      "1": 8,
+      "0": 190
+    },
+    "GoogleCloudPlatform/esp-v2": {
+      "1": 1,
+      "0": 6
+    },
+    "pymumu/smartdns": {
+      "1": 9,
+      "0": 136
+    },
+    "WebAssembly/wabt": {
+      "1": 10,
+      "0": 395
+    },
+    "nanomq/NanoNNG": {
+      "1": 9,
+      "0": 343
+    },
+    "llvm/llvm-project": {
+      "1": 8,
+      "0": 235
+    },
+    "DMTF/libspdm": {
+      "1": 6,
+      "0": 13
+    },
+    "samboy/MaraDNS": {
+      "1": 1,
+      "0": 14
+    },
+    "opencv/opencv_contrib": {
+      "1": 1,
+      "0": 11
+    },
+    "weston-embedded/uC-FTPs": {
+      "1": 3,
+      "0": 12
+    },
+    "bellard/quickjs": {
+      "1": 1,
+      "0": 1319
+    },
+    "openlink/virtuoso-opensource": {
+      "1": 32,
+      "0": 1531
+    },
+    "OpenPrinting/cups-filters": {
+      "1": 2
+    },
+    "RedisLabs/redisraft": {
+      "1": 1,
+      "0": 43
+    },
+    "facebook/netconsd": {
+      "1": 1,
+      "0": 29
+    },
+    "yhirose/cpp-httplib": {
+      "1": 9,
+      "0": 745
+    },
+    "kernel/git/arm64/linux": {
+      "1": 1,
+      "0": 57
+    },
+    "ndevilla/iniparser": {
+      "1": 3,
+      "0": 20
+    },
+    "tsingsee/EasyPlayerPro-Win": {
+      "1": 1,
+      "0": 5
+    },
+    "nanomq": {
+      "1": 6,
+      "0": 42
+    },
+    "sogou/workflow": {
+      "1": 1,
+      "0": 5
+    },
+    "cloudflare/lua-resty-json": {
+      "1": 1,
+      "0": 20
+    },
+    "OpenPrinting/cpdb-libs": {
+      "1": 2,
+      "0": 84
+    },
+    "brechtsanders/xlsxio": {
+      "1": 1,
+      "0": 67
+    },
+    "libressl/openbsd": {
+      "1": 2,
+      "0": 111
+    },
+    "icoutils": {
+      "1": 2,
+      "0": 3
+    },
+    "mesa": {
+      "1": 3,
+      "0": 36
+    },
+    "rsyslog": {
+      "1": 3,
+      "0": 28
+    },
+    "xfce-mirror/thunar": {
+      "1": 1,
+      "0": 9
+    },
+    "horms/perdition": {
+      "1": 1,
+      "0": 11
+    },
+    "python/typed_ast": {
+      "1": 2,
+      "0": 100
+    },
+    "bminor/bash": {
+      "1": 1,
+      "0": 12
+    },
+    "LuaJIT": {
+      "1": 1,
+      "0": 20
+    },
+    "alanxz/rabbitmq-c": {
+      "1": 1,
+      "0": 21
+    },
+    "facebook/mcrouter": {
+      "1": 2,
+      "0": 32
+    },
+    "twigphp/Twig": {
+      "1": 2,
+      "0": 24
+    },
+    "acpica": {
+      "1": 4,
+      "0": 19
+    },
+    "gobby/libinfinity": {
+      "1": 1,
+      "0": 19
+    },
+    "ntp-project/ntp": {
+      "1": 2,
+      "0": 105
+    },
+    "nih-at/libzip": {
+      "1": 2,
+      "0": 29
+    },
+    "NagiosEnterprises/nagioscore": {
+      "1": 1,
+      "0": 2
+    },
+    "flori/json": {
+      "1": 6,
+      "0": 58
+    },
+    "cloudendpoints/esp": {
+      "1": 7,
+      "0": 60
+    },
+    "Ardour/ardour": {
+      "1": 1,
+      "0": 39
+    },
+    "OpenRC/openrc": {
+      "1": 5,
+      "0": 1
+    },
+    "signalwire/freeswitch": {
+      "1": 3,
+      "0": 54
+    },
+    "reddit/snudown": {
+      "1": 6,
+      "0": 53
+    },
+    "open-power/skiboot": {
+      "1": 1,
+      "0": 19
+    },
+    "fuzzard/xbmc": {
+      "1": 1,
+      "0": 6
+    },
+    "trgil/gilcc": {
+      "1": 1,
+      "0": 6
+    },
+    "debauchee/barrier": {
+      "1": 9,
+      "0": 208
+    },
+    "zyantific/zydis": {
+      "1": 2,
+      "0": 10
+    },
+    "wbx-github/uclibc-ng": {
+      "1": 3,
+      "0": 59
+    },
+    "xiph/speex": {
+      "1": 1,
+      "0": 1
+    },
+    "CroatiaControlLtd/asterix": {
+      "1": 1,
+      "0": 12
+    },
+    "tmate-io/tmate-ssh-server": {
+      "1": 1,
+      "0": 9
+    },
+    "TokTok/c-toxcore": {
+      "1": 11,
+      "0": 88
+    },
+    "haiwen/seafile-server": {
+      "1": 1,
+      "0": 68
+    },
+    "numpy": {
+      "1": 3,
+      "0": 136
+    },
+    "belangeo/pyo": {
+      "1": 5,
+      "0": 143
+    },
+    "cvxopt": {
+      "1": 6,
+      "0": 7
+    },
+    "e2guardian": {
+      "1": 1,
+      "0": 39
+    },
+    "kernel/git/chao/linux": {
+      "1": 1,
+      "0": 24
+    },
+    "qt/qtsvg": {
+      "1": 2,
+      "0": 140
+    },
+    "wolfSSL/wolfMQTT": {
+      "1": 1,
+      "0": 45
+    },
+    "the-tcpdump-group/tcpslice": {
+      "1": 1,
+      "0": 13
+    },
+    "manticoresoftware/manticoresearch": {
+      "1": 2,
+      "0": 737
+    },
+    "LoicMarechal/libMeshb": {
+      "1": 2,
+      "0": 26
+    },
+    "gnu-mirror-unofficial/recutils": {
+      "1": 1,
+      "0": 22
+    },
+    "svaarala/duktape": {
+      "1": 1,
+      "0": 21
+    },
+    "NLnetLabs/ldns": {
+      "1": 2,
+      "0": 119
+    },
+    "silnrsi/graphite": {
+      "1": 3,
+      "0": 39
+    },
+    "KDE/kde1-kdebase": {
+      "1": 1,
+      "0": 10
+    },
+    "kernel/git/avi/kvm": {
+      "1": 3,
+      "0": 54
+    },
+    "kernel/git/chris/linux": {
+      "1": 1,
+      "0": 49
+    },
+    "xrg/asterisk-xrg": {
+      "1": 19,
+      "0": 258
+    },
+    "pruiz/asterisk": {
+      "1": 10,
+      "0": 49
+    },
+    "jcollie/asterisk": {
+      "1": 30,
+      "0": 49
+    },
+    "silentindark/asterisk-1": {
+      "1": 10,
+      "0": 49
+    },
+    "kaoru6/asterisk": {
+      "1": 10,
+      "0": 49
+    },
+    "mojolingo/asterisk": {
+      "1": 10,
+      "0": 49
+    },
+    "lyx2014/Asterisk": {
+      "1": 10,
+      "0": 49
+    },
+    "gstreamer/gst-plugins-good": {
+      "1": 4,
+      "0": 72
+    },
+    "gstreamer/gst-plugins-base": {
+      "1": 1,
+      "0": 6
+    },
+    "hotplug/udev": {
+      "1": 6,
+      "0": 26
+    },
+    "bratsche/pango": {
+      "1": 1,
+      "0": 9
+    },
+    "kernel/git/netdev/net-next": {
+      "1": 6,
+      "0": 75
+    },
+    "gisle/html-parser": {
+      "1": 1,
+      "0": 5
+    },
+    "GNOME/network-manager-applet": {
+      "1": 9,
+      "0": 179
+    },
+    "acl": {
+      "1": 1,
+      "0": 12
+    },
+    "uzbl": {
+      "1": 1,
+      "0": 95
+    },
+    "Samsung/escargot": {
+      "1": 3,
+      "0": 32
+    },
+    "mullvad/mullvadvpn-app": {
+      "1": 1,
+      "0": 12
+    },
+    "afichet/openexr-viewer": {
+      "1": 4,
+      "0": 18
+    },
+    "moonlight-stream/moonlight-common-c": {
+      "1": 29,
+      "0": 107
+    },
+    "asterisk": {
+      "1": 4,
+      "0": 391
+    },
+    "starnight/MicroHttpServer": {
+      "1": 3,
+      "0": 19
+    },
+    "TeraTermProject/teraterm": {
+      "1": 5,
+      "0": 213
+    },
+    "janmojzis/tinyssh": {
+      "1": 7,
+      "0": 4
+    },
+    "ClickHouse": {
+      "1": 3,
+      "0": 15
+    },
+    "linuxdeepin/deepin-reader": {
+      "1": 1,
+      "0": 2
+    },
+    "Blosc/c-blosc2": {
+      "1": 11,
+      "0": 76
+    },
+    "linuxdeepin/deepin-compressor": {
+      "1": 1,
+      "0": 26
+    },
+    "micropython": {
+      "1": 2,
+      "0": 24
+    },
+    "hongliuliao/ehttp": {
+      "1": 3,
+      "0": 113
+    },
+    "PackageKit": {
+      "1": 1,
+      "0": 108
+    },
+    "boazsegev/iodine": {
+      "1": 25,
+      "0": 550
+    },
+    "foxweb/pico": {
+      "1": 1,
+      "0": 3
+    },
+    "mrousavy/react-native-mmkv": {
+      "1": 1,
+      "0": 1
+    },
+    "troglobit/libuev": {
+      "1": 2,
+      "0": 9
+    },
+    "chromiumembedded/cef": {
+      "1": 2,
+      "0": 23
+    },
+    "emikulic/darkhttpd": {
+      "1": 2,
+      "0": 68
+    },
+    "mate-desktop/atril": {
+      "1": 3,
+      "0": 48
+    },
+    "latchset/pkcs11-provider": {
+      "1": 1,
+      "0": 13
+    },
+    "graphviz": {
+      "1": 3,
+      "0": 13
+    },
+    "mate-desktop/engrampa": {
+      "1": 1,
+      "0": 10
+    },
+    "freeglut": {
+      "1": 2,
+      "0": 25
+    },
+    "linux-pam": {
+      "1": 1,
+      "0": 31
+    },
+    "litespeedtech/lsquic": {
+      "1": 2,
+      "0": 259
+    },
+    "p-quic/pquic": {
+      "1": 9,
+      "0": 327
+    },
+    "wireless/iwd": {
+      "1": 1,
+      "0": 77
+    },
+    "openSUSE/libsolv": {
+      "1": 1,
+      "0": 121
+    },
+    "videolan/vlc": {
+      "1": 4,
+      "0": 184
+    },
+    "nanopb": {
+      "1": 5,
+      "0": 100
+    },
+    "ipmitool": {
+      "1": 2,
+      "0": 30
+    },
+    "kernel/git/rt/linux-stable-rt": {
+      "1": 5,
+      "0": 58
+    },
+    "lvm2": {
+      "1": 1,
+      "0": 43
+    },
+    "danfruehauf/NetworkManager-ssh": {
+      "1": 5,
+      "0": 64
+    },
+    "FreeRADIUS/pam_radius": {
+      "1": 1,
+      "0": 23
+    },
+    "PierreLvx/qpress": {
+      "1": 1,
+      "0": 21
+    },
+    "EvgeniyPatlan/qpress": {
+      "1": 1
+    },
+    "percona/percona-xtrabackup": {
+      "1": 1,
+      "0": 15
+    },
+    "pytorch": {
+      "1": 1,
+      "0": 12
+    },
+    "capnproto": {
+      "1": 1,
+      "0": 83
+    },
+    "objsys/oocborrt": {
+      "1": 1,
+      "0": 3
+    },
+    "mltframework/shotcut": {
+      "1": 2,
+      "0": 203
+    },
+    "Fluorohydride/ygopro": {
+      "1": 2,
+      "0": 53
+    },
+    "bminor/glibc": {
+      "1": 3,
+      "0": 6
+    },
+    "wildfly-security/wildfly-openssl-natives": {
+      "1": 1,
+      "0": 4
+    },
+    "sympa-community/sympa": {
+      "1": 3
+    },
+    "livecode": {
+      "1": 2,
+      "0": 231
+    },
+    "veyon": {
+      "1": 1,
+      "0": 10
+    },
+    "neocturne/fastd": {
+      "1": 2,
+      "0": 9
+    },
+    "Motion-Project/motion": {
+      "1": 1,
+      "0": 47
+    },
+    "tmux": {
+      "1": 1,
+      "0": 51
+    },
+    "maxmind/libmaxminddb": {
+      "1": 10,
+      "0": 60
+    },
+    "ValveSoftware/GameNetworkingSockets": {
+      "1": 5,
+      "0": 93
+    },
+    "LibVNC/x11vnc": {
+      "1": 1,
+      "0": 40
+    },
+    "troglobit/uftpd": {
+      "1": 3,
+      "0": 79
+    },
+    "kovidgoyal/kitty": {
+      "1": 1,
+      "0": 52
+    },
+    "RedisGraph": {
+      "1": 2,
+      "0": 27
+    },
+    "gobby": {
+      "1": 13,
+      "0": 47
+    },
+    "LINBIT/csync2": {
+      "1": 2,
+      "0": 30
+    },
+    "gssapi/gssproxy": {
+      "1": 1,
+      "0": 7
+    },
+    "google/flatbuffers": {
+      "1": 2,
+      "0": 54
+    },
+    "mymarilyn/clickhouse-driver": {
+      "1": 4,
+      "0": 167
+    },
+    "vmg/redcarpet": {
+      "1": 1,
+      "0": 37
+    },
+    "winscp": {
+      "1": 5,
+      "0": 448
+    },
+    "Duncaen/OpenDoas": {
+      "1": 4,
+      "0": 15
+    },
+    "GNOME/gnome-autoar": {
+      "1": 4,
+      "0": 49
+    },
+    "flexpaper/pdf2json": {
+      "1": 1,
+      "0": 20
+    },
+    "private-octopus/picoquic": {
+      "1": 3,
+      "0": 110
+    },
+    "ThomasDickey/xterm-snapshots": {
+      "1": 1,
+      "0": 133
+    },
+    "autotrace": {
+      "1": 1,
+      "0": 3
+    },
+    "canarymail/mailcore2": {
+      "1": 1,
+      "0": 158
+    },
+    "gemini-testing/png-img": {
+      "1": 1,
+      "0": 17
+    },
+    "stnoonan/spnego-http-auth-nginx-module": {
+      "1": 1,
+      "0": 10
+    },
+    "rzkn/libtiff": {
+      "1": 1
+    },
+    "facebook/mvfst": {
+      "1": 1,
+      "0": 14
+    },
+    "KDE/discover": {
+      "1": 1,
+      "0": 31
+    },
+    "sqlcipher": {
+      "1": 1,
+      "0": 16
+    },
+    "laverdet/isolated-vm": {
+      "1": 8,
+      "0": 38
+    },
+    "openresty/lua-nginx-module": {
+      "1": 6,
+      "0": 35
+    },
+    "libexif/exif": {
+      "1": 2,
+      "0": 23
+    },
+    "ClusterLabs/libqb": {
+      "1": 1,
+      "0": 4
+    },
+    "trailofbits/uthenticode": {
+      "1": 1,
+      "0": 20
+    },
+    "birkelund/qemu": {
+      "1": 1,
+      "0": 235
+    },
+    "libxls": {
+      "1": 2,
+      "0": 31
+    },
+    "pete4abw/lrzip-next": {
+      "1": 1,
+      "0": 50
+    },
+    "Z3Prover/z3": {
+      "1": 1,
+      "0": 14
+    },
+    "xiph/flac": {
+      "1": 2,
+      "0": 73
+    },
+    "open-mpi/hwloc": {
+      "1": 5,
+      "0": 135
+    },
+    "gerbv": {
+      "1": 4,
+      "0": 59
+    },
+    "TicklishHoneyBee/nodau": {
+      "1": 2,
+      "0": 22
+    },
+    "manugarg/pacparser": {
+      "1": 1,
+      "0": 20
+    },
+    "davehorton/sofia-sip": {
+      "1": 3,
+      "0": 179
+    },
+    "sshock/AFFLIBv3": {
+      "1": 1,
+      "0": 11
+    },
+    "mwarning/KadNode": {
+      "1": 1,
+      "0": 11
+    },
+    "Yubico/yubico-pam": {
+      "1": 1,
+      "0": 11
+    },
+    "hyperhq/hyperstart": {
+      "1": 4,
+      "0": 51
+    },
+    "AndreRenaud/PDFGen": {
+      "1": 1,
+      "0": 53
+    },
+    "pts/sam2p": {
+      "1": 3,
+      "0": 77
+    },
+    "dmlc/ps-lite": {
+      "1": 1,
+      "0": 9
+    },
+    "freedink/dfarc": {
+      "1": 5,
+      "0": 11
+    },
+    "civetweb": {
+      "1": 1,
+      "0": 297
+    },
+    "cn-uofbasel/ccn-lite": {
+      "1": 2,
+      "0": 35
+    },
+    "spheredev/neosphere": {
+      "1": 1,
+      "0": 155
+    },
+    "MarlinFirmware/Marlin": {
+      "1": 1,
+      "0": 36
+    },
+    "wolfSSL/wolfssh": {
+      "1": 12,
+      "0": 72
+    },
+    "gsasl": {
+      "1": 1,
+      "0": 2
+    },
+    "gstreamer": {
+      "1": 4,
+      "0": 313
+    },
+    "ClusterLabs/booth": {
+      "1": 1,
+      "0": 34
+    },
+    "landfillbaby/png2webp": {
+      "1": 1,
+      "0": 11
+    },
+    "jgarzik/univalue": {
+      "1": 1,
+      "0": 2
+    },
+    "gstreamer/gst-rtsp-server": {
+      "1": 1,
+      "0": 40
+    },
+    "USCiLab/cereal": {
+      "1": 1,
+      "0": 20
+    },
+    "att/ast": {
+      "1": 1,
+      "0": 6
+    },
+    "crawl": {
+      "1": 3,
+      "0": 72
+    },
+    "skvadrik/re2c": {
+      "1": 1,
+      "0": 7
+    },
+    "ArtifexSoftware/jbig2dec": {
+      "1": 1,
+      "0": 13
+    },
+    "openthread": {
+      "1": 3,
+      "0": 41
+    },
+    "sirdude/gurbalib": {
+      "1": 3,
+      "0": 5
+    },
+    "rsyslog/libfastjson": {
+      "1": 3,
+      "0": 9
+    },
+    "iproute2": {
+      "1": 1,
+      "0": 28
+    },
+    "openconnect": {
+      "1": 1,
+      "0": 44
+    },
+    "mariadb-corporation/mariadb-connector-c": {
+      "1": 1,
+      "0": 116
+    },
+    "axel-download-accelerator/axel": {
+      "1": 1,
+      "0": 3
+    },
+    "GNOME/glib-networking": {
+      "1": 1,
+      "0": 77
+    },
+    "istio/envoy": {
+      "1": 15,
+      "0": 178
+    },
+    "AntonKueltz/fastecdsa": {
+      "1": 3,
+      "0": 5
+    },
+    "pupnp": {
+      "1": 2,
+      "0": 20
+    },
+    "ohler55/agoo": {
+      "1": 10,
+      "0": 97
+    },
+    "ngircd": {
+      "1": 2,
+      "0": 84
+    },
+    "openbmc/phosphor-host-ipmid": {
+      "1": 1,
+      "0": 8
+    },
+    "mjurczak/mbed-coap": {
+      "1": 2,
+      "0": 15
+    },
+    "jaygreig86/dmitry": {
+      "1": 1,
+      "0": 3
+    },
+    "chocolate-doom": {
+      "1": 1,
+      "0": 24
+    },
+    "GNS3/ubridge": {
+      "1": 2,
+      "0": 29
+    },
+    "AXDOOMER/doom-vanille": {
+      "1": 1,
+      "0": 12
+    }
+  },
+  "split_policy": "Historical pair-project assignments retained; new projects SHA256(cross-dataset-42:project) mod 100, 80/10/10. User authorized. No class balancing, CPG or parsing admission.",
+  "source_policy": "One native labeled function per raw row. Vulnerable=func_before; negative=func. No additional repaired negatives.",
+  "test_source_used": false
+}

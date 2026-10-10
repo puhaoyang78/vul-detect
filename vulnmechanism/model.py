@@ -452,10 +452,23 @@ class SourceAttentionPool(nn.Module):
         return torch.einsum("bqt,bth->bqh", weights, hidden).mean(dim=1)
 
 
+class MultiPrototypeHead(nn.Module):
+    """K affine positive scores against a shared zero negative reference."""
+    def __init__(self, hidden_size: int, k: int = 4):
+        super().__init__()
+        if k < 1:
+            raise ValueError("k must be positive")
+        self.prototypes = nn.Linear(hidden_size, k)
+
+    def forward(self, features):
+        scores = self.prototypes(features)
+        return torch.logsumexp(scores, dim=-1, keepdim=True) - math.log(scores.shape[-1])
+
+
 class SequenceVulnerabilityClassifier(nn.Module):
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int,
                  lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool,
-                 variant: str = "baseline") -> None:
+                 variant: str = "baseline", classifier_head: str = "linear") -> None:
         super().__init__()
         self.encoder, hidden_size = _build_lora_encoder(
             model_path,
@@ -467,6 +480,23 @@ class SequenceVulnerabilityClassifier(nn.Module):
             gradient_checkpointing=gradient_checkpointing,
         )
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
+        if classifier_head not in {"linear", "mlp4", "prototype4"}:
+            raise ValueError("unknown classifier head")
+        if classifier_head != "linear" and variant != "codebert_source":
+            raise ValueError("head comparison is restricted to CodeBERT source")
+        # Preserve the original encoder initialization and subsequent dropout RNG.
+        with torch.random.fork_rng(devices=[]):
+            if classifier_head == "mlp4":
+                self.task_modules["classifier"] = nn.Sequential(
+                    nn.Linear(hidden_size, 4), nn.Tanh(), nn.Linear(4, 1))
+            elif classifier_head == "prototype4":
+                original = self.task_modules["classifier"]
+                head = MultiPrototypeHead(hidden_size, 4)
+                with torch.no_grad():
+                    head.prototypes.weight.sub_(head.prototypes.weight.mean(0, keepdim=True))
+                    head.prototypes.weight.add_(original.weight)
+                    head.prototypes.bias.fill_(float(original.bias.detach()))
+                self.task_modules["classifier"] = head
         # Extra CPU initialization must not alter the encoder/classifier initialization
         # or the subsequent training RNG stream of the baseline control.
         with torch.random.fork_rng(devices=[]):
@@ -477,7 +507,7 @@ class SequenceVulnerabilityClassifier(nn.Module):
                 self.task_modules["source_pool"] = SourceAttentionPool(hidden_size)
         self.to(device)
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
+    def encode(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
                 window_owners=None, pooling_weights=None, function_count=None) -> torch.Tensor:
         hidden = self.encoder(
             input_ids=input_ids, attention_mask=attention_mask, use_cache=False
@@ -490,9 +520,12 @@ class SequenceVulnerabilityClassifier(nn.Module):
             pooled = self.task_modules["source_pool"](hidden.float(), attention_mask)
         else:
             pooled = _masked_mean(hidden, attention_mask).float()
-        return self.task_modules["classifier"](
-            pooled
-        ).squeeze(-1)
+        return pooled
+
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
+                window_owners=None, pooling_weights=None, function_count=None) -> torch.Tensor:
+        pooled = self.encode(input_ids, attention_mask, window_owners, pooling_weights, function_count)
+        return self.task_modules["classifier"](pooled).squeeze(-1)
 
 
 class GraphVulnerabilityClassifier(SequenceVulnerabilityClassifier):
@@ -589,6 +622,7 @@ def _build_model(
     fusion_dim: int,
     fusion_heads: int,
     graph_config: dict | None = None,
+    classifier_head: str = "linear",
 ):
     common = dict(
         device=device,
@@ -605,7 +639,7 @@ def _build_model(
             model_path, variant=variant, graph_config=graph_config, **common
         )
     if variant in _SEQUENCE_VARIANTS:
-        return SequenceVulnerabilityClassifier(model_path, variant=variant, **common)
+        return SequenceVulnerabilityClassifier(model_path, variant=variant, classifier_head=classifier_head, **common)
     if variant == "mechanism_fusion":
         return MechanismFusionClassifier(
             model_path, fusion_dim=fusion_dim, fusion_heads=fusion_heads, **common
@@ -841,8 +875,11 @@ def train_model(
     graph_options: dict | None = None,
     synthetic_pairs: list | None = None,
     synthetic_objective: str | None = None,
+    classifier_head: str = "linear",
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
+    if classifier_head != "linear" and variant != "codebert_source":
+        raise ValueError("alternative heads require codebert_source")
     if variant == 'codebert_source' and source_max_length not in (512, 2048):
         raise ValueError('CodeBERT comparison requires logical length 512 or 2048')
     if batch_size <= 0 or gradient_accumulation <= 0 or epochs <= 0:
@@ -935,6 +972,7 @@ def train_model(
         gradient_checkpointing=resolved_device.type == "cuda",
         fusion_dim=fusion_dim,
         fusion_heads=fusion_heads,
+        classifier_head=classifier_head,
         **({"graph_config": graph_config} if graph_config is not None else {}),
     )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
@@ -1077,6 +1115,7 @@ def train_model(
         "seed": seed,
         "initial_checkpoint": str(initial_checkpoint) if initial_checkpoint is not None else None,
         "sample_weights": sample_weights,
+        "classifier_head": classifier_head,
         "training_config": dict(epochs=epochs, batch_size=batch_size,
                                 gradient_accumulation=gradient_accumulation,
                                 learning_rate=learning_rate, weight_decay=weight_decay),
@@ -1141,6 +1180,7 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
         lora_dropout=float(checkpoint["lora_dropout"]),
         target_modules=tuple(str(value) for value in checkpoint["target_modules"]),
         gradient_checkpointing=False,
+        classifier_head=str(checkpoint.get("classifier_head", "linear")),
         fusion_dim=int(checkpoint["fusion_dim"]),
         fusion_heads=int(checkpoint["fusion_heads"]),
         **({"graph_config": checkpoint.get("graph_config")}

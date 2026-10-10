@@ -2273,3 +2273,486 @@ mkdir -p "$OUT"
   > "$OUT/eval.log" 2>&1
 "$PYTHON" -m unittest tests.test_codebert_source tests.test_benchmark_view tests.test_graph_training -q
 ```
+
+### CodeBERT → Qwen 固定预算级联（2026-10-10）
+
+本轮是已训练分类器的系统级离线协作实验，不训练新漏洞检测模型或路由器。
+使用同一741个PrimeVul valid函数（373正/368负），逐条核对sample_key、源码哈希、标签、
+模型分数与阈值，并复现三模型原Accuracy/Precision/Recall/F1/MCC/AUC。
+复现共同错误数：Qwen/512为114，Qwen/2048为133，三模型为107。
+仍是经过平衡抽样与CPG准入的子集，非官方全量分布。基础模型和阈值历史上已用此valid选取，
+因此本轮是开发集上的固定规则诊断，不能称为独立确认。没有使用test。
+
+正式入口 `python -m vulnmechanism.cascade` 复用 `cfg_metrics` 与原模型加载/前向；
+不改变模型、原始数据和划分。新增路由函数只接收CodeBERT分数、阈值、样本键与固定策略，
+无法接收Qwen分数、分歧、标签或纠错信息。Qwen结果仅在路由决定之后替换被选函数的最终分类。
+原始概率未经跨模型校准，故级联只报告硬分类指标，不报告混合概率AUC/BCE。
+
+在运行前固定以下四条规则，512和2048均完整执行，不根据结果筛选或调整规则：
+
+- `margin`：优先升级 `abs(p - t)` 最小的函数；512的t=.15，2048的t=.54，
+  阈值按原float32决策边界处理。它是决策边界距离，不是已经校准的错误概率。
+- `probability_uncertainty`：优先升级 `abs(p - .5)` 最小的函数，用作不同置信度定义的对照。
+- `positive_first`：先升级CodeBERT预测为正的函数，类内按margin升序；额度剩余才升级预测负例。
+- `negative_first`：优先次序相反。两者是预先固定的误报/漏报偏好，不是根据valid拟合的代价权重。
+
+每条规则的预算均为0/10/25/50/75/100%，最多升级 `floor(741*b/100)` 个函数，即
+0/74/185/370/555/741；同分按sample_key排序，不读标签。是全批扫描预算路由，不是单样本在线阈值。
+加三组单模型基线共51个配置（包含重复端点），全部保存。100%级联的输出等于Qwen，
+但要先付CodeBERT成本，因此不是Qwen-only的同成本实现。
+
+512主级联完整valid结果：
+
+| 策略 | Qwen调用数 | Accuracy | Precision | Recall | F1 | MCC | TP/FP/TN/FN | 纠正/损坏（相对512） |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| 512 only / margin 0% | 0 | .730094 | .704492 | .798928 | .748744 | .463924 | 298/125/243/75 | 0/0 |
+| margin 10% | 74 | .736842 | .720297 | .780161 | .749035 | .475031 | 291/113/255/82 | 18/13 |
+| margin 25% | 185 | .751687 | .742931 | .774799 | .758530 | .503677 | 289/100/268/84 | 41/25 |
+| margin 50% | 370 | .755735 | .752632 | .766756 | .759628 | .511478 | 286/94/274/87 | 52/33 |
+| margin 75% | 555 | .743590 | .781538 | .680965 | .727794 | .491741 | 254/71/297/119 | 75/65 |
+| margin 100% / Qwen输出 | 741 | .751687 | .805825 | .667560 | .730205 | .511603 | 249/60/308/124 | 86/70 |
+
+25%预算的Accuracy等于Qwen，MCC低.007926；50%预算MCC低.000125、Accuracy净高3/741，
+但相对Qwen增加34个误报、减少37个漏报，不是全面支配。50%相对512减少31个误报、增加12个漏报。
+相对Qwen的纠正/损坏分别为25%：45/45，50%：37/34。3个样本的净差不支持显著提升的结论。
+
+| 512策略 | 10% MCC | 25% MCC | 50% MCC | 75% MCC |
+|---|---:|---:|---:|---:|
+| margin | .475031 | .503677 | .511478 | .491741 |
+| probability_uncertainty | .451610 | .430604 | .483297 | .506640 |
+| positive_first | .481824 | .498365 | .491068 | .512653 |
+| negative_first | .476689 | .481443 | .491292 | .491741 |
+
+不能将0.5附近不确定性当作0.15分类边界不确定性：前者25%预算相对512净损坏11例。
+正例优先50%把FP降至57，但FN升至136；负例优先25%把FN降至63，但FP升至132。
+Class-aware提供不同误报/漏报工作点，不存在对所有预算和指标一致占优的规则。
+2048辅助对照的margin 25%/50% Accuracy为.746289/.748988、MCC为.497560/.506640；
+完整结果含其余所有策略和预算，见`metrics.csv`。
+
+升级价值不是margin的单调函数：512由近到远五个无标签排序分位组，全部改用Qwen的
+净纠错依次为+13、0、+7、−10、+6。预测负例318个中Qwen纠正14、损坏7；预测正例423个中
+纠正72、损坏63。整体只净纠正16例；仅知道“不确定”不等价于知道“Qwen值得调用”。
+50% margin的实际净纠错为19；均匀随机升级370个成员时，净纠错的解析期望为
+`370/741 * 16 = 7.99`。后者只是随机路由期望，不是训练或额外挑选的一条策略。
+这些规律都是本valid上的描述性证据，未用于反向修改路由规则。
+
+分组只使用train的Qwen token四分位点94/244.5/631.75；项目来自已有审计字段。
+短正例/长负例是单类别组，MCC/F1不宜解释为完整二分类能力，以下给直接错误计数：
+
+| 模型/策略 | 短正例FN（30例） | 长负例FP（42例） | 未见项目Accuracy/MCC（103例） |
+|---|---:|---:|---:|
+| 512 only | 28 | 39 | .708738/.403374 |
+| Qwen only | 25 | 29 | .650485/.318808 |
+| 512 margin 25% | 28 | 37 | .728155/.450595 |
+| 512 margin 50% | 25 | 37 | .728155/.450595 |
+| 512 positive_first 50% | 28 | 28 | .660194/.341762 |
+| 2048 margin 50% | 28 | 29 | .669903/.358181 |
+
+普通margin级联未解决长负例问题；未见项目上Qwen也不天然优于小模型。
+完整各长度区间、概率区间、预测方向、子组指标及纠错ID均保存于`comparison.json`。
+
+标签知情oracle只在512错误且Qwen正确的86例上升级（11.61%），可达Accuracy .846154、
+MCC .692500；2048的对应oracle为64例（8.64%）、Accuracy .820513、MCC .643781。
+这是不可部署的互补上限，未纳入实际Pareto曲线。有限预算下oracle最多纠正
+`min(预算样本数, 有用升级数)`，不强迫花完预算，与实际固定排序必须报告实际调用量的规则区分。
+
+学习型路由没有在本轮拟合：未发现三个现有基础模型的可核验OOF/独立路由训练预测，
+它们均已训练过5886个train成员。直接用train拟合可靠性会偏乐观，用此valid拟合又评价会泄漏。
+当前结果值得进一步验证后验升级价值，但不是学习型路由已经有效的证据。
+若推进，最小合规方案需事先从train划出共同独立路由集，并至少重新训练一次CodeBERT和一次Qwen，
+再在留出集构造 `z = cost(error_CB) - cost(error_Qwen)`；用小型正则化回归预测升级净价值，
+输入仅CB概率/margin或已有向量，比较预期收益和额外成本，不训练漏洞类别预测替代目标。
+这些是后续设计边界，本轮没有启动两次基础模型重训、OOF交叉训练或路由参数搜索。
+
+相关原文及本轮对应关系：
+
+- [FrugalGPT (2023)](https://arxiv.org/abs/2305.05176)：借鉴按查询使用不同成本模型的级联思路；
+  本轮固定规则、已有分类器，不复现其学习式API组合和定价优化。
+- [When Does Confidence-Based Cascade Deferral Suffice? (NeurIPS 2023)](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1f09e1ee5035a4c3fe38a5681cae5815-Abstract-Conference.html)：
+  关键量是后续模型相对当前模型的预期错误减少是否超过调用成本；其后验回归思想适合作为
+  后续路由依据。本轮仅验证无标签置信度规则，没有预先使用Qwen置信度或真实增益路由。
+- [Online Cascade Learning (ICML 2024)](https://proceedings.mlr.press/v235/nie24a.html)：研究数据流中
+  借助LLM示范在线更新小模型与级联。本轮是冻结模型的离线批量路由，不是在线学习。
+- [ConColl / ConfColl (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1071/)：漏洞检测中已有
+  单LLM、RAG、多智能体逐级决策。本轮不使用RAG、生成式多智能体或额外证据，只交接函数分类决策。
+- [Ensembling Large Language Models for Code Vulnerability Detection (2025)](https://arxiv.org/abs/2509.12629)：
+  已研究多个代码LLM及动态门控Stacking，数据包括Devign/ReVeal/BigVul。
+  本轮关心只对部分函数执行昂贵模型，而非默认已取得所有模型输出的融合。
+
+文献支持“模型错误互补且推理成本不同，升级应针对相对收益”的动机；当前结果支持
+该PrimeVul子集上简单margin级联有可利用的性能—调用量权衡。不能将两模型组合、oracle、
+开发集的3例净收益或静态估算时间包装为新学习范式、稳定泛化增益或已学会漏洞机理。
+
+实际计时：GPU 0 / NVIDIA GeForce RTX 4090，PyTorch 2.9.1+cu128，CPU线程2，batch=1，
+三模型均沿用原加载器的bfloat16与LoRA。每模型按长度覆盖8次预热，然后对全部741函数执行
+两轮固定随机顺序推理；共4446次正式计时。计时包括分词、输入搬运、前向和分类输出，
+前后CUDA同步；不包括模型加载、磁盘读取、排队、路由排序和模型切换。
+没有将LoRA合并、做量化或更改推理内核。三模型决策均与缓存完全相同，最大概率差小于1.2e-7。
+
+| 单模型 | 实测平均ms | P50 ms | P95 ms | P99 ms |
+|---|---:|---:|---:|---:|
+| CodeBERT512 | 34.61 | 32.25 | 45.55 | 65.98 |
+| CodeBERT2048 | 35.18 | 32.42 | 47.34 | 68.29 |
+| Qwen | 104.28 | 83.84 | 238.64 | 259.60 |
+
+级联成本为每个函数的两轮平均组件耗时相加：`CB_i + selected_i * Qwen_i`，
+再与全体Qwen-only耗时比较；不是直接执行已部署级联服务测得的端到端延迟，更不是能耗。
+Qwen调用比例来自离线预算路由；为核验成本本次profiling实际执行了所有三模型，不能将其
+profiling总开销算成级联部署调用开销。CPU启动、框架和LoRA等开销未单独剖析，
+因此不能凭参数量比例推断运行时间，也不能将窗口数线性换算成延迟。
+
+| 512 margin预算 | 实际调用率 | 估计平均ms | 估计P95 ms | 相对组件成本（Qwen-only=1） |
+|---|---:|---:|---:|---:|
+| 0% | 0% | 34.61 | 45.42 | .3319 |
+| 10% | 9.99% | 43.46 | 114.85 | .4168 |
+| 25% | 24.97% | 56.09 | 116.84 | .5378 |
+| 50% | 49.93% | 76.93 | 117.62 | .7377 |
+| 75% | 74.90% | 103.81 | 173.19 | .9955 |
+| 100% | 100% | 138.90 | 283.77 | 1.3319 |
+
+25%/50% margin的组件成本节省分别约46.2%/26.2%，而不是75%/50%。选择样本的长度不同，
+也不能简单用调用率乘全体Qwen平均时间代替逐函数计时。75% margin基本没有成本优势，
+性能也退化；100%串联必然比Qwen-only昂贵。
+
+辅助2048对照也完整保留：negative_first 10%为Accuracy .750337、MCC .500652，
+组件成本.4258；probability_uncertainty 50%为Accuracy .753036、MCC .514087，
+组件成本.8309，相对Qwen纠正8/损坏7（仅净1例，FP60/FN123）。
+positive_first 75%的MCC .515670，但成本1.1418，不能称为省算力。
+这些事先列出的配置均是开发集观察，不能看到结果后宣称其中一组是已独立确认的最终方法。
+Pareto点按实测组件成本与Accuracy/MCC分别计算；极小样本差即可改变点的支配关系，
+此处的Pareto不含统计显著性或独立泛化保证。
+
+结果目录 `results/codebert_qwen_cascade_seed42/`：
+`config.json`为事先固定的路由/计时协议，`comparison.json`为全部51配置与oracle/分组/纠错ID，
+`metrics.csv`为全表，`latency.rows.jsonl`为逐函数两轮测量，`latency.json`为计时与checkpoint信息，
+`cost_comparison.json`为全部成本与Pareto标记，`performance_cost.png/.svg`为曲线。
+同时保存假设每次CodeBERT成本为Qwen的.01/.05/.1时的调用量代理，仅作敏感性说明，
+不能代替此次真实设备测量。
+
+检查结果：5项单元测试通过，覆盖实际边界与.5差异、预算取整/嵌套、类优先级、
+稳定同分处理、非法输入、禁止标签/Qwen路由输入、纠错计数和禁止硬预测伪AUC。
+另对实际51配置检查0%/100%端点、预算、373/368混淆矩阵分母及纠错净数守恒，全部通过。
+4446次正式推理完成且全部缓存决策回放一致；本轮没有GPU训练。
+
+复现（使用新的输出目录，不覆盖本轮结果；measure前检查GPU空闲）：
+
+```bash
+export OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false
+CASCADE_PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+CASCADE_OUT=results/codebert_qwen_cascade_reproduce
+"$CASCADE_PY" -m unittest tests.test_cascade -v
+"$CASCADE_PY" -m vulnmechanism.cascade run --output "$CASCADE_OUT"
+"$CASCADE_PY" -m vulnmechanism.cascade measure --output "$CASCADE_OUT" --device cuda:0
+MPLCONFIGDIR=/tmp/vul-detect-matplotlib "$CASCADE_PY" -m vulnmechanism.cascade plot --output "$CASCADE_OUT"
+```
+
+本轮的研究判断：简单级联有真实的开发集性能—成本折中，值得用独立路由数据进一步检验；
+不支持“Qwen始终更可靠”“高不确定样本必然值得升级”或“长函数问题已解决”。
+当前可支撑的是可复核的异构分类器级联实证与成本测量，而非新算法贡献或已验证的学习型路由。
+
+
+## CodeBERT–Qwen Learning to Defer（2026-10-10）
+
+本轮完成冻结基础模型的训练侧样本外推理和轻量路由训练，无基础模型重训、无 test 评价。结果目录：`results/codebert_qwen_defer_seed42/`。正式入口 `vulnmechanism/defer.py` 复用 `cascade.py`、原 `_load_model` / `_forward_batch` 和阈值口径。
+
+**公平工作点诊断。** CodeBERT512 / Qwen 的 ROC AUC 为 0.782638 / 0.804727，AP 为 0.740872 / 0.798177。原 Qwen 阈值 0.31，CodeBERT 阈值 0.15 保持不变。完整 ROC/PR 和逐样本变化保存在 `threshold_diagnostic.json`、`roc_pr.png`。事后匹配阈值仅用于开发 valid 的解释，不作为新选定模型成绩。
+
+|工作点|级联 FP/FN|Qwen 同 FP 的 FN|Qwen 同 Recall 的 FP|
+|---|---:|---:|---:|
+|25% margin|100/84|89|109|
+|50% margin|94/87|99|101|
+
+级联相对原 Qwen 的 Recall 改善有工作点变化的成分，但不能全部由阈值解释：同 FP 仍少 5/12 个 FN，同 Recall 少 9/7 个 FP。该比较不构成独立泛化证据。
+
+**合法路由成员。** 原官方 train 有 175,797 个函数（4,862 正、170,935 负）。复用已清洗 benchmark 的 7,840 个 train 成员，减去基础模型实际使用的 5,886 个，得到 1,954 个候选。排除 840 个共享修复 commit、1 个来源未解决成员后保留 1,113 个（780 正、333 负），来自 206 个项目、846 个 commit。全部与官方 train 原源码和标签逐项核验。项目哈希确定 fit 980（689/291 正负），内部 check 133（91/42），项目及修复来源隔离；额外检查与基础训练、valid 和两路由分区之间的 0.90 token-shingle 近重复。
+
+该池来自构图失败成员，676/1,113 个函数有语法解析错误；不修复或删除原源码。fit/check 的缺失原因分别为 target_method 591/79、low_quality_cpg 389/54。正例占约 70%，明显不同于 valid；这是具有选择偏差的可行性训练池，不是代表性良好的新评价集。未纳入未经现有近重复清洗的 166,344 个下采样负例。仅用已有 held-out manifest 的身份/来源元信息排除重叠，未读取原始 test 源码、标签或预测用于设计。既有近重复筛选覆盖保留的 benchmark 成员，不能据此宣称与所有被排除的官方 test 函数都完成近重复核验。
+
+**固定训练协议。** seed=42；fit only；StandardScaler + LogisticRegression(C=1, lbfgs, max_iter=2000)，不搜参、不重拟合内部 check。输入只有 CodeBERT 概率、距 0.15 的 margin、预测类别和 log1p 源码 token 数。B 学习 CodeBERT 错误概率（5 参数）；C 学习无变化、纠正 FN、纠正 FP、引入 FN、引入 FP 五类联合结果（25 参数），再按错误代价求期望增量。Qwen 预测只用于训练监督及事后评价，绝不作为路由输入。fit 的五类结果数量依次为 836/5/72/64/3；check 为 118/1/10/4/0。有效升级方向稀疏，尤其“纠正 FN”只有 5 个拟合实例。
+
+成本模型为 Ridge(alpha=1)，仅由 log1p(CodeBERT token 数)预测 log(Qwen ms)，在 fit 拟合。固定 FP 代价 1，FN 代价 1 和 3，λ=0.1（一次平均 fit Qwen 调用等价于 0.1 个 FP 代价）。25%/50% 为强制 top-k 批量预算，可能包含负预期净收益成员，不冒充逐样本 U>0 策略。confidence 路由对预计小模型错误按其预测方向加权并扣成本；utility 扣除同样成本。路由器、成本模型保存在 `router.joblib`。
+
+**开发 valid 全部固定调用预算结果。** 成本是相同 GPU 上的 CodeBERT 全量耗时 + 所选 Qwen 分项实测耗时，相对 Qwen-only。valid 复用原 741×2 次延迟；新增 1,113 个函数每模型 8 次 warmup、1 次推理，batch=1，RTX4090，不包括加载。尚非部署端到端级联时间，未计 CPU 路由开销。所有调用约为 24.97%/49.93%。
+
+|FN代价|路由|预算|Accuracy|Precision|Recall|F1|MCC|FP|FN|成本/Qwen|
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+|1|margin|25%|0.7517|0.7429|0.7748|0.7585|0.5037|100|84|53.78%|
+|1|confidence|25%|0.7409|0.7837|0.6702|0.7225|0.4875|69|123|54.29%|
+|1|utility|25%|0.7287|0.7486|0.6944|0.7204|0.4590|87|114|52.96%|
+|1|margin|50%|0.7557|0.7526|0.7668|0.7596|0.5115|94|87|73.77%|
+|1|confidence|50%|0.7449|0.7987|0.6595|0.7225|0.4982|62|127|76.37%|
+|1|utility|50%|0.7341|0.7500|0.7078|0.7283|0.4692|88|109|72.48%|
+|3|margin|25%|0.7517|0.7429|0.7748|0.7585|0.5037|100|84|53.78%|
+|3|confidence|25%|0.7355|0.7073|0.8097|0.7550|0.4755|125|71|52.78%|
+|3|utility|25%|0.7382|0.7057|0.8231|0.7599|0.4826|128|66|52.75%|
+|3|margin|50%|0.7557|0.7526|0.7668|0.7596|0.5115|94|87|73.77%|
+|3|confidence|50%|0.7503|0.7350|0.7882|0.7607|0.5017|106|79|72.60%|
+|3|utility|50%|0.7436|0.7094|0.8311|0.7654|0.4940|127|63|76.00%|
+
+等权下 C 相对 margin 在 25% 纠正 21、损坏 38，在 50% 纠正 17、损坏 33，均退步。FN 代价 3 时，25% 的 FP+3FN 从 margin 的 352 降到 326，但 FP 从 100 增至 128；50% 从 355 降至 316，但 FP 从 94 增至 127。不能称为全面分类提升。50% 的 C 实测成本 76.00%，高于 margin 的 73.77%，不是严格等计算改善。
+
+`results.json` / `metrics.csv` 同时保存等**预测**成本预算比较（以 margin 的预计 Qwen 耗时为上限，不使用实际 Qwen 耗时路由）。等权 C 在 25%/50% 的 MCC 仍只有 0.4644/0.4745；实测相对成本 56.52%/74.92%，与 margin 不完全相同。FN 代价 3 下 C 为 FP/FN=129/65 和 127/63，实测成本 58.16%/76.00%。内部 check/valid 成本预测 MAE 约 25.0/19.6 ms，因此只能报告预测成本约束和实测差额，不能冒称严格等 GPU 时间实验。
+
+**内部检查与校准。** 在 133 个项目隔离成员上，等权 margin 25%/50% MCC=0.4461/0.5371，confidence=0.5327/0.5421，utility=0.4501/0.4756；utility 没有稳定优势。FN 代价 3 时，margin 与 utility 在两个调用预算上的 FP+3FN 都为 48，没有复现开发 valid 的加权风险改善。等权预测 U>0 仅 7 个 check 成员，实际净纠错 2 个；FN×3 的 U>0 有 14 个，实际加权收益合计 3。样本太少，不足以声称可靠校准。所有固定 reliability bins、逐样本分数、成本和纠错/损坏 ID 已保存。
+
+**子组。** short-positive=30、long-negative=42、相对基础模型 train 未见项目=103，沿用训练长度四分位数。等权 C 25%/50% 的短正例 FN=28/25（margin 同为 28/25），长负例 FP=39/39（margin=37/37）；未见项目 MCC=0.4025/0.3805（margin 均 0.4506）。FN×3 的 C 25%/50% 短正例 FN=27/25、长负例 FP=39/40、未见项目 MCC 均 0.3825。未见项目是相对基础模型训练集，不保证相对新增路由训练集未见。单标签子组只解释 FP/FN，不解释其退化 MCC。
+
+**结论。** 本轮未证明预期增量收益路由优于 margin。成本敏感设定能改变开发集的漏报/误报取舍，但内部 check 未复现加权风险改善，且训练池分布偏、有效方向监督稀疏。结果支持保留简单级联的成本动机，不支持当前学习型路由作为已验证的方法贡献；不继续叠模块或搜索 λ。论文仍缺代表性充足的样本外路由监督、锁定方案后的独立评价，以及端到端真实成本证据。
+
+与文献关系：借鉴 [NeurIPS 2023 后验转交](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1f09e1ee5035a4c3fe38a5681cae5815-Abstract-Conference.html) 的后续模型相对价值，而非仅预测小模型错误；[FrugalGPT](https://arxiv.org/abs/2305.05176) 支持成本级联动机；[Online Cascade Learning](https://proceedings.mlr.press/v235/nie24a.html) 的在线学习不是本实验的静态路由协议；[ConColl](https://aclanthology.org/2025.emnlp-main.1071/) 的多阶段漏洞决策也不等同于这里的两个冻结分类器协作。不以模型组合本身声称算法创新。
+
+复现（输出目录必须不存在，依次执行；原结果不可覆盖）：
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+OUT=results/codebert_qwen_defer_seed42
+$PY -m vulnmechanism.defer fair --output "$OUT"
+$PY -m vulnmechanism.defer audit --output "$OUT"
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false $PY -m vulnmechanism.defer predict --output "$OUT" --device cuda:0
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 $PY -m vulnmechanism.defer learn --output "$OUT"
+MPLCONFIGDIR=/tmp/vul-matplotlib $PY -m vulnmechanism.defer plot --output "$OUT"
+$PY -m unittest tests.test_defer tests.test_cascade
+```
+
+检查：9 个相关单元测试通过；两基础模型均成功完成 1,113 个原始函数推理；两个 LogisticRegression 均在 2,000 次上限内收敛；980/133 项目分区、预测身份、完整 valid 741 成员和原指标核验通过。所有新统计为原标签函数级分类，不新增漏洞或安全标签。
+
+## 正类异质性与多原型 CodeBERT（2026-10-10）
+
+本轮只比较函数级二分类头，固定 K=4，不增加 CWE 监督、图、局部标签或额外损失。入口为
+`vulnmechanism.prototype_experiment`，复用正式 `model.py` 的训练、选模、保存、加载与评价。
+原始 5,886 train / 741 valid 的成员、源码与标签均核对原 CodeBERT cohort；不评价 test。
+
+- A：原始 `Linear(768,1)`，769 个头参数；本轮重训。
+- B：`Linear(768,4) → Tanh → Linear(4,1)`，3,081 个头参数。
+- C：4 个仿射判别分数 `s_k=w_k^T h+b_k`，`logit=logsumexp(s)-log(4)`，3,076 个头参数。
+  负类为共享零参考，仍使用全部原函数的 BCE。这是判别原型，不是经过机理标注的漏洞中心。
+  K=1 精确退化为普通线性头；重复相同原型不改变 logit。
+
+三组均从同一 CodeBERT-base 初始化，512 总 token（源码上限 489），原 LoRA r=16/alpha=32/dropout=0.05，
+seed=42，3 epoch，batch=1，累积8，AdamW lr=2e-4/weight_decay=0.01。
+按原 valid MCC/F1/Accuracy/AUC 协议选 checkpoint，使用原阈值网格。
+额外分类头在 CPU fork_rng 中初始化，不改变编码器和后续训练随机流；C 的随机权重以共同线性头为中心，
+保留不同方向以打破原型对称。B 使用标准初始化。初始化相同不意味着 CUDA 浮点训练能逐位复现。
+
+固定训练侧诊断：对已有 CodeBERT512 的 L2 归一化正例表示做 K=4 KMeans，不搜索 K。
+训练正例 silhouette=0.4166，两次初始化 ARI=1.0；与项目/长度四分位/CWE 的 AMI 分别为
+0.0676/0.1750/0.0289。仅用长度的5折分组预测准确率为48.85%，多数类为32.63%；
+仅用原分类 logit 达到96.08%。5次训练正例重采样的聚类 ARI 为0.8566–0.9990。
+因此“分组稳定”不能直接解释为多种漏洞语义，主要分类分数方向足以恢复这些分组。
+这些表示已经用函数标签训练过，也不是无监督原始代码空间。
+
+CWE 来源审计：train 正例2,835/2,835、valid正例373/373均关联一个数值 CWE ID，分别108/59类，
+没有多 CWE 注释；77个训练类别少于10个函数，valid中6个类别（共7个函数）在train未见。
+原始记录没有可靠层级/完整性标记，因此不能把单条来源 CWE 当作完整多标签真值，也不自动补充父子标签。
+类别独立函数与项目计数、原始 CWE 字段及源成员身份均保存在结果目录。
+D 的前提仍是 C 对 A/B 的明确增量；覆盖率高本身不会触发额外训练。
+
+本轮借鉴 [SoftTriple（ICCV 2019）](https://openaccess.thecvf.com/content_ICCV_2019/html/Qian_SoftTriple_Loss_Deep_Metric_Learning_Without_Triplet_Sampling_ICCV_2019_paper.html)
+的“一类可有多个中心”动机，不复现其度量损失、归一化中心或正则项，不宣称提出新的学习范式。
+
+
+实际完成 A/B/C 各3轮、各2,208次优化器更新。选中 A epoch2、B/C epoch3；训练退出码均0。
+新增训练不覆盖原 baseline，A 与历史 baseline 的轻微差异全部保留，不将其计入 C 的收益。
+本轮 A/B/C 是主要公平对照，历史 CodeBERT512 另列参考。
+
+|模型|阈值|Accuracy|Precision|Recall|F1|MCC|AUC|未缩放BCE|TP|FP|TN|FN|
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+|original|0.15|0.7301|0.7045|0.7989|0.7487|0.4639|0.7826|0.7257|298|125|243|75|
+|A|0.17|0.7314|0.7071|0.7962|0.7491|0.4662|0.7854|0.7018|297|123|245|76|
+|B|0.49|0.7463|0.7441|0.7560|0.7500|0.4926|0.7933|0.5580|282|97|271|91|
+|C|0.27|0.7449|0.7222|0.8016|0.7598|0.4925|0.7932|0.6089|299|115|253|74|
+
+A/B/C 总可训练参数分别为1,180,417 / 1,182,729 / 1,182,724。C 相对 A 纠正39个旧错误、损坏29个原正确样本；
+相对 B 纠正29个、损坏30个。相对历史原 CodeBERT，A为8/7，B为42/30，C为40/29。
+C相对B的净变化为多17个TP、同时多18个FP：F1提高不是全面检测改善。
+
+|模型|固定0.5 MCC|固定原0.15 MCC|
+|---|---:|---:|
+|original|0.3096|0.4639|
+|A|0.3032|0.4577|
+|B|0.4899|0.3929|
+|C|0.4080|0.4215|
+
+配对 bootstrap（seed42，1,000次函数重采样，选中阈值保持固定；非独立确认，不覆盖项目相关性、选模或训练随机性）：
+
+|差异|AUC差|AUC 95%区间|MCC差|MCC 95%区间|
+|---|---:|---|---:|---|
+|C_vs_A|+0.00774|[-0.00687, +0.02248]|+0.02633|[-0.01758, +0.07039]|
+|C_vs_B|-0.00011|[-0.01176, +0.01311]|-0.00006|[-0.03760, +0.04083]|
+
+所有区间包含0。C未同时明确超过A/B；尤其与容量匹配的B几乎相同，BCE还更差。
+因此不启动D或Binary+CWE Head，不追加损失、K搜索、多seed或Qwen/MegaVul迁移。
+
+子组用训练长度四分位数划分，项目按原始PrimeVul `project` 字段；不是新恢复的仓库实体。
+四个长度区间都保留正负成员，属于粗粒度长度分层，不冒充严格匹配或因果控制。
+长度变量沿用 `function_statistics_seed42/features.jsonl` 的 Qwen tokenizer token 数，仅作为既有长度协变量；
+不是 CodeBERT 的实际可见 token 数。CodeBERT 输入仍严格使用自身 tokenizer 的512预算（源码489）。
+
+|子组|成员数|A|B|C|
+|---|---:|---:|---:|---:|
+|short_positive (fn)|30|28|28|25|
+|long_negative (fp)|42|38|32|36|
+|seen_project (mcc)|638|0.4787|0.5015|0.5052|
+|unseen_project (mcc)|103|0.3844|0.4227|0.4020|
+|length_quartile_0 (mcc)|171|0.1321|0.1025|0.1924|
+|length_quartile_1 (mcc)|185|0.3201|0.4022|0.3947|
+|length_quartile_2 (mcc)|182|0.1347|0.2066|0.2016|
+|length_quartile_3 (mcc)|203|0.2327|0.3019|0.2716|
+
+C在30个短正例上比A/B多检出3个，但长负例误报多于B，未见项目MCC也低于B。
+不能将局部子组改善描述为稳定的跨项目增量。
+
+CWE关联正例召回（valid至少10个成员，全部预定成员保留；这是记录关联，不是函数机理监督）：
+
+|CWE|train函数|valid函数|A Recall|B Recall|C Recall|
+|---|---:|---:|---:|---:|---:|
+|CWE-120|23|11|0.9091|1.0000|1.0000|
+|CWE-125|243|43|0.8140|0.7674|0.8372|
+|CWE-190|94|18|0.7778|0.7778|0.8333|
+|CWE-20|270|10|1.0000|1.0000|1.0000|
+|CWE-200|178|15|1.0000|1.0000|1.0000|
+|CWE-369|51|23|1.0000|0.9565|1.0000|
+|CWE-416|109|16|0.4375|0.2500|0.4375|
+|CWE-476|134|36|0.7222|0.8056|0.7778|
+|CWE-703|104|31|0.8387|0.7419|0.8065|
+|CWE-787|167|55|0.8545|0.7636|0.8364|
+
+CWE是混合层级注释：官方定义中 [CWE-119](https://cwe.mitre.org/data/definitions/119.html) 是125/787的父类，
+而 [CWE-264](https://cwe.mitre.org/data/definitions/264.html) 是Category。不能把这些ID直接当作互斥同层级机理。
+本轮未补父标签或推断未记录的其他CWE；全部正例来源哈希唯一（train2,835、valid373）。
+有9类同时满足train≥30、valid≥10及两侧各≥3个项目，仅说明存在较常见的关联标签，不保证其函数级语义完整。
+
+**原型诊断。** 四个参数向量没有合并为相同向量（两两余弦0.445–0.503），但输出分数相关性为0.9953–0.9989。
+train正例的硬赢家数量为[0,387,2442,6]，valid正例为[0,0,373,0]：所有valid正例由同一原型取得最大分数。
+这属于硬分配集中和函数输出高度冗余，不能说其余原型完全不参与；valid正例平均软责任为
+[9.61%,28.64%,45.93%,15.82%]，平均熵1.226（均匀上限ln4≈1.386）。
+train正例赢家与项目/长度/CWE的AMI为0.0263/0.0565/0.0102；valid正例赢家恒定，因此关联为0不代表已排除所有偏差。
+没有观察到四个可解释、可泛化的不同正类判别模式。
+
+固定C编码器和阈值，仅把logmeanexp替换为四头算术平均，AUC从0.793187变为0.792961，几乎不变；
+MCC从0.49250降至0.47146。原聚合相对均值增加logit平均0.1476、标准差0.0593。
+这个干预支持“排序高度冗余、聚合影响工作点”的解释，但不否认多头训练对编码器优化的影响；
+未重选该干预阈值，未把它作为新候选或额外训练方法。
+
+**研究结论。** 可观察的正例内部差异不等于尚未利用的漏洞类型模式。当前基线聚类主要由已有分类分数恢复；
+K=4头在验证集的硬赢家集中，未超过等容量普通非线性头。支持保留“检验二分类头表达能力”的研究问题，
+不支持“多原型已学会多种漏洞模式”或独立性能贡献。无法仅凭本实验确定真实正类缺乏异质性；
+也可能是现有二分类监督表示、优化或该聚合机制未能利用它。按预定边界停止，不加正则追求均衡。
+当前结果不足以作为有效多原型方法论文，也不值得据此直接扩大到Qwen/MegaVul。
+
+产物：`comparison.json`含完整指标、固定阈值、子组、配对区间及纠错/损坏ID；`metrics.csv`、`comparison.png`；
+`heterogeneity.json`、`heterogeneity.png`、`cluster_assignments.jsonl`；`cwe.json`、`members.jsonl`；
+`A/B/C/best.pt`及三轮history、valid逐样本预测；`prototype_assignments.jsonl`及冻结表示缓存。
+
+复现命令（使用新的输出目录，不覆盖现有结果；本轮A/C在GPU0串行、B在GPU1）：
+
+```bash
+export OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false
+export MPLCONFIGDIR=/tmp/vul-matplotlib
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+OUT=results/codebert_prototype_reproduce
+$PY -m vulnmechanism.prototype_experiment prepare --output "$OUT"
+$PY -m vulnmechanism.prototype_experiment extract --output "$OUT" --name baseline --device cuda:0
+$PY -m vulnmechanism.prototype_experiment audit --output "$OUT"
+$PY -m vulnmechanism.prototype_experiment train --output "$OUT" --name A --device cuda:0
+$PY -m vulnmechanism.prototype_experiment train --output "$OUT" --name B --device cuda:1
+$PY -m vulnmechanism.prototype_experiment train --output "$OUT" --name C --device cuda:0
+$PY -m vulnmechanism.prototype_experiment extract --output "$OUT" --name C --device cuda:0
+$PY -m vulnmechanism.prototype_experiment analyze --output "$OUT"
+$PY -m vulnmechanism.prototype_experiment plot --output "$OUT"
+$PY -m unittest tests.test_prototype tests.test_codebert_source tests.test_graph_training tests.test_benchmark_view -q
+```
+
+实际检查：18个相关测试通过，包含K=1线性退化、重复原型归一化、全原型及输入梯度、共同编码器/RNG、
+三种头的小RoBERTa前向/反向/保存/加载/预测，以及原CodeBERT/图训练/成员回归。
+原baseline提取的valid logits与既有预测一致；C提取结果也与本轮保存预测一致；原成员、标签、源码未改。
+A/B/C均完成3轮，历史同类实现检索未发现等价多原型/正类专家分类头。
+修改正式`model.py`、`cli.py`，新增最小实验入口`prototype_experiment.py`及`tests/test_prototype.py`，说明更新在本README。
+
+### PrimeVul → MegaVul 固定权重迁移与类别比例对照（2026-10-10）
+
+按本轮确认的范围，先复用现有PrimeVul模型进行直接迁移，不重新训练、不在MegaVul选择阈值。
+A为`codebert_prototype_seed42/A/best.pt`（linear，阈值.17），
+B为同目录`B/best.pt`（mlp4，.49），C为`cfg_abc_seed42/baseline/best.pt`（原始Qwen source-only，.31）。
+本节C不是上一节的多原型模型；没有使用CLM/P0/图模块。PrimeVul仍为原5886/741构图成功子集。
+
+MegaVul原文件353873条，17975正例。正例取`func_before`，负例取`func`，不额外添加修复后负例。
+用户授权建立固定项目划分：保留既有修复对的项目归属，新项目按
+`SHA256("cross-dataset-42:"+project) mod 100`的80/10/10区间分配。
+实际项目数844/109/109，函数数228001/100098/25774；这是约8:1:1的**项目划分**，不是函数数8:1:1。
+test不导出源码、不推理、不选模。没有Joern/解析成功准入、训练抽样或原标签修改。
+
+在读取迁移预测前固定四个评价视图（`results/cross_dataset_seed42/views.json`）：
+
+| 视图 | 函数数 | 正例 | 负例 |
+|---|---:|---:|---:|
+| 原始自然valid | 100098 | 4341 | 95757 |
+| 原始平衡valid子集 | 8682 | 4341 | 4341 |
+| 去交叉及精确重复后的自然valid | 63869 | 3079 | 60790 |
+| 对应平衡valid子集 | 6158 | 3079 | 3079 |
+
+平衡视图在各自自然视图内以seed42均匀抽取同数正负例，三模型共用成员，不依据分数选样本。
+严格视图排除与源train及选模valid的token重复/5-gram Jaccard≥.90近重复、修复提交交叉，
+以及目标valid内部token完全相同的重复函数和标签冲突组。保留原始视图作排除前对照；
+目标内部仅近似而token不同的函数不自动认定为同一函数或标签错误。原始数据及划分文件不修改。
+元数据中的CWE来自修复记录，只在正例上作描述，不能解释为函数机制真值。
+
+去交叉自然valid含96个项目，其中Linux为55263条（约86.5%）。因此同时检查Linux与其余项目，
+不能把63869个函数视作63869个独立项目证据。仓库URL匹配只表示可核实的同URL，未匹配不证明项目未见，
+镜像/别名及未知URL分别披露。短正例、长负例的长度边界取PrimeVul train源码字符数四分位数，
+不在目标valid选择边界。自然/平衡间另报告固定TPR/FPR下的50%先验标准化结果，仅作比例效应诊断。
+
+入口为`python -m vulnmechanism.cross_dataset`；正式编码与权重加载复用`model.py`。
+推理为CodeBERT batch32、Qwen batch4，按源码长度排序减少padding，不改变源码预算或函数级聚合。
+另以固定无标签抽样的128个函数测量batch1延迟并检查批处理logit差异；不把批处理摊销时间当单请求延迟。
+所有结果仍是开发性验证，不是封存test终验。
+
+CVE来源补核发现，源train/valid有6413/6627条可恢复CVE，共3298个CVE；目标原始valid均有CVE。
+去交叉自然视图仍有2258条（113正例）关联已知源CVE，原平衡子集有215条（113正例）。
+因此追加“无已知共享CVE”敏感性视图：仅从已固定成员删除这些条目，不改模型、不重抽负例、不覆盖原视图；
+自然视图剩61611条（2966正例），近似平衡视图剩5943条（2966正/2977负）。
+这不是新的选模集；未知源CVE、预训练语料重叠及镜像来源仍不能据此排除。
+输入覆盖分组预定为两模型均完整、仅Qwen完整和两者均截断，不按预测成绩选择子集。
+
+实际完成三组各100098条预测，均退出0；没有MegaVul训练、反向迁移或test评价。以下为源valid选定阈值，未在目标重新校准。
+
+| 模型 | PrimeVul AUC / MCC | MegaVul平衡 AUC / MCC | 平衡 BCE |
+|---|---:|---:|---:|
+| A | 0.7854 / 0.4662 | 0.7238 / 0.3190 | 0.9090 |
+| B | 0.7933 / 0.4926 | 0.7162 / 0.2987 | 0.6809 |
+| C | 0.8047 / 0.5116 | 0.7067 / 0.2942 | 1.1923 |
+
+去交叉自然valid（63869条，3079正例）的完整结果：
+
+| 模型 | Accuracy | Precision | Recall | F1 | MCC | AUROC | AUPRC(AP) | BCE | TP | TN | FP | FN |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A | 0.7180 | 0.0988 | 0.5973 | 0.1696 | 0.1515 | 0.7216 | 0.1282 | 0.2441 | 1839 | 44022 | 16768 | 1240 |
+| B | 0.7980 | 0.1112 | 0.4563 | 0.1789 | 0.1461 | 0.7151 | 0.1261 | 0.4121 | 1405 | 49564 | 11226 | 1674 |
+| C | 0.8759 | 0.1512 | 0.3413 | 0.2096 | 0.1681 | 0.7052 | 0.1400 | 0.2691 | 1051 | 54892 | 5898 | 2028 |
+
+全部六个视图及固定0.5结果见`metrics.csv`；逐样本纠错、共同错误、长度/项目/可见性分组见`comparison.json`。
+去已知共享CVE后，近似平衡AUC为A .7266、B .7185、C .7090，主要排序不变。自然集与平衡子集的召回相同，因为保留相同正例；Precision变化不能解释为模型能力变化。
+B相对A在自然集减少5542个FP，却新增434个FN；AUC/MCC均下降。C相对A减少10870个FP，却新增788个FN。C纠正75个旧FN、11873个旧FP，同时损坏863个旧TP和1003个旧TN。三模型共同FP4312、共同FN1155。
+Linux子集A/B/C AUC为.7079/.7001/.6838；其他项目为.7721/.7725/.7944。Qwen并非在所有领域都较差，但总体优势未保持，且总体结论受Linux占比影响。
+短正例399条，A/B/C召回1.00%/1.00%/3.01%；长负例2908条，FPR94.67%/71.91%/47.32%。边界来自源train四分位数。
+两编码器输入均完整的50440条，A/C AUC .6428/.6305；仅Qwen完整的13268条，A/C AUC .6239/.6470。组内类比例不同，且分组不是随机干预，不能据此证明长度是因果原因；但完整可见子集仍较弱，排除了“所有退化仅由截断造成”的解释。
+RTX4090上固定128条batch1探针，A/B/C平均34.76/37.59/94.07ms，P95 40.51/48.10/107.84ms；包含编码及同步forward、不含加载。对应批量forward总计320.59/323.20/4063.79秒（batch32/32/4），不是总墙钟时间或单请求延迟。128条探针批量与单条决策均无变化，最大logit差.01052/.02201/.03909。详见`costs.json`。
+早期Cursor记录核查见`history.json`：恢复到的MegaVul M0并非随机，seed42 epoch1 AUC .7985、MCC .3156。旧训练80000条（5000正），valid39077条（1752正）；旧PrimeVul train77792条、valid23948条。旧优化、冻结层、窗口聚合、分类头及focal loss也不同，不能把新旧成绩差异归因于某个单独修复；未完整恢复的早期PrimeVul差结果不作推测。
+研究判断：本轮更支持研究跨域下的表示与决策稳定性，以及长度/项目分布依赖；不支持直接增加头容量或宣称大模型普遍泛化更强。长度关联与分层AUC是诊断性证据，不是已确认的捷径机制；还未完成MegaVul训练，不能回答同数据集MegaVul性能或双向泛化。
+新增`cross_dataset.py`、`tests/test_cross_dataset.py`，扩展`benchmark_view.py`的数据集枚举；复用`model.py`，未修改模型结构。11项直接相关测试通过；最终汇总修改后3项审计测试复验通过，`git diff --check`通过。
+
+复现（使用尚不存在的新输出目录，旧产物不覆盖）：
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+OUT=results/cross_dataset_reproduce_seed42
+export OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false MPLCONFIGDIR=/tmp/vul-detect-mpl
+for ACTION in prepare audit views provenance; do
+  "$PY" -m vulnmechanism.cross_dataset "$ACTION" --output "$OUT"
+done
+for MODEL in A B C; do
+  "$PY" -m vulnmechanism.cross_dataset evaluate --output "$OUT" --model "$MODEL" --origin primevul --target megavul --device cuda:0
+done
+"$PY" -m vulnmechanism.cross_dataset compare --output "$OUT"
+"$PY" -m unittest tests.test_cross_dataset tests.test_codebert_source tests.test_benchmark_view -q
+```

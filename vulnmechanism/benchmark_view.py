@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 
 
-FORMAL_DATASETS = ("primevul", "cleanvul", "sven")
+FORMAL_DATASETS = ("primevul", "cleanvul", "sven", "megavul")
 PAIRED_DATASETS = {"cleanvul", "sven"}
 VALID_SPLITS = {"train", "valid", "test", "external_test"}
 
