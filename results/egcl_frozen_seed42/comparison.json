@@ -1,0 +1,56 @@
+{
+  "changes_vs_bce": {
+    "all": {
+      "corrected": 182,
+      "introduced": 284,
+      "both_correct": 440,
+      "both_wrong": 150,
+      "members": 1056
+    },
+    "original_only": {
+      "corrected": 79,
+      "introduced": 114,
+      "both_correct": 130,
+      "both_wrong": 29,
+      "members": 352
+    }
+  },
+  "rank_and_common_shift": {
+    "bce": {
+      "original": {
+        "pair_accuracy": 0.9488636363636364,
+        "mean_logit_margin": 0.8055870604532008,
+        "mean_absolute_pair_center_shift": 0.0
+      },
+      "rename": {
+        "pair_accuracy": 0.9886363636363636,
+        "mean_logit_margin": 0.6872458356453783,
+        "mean_absolute_pair_center_shift": 1.2399008922352963
+      },
+      "neutral": {
+        "pair_accuracy": 0.9488636363636364,
+        "mean_logit_margin": 0.703479533014946,
+        "mean_absolute_pair_center_shift": 0.541019007375739
+      }
+    },
+    "egcl": {
+      "original": {
+        "pair_accuracy": 1,
+        "mean_logit_margin": 2.603314471494576,
+        "mean_absolute_pair_center_shift": 0.0
+      },
+      "rename": {
+        "pair_accuracy": 1,
+        "mean_logit_margin": 2.2346883659378034,
+        "mean_absolute_pair_center_shift": 6.646051255520433
+      },
+      "neutral": {
+        "pair_accuracy": 1,
+        "mean_logit_margin": 2.2211065329452553,
+        "mean_absolute_pair_center_shift": 5.810457273664228
+      }
+    }
+  },
+  "ranking_gate_passed": true,
+  "caveat": "Pairwise loss is invariant to a common per-pair logit shift. These diagnostics show shift sensitivity; they do not prove a unique cause or real vulnerability transfer."
+}

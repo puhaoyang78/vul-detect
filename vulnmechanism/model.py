@@ -31,6 +31,7 @@ from .semantics import (
 
 MODEL_VARIANTS = (
     "baseline",
+    "codebert_source",
     "source_attention",
     "source_bidirectional",
     "source_bidirectional_attention",
@@ -40,7 +41,7 @@ MODEL_VARIANTS = (
     "graph_attributes",
     "graph_cfg",
 )
-_SOURCE_VARIANTS = {"baseline", "source_attention", "source_bidirectional", "source_bidirectional_attention"}
+_SOURCE_VARIANTS = {"baseline", "codebert_source", "source_attention", "source_bidirectional", "source_bidirectional_attention"}
 _SEQUENCE_VARIANTS = _SOURCE_VARIANTS | {"raw_cpg", "mechanism_concat"}
 _FUSION_VARIANTS = {"mechanism_fusion"}
 _GRAPH_VARIANTS = {"graph_attributes", "graph_cfg"}
@@ -176,6 +177,45 @@ class InputBuilder:
     def source_ids(self, record: dict[str, object]) -> list[int]:
         source = self._encode(str(record["raw_source"]), self.source_max_length)
         return self._with_eos([*self.source_prefix, *source])
+
+    def codebert_batch(self, records, *, device):
+        """Native 512-token windows, half-window stride, one weighted function pool.
+
+        source_max_length is the logical total budget, including one copy of
+        the unchanged task prefix and the two RoBERTa boundary tokens. Each
+        source position and each prefix/boundary slot has total weight one.
+        """
+        if self.source_max_length not in (512, 2048):
+            raise ValueError('CodeBERT comparison requires logical length 512 or 2048')
+        bos = getattr(self.tokenizer, 'bos_token_id', None)
+        if bos is None or self.eos_token_id is None:
+            raise ValueError('CodeBERT requires native BOS/EOS tokens')
+        capacity = 512 - len(self.source_prefix) - 2
+        budget = self.source_max_length - len(self.source_prefix) - 2
+        if capacity <= 0:
+            raise ValueError('task prefix leaves no CodeBERT source capacity')
+        stride = capacity // 2
+        sequences, weights, owners = [], [], []
+        for owner, record in enumerate(records):
+            tokens = self._encode(str(record['raw_source']), budget)
+            starts = [0]
+            while starts[-1] + capacity < len(tokens):
+                starts.append(starts[-1] + stride)
+            coverage = [0] * len(tokens)
+            for start in starts:
+                for pos in range(start, min(start + capacity, len(tokens))):
+                    coverage[pos] += 1
+            for start in starts:
+                end = min(start + capacity, len(tokens))
+                sequences.append([bos, *self.source_prefix, *tokens[start:end], self.eos_token_id])
+                weights.append([1. / len(starts)] * (1 + len(self.source_prefix)) +
+                               [1. / coverage[pos] for pos in range(start, end)] + [1. / len(starts)])
+                owners.append(owner)
+        ids, mask = self._pad(sequences, device=device)
+        pool_weights = torch.zeros_like(mask, dtype=torch.float32)
+        for i, values in enumerate(weights):
+            pool_weights[i, :len(values)] = torch.tensor(values, device=device)
+        return ids, mask, torch.tensor(owners, dtype=torch.long, device=device), pool_weights, len(records)
 
     def mechanism_text(
         self,
@@ -359,6 +399,20 @@ def _masked_mean(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Te
     return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
 
 
+def _window_mean(hidden, mask, owners, weights, function_count):
+    if (weights.shape != mask.shape or hidden.shape[:2] != mask.shape or
+            owners.shape != (len(hidden),) or function_count <= 0 or
+            torch.any(owners < 0) or torch.any(owners >= function_count) or
+            torch.any(weights < 0) or torch.any(weights[~mask.bool()] != 0)):
+        raise ValueError('invalid function window pooling inputs')
+    totals = weights.sum(1)
+    denominator = totals.new_zeros(function_count).index_add(0, owners, totals)
+    if torch.any(denominator <= 0):
+        raise ValueError('every function must have visible pooling tokens')
+    sums = (hidden.float() * weights.unsqueeze(-1)).sum(1)
+    return sums.new_zeros((function_count, hidden.shape[-1])).index_add(0, owners, sums) / denominator[:, None]
+
+
 class BidirectionalSourceAdapter(nn.Module):
     """One non-causal layer over contextual token states; Qwen stays causal."""
 
@@ -423,13 +477,16 @@ class SequenceVulnerabilityClassifier(nn.Module):
                 self.task_modules["source_pool"] = SourceAttentionPool(hidden_size)
         self.to(device)
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
+                window_owners=None, pooling_weights=None, function_count=None) -> torch.Tensor:
         hidden = self.encoder(
             input_ids=input_ids, attention_mask=attention_mask, use_cache=False
         ).last_hidden_state
         if "source_adapter" in self.task_modules:
             hidden = self.task_modules["source_adapter"](hidden.float(), attention_mask)
-        if "source_pool" in self.task_modules:
+        if window_owners is not None:
+            pooled = _window_mean(hidden, attention_mask, window_owners, pooling_weights, function_count)
+        elif "source_pool" in self.task_modules:
             pooled = self.task_modules["source_pool"](hidden.float(), attention_mask)
         else:
             pooled = _masked_mean(hidden, attention_mask).float()
@@ -571,6 +628,8 @@ def _forward_batch(
     excluded_groups: tuple[str, ...],
     device: torch.device,
 ) -> torch.Tensor:
+    if variant == 'codebert_source':
+        return model(*input_builder.codebert_batch(records, device=device))
     if variant in _GRAPH_VARIANTS:
         input_ids, mask = input_builder.sequence_batch(
             records, variant="baseline", excluded_groups=(), device=device
@@ -736,6 +795,22 @@ def _cpu_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().clone() for key, value in state.items()}
 
 
+def synthetic_supervision_loss(logits, objective, labels=None):
+    """Absolute BCE on all members; optional ranking only for opposite labels."""
+    if logits.shape != (2,):
+        raise ValueError('one verified two-member group is required')
+    labels=logits.new_tensor([0.,1.] if labels is None else labels)
+    if labels.shape!=(2,) or not bool(((labels==0)|(labels==1)).all()):
+        raise ValueError('binary local safety labels required')
+    if objective not in ('bce','bce_rank'):
+        raise ValueError('unknown synthetic objective')
+    loss=torch.nn.functional.binary_cross_entropy_with_logits(logits,labels)
+    if objective=='bce_rank' and bool(labels[0]!=labels[1]):
+        from .cgvl import local_rank_loss
+        loss=loss+local_rank_loss(logits[labels==0],logits[labels==1])
+    return loss
+
+
 def train_model(
     dataset_path: str | Path | None,
     output_path: str | Path,
@@ -761,12 +836,25 @@ def train_model(
     records: list[dict[str, object]] | None = None,
     log_every: int = 10,
     initial_checkpoint: str | Path | None = None,
+    initial_adapter_state: dict | None = None,
     sample_weights: dict[str, float] | None = None,
     graph_options: dict | None = None,
+    synthetic_pairs: list | None = None,
+    synthetic_objective: str | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
+    if variant == 'codebert_source' and source_max_length not in (512, 2048):
+        raise ValueError('CodeBERT comparison requires logical length 512 or 2048')
     if batch_size <= 0 or gradient_accumulation <= 0 or epochs <= 0:
         raise ValueError("batch_size, gradient_accumulation, and epochs must be positive")
+    if synthetic_pairs is not None:
+        if variant != 'baseline' or synthetic_objective not in ('bce', 'bce_rank') or not synthetic_pairs:
+            raise ValueError('synthetic supervision requires baseline and nonempty matched pairs')
+        if any(len(p)!=2 or any(r.get('label') not in (0,1) for r in p) or
+               any(r.get('split')!='train' for r in p) for p in synthetic_pairs):
+            raise ValueError('synthetic supervision accepts verified binary training pairs only')
+    elif synthetic_objective is not None:
+        raise ValueError('synthetic objective requires verified pairs')
     resolved_device = _resolve_device(device)
     if log_every <= 0 or learning_rate <= 0 or weight_decay < 0:
         raise ValueError("invalid log_every, learning_rate or weight_decay")
@@ -808,6 +896,8 @@ def train_model(
         if any(not math.isfinite(w) or w <= 0 for w in sample_weights.values()):
             raise ValueError("sample weights must be finite and positive")
     initial = None
+    if initial_adapter_state is not None and (initial_checkpoint is not None or variant != "baseline"):
+        raise ValueError("adapter initialization requires a fresh baseline classifier")
     if initial_checkpoint is not None:
         if not fixed_epochs:
             raise ValueError("checkpoint continuation requires fixed_epochs")
@@ -831,7 +921,8 @@ def train_model(
     input_builder = InputBuilder(
         tokenizer, source_max_length=source_max_length, context_max_length=context_max_length
     )
-    target_modules = ("q_proj", "k_proj", "v_proj", "o_proj")
+    target_modules = (("attention.self.query", "attention.self.key", "attention.self.value", "attention.output.dense")
+                      if variant == 'codebert_source' else ("q_proj", "k_proj", "v_proj", "o_proj"))
     _seed_everything(seed)
     model = _build_model(
         variant,
@@ -847,6 +938,8 @@ def train_model(
         **({"graph_config": graph_config} if graph_config is not None else {}),
     )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    if initial_adapter_state is not None:
+        set_peft_model_state_dict(model.encoder, initial_adapter_state)
     if initial is not None:
         set_peft_model_state_dict(model.encoder, initial["adapter_state"])
         model.task_modules.load_state_dict(initial["task_state"])
@@ -868,6 +961,9 @@ def train_model(
         random.Random(seed + epoch).shuffle(order)
         optimizer.zero_grad(set_to_none=True)
         running_loss = 0.0
+        synthetic_total = 0.0
+        synthetic_order = list(range(len(synthetic_pairs))) if synthetic_pairs is not None else []
+        random.Random(seed + epoch).shuffle(synthetic_order)
         optimizer_steps = 0
         pending = 0
         num_batches = math.ceil(len(order) / batch_size)
@@ -900,6 +996,15 @@ def train_model(
                             lr=f"{learning_rate:.1e}", refresh=False)
             pending += 1
             if pending == gradient_accumulation or batch_index + 1 == num_batches:
+                if synthetic_pairs is not None:
+                    pair = synthetic_pairs[synthetic_order[optimizer_steps % len(synthetic_order)]]
+                    pair_logits = _forward_batch(model, pair, input_builder, variant=variant,
+                        excluded_groups=excluded_groups, device=resolved_device)
+                    synthetic_loss = synthetic_supervision_loss(pair_logits, synthetic_objective, [r['label'] for r in pair])
+                    if not torch.isfinite(synthetic_loss):
+                        raise ValueError('non-finite synthetic supervision loss')
+                    synthetic_loss.backward()
+                    synthetic_total += float(synthetic_loss.detach().cpu())
                 torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -933,6 +1038,10 @@ def train_model(
             "validation_threshold": threshold,
             "validation": validation.as_json() if validation else None,
         }
+        if synthetic_pairs is not None:
+            epoch_row['synthetic_loss'] = synthetic_total / optimizer_steps
+            epoch_row['synthetic_objective'] = synthetic_objective
+            epoch_row['synthetic_pairs_seen'] = optimizer_steps
         history.add(epoch_row)
         key = ((epoch+1,) if fixed_epochs else
                (validation.mcc, validation.f1, validation.accuracy,
@@ -976,6 +1085,16 @@ def train_model(
         "validation": best_validation.as_json() if best_validation else None,
         "trainable_parameters": sum(parameter.numel() for parameter in trainable),
     }
+    if synthetic_pairs is not None:
+        checkpoint['synthetic_supervision'] = dict(objective=synthetic_objective, weight=1.0,
+            pairs_per_optimizer_step=1, unique_pairs=len(synthetic_pairs))
+    if variant == 'codebert_source':
+        capacity = 512 - len(input_builder.source_prefix) - 2
+        checkpoint['input_protocol'] = dict(encoder='roberta', native_window=512,
+            logical_budget=source_max_length, source_budget=source_max_length-len(input_builder.source_prefix)-2,
+            window_source_capacity=capacity, stride=capacity//2,
+            pooling='mean over unique source positions; repeated prefix/BOS/EOS averaged across windows',
+            function_loss='one BCE per original function')
     if graph_config is not None:
         checkpoint["graph_config"] = graph_config
     target = Path(output_path)
@@ -1040,7 +1159,10 @@ def evaluate_model(
     split: str,
     batch_size: int = 1,
     device: str = "auto",
+    prediction_path: str | Path | None = None,
 ) -> dict[str, object]:
+    if prediction_path is not None and Path(prediction_path).exists():
+        raise FileExistsError(prediction_path)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     if checkpoint.get("checkpoint_version") != _CHECKPOINT_VERSION:
         raise ValueError("checkpoint is incompatible with the current model")
@@ -1070,11 +1192,13 @@ def evaluate_model(
         context_max_length=int(checkpoint["context_max_length"]),
     )
     model = _load_model(checkpoint, device=resolved_device)
-    probabilities = _predict(
-        model, records, input_builder,
-        variant=variant, excluded_groups=excluded_groups,
-        batch_size=batch_size, device=resolved_device,
-    )
+    predict_options = dict(variant=variant, excluded_groups=excluded_groups,
+                           batch_size=batch_size, device=resolved_device)
+    if prediction_path is None:
+        probabilities = _predict(model, records, input_builder, **predict_options)
+    else:
+        logits = _predict_logits(model, records, input_builder, **predict_options)
+        probabilities = torch.sigmoid(logits)
     threshold = float(checkpoint["decision_threshold"])
     metrics = _classification_metrics(records, probabilities, threshold=threshold)
     result = {
@@ -1094,5 +1218,25 @@ def evaluate_model(
             threshold=threshold,
         ),
     }
+    if prediction_path is not None:
+        from .cfg_data import identity
+        from .cfg_metrics import metrics as binary_metrics, decision_boundary
+        result['bce'] = float(torch.nn.functional.binary_cross_entropy_with_logits(
+            logits.float(), torch.tensor([r['label'] for r in records], dtype=torch.float32)))
+        result['fixed_0_5'] = binary_metrics([r['label'] for r in records], probabilities.tolist())
+        target = Path(prediction_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open('x', encoding='utf-8') as handle:
+            for i, row in enumerate(records):
+                count = len(input_builder._encode(str(row['raw_source'])))
+                budget = int(checkpoint.get('input_protocol', {}).get('source_budget', checkpoint['source_max_length']))
+                visible = min(count, budget)
+                protocol = checkpoint.get('input_protocol')
+                windows = (1 + math.ceil(max(0, visible-protocol['window_source_capacity'])/protocol['stride'])
+                           if protocol else 1)
+                handle.write(json.dumps({**identity(row), 'score':float(probabilities[i]),
+                    'logit':float(logits[i]),'prediction':int(float(probabilities[i])>=decision_boundary(threshold)),
+                    'threshold':threshold,'source_token_count':count,'source_truncated':count>budget,
+                    'visible_source_tokens':visible,'windows':windows})+'\n')
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return result

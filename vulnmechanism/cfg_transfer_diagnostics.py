@@ -1,4 +1,4 @@
-"""Bounded fixed-checkpoint transfer diagnosis; never trains or assigns patch labels."""
+"""Fixed-checkpoint diagnostics and frozen-encoder probes; never assigns patch labels."""
 from collections import Counter, defaultdict
 import difflib
 import gc
@@ -660,3 +660,247 @@ def summarize_scope(output, *, boundary_check=False, original_valid=False):
                 graph_logit_max_delta=graph_delta,
                 coverage=protocol['coverage'], original_full_valid=full_valid, results=summaries))
     return summaries
+
+
+def rewire_cfg(edges, *, seed, key):
+    """Directed double-edge swaps preserve each node's in/out degree and self-loops."""
+    result = [tuple(e) for e in edges]
+    if len(set(result)) != len(result):
+        raise ValueError('CFG edges must be unique')
+    positions = [i for i, (a, b) in enumerate(result) if a != b]
+    rng = random.Random(f'{seed}:{key}:cfg-swaps')
+    present = set(result)
+    if len(positions) >= 2:
+        for _ in range(20 * len(positions)):
+            i, j = rng.sample(positions, 2)
+            a, b = result[i]; c, d = result[j]
+            if a == c or b == d or a == d or c == b:
+                continue
+            if (a, d) in present or (c, b) in present:
+                continue
+            present.remove((a, b)); present.remove((c, d))
+            result[i], result[j] = (a, d), (c, b)
+            present.update((result[i], result[j]))
+    return result
+
+
+def topology_diagnosis(run_dir, output_dir, *, device='cuda:0', variant='dep_pretrain_cfg',
+                       split='valid', branches_only=False):
+    """Fixed-model topology or branch intervention, with no threshold selection."""
+    import torch
+    from .cfg_experiment import _base_module, _prepare, _tokenizer, _graph_inputs
+    from .cfg_network import build_model, collate_graphs
+    from .cfg_metrics import metrics, paired_changes, decision_boundary
+    if split not in ('valid', 'test') or variant not in ('lm_pretrain_cfg', 'dep_pretrain_cfg'):
+        raise ValueError('fixed diagnosis requires CLM/P0+C and valid/test')
+    if not branches_only and (split != 'valid' or variant != 'dep_pretrain_cfg'):
+        raise ValueError('topology protocol is restricted to original P0 valid')
+    root = Path(output_dir)
+    if root.exists():
+        raise FileExistsError(root)
+    folder = Path(run_dir) / variant
+    cp = torch.load(folder / 'best.pt', map_location='cpu', weights_only=False)
+    config = cp['model_config']
+    rows, views = _prepare(config['dataset'], config['graphs'], config['source_dataset'])
+    if cohort_hash(rows) != config['cohort_sha256'] or file_sha256(config['graphs']) != config['graph_file_sha256']:
+        raise ValueError('fixed topology data changed')
+    rows = [r for r in rows if r['split'] == split]
+    reference = {r['sample_key']: r for r in read_jsonl(folder / f'{split}.predictions.jsonl')}
+    if set(reference) != {r['sample_key'] for r in rows}:
+        raise ValueError('evaluation membership mismatch')
+    base = _base_module(); resolved = base._resolve_device(device)
+    builder = _tokenizer(base, config); vocab = AttributeVocabulary(cp['vocabulary'])
+    encoded = {r['sample_key']: vocab.encode(views[r['sample_key']]) for r in rows}
+    base._seed_everything(42)
+    model = build_model(base, config, vocab.sizes(), resolved, training=False)
+    base.set_peft_model_state_dict(model.encoder, cp['adapter_state'])
+    model.task_modules.load_state_dict(cp['task_state']); model.eval()
+    names = (('original', 'source_branch', 'graph_branch') if branches_only else
+             ('original', 'rewire42', 'rewire43', 'rewire44', 'no_edges', 'source_branch'))
+    scores = {n: [] for n in names}; bce = Counter(); changes = Counter()
+    threshold = float(cp['decision_threshold'])
+    root.mkdir(parents=True)
+    atomic_json(root / 'config.json', dict(run_dir=str(Path(run_dir).resolve()), split=split, variant=variant,
+        threshold=threshold, seeds=[] if branches_only else [42,43,44],
+        protocol='fixed fused checkpoint and threshold; zero one branch; no selection' if branches_only else
+        'fixed source/weights; directed degree-preserving edge swaps; no selection'))
+    with torch.no_grad(), (root / 'predictions.jsonl').open('x') as out:
+        for index, row in enumerate(rows):
+            key = row['sample_key']; view = views[key]
+            source, graph = model.branch_logits(*_graph_inputs(model, [row], builder, views, encoded, resolved))
+            logits = {'original': source + graph, 'source_branch': source}
+            if branches_only:
+                logits['graph_branch'] = graph
+            for name in (() if branches_only else names[1:-1]):
+                edges = [] if name == 'no_edges' else rewire_cfg(view['edges'], seed=int(name[-2:]), key=key)
+                changes[name] += set(map(tuple, view['edges'])) != set(map(tuple, edges))
+                changed = dict(view, edges=edges)
+                batch = collate_graphs([changed], [encoded[key]], device=resolved)
+                vector = model.task_modules['cfg_encoder'](batch)
+                logits[name] = source + model.task_modules['cfg_classifier'](vector).reshape(-1)
+            item = dict(sample_key=key, split=split, label=row['label'], source_logit=float(source.item()), graph_logit=float(graph.item()))
+            for name, logit in logits.items():
+                value = float(logit.float().sigmoid().item()); scores[name].append(value)
+                item[name] = value
+                bce[name] += float(torch.nn.functional.binary_cross_entropy_with_logits(logit.float(),
+                    torch.tensor([row['label']], device=resolved, dtype=torch.float32)))
+            if abs(item['original'] - reference[key]['score']) > 2e-5:
+                raise ValueError(f'fixed checkpoint replay differs: {key}')
+            out.write(json.dumps(item)+'\n')
+            if (index+1) % 100 == 0:
+                out.flush(); print(f'fixed_{variant}_{split}={index+1}/{len(rows)}', flush=True)
+    labels = [r['label'] for r in rows]
+    predictions = {n: [dict(reference[r['sample_key']], score=s, prediction=int(s >= decision_boundary(threshold)))
+                       for r, s in zip(rows, values)] for n, values in scores.items()}
+    report = {n: dict(metrics=metrics(labels, values, threshold), fixed_05=metrics(labels, values, .5), bce=bce[n]/len(rows),
+        changed_graphs=changes[n], mean_abs_score_change=sum(abs(a-b) for a,b in zip(values,scores['original']))/len(rows),
+        paired=paired_changes(predictions['original'],predictions[n])) for n,values in scores.items()}
+    atomic_json(root/'summary.json',report)
+    print(json.dumps({n: {k:v for k,v in r.items() if k != 'paired'} for n,r in report.items()}),flush=True)
+
+
+def fit_origin_probe(cache, *, task, epochs=20):
+    """Common frozen-feature protocol: train-only standardization, identical seeded heads."""
+    import torch
+    from .cfg_dependency import DirectedRelationHead
+    from .cfg_metrics import metrics, select_threshold
+    torch.manual_seed(42)
+    x = cache['pool'].float() if task == 'classification' else cache['pairs'].float()
+    labels = cache['labels'] if task == 'classification' else cache['relation_labels']
+    splits = cache['splits'] if task == 'classification' else cache['relation_splits']
+    train = torch.tensor([i for i,s in enumerate(splits) if s == 'train'])
+    valid = torch.tensor([i for i,s in enumerate(splits) if s == 'valid'])
+    if len(train) == 0 or len(valid) == 0 or any(s not in ('train','valid') for s in splits):
+        raise ValueError('probe requires nonempty train/valid only')
+    mean = x[train].mean(0); std = x[train].std(0, unbiased=False).clamp_min(1e-4)
+    x = (x-mean)/std
+    head = torch.nn.Linear(x.shape[-1],1) if task == 'classification' else DirectedRelationHead(x.shape[-1],32)
+    optimizer = torch.optim.AdamW(head.parameters(),lr=1e-3,weight_decay=.01)
+    labels = labels.float()
+    if task == 'classification':
+        groups = [torch.tensor([i]) for i in train.tolist()]
+    else:
+        by_key = defaultdict(list)
+        for i in train.tolist(): by_key[cache['relation_keys'][i]].append(i)
+        groups = [torch.tensor(indices) for indices in by_key.values()]
+    def predict(ids):
+        return head(x[ids]).squeeze(-1) if task == 'classification' else head(x[ids,0],x[ids,1])
+    history=[]; best=None; best_key=None
+    for epoch in range(epochs):
+        order=list(range(len(groups))); random.Random(42+epoch).shuffle(order)
+        head.train()
+        for start in range(0,len(order),32):
+            batch=[groups[j] for j in order[start:start+32]]
+            ids=torch.cat(batch)
+            losses=torch.nn.functional.binary_cross_entropy_with_logits(predict(ids),labels[ids],reduction='none')
+            # Each independent function has equal relation-task weight.
+            loss=torch.stack([part.mean() for part in losses.split([len(g) for g in batch])]).mean()
+            optimizer.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(head.parameters(),1.0); optimizer.step()
+        head.eval()
+        with torch.no_grad():
+            logits=predict(valid); scores=logits.sigmoid().tolist()
+            threshold,m=select_threshold(labels[valid].int().tolist(),scores) if task=='classification' else (.5,metrics(labels[valid].int().tolist(),scores,.5))
+            losses=torch.nn.functional.binary_cross_entropy_with_logits(logits,labels[valid],reduction='none')
+            row=dict(epoch=epoch+1,metrics=m,bce=float(losses.mean()))
+            if task=='dependency':
+                grouped=defaultdict(list)
+                for i,v in zip(valid.tolist(),losses.tolist()):grouped[cache['relation_keys'][i]].append(v)
+                row['function_bce']=sum(sum(v)/len(v) for v in grouped.values())/len(grouped)
+        history.append(row)
+        key=(m['mcc'],m['f1'],m['accuracy'],m['auc']) if task=='classification' else (epoch,)
+        if best_key is None or key>best_key:
+            best_key=key
+            best=dict(**row,scores=scores,threshold=threshold,
+                      head_state={k:v.detach().clone() for k,v in head.state_dict().items()})
+    return dict(history=history,selected=best,mean=mean,std=std,valid_indices=valid.tolist())
+
+
+def dependency_pair_features(hidden, relation):
+    """Pair readout occurs after max(definition, use), not necessarily at the use."""
+    positions = [relation['definition_token'], relation['use_token']]
+    if any(type(p) is not int or not 0 <= p < hidden.shape[0] for p in positions):
+        raise ValueError('dependency endpoint outside visible source')
+    return hidden[positions]
+
+
+def frozen_origin_probes(run_dir, output_dir, *, device='cuda:0', lm_pretrain_dir=None):
+    """Apply one frozen probe protocol to the original encoders or an additional CLM control."""
+    import torch
+    from .cfg_experiment import _base_module, _tokenizer, _save_torch
+    from .cfg_dependency import _checked_relation_rows, function_relations
+    from .cfg_data import load_graphs
+    from .cfg_network import build_model
+    root=Path(output_dir)
+    if root.exists():raise FileExistsError(root)
+    run=Path(run_dir); config=json.loads((run/'config.json').read_text())
+    p0=Path(config['pretrain_run_dir']); pre=json.loads((p0/'config.json').read_text())
+    names = ('lm',) if lm_pretrain_dir else ('qwen','p0','p0_c')
+    lm_path = None
+    if lm_pretrain_dir:
+        lm_root = Path(lm_pretrain_dir)
+        lm_config = json.loads((lm_root/'config.json').read_text())
+        comparable = lambda c: {k:v for k,v in c.items() if k != 'relation_accumulation_normalization'}
+        if comparable(lm_config) != comparable(pre):
+            raise ValueError('CLM and P0 pretraining protocols differ')
+        lm_path = lm_root/'lm_pretrain'/'last.pt'
+        complete = json.loads((lm_path.parent/'complete.json').read_text())
+        if complete['mode'] != 'lm_pretrain' or complete['checkpoint_sha256'] != file_sha256(lm_path):
+            raise ValueError('CLM checkpoint identity differs')
+    rows=read_records(config['dataset'],config['source_dataset'])
+    if cohort_hash(rows)!=config['cohort_sha256'] or file_sha256(config['graphs'])!=config['graph_file_sha256']:
+        raise ValueError('probe input differs from P0+C')
+    graphs=load_graphs(config['graphs'],rows)
+    rows=[r for r in rows if r['split'] in ('train','valid')]
+    base=_base_module();resolved=base._resolve_device(device);builder=_tokenizer(base,config)
+    supervision,audit=_checked_relation_rows(pre['supervision_dir'],[r for r in rows if r['split']=='train'],builder)
+    if audit['relations_sha256']!=pre['relations_sha256']:raise ValueError('P0 supervision changed')
+    for row in rows:
+        if row['split']=='valid':
+            relations,_=function_relations(row,graphs[row['sample_key']],builder.tokenizer,
+                source_max_length=2048,prefix_tokens=len(builder.source_prefix),for_valid=True)
+            supervision[row['sample_key']]=relations
+    del graphs
+    relation_rows=[q for r in rows for q in supervision.get(r['sample_key'],[])]
+    root.mkdir(parents=True)
+    atomic_json(root/'config.json',dict(run_dir=str(run.resolve()),seed=42,epochs=20,learning_rate=.001,
+        weight_decay=.01,batch_functions=32,dependency_rank=32,dependency_selection='fixed epoch 20',
+        classification_selection='valid MCC/F1/accuracy/AUC',standardization='train-only mean/std',
+        relation_readout='ordered pair after max(definition_token,use_token); both endpoints causal',
+        frozen_encoders=list(names),lm_pretrain_dir=str(Path(lm_pretrain_dir).resolve()) if lm_pretrain_dir else None,classification_functions=len(rows),relation_queries=len(relation_rows)))
+    with (root/'relations.jsonl').open('x') as out:
+        for q in relation_rows:out.write(json.dumps(q)+'\n')
+    for name in names:
+        base._seed_everything(42)
+        model=build_model(base,dict(config,variant='baseline'),None,resolved,training=False)
+        if name!='qwen':
+            path=lm_path if name=='lm' else p0/'dep_pretrain'/'last.pt' if name=='p0' else run/'dep_pretrain_cfg'/'best.pt'
+            cp=torch.load(path,map_location='cpu',weights_only=False)
+            if name=='lm' and (cp['mode']!='lm_pretrain' or cp['pretrain_config']!=lm_config):
+                raise ValueError('CLM checkpoint configuration differs')
+            base.set_peft_model_state_dict(model.encoder,cp['adapter_state']);del cp
+        model.eval();model.requires_grad_(False)
+        pools=[];pairs=[];relation_labels=[];relation_keys=[];relation_splits=[]
+        with torch.no_grad():
+            for i,row in enumerate(rows):
+                ids,mask=builder.sequence_batch([row],variant='baseline',excluded_groups=(),device=resolved)
+                hidden=model.encoder(input_ids=ids,attention_mask=mask,use_cache=False).last_hidden_state
+                weighted=mask.unsqueeze(-1).to(hidden.dtype)
+                pools.append(((hidden*weighted).sum(1)/weighted.sum(1)).cpu().half())
+                for q in supervision.get(row['sample_key'],[]):
+                    pairs.append(dependency_pair_features(hidden[0],q).cpu().half())
+                    relation_labels.append(q['label']);relation_keys.append(row['sample_key']);relation_splits.append(row['split'])
+                if (i+1)%200==0:print(f'frozen_{name}={i+1}/{len(rows)}',flush=True)
+        cache=dict(pool=torch.cat(pools),pairs=torch.stack(pairs),labels=torch.tensor([r['label'] for r in rows]),
+            keys=[r['sample_key'] for r in rows],splits=[r['split'] for r in rows],relation_labels=torch.tensor(relation_labels),
+            relation_keys=relation_keys,relation_splits=relation_splits)
+        _save_torch(root/f'{name}.features.pt',cache)
+        del model;gc.collect()
+        if resolved.type=='cuda':torch.cuda.empty_cache()
+        reports={}
+        for task in ('dependency','classification'):
+            result=fit_origin_probe(cache,task=task)
+            _save_torch(root/f'{name}.{task}.pt',result)
+            reports[task]=dict(history=result['history'],selected={k:v for k,v in result['selected'].items() if k!='head_state'},
+                               valid_indices=result['valid_indices'])
+        atomic_json(root/f'{name}.json',reports)
+    atomic_json(root/'complete.json',dict(encoders=list(names),test_used=False))

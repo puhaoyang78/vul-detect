@@ -1,0 +1,88 @@
+{
+  "trained_on": "primevul",
+  "evaluated_on": "primevul",
+  "split": "valid",
+  "variant": "codebert_source",
+  "excluded_groups": [],
+  "decision_threshold": 0.54,
+  "samples": 741,
+  "positive": 373,
+  "negative": 368,
+  "metrics": {
+    "accuracy": 0.7341430499325237,
+    "precision": 0.7458100558659218,
+    "recall": 0.7158176943699732,
+    "f1": 0.7305061559507524,
+    "mcc": 0.4687912996716297,
+    "auc": 0.7904075358433383
+  },
+  "mechanism_subgroups": {
+    "relation_present": {
+      "samples": 115,
+      "positive": 78,
+      "negative": 37,
+      "metrics": {
+        "accuracy": 0.6695652173913044,
+        "precision": 0.7127659574468085,
+        "recall": 0.8589743589743589,
+        "f1": 0.7790697674418605,
+        "mcc": 0.15627413160481246,
+        "auc": 0.6377338877338877
+      }
+    },
+    "relation_absent": {
+      "samples": 626,
+      "positive": 295,
+      "negative": 331,
+      "metrics": {
+        "accuracy": 0.7460063897763578,
+        "precision": 0.7575757575757576,
+        "recall": 0.6779661016949152,
+        "f1": 0.7155635062611806,
+        "mcc": 0.4898504173226556,
+        "auc": 0.8032874187106355
+      }
+    },
+    "candidate_present": {
+      "samples": 81,
+      "positive": 59,
+      "negative": 22,
+      "metrics": {
+        "accuracy": 0.7160493827160493,
+        "precision": 0.75,
+        "recall": 0.9152542372881356,
+        "f1": 0.8244274809160305,
+        "mcc": 0.13738701759630043,
+        "auc": 0.6043913713405239
+      }
+    },
+    "relation_only": {
+      "samples": 34,
+      "positive": 19,
+      "negative": 15,
+      "metrics": {
+        "accuracy": 0.5588235294117647,
+        "precision": 0.5909090909090909,
+        "recall": 0.6842105263157895,
+        "f1": 0.6341463414634148,
+        "mcc": 0.08749572785196143,
+        "auc": 0.5578947368421052
+      }
+    }
+  },
+  "bce": 0.5928868055343628,
+  "fixed_0_5": {
+    "accuracy": 0.7300944669365722,
+    "precision": 0.7319034852546917,
+    "recall": 0.7319034852546917,
+    "f1": 0.7319034852546917,
+    "mcc": 0.4601643548199091,
+    "auc": 0.7904075358433383,
+    "tp": 273,
+    "tn": 268,
+    "fp": 100,
+    "fn": 100,
+    "samples": 741,
+    "threshold": 0.5
+  }
+}

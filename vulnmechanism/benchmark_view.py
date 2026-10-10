@@ -123,12 +123,14 @@ def _balance_primevul(
 
 
 def select_source_records(
-    records: list[dict[str, object]], source_dataset: str
+    records: list[dict[str, object]], source_dataset: str, *, preserve_members: bool = False
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if source_dataset not in FORMAL_DATASETS:
         raise ValueError(
             f"source_dataset must be one of {', '.join(FORMAL_DATASETS)}, got {source_dataset!r}"
         )
+    if preserve_members and source_dataset != 'primevul':
+        raise ValueError('preserve_members is the original PrimeVul comparison policy')
     detected = Counter(record_dataset(record) for record in records)
     selected = [record for record in records if record_dataset(record) == source_dataset]
     if not selected:
@@ -140,7 +142,7 @@ def select_source_records(
         selected, dropped_incomplete_pair_records = _complete_pairs(selected, source_dataset)
         if not selected:
             raise ValueError(f"no complete {source_dataset} pairs remain after build filtering")
-    elif source_dataset == "primevul":
+    elif source_dataset == "primevul" and not preserve_members:
         selected, dropped_primevul_balance_records = _balance_primevul(selected)
 
     split_counts = Counter(record_split(record) for record in selected)
@@ -162,13 +164,15 @@ def select_source_records(
             for (split, label), count in sorted(split_label_counts.items())
         },
     }
+    if preserve_members:
+        summary['member_policy'] = 'original build-success members and order, without rebalancing'
     return selected, summary
 
 
 @contextmanager
-def dataset_view(path: str | Path, source_dataset: str):
+def dataset_view(path: str | Path, source_dataset: str, *, preserve_members: bool = False):
     records = _read_jsonl(path)
-    selected, summary = select_source_records(records, source_dataset)
+    selected, summary = select_source_records(records, source_dataset, preserve_members=preserve_members)
     print(
         "benchmark_dataset_view=" + json.dumps(summary, ensure_ascii=False, sort_keys=True),
         flush=True,

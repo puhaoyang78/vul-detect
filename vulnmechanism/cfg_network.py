@@ -636,7 +636,7 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
         lora_dropout=config["lora_dropout"],
         target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
         gradient_checkpointing=training and device.type == "cuda")
-    if config["variant"] == "baseline":
+    if config["variant"] in {"baseline", "lm_pretrain_source", "dep_pretrain_source"}:
         return source
     if vocabulary_sizes is None:
         raise ValueError("graph vocabulary required")
@@ -653,6 +653,7 @@ def build_model(base, config: dict, vocabulary_sizes: list[int] | None, device, 
             "program_plain" if config["variant"] == "dep_pretrain_program_plain" else
             "program_state" if config["variant"] in {"dep_pretrain_program_state",
                                                       "composition_pretrain_program_state"}
+            else "attributes" if config["variant"] == "dep_pretrain_attributes"
             else config["variant"])
     return SourceGraphClassifier(source, vocabulary_sizes,
                                  hidden_size=config["graph_hidden_size"], steps=config["graph_steps"],

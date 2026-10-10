@@ -52,6 +52,22 @@ def build_model(variant, config):
 
 
 class GraphTrainingTests(unittest.TestCase):
+    def test_source_pretrained_adapter_fresh_head_roundtrip(self):
+        rows = [sample_row(str(i), label=i % 2) for i in range(4)]
+        rows += [sample_row('v0','valid',0),sample_row('v1','valid',1)]
+        initial=TinyEncoder().state_dict()
+        initial['embedding.weight'].fill_(.25)
+        with tempfile.TemporaryDirectory() as tmp, mock_models():
+            path=Path(tmp)/'source.pt'
+            saved=core.train_model(None,path,records=rows,variant='baseline',model_path='tiny',
+                source_max_length=16,epochs=1,batch_size=2,gradient_accumulation=2,device='cpu',
+                initial_adapter_state=initial)
+            torch.testing.assert_close(core.set_peft_model_state_dict.call_args.args[1]['embedding.weight'],initial['embedding.weight'])
+            self.assertFalse(torch.equal(saved['adapter_state']['embedding.weight'],initial['embedding.weight']))
+            scores=core.predict_checkpoint(path,rows[-2:],batch_size=2,device='cpu')
+            self.assertEqual(tuple(scores.shape),(2,))
+            self.assertTrue(torch.isfinite(scores).all())
+
     def test_source_initialization_rng_input_and_logits_match_baseline(self):
         row = sample_row()
         config = fit_graph_config([row], embedding_dim=4, steps=2)

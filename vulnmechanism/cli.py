@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 from .benchmark_view import FORMAL_DATASETS, dataset_view
 from .dataset import build_function_dataset
@@ -33,7 +35,9 @@ def _fit_arguments(parser):
 def _train(args):
     if args.source_dataset == "sven":
         raise ValueError("SVEN is external-test-only and cannot be used for training")
-    with dataset_view(args.dataset, args.source_dataset) as dataset:
+    if args.variant == 'codebert_source' and not args.preserve_members:
+        raise ValueError('CodeBERT comparison requires --preserve-members to retain the original cohort')
+    with dataset_view(args.dataset, args.source_dataset, preserve_members=args.preserve_members) as dataset:
         return train_model(
             dataset,
             args.output or f"results/{args.source_dataset}_{args.variant}.pt",
@@ -59,19 +63,26 @@ def _train(args):
 
 
 def _evaluate(args):
+    if args.output and Path(args.output).exists():
+        raise FileExistsError(args.output)
     expected_split = "external_test" if args.source_dataset == "sven" else args.split
     if args.source_dataset == "sven" and args.split != "external_test":
         raise ValueError("SVEN evaluation must use --split external_test")
     if args.source_dataset != "sven" and args.split == "external_test":
         raise ValueError("external_test is reserved for SVEN")
-    with dataset_view(args.dataset, args.source_dataset) as dataset:
-        return evaluate_model(
+    with dataset_view(args.dataset, args.source_dataset, preserve_members=args.preserve_members) as dataset:
+        result = evaluate_model(
             dataset,
             args.checkpoint,
             split=expected_split,
             batch_size=args.batch_size,
             device=args.device,
+            prediction_path=args.predictions,
         )
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
+    return result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -107,6 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train.add_argument("--variant", choices=MODEL_VARIANTS, default="mechanism_fusion")
     train.add_argument("--output")
+    train.add_argument("--preserve-members", action="store_true", help="keep original PrimeVul members and order without post-build rebalancing")
     _fit_arguments(train)
     train.add_argument("--context-max-length", type=int, default=384)
     train.add_argument("--fusion-dim", type=int, default=256)
@@ -131,6 +143,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument("--batch-size", type=int, default=1)
     evaluate.add_argument("--device", default="auto")
+    evaluate.add_argument("--predictions", help="save per-function probabilities and raw logits; refuses overwrite")
+    evaluate.add_argument("--output", help="save evaluation metrics JSON; refuses overwrite")
+    evaluate.add_argument("--preserve-members", action="store_true", help="evaluate original PrimeVul members without post-build rebalancing")
     evaluate.set_defaults(func=_evaluate)
 
     diagnostic = sub.add_parser("diagnose", help="train-only nested OOF and incremental-information probes")

@@ -36,8 +36,9 @@ PROGRAM_VARIANTS = ("dep_pretrain_program_plain", "dep_pretrain_program_state",
 REGION_CONTEXT_VARIANTS = ("region_local", "region_context")
 REGION_VARIANTS = (*REGION_CONTEXT_VARIANTS, "dep_pretrain_hierarchical", "region_pretrain_cfg", "region_pretrain_hierarchical")
 PRETRAIN_CFG_VARIANTS = (*JOINT_EXPERIMENTS, *BEHAVIOR_VARIANTS, *REGION_VARIANTS, "lm_pretrain_cfg", "dep_pretrain_cfg", *PROGRAM_VARIANTS,
-                         "composition_pretrain_cfg")
+                         "composition_pretrain_cfg", "lm_pretrain_source", "dep_pretrain_source", "dep_pretrain_attributes")
 PRETRAIN_MODE = {**{v:"dep_pretrain" for v in (*JOINT_VARIANTS, *POOL_VARIANTS)}, **{v:"control_pretrain" for v in CONTROL_VARIANTS}, **{v: "dep_pretrain" for v in BEHAVIOR_VARIANTS}, "region_local": "dep_pretrain", "region_context": "dep_pretrain", "dep_pretrain_hierarchical": "dep_pretrain",
+                 "lm_pretrain_source": "lm_pretrain", "dep_pretrain_source": "dep_pretrain", "dep_pretrain_attributes": "dep_pretrain",
                  "region_pretrain_cfg": "region_pretrain",
                  "region_pretrain_hierarchical": "region_pretrain", "lm_pretrain_cfg": "lm_pretrain", "dep_pretrain_cfg": "dep_pretrain",
                  "dep_pretrain_program_plain": "dep_pretrain",
@@ -913,7 +914,15 @@ def run_experiment(args, base=None):
             folder.mkdir(exist_ok=True)
             atomic_json(folder / "config.json", variant_config)
             source_output = None
-            if variant == "baseline":
+            initial_adapter_state = None
+            if stage1_path is not None:
+                stage1 = torch.load(stage1_path, map_location="cpu", weights_only=False)
+                if (stage1["mode"] != PRETRAIN_MODE[variant] or
+                        stage1["pretrain_config"] != pretrain_config):
+                    raise ValueError(f"{variant}: wrong phase-1 LoRA checkpoint")
+                initial_adapter_state = stage1["adapter_state"]
+                del stage1
+            if variant in {"baseline", "lm_pretrain_source", "dep_pretrain_source"}:
                 # Delegate A to the unchanged original trainer and model, not a reimplementation.
                 checkpoint = base.train_model(
                     None, folder/"best.pt", variant="baseline", model_path=args.model_path,
@@ -921,7 +930,12 @@ def run_experiment(args, base=None):
                     batch_size=args.batch_size, gradient_accumulation=args.gradient_accumulation,
                     epochs=args.epochs, learning_rate=args.learning_rate, weight_decay=args.weight_decay,
                     lora_r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
-                    seed=args.seed, device=str(device), log_every=args.log_every)
+                    seed=args.seed, device=str(device), log_every=args.log_every,
+                    **({"initial_adapter_state": initial_adapter_state}
+                       if initial_adapter_state is not None else {}))
+                if variant in {"lm_pretrain_source", "dep_pretrain_source"}:
+                    checkpoint["model_config"] = variant_config
+                    _save_torch(folder/"best.pt", checkpoint)
                 threshold = float(checkpoint["decision_threshold"])
                 del checkpoint
                 gc.collect()
@@ -935,14 +949,6 @@ def run_experiment(args, base=None):
                             if variant in ROTATION_VARIANTS else None)
                 if schedule is not None:
                     atomic_json(folder / "train_epochs.json", schedule_report(schedule))
-                initial_adapter_state = None
-                if stage1_path is not None:
-                    stage1 = torch.load(stage1_path, map_location="cpu", weights_only=False)
-                    if (stage1["mode"] != PRETRAIN_MODE[variant] or
-                            stage1["pretrain_config"] != pretrain_config):
-                        raise ValueError(f"{variant}: wrong phase-1 LoRA checkpoint")
-                    initial_adapter_state = stage1["adapter_state"]
-                    del stage1
                 scores, threshold, alignment_coverage, source_output = _train_graph(
                     base, variant_config, rows, views, vocab, folder, device, epoch_rows=schedule,
                     initial_adapter_state=initial_adapter_state)
@@ -1037,7 +1043,8 @@ def evaluate_run(args, base=None):
                 if existing is not None and existing.exists() and not args.replace_predictions:
                     raise FileExistsError(f"{existing} exists; use --replace-predictions to recompute this evaluation only")
             source_scores = None
-            if variant == "baseline":
+            coverage = None
+            if variant in {"baseline", "lm_pretrain_source", "dep_pretrain_source"}:
                 scores = torch.sigmoid(base.predict_checkpoint(folder/"best.pt", selected,
                                         batch_size=args.batch_size, device=str(device))).tolist()
             else:
@@ -1094,6 +1101,27 @@ def evaluate_run(args, base=None):
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
+    egcl = sub.add_parser('egcl', help='bounded synthetic data and matched frozen CLM experiment')
+    egcl.add_argument('--phase', choices=('prepare','frozen','transfer'), required=True)
+    egcl.add_argument('--data-dir', default='data/egcl_crossed_seed42')
+    egcl.add_argument('--output-dir', required=True)
+    egcl.add_argument('--device', default='cuda:0')
+    egcl.add_argument('--objective', choices=('bce','bce_rank'))
+    egcl.add_argument('--frozen-run-dir')
+    cgvl = sub.add_parser('prepare-cgvl', help='audit local safety pairs on original train/valid only')
+    cgvl.add_argument('--dataset', default='data/function_dataset.jsonl')
+    cgvl.add_argument('--reference-run-dir', default='results/cfg_abc_seed42')
+    cgvl.add_argument('--output-dir', required=True)
+    cgvl.add_argument('--construct-real-source', action='store_true')
+    cgvl.add_argument('--primevul-dir', default='/home/PublicData/PHY-data/vul_detect/data/PrimeVul_v0.1')
+    origin = sub.add_parser('diagnose-origin', help='fixed valid topology or frozen train/valid probes')
+    origin.add_argument('--phase', choices=('topology', 'probe', 'branches'), required=True)
+    origin.add_argument('--run-dir', default='results/cfg_dep_cfg_windowfix_seed42')
+    origin.add_argument('--output-dir', required=True)
+    origin.add_argument('--device', default='cuda:0')
+    origin.add_argument('--variant', choices=('lm_pretrain_cfg', 'dep_pretrain_cfg'), default='dep_pretrain_cfg')
+    origin.add_argument('--split', choices=('valid', 'test'), default='valid')
+    origin.add_argument('--lm-pretrain-dir', help='probe only this CLM encoder with the original frozen protocol')
     transfer = sub.add_parser('diagnose-transfer', help='bounded fixed-model train/valid transfer diagnosis')
     transfer.add_argument('--output-dir',default='results/cfg_transfer_diagnostic_seed42')
     transfer.add_argument('--prepare-only',action='store_true')
@@ -1341,6 +1369,29 @@ def short_command(args):
 def main():
     args = parser().parse_args()
     try:
+        if args.command == 'egcl':
+            from .egcl import prepare, frozen_experiment, transfer_experiment
+            result = (prepare(args.output_dir) if args.phase == 'prepare' else
+                      frozen_experiment(args.data_dir,args.output_dir,args.device) if args.phase == 'frozen' else
+                      transfer_experiment(args.data_dir,args.output_dir,args.objective,args.device,args.frozen_run_dir))
+            print(json.dumps(result,indent=2))
+            return
+        if args.command == 'prepare-cgvl':
+            from .cgvl import prepare_cgvl, prepare_constructed
+            result = (prepare_constructed(args.dataset,args.reference_run_dir,args.output_dir,args.primevul_dir)
+                      if args.construct_real_source else prepare_cgvl(args.dataset,args.reference_run_dir,args.output_dir))
+            print(json.dumps(result,indent=2))
+            return
+        if args.command == 'diagnose-origin':
+            from .cfg_transfer_diagnostics import topology_diagnosis, frozen_origin_probes
+            action = frozen_origin_probes if args.phase == 'probe' else topology_diagnosis
+            if args.lm_pretrain_dir and args.phase != 'probe':
+                raise ValueError('--lm-pretrain-dir requires probe phase')
+            action(args.run_dir, args.output_dir, device=args.device,
+                   **(dict(variant=args.variant, split=args.split, branches_only=args.phase == 'branches')
+                      if args.phase != 'probe' else
+                      {'lm_pretrain_dir': args.lm_pretrain_dir} if args.lm_pretrain_dir else {}))
+            return
         if args.command=='diagnose-transfer':
             from .cfg_transfer_diagnostics import prepare,evaluate,readout_intervention,saved_analysis,position_reference,summarize,scope_diagnosis,summarize_scope
             if args.scope_check or args.boundary_check or args.original_valid:

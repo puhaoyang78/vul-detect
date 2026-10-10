@@ -692,10 +692,11 @@ class StageTests(unittest.TestCase):
                     "mode": mode, "checkpoint_sha256": file_sha256(folder / "last.pt")}))
             trained = exp.run_experiment(exp.parser().parse_args([
                 "run", *common, "--output-dir", str(stage2), "--variants",
-                "lm_pretrain_cfg", "dep_pretrain_cfg", "--pretrain-dir", str(stage1),
+                "lm_pretrain_cfg", "dep_pretrain_cfg", "lm_pretrain_source", "dep_pretrain_source", "dep_pretrain_attributes", "--pretrain-dir", str(stage1),
                 "--reference-run-dir", str(c_run)]), base=api)
             self.assertEqual(set(trained["changes_vs_cfg"]),
-                             {"lm_pretrain_cfg", "dep_pretrain_cfg"})
+                             {"lm_pretrain_cfg", "dep_pretrain_cfg", "lm_pretrain_source", "dep_pretrain_source", "dep_pretrain_attributes"})
+            self.assertIn("initial_adapter_state", api.train_model.call_args.kwargs)
             self.assertEqual(trained["initialization_policy"], "source_dependency_pretraining")
             self.assertEqual(json.loads((stage2 / "vocabulary.json").read_text()),
                              json.loads((c_run / "vocabulary.json").read_text()))
@@ -706,11 +707,11 @@ class StageTests(unittest.TestCase):
                     "--variants", "cfg", "--device", "cpu"]), base=api)
                 evaluation = exp.parser().parse_args([
                     "eval", "--run-dir", str(stage2), "--split", "test", "--variants",
-                    "lm_pretrain_cfg", "dep_pretrain_cfg", "--device", "cpu"])
+                    "lm_pretrain_cfg", "dep_pretrain_cfg", "lm_pretrain_source", "dep_pretrain_source", "dep_pretrain_attributes", "--device", "cpu"])
                 with patch.object(exp, "select_threshold", side_effect=AssertionError("test tuning")):
                     tested = exp.evaluate_run(evaluation, base=api)
                 self.assertEqual(set(tested["changes_vs_cfg"]),
-                                 {"lm_pretrain_cfg", "dep_pretrain_cfg"})
+                                 {"lm_pretrain_cfg", "dep_pretrain_cfg", "lm_pretrain_source", "dep_pretrain_source", "dep_pretrain_attributes"})
                 self.assertEqual({row["split"] for row in data.read_jsonl(
                     stage2 / "dep_pretrain_cfg" / "test.predictions.jsonl")}, {"test"})
             finally:

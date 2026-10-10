@@ -562,6 +562,8 @@ def fake_base():
     def train(dataset,output,**kw):
         # Fixture for checking delegation/orchestration only; not a Qwen training substitute.
         seed(kw["seed"]);model=TinySource();optimizer=torch.optim.SGD(model.parameters(),lr=.03)
+        if kw.get('initial_adapter_state') is not None:
+            model.encoder.load_state_dict(kw['initial_adapter_state'])
         builder=TinyInputBuilder(None,source_max_length=kw["source_max_length"],context_max_length=384)
         rows=[r for r in kw["records"] if r["split"]=="train"]
         for _ in range(kw["epochs"]):

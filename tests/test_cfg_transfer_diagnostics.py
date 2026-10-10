@@ -14,6 +14,62 @@ class Builder:
         return list(range(len(source)))
 
 class TransferTests(unittest.TestCase):
+    def test_fixed_branch_protocol_arguments(self):
+        from vulnmechanism.cfg_transfer_diagnostics import topology_diagnosis
+        from vulnmechanism.cfg_experiment import parser
+        args=parser().parse_args(['diagnose-origin','--phase','branches','--variant',
+                                 'lm_pretrain_cfg','--split','test','--output-dir','unused'])
+        self.assertEqual((args.variant,args.split),('lm_pretrain_cfg','test'))
+        for kwargs in ({'split':'train','branches_only':True}, {'variant':'baseline','branches_only':True},
+                       {'split':'test'}, {'variant':'lm_pretrain_cfg'}):
+            with self.assertRaises(ValueError):
+                topology_diagnosis('missing','unused',device='cpu',**kwargs)
+
+    def test_dependency_pair_keeps_reverse_order_and_checks_visibility(self):
+        import torch
+        from vulnmechanism.cfg_transfer_diagnostics import dependency_pair_features
+        hidden=torch.arange(32).reshape(4,8)
+        query=dict(definition_token=2,use_token=0,label=1)
+        torch.testing.assert_close(dependency_pair_features(hidden,query),hidden[[2,0]])
+        query['label']=0
+        torch.testing.assert_close(dependency_pair_features(hidden,query),hidden[[2,0]])
+        for position in (-1,4):
+            with self.assertRaisesRegex(ValueError,'outside visible'):
+                dependency_pair_features(hidden,dict(definition_token=position,use_token=0))
+
+    def test_degree_preserving_topology_intervention(self):
+        from collections import Counter
+        from vulnmechanism.cfg_transfer_diagnostics import rewire_cfg
+        edges=[(0,1),(1,2),(2,3),(3,4),(4,5),(5,0),(0,0)]
+        before=list(edges)
+        changed=rewire_cfg(edges,seed=42,key='fixture')
+        self.assertEqual(edges,before)
+        self.assertEqual(Counter(a for a,b in edges),Counter(a for a,b in changed))
+        self.assertEqual(Counter(b for a,b in edges),Counter(b for a,b in changed))
+        self.assertEqual(len(changed),len(set(changed)))
+        self.assertIn((0,0),changed)
+        self.assertNotEqual(set(edges),set(changed))
+        self.assertEqual(changed,rewire_cfg(edges,seed=42,key='fixture'))
+        self.assertEqual(rewire_cfg([],seed=42,key='empty'),[])
+
+    def test_frozen_probe_train_only_statistics_and_roundtrip(self):
+        import torch
+        from vulnmechanism.cfg_transfer_diagnostics import fit_origin_probe
+        torch.manual_seed(3)
+        cache=dict(pool=torch.randn(8,8),pairs=torch.randn(12,2,8),
+            labels=torch.tensor([0,1]*4),splits=['train']*6+['valid']*2,
+            relation_labels=torch.tensor([0,1]*6),relation_splits=['train']*8+['valid']*4,
+            relation_keys=['a','a','b','b','c','c','d','d','e','e','f','f'])
+        for task in ('classification','dependency'):
+            result=fit_origin_probe(cache,task=task,epochs=2)
+            self.assertTrue(all(torch.isfinite(v).all() for v in result['selected']['head_state'].values()))
+            self.assertTrue(torch.equal(result['mean'],(cache['pool'][:6] if task=='classification' else cache['pairs'][:8]).mean(0)))
+            self.assertEqual(len(result['history']),2)
+            with tempfile.TemporaryDirectory() as tmp:
+                path=Path(tmp)/'probe.pt';torch.save(result,path)
+                loaded=torch.load(path,weights_only=False)
+                self.assertEqual(loaded['selected']['scores'],result['selected']['scores'])
+
     def test_scope_summary_refuses_partial_responses(self):
         from vulnmechanism.cfg_transfer_diagnostics import summarize_scope
         with tempfile.TemporaryDirectory() as tmp:

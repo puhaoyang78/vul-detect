@@ -1,0 +1,13 @@
+{"event": "step", "epoch": 1, "step": 1, "loss": 0.8289735466241837, "learning_rate": 0.0002, "samples_seen": 8}
+{"event": "step", "epoch": 1, "step": 10, "loss": 0.6882531019962497, "learning_rate": 0.0002, "samples_seen": 80}
+{"event": "step", "epoch": 1, "step": 20, "loss": 0.5436511310748756, "learning_rate": 0.0002, "samples_seen": 160}
+{"event": "step", "epoch": 1, "step": 30, "loss": 0.44162537993397566, "learning_rate": 0.0002, "samples_seen": 240}
+{"event": "step", "epoch": 1, "step": 40, "loss": 0.6004039291292429, "learning_rate": 0.0002, "samples_seen": 320}
+{"event": "step", "epoch": 1, "step": 50, "loss": 0.5615843560546636, "learning_rate": 0.0002, "samples_seen": 400}
+{"event": "step", "epoch": 1, "step": 60, "loss": 0.45832842116174105, "learning_rate": 0.0002, "samples_seen": 480}
+{"event": "step", "epoch": 1, "step": 70, "loss": 0.37069756676395205, "learning_rate": 0.0002, "samples_seen": 560}
+{"event": "step", "epoch": 1, "step": 80, "loss": 0.3446893920320928, "learning_rate": 0.0002, "samples_seen": 640}
+{"event": "step", "epoch": 1, "step": 90, "loss": 0.7860821777980732, "learning_rate": 0.0002, "samples_seen": 720}
+{"event": "step", "epoch": 1, "step": 100, "loss": 0.4374625908639416, "learning_rate": 0.0002, "samples_seen": 800}
+{"event": "step", "epoch": 1, "step": 110, "loss": 0.548742734854659, "learning_rate": 0.0002, "samples_seen": 880}
+{"event": "step", "epoch": 1, "step": 120, "loss": 0.41782159047288586, "learning_rate": 0.0002, "samples_seen": 960}
