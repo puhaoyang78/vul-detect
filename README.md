@@ -26,6 +26,108 @@ data/benchmark/manifest.jsonl
 data/benchmark/manifest_sven_commit_disjoint.jsonl
 ```
 
+### 安全相关变化与无关变化学习
+
+`python -m vulnmechanism.cli change-learning` 复用 `model.train_model`、CodeBERT/Qwen LoRA
+编码器、源码汇聚和原有线性函数分类头。五组为 `bce`、`bce_invariance`、`bce_ranking`、
+`full`、`bce_random_ranking`。一致性损失是两个 Bernoulli 预测的 Jensen–Shannon divergence；
+RankNet 为 `softplus(z_fixed - z_vulnerable)`。完整方法在公共 BCE 上加入两项损失。
+
+数据使用现有 score=4、SVEN commit-disjoint 清单，不重划分。PrimeVul 以保留的正样本为锚点，
+从官方相应 split 的 paired 文件恢复修复端；两端源码和标签须与原始非 paired 文件完全一致，
+函数名及 tokenized signature 相同，并通过既有 exact/normalized/near-duplicate 与 SVEN
+提交隔离检查。补充的 train 修复端在五组中共同接受 BCE；补充的 valid/test 修复端仅进入
+配对评价，不改变函数级 holdout 清单。CleanVul 使用原 score=4 函数对，SVEN 只作 external test。
+
+重命名按声明位置和块/控制作用域解析绑定，保留 shadowing、成员、字符串和注释。
+无法核验宏/调用绑定时使用函数体开头的行内注释变换，核对预处理 token 和行数不变；
+解析错误及列号敏感的代码不变换。变换覆盖及 rename/comment 指标分别保存。
+同一编码器内五组的 BCE 顺序、初始化、有效 batch、epochs、优化步数和辅助 forward 数相同。
+每个优化步计算一对原始/变换预测及一对排序预测；关闭的损失使用零权重，辅助预测关闭 dropout。
+随机对照对每轮实际抽到的负端做 seed=42 derangement，精确保留正负成员及使用次数。训练不使用
+tokenized input 完全相同的排序对或变换对；这些函数仍保留在 BCE 和最终评价分母中。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+$PY -m vulnmechanism.cli change-learning --stage prepare
+# 两个训练数据集分别运行；只以各自 Valid MCC 选择 epoch 和阈值。
+$PY -m vulnmechanism.cli change-learning --stage train --encoder codebert \
+  --source-dataset primevul --epochs 3 --batch-size 8 --gradient-accumulation 1 --device cuda:0
+$PY -m vulnmechanism.cli change-learning --stage train --encoder codebert \
+  --source-dataset cleanvul --epochs 3 --batch-size 8 --gradient-accumulation 1 --device cuda:1
+# 在 CodeBERT 验证后用同一入口、线性分类头和损失进行 Qwen 架构验证。
+$PY -m vulnmechanism.cli change-learning --stage train --encoder qwen \
+  --source-dataset primevul --epochs 3 --batch-size 8 --gradient-accumulation 1 --device cuda:0
+$PY -m vulnmechanism.cli change-learning --stage train --encoder qwen \
+  --source-dataset cleanvul --epochs 3 --batch-size 2 --gradient-accumulation 4 --device cuda:1
+# 每个 dataset/encoder 的五组训练完成、方法确定后，分别运行 valid、test、external_test。
+$PY -m vulnmechanism.cli change-learning --stage eval --encoder codebert \
+  --source-dataset primevul --split test --batch-size 8 --device cuda:0
+$PY -m vulnmechanism.cli change-learning --stage eval --encoder codebert \
+  --source-dataset primevul --split external_test --batch-size 8 --device cuda:0
+# 两种编码器、两个训练源的全部评价完成后，导出 60 行完整指标与消融差值。
+$PY -m vulnmechanism.cli change-learning --stage report
+```
+
+默认 seed=42、输入预算 512、LoRA r=16/alpha=32/dropout=0.05、learning rate=2e-4、
+weight decay=0.01，两项启用的辅助损失权重均为 1。保留既有输入构造：CodeBERT 总长度 512
+（含边界及 task prefix），Qwen 截取 512 个源码 tokens 再添加 prefix/EOS。记录实际 token
+预算、截断和输入可见配对数；同一编码器的所有消融使用相同协议。配置预先指定，epoch/
+阈值由各自 Valid 选择，不以 Test/SVEN 调参。`--smoke-samples 8 --epochs 1 --objective full
+--output-dir results/change_learning_smoke_seed42` 仅用于闭环检查，禁止生成正式 Test/SVEN 结果。
+
+数据和准入统计位于 `data/change_learning_seed42/`。真实模型、逐步/逐 epoch 进度、配置、
+逐函数预测与完整指标位于 `results/change_learning_seed42/{encoder}/{dataset}/`。
+PR-AUC 是 precision–recall 曲线的梯形面积，同时单列 average precision。Pairwise Correct
+要求修复前后分别预测为 1/0；Ranking Accuracy 要求原始 logit 严格有序，ties 算错。
+编码器输入 token 相同的修复对明确算作 tie，不把不同批处理产生的数值差异计为修复判别。
+Prediction Consistency/Robust Accuracy 的分母是实际可变换函数，后者要求原始及变换预测均正确，
+另报相同子集的原始 accuracy 与覆盖率。SVEN 沿用对应训练源的 checkpoint 和 Valid 阈值。
+
+**seed=42 正式结果（2026-10-10）。** 已完成两个编码器、两个独立训练源、五种损失的
+20 个模型及 60 组 Valid/Test/SVEN 评价。全部训练 3 epochs；同一训练源的五组实际预算一致：
+PrimeVul 每组 3,792 optimizer steps、15,168 次辅助函数 forward；CleanVul 为 927/3,708。
+Qwen 基座为本地 Qwen2.5-Coder-7B-Instruct。完整七项分类指标、配对及鲁棒性指标、
+selected epoch/threshold、消融差值分别保存在
+[CSV](results/change_learning_seed42/comparison.metrics.csv) 和
+[JSON](results/change_learning_seed42/comparison.metrics.json)。
+
+官方 PrimeVul paired 文件有 Train/Valid/Test **3,789/480/435 对**，不是 68 对；旧的小交集
+主要源于平衡抽样未保留修复负端。当前 3,910 个 train 正例中，3,160 个有官方配对锚点，
+通过源码及函数身份、隔离检查后保留 **2,350/310/290 对**，补回 2,285 个 train 修复负端。
+train 其余锚点排除原因为 identity unresolved 714、signature mismatch 49、name mismatch 29、
+跨 counterpart near duplicate 18；这些正例仍接受 BCE。CleanVul 可用配对 **1,049/326/389**，
+SVEN **280**。实际进入排序损失的输入可见 train 对数为 CodeBERT **1,577/841**、
+Qwen **1,865/937**（PrimeVul/CleanVul）。
+
+以下每格为 **本数据集 Test MCC / SVEN MCC**；原函数级 Test 分母为 PrimeVul 1,014、
+CleanVul 856，SVEN 742，沿用既有去重和平衡后的清单，不是未经筛选的官方全分布。
+
+| 损失 | CodeBERT–PrimeVul | CodeBERT–CleanVul | Qwen–PrimeVul | Qwen–CleanVul |
+| --- | ---: | ---: | ---: | ---: |
+| BCE | .4986 / −.0311 | .0581 / .0371 | .4994 / −.0369 | .0374 / .0594 |
+| BCE + Invariance | .4735 / −.0206 | .0460 / .0367 | .4992 / −.0225 | .0445 / .0659 |
+| BCE + real Ranking | .2729 / .0271 | .0270 / .0130 | .4673 / −.0366 | .1006 / .1002 |
+| Full | .3418 / .0298 | .0765 / .0632 | .4743 / −.0309 | .0893 / .0714 |
+| BCE + random Ranking | .4692 / −.0328 | .0173 / .0000 | .4262 / −.0239 | .0593 / .0367 |
+
+一致性学习在 PrimeVul Test 将 CodeBERT/Qwen 的 Prediction Consistency 从
+.9081/.7632 提高至 .9798/.9938，Robust Accuracy 从 .6760/.5888 提高至 .7009/.7212；
+Qwen PR-AUC 从 .7866 提高至 .8074，MCC 基本持平。鲁棒性覆盖主要来自行内注释变换，
+PrimeVul/CleanVul/SVEN Test 的安全 rename 只有 7/2/2 个，不能外推为广泛的变量重命名鲁棒性。
+
+真实配对相对随机排序在四个 Test 上都改善 Ranking Accuracy，但分类收益不一致：
+CodeBERT–PrimeVul 的 MCC 低 .1962；Qwen–CleanVul 的 MCC 高 .0413，Pairwise Correct
+为 .1105 对 .0026、Ranking Accuracy 为 .6427 对 .5373，SVEN 上对应 MCC 为 .1002 对 .0367。
+完整方法改善 CleanVul 的 MCC，但降低 PrimeVul 的 MCC，且未同时改善所有鲁棒性及配对指标。
+因此，本次结果支持部分目标，**不支持联合方法在两种编码器、两个数据集上全面提升**。
+
+完整源码跨分区重复及修复对跨划分泄漏为 0，SVEN 与 train/valid 共享提交为 0；原官方
+PrimeVul train/valid 仍有 2 个共享提交，PrimeVul/CleanVul 也存在共享提交但无共享规范化源码，
+均记录于 `data/change_learning_seed42/statistics.json`。保留官方划分，不将该协议描述为内部
+所有提交均隔离。相同输入的配对按 tie 处理；重算已保存的 45 组早期评价时，分类、鲁棒性、
+阈值及预测文件均核对未变。40 项相关测试、实际 GPU train/save/reload 及完整结果导出通过。
+
 主 benchmark 规则：PrimeVul 保留官方 split；CleanVul/SVEN 保持 pair 原子性；exact/normalized/counterpart/高置信 near duplicate 按 test-first 优先级清理；SVEN 永远只作 external test。
 
 ## 2. CPG build

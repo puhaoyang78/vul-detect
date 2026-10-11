@@ -174,6 +174,25 @@ def build_parser() -> argparse.ArgumentParser:
     pilot.add_argument("--stage", choices=("prepare", "run"), default="prepare")
     pilot.add_argument("--device", default="cuda")
     pilot.set_defaults(func=_source_pilot)
+
+    change = sub.add_parser("change-learning", help="matched source-only invariance/real-repair ranking ablations")
+    change.add_argument("--stage", choices=("prepare", "train", "eval", "report"), required=True)
+    change.add_argument("--manifest", default="data/benchmark/manifest_sven_commit_disjoint.jsonl")
+    change.add_argument("--raw-dir", default="/home/PublicData/PHY-data/vul_detect/data")
+    change.add_argument("--data-dir", default="data/change_learning_seed42")
+    change.add_argument("--output-dir", default="results/change_learning_seed42")
+    change.add_argument("--source-dataset", choices=("primevul", "cleanvul"), default="primevul")
+    change.add_argument("--encoder", choices=("codebert", "qwen"), default="codebert")
+    from .change_learning import OBJECTIVES
+    change.add_argument("--objective", choices=OBJECTIVES, help="default: all five matched ablations")
+    change.add_argument("--split", choices=("valid", "test", "external_test"), default="valid")
+    _fit_arguments(change)
+    change.set_defaults(model=None, source_max_length=512, device="cuda:0", batch_size=1,
+                        gradient_accumulation=8)
+    change.add_argument("--invariance-weight", type=float, default=1.0)
+    change.add_argument("--ranking-weight", type=float, default=1.0)
+    change.add_argument("--smoke-samples", type=int, default=0, help="explicit diagnostic subset; forbids Test/SVEN evaluation")
+    change.set_defaults(func=_change_learning)
     return parser
 
 
@@ -185,6 +204,20 @@ def _diagnose(args):
 def _source_pilot(args):
     from . import source_pilot
     return source_pilot.prepare(args) if args.stage == "prepare" else source_pilot.run(args)
+
+
+def _change_learning(args):
+    from . import change_learning
+    if args.stage == "prepare":
+        result = change_learning.prepare(args.manifest, args.raw_dir, args.data_dir)
+    elif args.stage == "train":
+        result = change_learning.train(args)
+    elif args.stage == "eval":
+        result = change_learning.evaluate(args)
+    else:
+        result = change_learning.report(args.output_dir)
+    print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False), flush=True)
+    return result
 
 
 def main() -> None:

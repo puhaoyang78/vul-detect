@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from tree_sitter import Language, Node, Parser
@@ -250,6 +251,158 @@ def local_identifiers(
             if name and name not in names:
                 names.append(name)
     return tuple(names)
+
+
+@lru_cache(maxsize=16384)
+def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]:
+    """Alpha-rename one lexically bound variable in a conservative C/C++ subset.
+
+    Unknown preprocessor/call semantics, nested functions, and nonlocal bindings
+    are ineligible. No text substitution is performed in literals or members.
+    Declaration positions and nested block/control scopes resolve shadowing.
+    Ineligible inputs remain in the classification cohort, without an invariance
+    example; returning the original source would overstate transformation coverage.
+    """
+    source = source_text.encode("utf-8")
+    root = parser_for(language).parse(source).root_node
+    if root.has_error:
+        return None, "parse_error"
+    nodes = list(walk(root))
+    functions = [n for n in nodes if n.type == "function_definition"]
+    if len(functions) != 1:
+        return None, "ambiguous_function"
+    function = functions[0]
+    if any(n.type.startswith("preproc_") or n.type in {
+        "call_expression", "lambda_expression", "class_specifier",
+        "struct_specifier", "union_specifier", "enum_specifier",
+        "type_definition", "alias_declaration", "structured_binding_declarator",
+        "for_range_loop", "gnu_asm_expression", "asm_statement",
+        "attribute_specifier", "attribute_declaration", "ms_declspec_modifier",
+        "try_statement", "catch_clause",
+    } for n in nodes):
+        return None, "unresolved_macro_or_binding_semantics"
+    if sum(n.type == "function_declarator" for n in nodes) != 1:
+        return None, "unsupported_declarator"
+    body = function.child_by_field_name("body")
+    if body is None:
+        return None, "missing_body"
+    scope_types = {"compound_statement", "for_statement", "if_statement",
+                   "switch_statement", "while_statement", "do_statement"}
+
+    def declarator_name(n):
+        while n is not None and n.type in {
+            "init_declarator", "pointer_declarator", "array_declarator",
+            "reference_declarator", "parenthesized_declarator",
+        }:
+            n = n.child_by_field_name("declarator")
+        return n if n is not None and n.type == "identifier" else None
+
+    bindings = []
+    for n in nodes:
+        if n.type not in {"parameter_declaration", "declaration"}:
+            continue
+        if n.type == "declaration" and not body.start_byte <= n.start_byte < body.end_byte:
+            continue
+        if any(x.type in {"storage_class_specifier", "attribute_specifier"} for x in walk(n)):
+            return None, "unsupported_storage_or_attribute"
+        declarations = n.children_by_field_name("declarator")
+        for declaration in declarations:
+            name = declarator_name(declaration)
+            if name is None:
+                return None, "unsupported_declarator"
+            if n.type == "parameter_declaration":
+                # Parameters are also visible in later VLA parameter bounds.
+                scope = function
+            else:
+                scope = n.parent
+                while scope is not None and scope.type not in scope_types:
+                    scope = scope.parent
+                if scope is None:
+                    return None, "unsupported_scope"
+            bindings.append(dict(name=text(name, source), declaration=name,
+                                 scope=scope, occurrences=[]))
+    if not bindings:
+        return None, "no_local_binding"
+    declarations = {(b["declaration"].start_byte, b["declaration"].end_byte): b for b in bindings}
+    function_name = identifier(function.child_by_field_name("declarator"), source)
+    for n in nodes:
+        if n.type != "identifier":
+            continue
+        position = (n.start_byte, n.end_byte)
+        if position in declarations:
+            declarations[position]["occurrences"].append(n)
+            continue
+        if n.start_byte < body.start_byte and text(n, source) == function_name:
+            continue
+        # Qualified names may refer to external symbols, not a local variable.
+        if n.parent.type in {"qualified_identifier", "scoped_identifier"}:
+            return None, "nonlocal_identifier"
+        name = text(n, source)
+        visible = [b for b in bindings if b["name"] == name
+                   and b["declaration"].end_byte <= n.start_byte
+                   and b["scope"].start_byte <= n.start_byte < b["scope"].end_byte]
+        if not visible:
+            return None, "nonlocal_identifier"
+        binding = min(visible, key=lambda b: (b["scope"].end_byte - b["scope"].start_byte,
+                                              -b["declaration"].start_byte))
+        binding["occurrences"].append(n)
+    # A used binding is preferable to an unused declaration. Stable order is
+    # independent of labels, model scores, and dataset split.
+    used = [b for b in bindings if len(b["occurrences"]) > 1]
+    if not used:
+        return None, "no_used_local_binding"
+    binding = used[0]
+    replacement = "local_value"
+    names = {text(n, source) for n in nodes if n.type.endswith("identifier")}
+    while replacement in names:
+        replacement += "_"
+    mutated = source
+    for n in sorted(binding["occurrences"], key=lambda n: n.start_byte, reverse=True):
+        mutated = mutated[:n.start_byte] + replacement.encode() + mutated[n.end_byte:]
+    renamed = mutated.decode("utf-8")
+    if parser_for(language).parse(mutated).root_node.has_error:
+        raise ValueError("scope-safe renaming produced invalid syntax")
+    return renamed, "renamed"
+
+
+@lru_cache(maxsize=16384)
+def semantic_preserving_view(source_text: str, language: str) -> tuple[str | None, str]:
+    """A safe rename where verified, otherwise a token-preserving inline comment.
+
+    The comment covers functions whose call/macro binding prevents verified
+    renaming. It is outside all call arguments, does not add a line, and is not
+    used for invalid/ambiguous function syntax or column-sensitive intrinsics.
+    """
+    renamed, reason = scope_safe_rename(source_text, language)
+    if renamed is not None:
+        return renamed, "rename"
+    encoded = source_text.encode()
+    root = parser_for(language).parse(encoded).root_node
+    if root.has_error:
+        return None, reason
+    top = [n for n in root.named_children if n.type != "comment"]
+    if len(top) != 1:
+        return None, reason
+    function = top[0]
+    if function.type == "template_declaration":
+        functions = [n for n in walk(function) if n.type == "function_definition"]
+        if len(functions) != 1:
+            return None, reason
+        function = functions[0]
+    if function.type != "function_definition":
+        return None, reason
+    if any(name in source_text for name in ("__builtin_COLUMN", "__COLUMN__", "source_location")):
+        return None, "column_sensitive_source"
+    body = function.child_by_field_name("body")
+    if body is None or encoded[body.start_byte:body.start_byte+1] != b"{":
+        return None, "missing_body"
+    at = body.start_byte + 1
+    transformed = (encoded[:at] + b" /* code */ " + encoded[at:]).decode()
+    from .prepare_benchmark import normalized_source
+    if (normalized_source(source_text) != normalized_source(transformed)
+            or source_text.count("\n") != transformed.count("\n")):
+        raise ValueError("comment transformation changed tokens or line numbers")
+    return transformed, "comment"
 
 
 # Tokens preserve literals and punctuation; comment/whitespace removal cannot turn

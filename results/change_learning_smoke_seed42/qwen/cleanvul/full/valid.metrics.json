@@ -1,0 +1,61 @@
+{
+  "accuracy": 0.5,
+  "precision": 0.5,
+  "recall": 1.0,
+  "f1": 0.6666666666666666,
+  "mcc": 0.0,
+  "auc": 0.0,
+  "tp": 1,
+  "tn": 0,
+  "fp": 1,
+  "fn": 0,
+  "samples": 2,
+  "threshold": 0.37,
+  "pr_auc": 0.25,
+  "average_precision": 0.5,
+  "bce": 0.7385769303738103,
+  "repair": {
+    "pairs": 1,
+    "pairwise_correct": 0.0,
+    "ranking_accuracy": 0.0,
+    "ties": 0
+  },
+  "robustness": {
+    "eligible": 2,
+    "total": 2,
+    "coverage": 1.0,
+    "prediction_consistency": 1.0,
+    "robust_accuracy": 0.5,
+    "original_accuracy_same_subset": 0.5,
+    "definition": "Robust Accuracy: both original and transformed predictions correct; denominator is eligible transformations only",
+    "by_transformation": {
+      "comment": {
+        "eligible": 2,
+        "prediction_consistency": 1.0,
+        "robust_accuracy": 0.5
+      }
+    }
+  },
+  "trained_on": "cleanvul",
+  "evaluated_on": "cleanvul",
+  "split": "valid",
+  "objective": "full",
+  "selected_epoch": 1,
+  "smoke_only": true,
+  "input_coverage": {
+    "source_token_budget": 512,
+    "total_encoder_budget": 527,
+    "function_coverage": {
+      "valid": {
+        "functions": 2,
+        "source_truncated": 0
+      }
+    },
+    "raw_repair_pairs": 1,
+    "input_visible_repair_pairs": 1,
+    "token_identical_repair_pairs": 0,
+    "raw_safe_views": 2,
+    "input_visible_safe_views": 2,
+    "token_identical_safe_views": 0
+  }
+}

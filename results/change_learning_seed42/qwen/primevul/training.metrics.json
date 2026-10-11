@@ -1,0 +1,52 @@
+{
+  "encoder": "qwen",
+  "trained_on": "primevul",
+  "model_path": "/home/phy/models/Qwen2.5-Coder-7B-Instruct",
+  "seed": 42,
+  "source_max_length": 512,
+  "epochs": 3,
+  "batch_size": 8,
+  "gradient_accumulation": 1,
+  "learning_rate": 0.0002,
+  "weight_decay": 0.01,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "invariance_weight": 1.0,
+  "ranking_weight": 1.0,
+  "selection": "corresponding Valid MCC; F1/accuracy/AUC tie-break; threshold by existing Valid-only selector",
+  "data_dir": "data/change_learning_seed42",
+  "smoke_only": false,
+  "train_samples": 10105,
+  "valid_samples": 1014,
+  "repair_pairs": 1865,
+  "safe_views": 7054,
+  "input_coverage": {
+    "source_token_budget": 512,
+    "total_encoder_budget": 527,
+    "function_coverage": {
+      "valid": {
+        "functions": 1014,
+        "source_truncated": 354
+      },
+      "train": {
+        "functions": 10105,
+        "source_truncated": 3790
+      }
+    },
+    "raw_repair_pairs": 2350,
+    "input_visible_repair_pairs": 1865,
+    "token_identical_repair_pairs": 485,
+    "raw_safe_views": 7054,
+    "input_visible_safe_views": 7054,
+    "token_identical_safe_views": 0
+  },
+  "budget": "All objectives: identical BCE cohort and order; one deterministic original/transformed pair and one ranking pair per optimizer step, including zero-weight controls",
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090"
+  }
+}

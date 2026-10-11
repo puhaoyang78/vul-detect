@@ -5,6 +5,7 @@ import math
 import random
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import torch
@@ -162,6 +163,7 @@ class InputBuilder:
         self.mechanism_prefix = self._encode("\nCPG_DERIVED_VULNERABILITY_MECHANISMS:\n")
         self.mechanism_only_prefix = self._encode("CPG_DERIVED_VULNERABILITY_MECHANISMS:\n")
 
+    @lru_cache(maxsize=32768)
     def _encode(self, text: str, max_length: int | None = None) -> list[int]:
         result = self.tokenizer(
             text,
@@ -876,6 +878,11 @@ def train_model(
     synthetic_pairs: list | None = None,
     synthetic_objective: str | None = None,
     classifier_head: str = "linear",
+    change_objective: str | None = None,
+    repair_pairs: list | None = None,
+    invariant_views: list | None = None,
+    invariance_weight: float = 1.0,
+    ranking_weight: float = 1.0,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
     if classifier_head != "linear" and variant != "codebert_source":
@@ -914,6 +921,24 @@ def train_model(
         raise ValueError("training split must contain both labels")
     if not fixed_epochs and {int(record["label"]) for record in valid_records} != {0, 1}:
         raise ValueError("validation split must contain both labels")
+
+    if change_objective is not None:
+        from .change_learning import (OBJECTIVES, invariance_loss, random_pair_control,
+                                      ranking_loss, validate_supervision)
+        if (change_objective not in OBJECTIVES or variant not in {"baseline", "codebert_source"}
+                or classifier_head != "linear" or synthetic_pairs is not None
+                or sample_weights is not None or initial_checkpoint is not None
+                or initial_adapter_state is not None or fixed_epochs):
+            raise ValueError("change learning requires a fresh source-only linear classifier with Valid selection")
+        if seed != 42 or source_dataset not in {"primevul", "cleanvul"}:
+            raise ValueError("change learning requires seed=42 and independent PrimeVul/CleanVul training")
+        if any(not math.isfinite(w) or w <= 0 for w in (invariance_weight, ranking_weight)):
+            raise ValueError("change loss weights must be finite and positive")
+        validate_supervision(train_records, repair_pairs, invariant_views)
+        if len(repair_pairs) < 2:
+            raise ValueError("at least two real pairs are required for the random ranking control")
+    elif repair_pairs is not None or invariant_views is not None:
+        raise ValueError("repair pairs and invariant views require a change objective")
 
     graph_config = None
     if variant in _GRAPH_VARIANTS:
@@ -1002,6 +1027,16 @@ def train_model(
         synthetic_total = 0.0
         synthetic_order = list(range(len(synthetic_pairs))) if synthetic_pairs is not None else []
         random.Random(seed + epoch).shuffle(synthetic_order)
+        if change_objective is not None:
+            pair_order = list(range(len(repair_pairs)))
+            view_order = list(range(len(invariant_views)))
+            random.Random(seed + epoch).shuffle(pair_order)
+            random.Random(seed + epoch).shuffle(view_order)
+            epoch_steps = math.ceil(math.ceil(len(order) / batch_size) / gradient_accumulation)
+            ranking_pairs = [repair_pairs[pair_order[i % len(pair_order)]] for i in range(epoch_steps)]
+            if change_objective == "bce_random_ranking":
+                ranking_pairs = random_pair_control(ranking_pairs, seed + epoch)
+            invariance_total, ranking_total = 0.0, 0.0
         optimizer_steps = 0
         pending = 0
         num_batches = math.ceil(len(order) / batch_size)
@@ -1034,6 +1069,31 @@ def train_model(
                             lr=f"{learning_rate:.1e}", refresh=False)
             pending += 1
             if pending == gradient_accumulation or batch_index + 1 == num_batches:
+                if change_objective is not None:
+                    # Deterministic auxiliary predictions isolate code changes
+                    # from dropout noise. Gradients still update the shared model.
+                    # Zero-weight ablations execute the same forwards/backwards,
+                    # preserving the number of examples and optimizer updates.
+                    model.eval()
+                    view = invariant_views[view_order[optimizer_steps % len(view_order)]]
+                    view_logits = _forward_batch(model, list(view), input_builder, variant=variant,
+                        excluded_groups=excluded_groups, device=resolved_device)
+                    invariant_loss = invariance_loss(view_logits)
+                    alpha = invariance_weight if change_objective in {"bce_invariance", "full"} else 0.0
+                    if not torch.isfinite(invariant_loss):
+                        raise ValueError("non-finite invariance loss")
+                    (alpha * invariant_loss).backward()
+                    invariance_total += float(invariant_loss.detach().cpu())
+                    pair = ranking_pairs[optimizer_steps]
+                    pair_logits = _forward_batch(model, list(pair), input_builder, variant=variant,
+                        excluded_groups=excluded_groups, device=resolved_device)
+                    rank_loss = ranking_loss(pair_logits)
+                    beta = ranking_weight if change_objective in {"bce_ranking", "full", "bce_random_ranking"} else 0.0
+                    if not torch.isfinite(rank_loss):
+                        raise ValueError("non-finite repair ranking loss")
+                    (beta * rank_loss).backward()
+                    ranking_total += float(rank_loss.detach().cpu())
+                    model.train()
                 if synthetic_pairs is not None:
                     pair = synthetic_pairs[synthetic_order[optimizer_steps % len(synthetic_order)]]
                     pair_logits = _forward_batch(model, pair, input_builder, variant=variant,
@@ -1080,6 +1140,15 @@ def train_model(
             epoch_row['synthetic_loss'] = synthetic_total / optimizer_steps
             epoch_row['synthetic_objective'] = synthetic_objective
             epoch_row['synthetic_pairs_seen'] = optimizer_steps
+        if change_objective is not None:
+            epoch_row.update(change_objective=change_objective,
+                invariance_loss=invariance_total / optimizer_steps,
+                ranking_loss=ranking_total / optimizer_steps,
+                auxiliary_function_forwards=4 * optimizer_steps,
+                ranking_positive_unique=len({p[0]["sample_key"] for p in ranking_pairs}),
+                ranking_negative_unique=len({p[1]["sample_key"] for p in ranking_pairs}),
+                total_loss=running_loss / len(train_records)
+                    + alpha * invariance_total / optimizer_steps + beta * ranking_total / optimizer_steps)
         history.add(epoch_row)
         key = ((epoch+1,) if fixed_epochs else
                (validation.mcc, validation.f1, validation.accuracy,
@@ -1127,6 +1196,16 @@ def train_model(
     if synthetic_pairs is not None:
         checkpoint['synthetic_supervision'] = dict(objective=synthetic_objective, weight=1.0,
             pairs_per_optimizer_step=1, unique_pairs=len(synthetic_pairs))
+    if change_objective is not None:
+        checkpoint["change_supervision"] = dict(objective=change_objective,
+            invariance_weight=alpha, ranking_weight=beta,
+            unique_repair_pairs=len(repair_pairs), unique_safe_views=len(invariant_views),
+            auxiliary_pairs_per_optimizer_step=2, auxiliary_dropout=False,
+            ranking_control="deranged real-pair negatives" if change_objective == "bce_random_ranking" else "real repairs",
+            bce_samples_per_epoch=len(train_records), optimizer_steps_per_epoch=optimizer_steps,
+            auxiliary_function_forwards_per_epoch=4 * optimizer_steps)
+        if change_objective == "bce_random_ranking":
+            checkpoint["change_supervision"]["random_sampling_protocol"] = "epoch_marginal_matched"
     if variant == 'codebert_source':
         capacity = 512 - len(input_builder.source_prefix) - 2
         checkpoint['input_protocol'] = dict(encoder='roberta', native_window=512,
