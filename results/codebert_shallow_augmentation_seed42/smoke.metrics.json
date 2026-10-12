@@ -1,0 +1,35 @@
+{
+  "train_members": [
+    "primevul:101872",
+    "primevul:101896",
+    "primevul:101941",
+    "primevul:101965",
+    "primevul:0",
+    "primevul:1",
+    "primevul:1001",
+    "primevul:1002"
+  ],
+  "valid_members": [
+    "primevul:124772",
+    "primevul:194999"
+  ],
+  "random": {
+    "encoder_updated": true,
+    "classifier_updated": true,
+    "save_reload_exact": true,
+    "optimizer_steps": 1,
+    "function_forwards": 24,
+    "encoder_sequences": 51,
+    "encoder_token_slots": 22492
+  },
+  "high_low": {
+    "encoder_updated": true,
+    "classifier_updated": true,
+    "save_reload_exact": true,
+    "optimizer_steps": 1,
+    "function_forwards": 24,
+    "encoder_sequences": 51,
+    "encoder_token_slots": 22492
+  },
+  "budgets_identical": true
+}

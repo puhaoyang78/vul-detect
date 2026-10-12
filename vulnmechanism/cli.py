@@ -214,10 +214,13 @@ def build_parser() -> argparse.ArgumentParser:
     finetuning = sub.add_parser('codebert-finetuning', help='fixed six-run PrimeVul LoRA/full comparison, Train/Valid only')
     finetuning.add_argument('--manifest', default='data/benchmark/manifest_sven_commit_disjoint.jsonl')
     finetuning.add_argument('--model', default='/home/PublicData/PHY-data/resource/codebert-base')
-    finetuning.add_argument('--output-dir', help='default: results/codebert_finetuning_seed42, or codebert_shallow_reweight_seed42')
+    finetuning.add_argument('--output-dir', help='experiment-specific result directory')
     finetuning.add_argument('--stage', choices=('prepare', 'smoke', 'train', 'report', 'all'), default='all')
     finetuning.add_argument('--finetuning-mode', choices=('lora', 'full'), help='train one fixed three-LR family')
-    finetuning.add_argument('--shallow-reweighting', action='store_true', help='one full fine-tuning run with fixed Train-only shallow OOF weights')
+    shallow_method = finetuning.add_mutually_exclusive_group()
+    shallow_method.add_argument('--shallow-reweighting', action='store_true', help='one full fine-tuning run with fixed Train-only shallow OOF weights')
+    shallow_method.add_argument('--shallow-augmentation', nargs='?', const='both', choices=('both','random','high_low'),
+        help='same-pool random/high-low semantic views; default: both new full fine-tuning runs')
     finetuning.add_argument('--baseline-checkpoint', default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
     finetuning.add_argument('--device', default='cuda:0')
     finetuning.add_argument('--batch-size', type=int, default=4)
@@ -279,11 +282,12 @@ def _codebert_finetuning_smoke(rows, root, common):
     return report
 
 
-def _finetuning_evaluate(rows, run, split, checkpoint, args):
+def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None, checkpoint_path=None):
     from . import model as core
     from .cfg_data import identity
     from .change_learning import write_json
-    output, predictions = run/f'{split}.metrics.json', run/f'{split}.predictions.jsonl'
+    name = output_name or split
+    output, predictions = run/f'{name}.metrics.json', run/f'{name}.predictions.jsonl'
     if output.exists() != predictions.exists():
         raise FileExistsError(f'incomplete evaluation artifacts: {run}/{split}; inspect before rerunning')
     if output.exists():
@@ -297,7 +301,7 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args):
         if result.get('selected_epoch') != checkpoint['selected_epoch']:
             raise ValueError('cached selected epoch differs')
     else:
-        result = core.evaluate_model(None, run/'best.pt', records=rows, split=split, device=args.device,
+        result = core.evaluate_model(None, checkpoint_path or run/'best.pt', records=rows, split=split, device=args.device,
                                     batch_size=args.batch_size, prediction_path=predictions)
         result.update(finetuning_mode=checkpoint['finetuning_mode'],
                       learning_rate=checkpoint['training_config']['learning_rate'],
@@ -307,10 +311,12 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args):
 
 
 def _codebert_finetuning(args):
+    if getattr(args, 'shallow_augmentation', None):
+        return _codebert_shallow_augmentation(args)
     if getattr(args, 'shallow_reweighting', False):
         return _codebert_shallow_reweighting(args)
     if args.stage == 'prepare':
-        raise ValueError('prepare is only used with --shallow-reweighting')
+        raise ValueError('prepare requires a shallow experiment')
     import csv
     import math
     import torch
@@ -435,16 +441,12 @@ def _reweighting_strata(items, source_budget, threshold=.5, *, oof=False):
     return groups
 
 
-def _codebert_shallow_reweighting(args):
+def _matching_full_baseline(args):
     import math
-    import numpy as np
     import torch
-    import sklearn
-    import transformers
-    from . import model as core, audit_statistics as shallow
-    from .change_learning import write_json
-    if args.stage == 'smoke' or args.finetuning_mode not in (None, 'full'):
-        raise ValueError('shallow reweighting uses full fine-tuning and prepare/train/report/all stages')
+    from . import model as core
+    if args.finetuning_mode not in (None, 'full'):
+        raise ValueError('shallow experiments require the full fine-tuning baseline')
     rows = [r for r in core._read_jsonl(args.manifest, source_only=True)
             if r['dataset'] == 'primevul' and r['split'] in ('train', 'valid')]
     train = [r for r in rows if r['split'] == 'train']
@@ -457,7 +459,7 @@ def _codebert_shallow_reweighting(args):
             or base.get('initial_checkpoint') is not None or base.get('seed') != 42
             or base.get('source_max_length') != 2048 or base.get('model_path') != args.model
             or base.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION
-            or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision'))):
+            or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision', 'augmentation_config'))):
         raise ValueError('requires the matching fresh full-CodeBERT BCE baseline and original manifest')
     training = base['training_config']
     if (training['epochs'] != 3 or training['weight_decay'] != .01
@@ -475,7 +477,23 @@ def _codebert_shallow_reweighting(args):
                    for suffix in ('metrics.json', 'predictions.jsonl')):
             raise FileNotFoundError(f'missing saved baseline {split} evaluation')
         _finetuning_evaluate(rows, baseline_path.parent, split, base, args)
-    input_protocol = base['input_protocol']
+    return rows, base, budget
+
+
+def _codebert_shallow_reweighting(args):
+    import numpy as np
+    import torch
+    import sklearn
+    import transformers
+    from . import model as core, audit_statistics as shallow
+    from .change_learning import write_json
+    if args.stage == 'smoke':
+        raise ValueError('shallow reweighting uses prepare/train/report/all stages')
+    rows, base, budget = _matching_full_baseline(args)
+    train = [r for r in rows if r['split'] == 'train']
+    members = base['cohort_members']
+    training, input_protocol = base['training_config'], base['input_protocol']
+    baseline_path = Path(args.baseline_checkpoint)
     source_budget = input_protocol['source_budget']
     root = Path(args.output_dir or 'results/codebert_shallow_reweight_seed42')
     config = dict(manifest=args.manifest, baseline_checkpoint=str(baseline_path), model=base['model_path'],
@@ -568,6 +586,222 @@ def _codebert_shallow_reweighting(args):
             definition='source tokens >512, including truncated functions')
     report = dict(config=config, oof=oof, valid=comparisons)
     write_json(root/'comparison.metrics.json', report)
+    return report
+
+
+def _augmentation_sources(rows, entries, mode):
+    from .syntax import apply_source_edits
+    if [e['sample_key'] for e in entries] != [r['sample_key'] for r in rows]:
+        raise ValueError('candidate cache members/order differ from the original Train cohort')
+    sources, choices = {}, {}
+    for row, entry in zip(rows, entries):
+        pool, selected = entry['candidates'], entry['selections'][mode]
+        if (len(pool) > 8 or len({c['visible_tokens'] for c in pool}) > 1
+                or len(selected) not in (0, 2) or len(set(selected)) != len(selected)
+                or any(not 0 <= i < len(pool) for i in selected)):
+            raise ValueError('invalid candidate pool or selection budget')
+        if selected and len(pool) < 2:
+            raise ValueError('two distinct candidates are required')
+        sources[row['sample_key']] = [apply_source_edits(row['raw_source'], pool[i]['edits']) for i in selected]
+        choices[row['sample_key']] = selected
+    return sources, choices
+
+
+def _codebert_augmentation_smoke(rows, entries, root, base, args):
+    import tempfile
+    import torch
+    from . import model as core
+    from .change_learning import write_json
+    train = [r for r in rows if r['split'] == 'train']
+    valid = [r for r in rows if r['split'] == 'valid']
+    covered = {e['sample_key'] for e in entries if e['selections']['random']}
+    chosen = [r for label in (0,1) for r in [x for x in train if x['label'] == label and x['sample_key'] in covered][:4]]
+    if len(chosen) != 8:
+        raise ValueError('smoke needs four transformable real Train functions of each label')
+    chosen += [next(r for r in valid if r['label'] == label) for label in (0,1)]
+    common = dict(variant='codebert_source', model_path=args.model, source_max_length=2048,
+        context_max_length=base['context_max_length'], seed=42, epochs=1, batch_size=4,
+        gradient_accumulation=2, learning_rate=base['training_config']['learning_rate'],
+        weight_decay=.01, finetuning_mode='full', device=args.device, log_every=1)
+    core._seed_everything(42)
+    initial = core._build_model('codebert_source', args.model, device=core._resolve_device(args.device),
+        lora_r=16, lora_alpha=32, lora_dropout=.05, target_modules=tuple(base['target_modules']),
+        gradient_checkpointing=False, fusion_dim=256, fusion_heads=8, finetuning_mode='full')
+    embedding = initial.encoder.state_dict()['embeddings.word_embeddings.weight'].detach().cpu().clone()
+    head = core._cpu_state(initial.task_modules.state_dict())
+    del initial
+    report = dict(train_members=[r['sample_key'] for r in chosen[:8]], valid_members=[r['sample_key'] for r in chosen[8:]])
+    budgets = []
+    with tempfile.TemporaryDirectory(prefix='vul_detect_augmentation_smoke_') as tmp:
+        for mode in ('random', 'high_low'):
+            sources, choices = _augmentation_sources(train, entries, mode)
+            sources = {r['sample_key']: sources[r['sample_key']] for r in chosen[:8]}
+            target = Path(tmp)/mode/'best.pt'
+            cp = core.train_model(None, target, records=chosen, function_views=sources,
+                augmentation_config=dict(mode=mode, choices={k:choices[k] for k in sources}), **common)
+            if torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'], embedding):
+                raise ValueError('smoke did not update the full encoder')
+            if all(torch.equal(cp['task_state'][k], v) for k,v in head.items()):
+                raise ValueError('smoke did not update the classifier')
+            restored = core._load_model(cp, device=core._resolve_device(args.device))
+            tokenizer = core.AutoTokenizer.from_pretrained(args.model)
+            builder = core.InputBuilder(tokenizer, source_max_length=2048, context_max_length=base['context_max_length'])
+            before = core._predict_logits(restored, chosen[8:], builder, variant='codebert_source', excluded_groups=(),
+                batch_size=4, device=core._resolve_device(args.device))
+            del restored
+            after = core.predict_checkpoint(target, chosen[8:], batch_size=4, device=args.device)
+            torch.testing.assert_close(before, after, rtol=0, atol=0)
+            epoch = [json.loads(l) for l in target.with_suffix('.training.jsonl').open() if json.loads(l)['event']=='epoch'][0]
+            budget = tuple(epoch[k] for k in ('optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots'))
+            if budget[0:2] != (1,24):
+                raise ValueError('smoke did not execute the expected per-function view BCE budget')
+            budgets.append(budget)
+            report[mode] = dict(encoder_updated=True, classifier_updated=True, save_reload_exact=True,
+                optimizer_steps=budget[0], function_forwards=budget[1], encoder_sequences=budget[2], encoder_token_slots=budget[3])
+            del cp
+    if budgets[0] != budgets[1]:
+        raise ValueError('random and guided smoke forward budgets differ')
+    report['budgets_identical'] = True
+    write_json(root/'smoke.metrics.json', report)
+    return report
+
+
+def _codebert_shallow_augmentation(args):
+    import pickle
+    import torch
+    import sklearn
+    import transformers
+    from . import model as core, audit_statistics as shallow
+    from .syntax import AUGMENT_NAMES, AUGMENT_COMMENTS, UNSEEN_NAMES, UNSEEN_COMMENTS
+    from .change_learning import write_json
+    rows, base, budget = _matching_full_baseline(args)
+    train = [r for r in rows if r['split']=='train']
+    root = Path(args.output_dir or 'results/codebert_shallow_augmentation_seed42')
+    config = dict(version=1, manifest=args.manifest, baseline_checkpoint=args.baseline_checkpoint,
+        model=args.model, seed=42, training=base['training_config'], input_protocol=base['input_protocol'],
+        encoder_precision=base['encoder_precision'], classifier_initialization=base['classifier_initialization'],
+        initialization='fresh matching pretrained CodeBERT; identical seed42 linear head',
+        augmentation=dict(max_candidates=8, names=AUGMENT_NAMES, comments=AUGMENT_COMMENTS,
+            source_visibility='preserve the entire original visible character prefix under the native 2048 protocol',
+            pool='largest equal-visible-token-count bucket; ties prefer first proposal bucket; label/score independent',
+            selection='fixed two distinct views per function; random seed42 or shallow minimum/maximum; no label access',
+            loss='mean BCE over original plus two views, then mean over original functions; insufficient pools use original only'),
+        shallow=dict(folds=3, grouping='existing transitive repair/duplicate groups',
+            features='log1p visible tokens/chars/lines + lexical TF-IDF',
+            tfidf=shallow.TFIDF_OPTIONS, logistic_regression=shallow.LR_OPTIONS,
+            scoring='frozen fold model scores its heldout function only'),
+        robustness=dict(split='valid', names=UNSEEN_NAMES, comments=UNSEEN_COMMENTS,
+            selection='one eligible unseen view per kind, deterministic and independent of labels/model scores'),
+        selection='original Valid MCC threshold/epoch and tie-break',
+        train_functions=len(train), valid_functions=len(rows)-len(train),
+        environment=dict(torch=torch.__version__, transformers=transformers.__version__, sklearn=sklearn.__version__))
+    config = json.loads(json.dumps(config))
+    config_path = root/'config.metrics.json'
+    if config_path.exists() and json.loads(config_path.read_text()) != config:
+        raise ValueError('existing augmentation configuration differs')
+    if not config_path.exists(): write_json(config_path, config)
+    paths = [root/name for name in ('candidates.jsonl','candidates.metrics.json','oof.models.pkl')]
+    if any(p.exists() for p in paths) and not all(p.exists() for p in paths):
+        raise FileExistsError('incomplete candidate/frozen-OOF cache; inspect before rerunning')
+    if all(p.exists() for p in paths):
+        entries = [json.loads(l) for l in paths[0].open()]
+        preparation = json.loads(paths[1].read_text())
+    else:
+        tokenizer = core.AutoTokenizer.from_pretrained(args.model)
+        entries, preparation, fitted = shallow.shallow_augmentation_views(train, tokenizer, base['input_protocol']['source_budget'])
+        with paths[0].open('x') as handle:
+            for entry in entries: handle.write(json.dumps(entry)+'\n')
+        write_json(paths[1], preparation)
+        with paths[2].open('xb') as handle: pickle.dump(fitted, handle)
+        del fitted
+    selections = {mode: _augmentation_sources(train, entries, mode) for mode in ('random','high_low')}
+    if args.stage == 'prepare': return dict(config=config, candidates=preparation)
+    smoke_path = root/'smoke.metrics.json'
+    if args.stage in ('smoke','all') and not smoke_path.exists():
+        _codebert_augmentation_smoke(rows, entries, root, base, args)
+    if args.stage == 'smoke': return json.loads(smoke_path.read_text())
+    if not smoke_path.exists() or not json.loads(smoke_path.read_text()).get('budgets_identical'):
+        raise ValueError('complete the real full-CodeBERT augmentation smoke before formal training')
+    modes = ('random','high_low') if args.shallow_augmentation=='both' else (args.shallow_augmentation,)
+    expected = {k:base[k] for k in ('checkpoint_version','dataset_schema_version','variant','model_path',
+        'source_max_length','context_max_length','lora_r','lora_alpha','lora_dropout','seed','finetuning_mode',
+        'classifier_head','classifier_initialization','encoder_precision','cohort_members','initial_checkpoint','training_config','target_modules')}
+    for mode in modes:
+        run, (sources, choices) = root/mode, selections[mode]
+        augmentation = dict(mode=mode, candidates_cache=str(paths[0]), choices=choices,
+            loss=config['augmentation']['loss'], protocol_version=config['version'])
+        target = run/'best.pt'
+        if target.exists():
+            cp = torch.load(target, map_location='cpu', weights_only=False)
+            if (any(cp.get(k) != v for k,v in expected.items()) or cp.get('sample_weights') is not None
+                    or cp.get('augmentation_config') != augmentation):
+                raise ValueError('existing augmentation checkpoint differs from the frozen experiment')
+            history = [json.loads(l) for l in target.with_suffix('.training.jsonl').open()]
+            if [(r['epoch'],r['optimizer_steps']) for r in history if r['event']=='epoch'] != budget:
+                raise ValueError('augmentation run did not complete the matching three epochs')
+        elif args.stage in ('train','all'):
+            cp = core.train_model(None, target, records=rows, variant='codebert_source', model_path=args.model,
+                source_max_length=2048, context_max_length=base['context_max_length'], seed=42, device=args.device,
+                finetuning_mode='full', function_views=sources, augmentation_config=augmentation,
+                log_every=25, **base['training_config'])
+        else:
+            raise FileNotFoundError(target)
+        _finetuning_evaluate(rows, run, 'valid', cp, args)
+        del cp
+    if args.stage in ('report','all'):
+        return _augmentation_report(rows, entries, root, config, preparation, base, args)
+    return dict(config=config, candidates=preparation, completed_modes=modes)
+
+
+def _augmentation_report(rows, entries, root, config, preparation, base, args):
+    import torch
+    from . import audit_statistics as shallow
+    from .syntax import apply_source_edits
+    from .change_learning import write_json
+    valid = [r for r in rows if r['split']=='valid']
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    views = {'comment':[], 'rename':[]}
+    for index, row in enumerate(valid):
+        candidates, _ = shallow.visible_semantic_candidates(row['raw_source'], row.get('language','c'),
+            tokenizer, base['input_protocol']['source_budget'], unseen=True, file_name=row.get('file_name',''))
+        for kind in views:
+            pool = [c for c in candidates if c['kind']==kind]
+            if pool:
+                chosen = pool[index % len(pool)]
+                views[kind].append(dict(row,raw_source=apply_source_edits(row['raw_source'],chosen['edits'])))
+    result, histories = {}, []
+    for mode in ('bce','random','high_low'):
+        checkpoint_path = Path(args.baseline_checkpoint) if mode=='bce' else root/mode/'best.pt'
+        cp = base if mode=='bce' else torch.load(checkpoint_path,map_location='cpu',weights_only=False)
+        run = Path(args.baseline_checkpoint).parent if mode=='bce' else root/mode
+        clean = _finetuning_evaluate(rows, run, 'valid', cp, args)
+        original = {r['sample_key']:r for r in map(json.loads,(run/'valid.predictions.jsonl').open())}
+        robust = {}
+        robust_run = root/'baseline' if mode=='bce' else run
+        for kind, changed in views.items():
+            if not changed:
+                robust[kind] = dict(eligible=0,total=len(valid),coverage=0.,robust_accuracy=None,flip_rate=None)
+                continue
+            _finetuning_evaluate(changed,robust_run,'valid',cp,args,output_name=f'unseen_{kind}',checkpoint_path=checkpoint_path)
+            predictions = list(map(json.loads,(robust_run/f'unseen_{kind}.predictions.jsonl').open()))
+            both_correct = sum(r['prediction']==original[r['sample_key']]['prediction']==r['label'] for r in predictions)
+            flipped = sum(r['prediction']!=original[r['sample_key']]['prediction'] for r in predictions)
+            robust[kind] = dict(eligible=len(predictions),total=len(valid),coverage=len(predictions)/len(valid),
+                robust_correct=both_correct,robust_accuracy=both_correct/len(predictions),flipped=flipped,flip_rate=flipped/len(predictions),
+                clean_accuracy_same_subset=sum(original[r['sample_key']]['prediction']==r['label'] for r in predictions)/len(predictions),
+                definition='both original and unseen view correct; flip rate over eligible functions; ineligible count reported')
+        result[mode] = dict(checkpoint=str(checkpoint_path),selected_epoch=clean['selected_epoch'],threshold=clean['decision_threshold'],
+            bce=clean['bce'],**clean['metrics'],length_groups=_reweighting_strata(list(original.values()),
+                base['input_protocol']['source_budget'],clean['decision_threshold']),robustness=robust)
+        if mode!='bce':
+            history = [json.loads(l) for l in checkpoint_path.with_suffix('.training.jsonl').open()]
+            histories.append([tuple(r[k] for k in ('epoch','optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots'))
+                              for r in history if r['event']=='epoch'])
+        if mode!='bce': del cp
+    if histories[0]!=histories[1]: raise ValueError('random/guided formal training forward budgets differ')
+    report = dict(config=config,candidates=preparation,valid=result,matched_training_budgets=histories[0])
+    write_json(root/'comparison.metrics.json',report)
     return report
 
 

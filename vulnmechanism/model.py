@@ -1050,6 +1050,20 @@ def _cpu_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().clone() for key, value in state.items()}
 
 
+def function_view_batches(records, views, micro_size):
+    """Each original function has total BCE weight one, regardless of view count."""
+    if views is None:
+        yield records, None
+        return
+    expanded, coefficients = [], []
+    for record in records:
+        sources = [record['raw_source'], *views[record['sample_key']]]
+        expanded.extend(dict(record, raw_source=source) for source in sources)
+        coefficients.extend([1./len(sources)] * len(sources))
+    for start in range(0, len(expanded), micro_size):
+        yield expanded[start:start+micro_size], coefficients[start:start+micro_size]
+
+
 def synthetic_supervision_loss(logits, objective, labels=None):
     """Absolute BCE on all members; optional ranking only for opposite labels."""
     if logits.shape != (2,):
@@ -1105,6 +1119,8 @@ def train_model(
     local_objective: str | None = None,
     local_regions: dict | None = None,
     finetuning_mode: str | None = None,
+    function_views: dict[str, list[str]] | None = None,
+    augmentation_config: dict | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
     if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
@@ -1148,6 +1164,22 @@ def train_model(
         raise ValueError("training split must contain both labels")
     if not fixed_epochs and {int(record["label"]) for record in valid_records} != {0, 1}:
         raise ValueError("validation split must contain both labels")
+    if function_views is not None:
+        if (finetuning_mode != 'full' or variant != 'codebert_source' or classifier_head != 'linear'
+                or any(x is not None for x in (sample_weights, change_objective, local_objective,
+                                               synthetic_pairs, initial_checkpoint, initial_adapter_state))
+                or fixed_epochs or not isinstance(augmentation_config, dict)
+                or augmentation_config.get('mode') not in ('random', 'high_low')):
+            raise ValueError('function views require fresh full CodeBERT BCE without other objectives')
+        if set(function_views) != {r['sample_key'] for r in train_records}:
+            raise ValueError('function views must cover exactly the original Train functions')
+        for record in train_records:
+            views = function_views[record['sample_key']]
+            if (len(views) not in (0, 2) or any(not isinstance(s, str) or not s for s in views)
+                    or len(set([record['raw_source'], *views])) != 1 + len(views)):
+                raise ValueError('function views require zero or two distinct transformed sources')
+    elif augmentation_config is not None:
+        raise ValueError('augmentation configuration requires function views')
 
     if change_objective is not None:
         from .change_learning import (OBJECTIVES, invariance_loss, random_pair_control,
@@ -1338,55 +1370,67 @@ def train_model(
             random.Random(seed + epoch).shuffle(view_order)
             phase = 'head_bce' if epoch == 0 else 'joint'
         window_loss, window_samples = 0.0, 0
+        view_forwards, encoder_sequences, encoder_token_slots = 0, 0, 0
         bar = tqdm(range(0, len(order), batch_size), total=num_batches,
                    desc=f"{variant} · epoch {epoch+1}/{epochs}", unit="batch",
                    dynamic_ncols=True, mininterval=1, file=sys.stdout, colour="cyan")
         for batch_index, start in enumerate(bar):
             batch = [train_records[index] for index in order[start:start + batch_size]]
-            prediction = _forward_batch(
-                model, batch, input_builder,
-                variant=variant, excluded_groups=excluded_groups, device=resolved_device,
-                return_local=local_objective is not None and local_objective != 'A',
-            )
-            logits, local_scores = prediction if local_objective is not None and local_objective != 'A' else (prediction, None)
-            losses = loss_fn(logits, _labels(batch, resolved_device))
-            if sample_weights is not None:
-                weights = losses.new_tensor([sample_weights[r["sample_key"]] for r in batch])
-                losses = losses * weights
-            loss = losses.mean()
-            if not torch.isfinite(loss):
-                raise ValueError(f"non-finite loss in epoch {epoch+1}, batch {batch_index+1}")
             group_start = (batch_index // gradient_accumulation) * gradient_accumulation
             group_end = min(group_start + gradient_accumulation, num_batches)
             group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
-            training_loss = loss * len(batch) / group_samples
-            if local_objective is not None:
-                ramp = (optimizer_steps / max(1, epoch_steps-1)) if epoch == 1 else 1.
-                loc_weight = .1 * ramp if epoch > 0 and local_objective in {'C', 'D', 'C_random'} else 0.
-                inv_weight = .01 * ramp if epoch > 0 and local_objective == 'D' else 0.
-                if epoch > 0 and local_scores is not None:
-                    selected = []
-                    for record, (line_numbers, scores) in zip(batch, local_scores):
-                        if record['label'] == 1:
-                            term = region_loss(scores, line_numbers, local_regions.get(record['sample_key'], []))
-                            if term is not None:
-                                selected.append(term)
-                    if selected:
-                        group_records = [train_records[i] for i in order[group_start*batch_size:min(group_end*batch_size, len(order))]]
-                        group_valid = 0
-                        encoder_name = 'codebert' if variant == 'codebert_source' else 'qwen'
-                        for row in group_records:
-                            if row['label'] == 1:
-                                layout = input_builder.local_layout(row['raw_source'], encoder_name)
-                                candidate = set(local_regions.get(row['sample_key'], [])) & set(layout['full_lines'])
-                                group_valid += 0 < len(candidate) < len(layout['lines'])
-                        term = torch.stack(selected).mean()
-                        training_loss = training_loss + loc_weight * term * len(selected) / group_valid
-                        local_total += float(term.detach()) * len(selected)
-                        local_weighted += loc_weight * float(term.detach()) * len(selected)
-                        local_count += len(selected)
-            training_loss.backward()
-            value = float(loss.detach().cpu())
+            value = 0.
+            for forwarded, coefficients in function_view_batches(batch, function_views, batch_size):
+                prediction = _forward_batch(
+                    model, forwarded, input_builder,
+                    variant=variant, excluded_groups=excluded_groups, device=resolved_device,
+                    return_local=local_objective is not None and local_objective != 'A',
+                )
+                logits, local_scores = prediction if local_objective is not None and local_objective != 'A' else (prediction, None)
+                losses = loss_fn(logits, _labels(forwarded, resolved_device))
+                if sample_weights is not None:
+                    weights = losses.new_tensor([sample_weights[r["sample_key"]] for r in forwarded])
+                    losses = losses * weights
+                loss = (losses.mean() if coefficients is None else
+                        (losses * losses.new_tensor(coefficients)).sum()/len(batch))
+                if not torch.isfinite(loss):
+                    raise ValueError(f"non-finite loss in epoch {epoch+1}, batch {batch_index+1}")
+                training_loss = loss * len(batch) / group_samples
+                if local_objective is not None:
+                    ramp = (optimizer_steps / max(1, epoch_steps-1)) if epoch == 1 else 1.
+                    loc_weight = .1 * ramp if epoch > 0 and local_objective in {'C', 'D', 'C_random'} else 0.
+                    inv_weight = .01 * ramp if epoch > 0 and local_objective == 'D' else 0.
+                    if epoch > 0 and local_scores is not None:
+                        selected = []
+                        for record, (line_numbers, scores) in zip(batch, local_scores):
+                            if record['label'] == 1:
+                                term = region_loss(scores, line_numbers, local_regions.get(record['sample_key'], []))
+                                if term is not None:
+                                    selected.append(term)
+                        if selected:
+                            group_records = [train_records[i] for i in order[group_start*batch_size:min(group_end*batch_size, len(order))]]
+                            group_valid = 0
+                            encoder_name = 'codebert' if variant == 'codebert_source' else 'qwen'
+                            for row in group_records:
+                                if row['label'] == 1:
+                                    layout = input_builder.local_layout(row['raw_source'], encoder_name)
+                                    candidate = set(local_regions.get(row['sample_key'], [])) & set(layout['full_lines'])
+                                    group_valid += 0 < len(candidate) < len(layout['lines'])
+                            term = torch.stack(selected).mean()
+                            training_loss = training_loss + loc_weight * term * len(selected) / group_valid
+                            local_total += float(term.detach()) * len(selected)
+                            local_weighted += loc_weight * float(term.detach()) * len(selected)
+                            local_count += len(selected)
+                training_loss.backward()
+                value += float(loss.detach().cpu())
+                if function_views is not None:
+                    capacity = 512 - len(input_builder.source_prefix) - 2
+                    budget = source_max_length - len(input_builder.source_prefix) - 2
+                    lengths = [len(input_builder._encode(r['raw_source'], budget)) for r in forwarded]
+                    sequences = sum(1+math.ceil(max(0, n-capacity)/(capacity//2)) for n in lengths)
+                    view_forwards += len(forwarded)
+                    encoder_sequences += sequences
+                    encoder_token_slots += sequences * min(512, max(lengths)+len(input_builder.source_prefix)+2)
             running_loss += value * len(batch)
             window_loss += value * len(batch)
             window_samples += len(batch)
@@ -1485,6 +1529,12 @@ def train_model(
             "validation_threshold": threshold,
             "validation": validation.as_json() if validation else None,
         }
+        if function_views is not None:
+            epoch_row.update(augmentation_mode=augmentation_config['mode'],
+                augmented_functions=sum(bool(v) for v in function_views.values()),
+                bce_function_forwards=view_forwards, bce_encoder_sequences=encoder_sequences,
+                encoder_token_slots=encoder_token_slots,
+                function_loss='mean view BCE per function, then mean over original functions')
         if synthetic_pairs is not None:
             epoch_row['synthetic_loss'] = synthetic_total / optimizer_steps
             epoch_row['synthetic_objective'] = synthetic_objective
@@ -1562,6 +1612,8 @@ def train_model(
         checkpoint['finetuning_mode'] = finetuning_mode
         checkpoint['encoder_precision'] = 'FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss'
         checkpoint['classifier_initialization'] = _CLASSIFIER_INITIALIZATION
+    if function_views is not None:
+        checkpoint['augmentation_config'] = augmentation_config
     if synthetic_pairs is not None:
         checkpoint['synthetic_supervision'] = dict(objective=synthetic_objective, weight=1.0,
             pairs_per_optimizer_step=1, unique_pairs=len(synthetic_pairs))
@@ -1597,7 +1649,8 @@ def train_model(
             logical_budget=source_max_length, source_budget=source_max_length-len(input_builder.source_prefix)-2,
             window_source_capacity=capacity, stride=capacity//2,
             pooling='mean over unique source positions; repeated prefix/BOS/EOS averaged across windows',
-            function_loss='one BCE per original function')
+            function_loss=('mean view BCE per function, then mean over original functions'
+                           if function_views is not None else 'one BCE per original function'))
     if graph_config is not None:
         checkpoint["graph_config"] = graph_config
     target = Path(output_path)

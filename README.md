@@ -264,6 +264,83 @@ Train OOF 共 7,820 个函数、7,727 个组，93 个双样本组不跨折；三
 加权均值损失、全参数更新和保存重载；正式训练后的真实 CodeBERT checkpoint
 已严格重载完成全量 Valid 推理。
 
+### 浅层模型引导的双向语义保持增强
+
+`codebert-finetuning --shallow-augmentation` 复用上述全参数 2048 基线的原数据清单、
+预训练起点和训练配置（seed=42、lr=1e-5、3 epochs、有效 batch=8），只新增
+`random` 和 `high_low` 两组。公共 `train_model` 保留 mean pooling + linear，
+使用普通 BCE，不叠加样本权重或其他损失。
+
+Train 内沿用修复/重复分组的 3 折 OOF，每折独立拟合规模统计、词表和 Logistic
+Regression；冻结各折模型，仅为本折留出函数的候选评分。每个函数最多提出4个
+作用域安全的重命名和4个无关注释候选；沿用保守解析/绑定检查，注释不改变行数。
+fast tokenizer 字符 offset 检查候选完整保留原来可见的源码前缀，排除无实际输入变化
+及预算不足的候选。为严格匹配两组 token/滑窗预算，候选池取可见 token 数相同的
+最大桶（平局取最先提出的桶），这一规则不读取标签或浅层分数。
+
+同池固定随机取2个，或取浅层分数最低和最高的2个不同候选；选择不读取函数标签，
+分数相同也保留两个不同候选。原函数及两个视图沿用同一标签，先按函数平均3个 BCE，
+再按原函数平均；不足两个候选的函数仅用原始 BCE。两组原函数顺序、优化步数、
+每函数视图数和编码 token/滑窗预算一致，视图分批反向以控制显存。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+# 准备冻结 OOF/候选、真实模型 smoke、两组训练及 Valid 报告
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-augmentation --stage all --device cuda:0
+# 分阶段运行；prepare 不需要 GPU
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-augmentation --stage prepare
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-augmentation --stage smoke --device cuda:0
+# 两个空闲 GPU 可分别执行这两条训练命令；已完成的匹配结果直接复用
+CUDA_VISIBLE_DEVICES=0 $PY -m vulnmechanism.cli codebert-finetuning --shallow-augmentation random --stage train --device cuda:0
+CUDA_VISIBLE_DEVICES=1 $PY -m vulnmechanism.cli codebert-finetuning --shallow-augmentation high_low --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-augmentation --stage report --device cuda:0
+```
+
+结果目录为 `results/codebert_shallow_augmentation_seed42`：保存配置、冻结折模型、
+候选字符编辑/分数/选择、覆盖率及分数跨度、smoke、两组训练日志/checkpoint/Valid预测。
+仅按原 Valid MCC/tie-break 选 epoch 和阈值。报告复用原始长度分组，并对训练增强
+未使用的注释文本和替换名评价鲁棒性；两组及已有 BCE 使用完全相同的 Valid 变换。
+Robust Accuracy 要求原版和变换版同时正确，Flip Rate 为预测改变比例，均报告有效
+函数分母与总函数覆盖率。此入口不读取 Test 进行训练、选模或评价。
+
+本次两组均已完成3轮，每轮978次优化更新、17,094个函数视图、40,100个原生滑窗；
+两组各轮实际 padded token 预算分别为19,289,426 / 19,304,164 / 19,310,474，完全相同。
+4,637/7,820个 Train 函数可增强（59.30%），其中4,577个使用注释候选、60个使用
+重命名候选，其余3,183个照常接受原始 BCE。候选浅层分数跨度均值 .01113、
+中位数 .00928、最大值 .11928。两组都按原 Valid MCC 选中第三轮。
+
+| 方法 | Epoch | 阈值 | Valid BCE | AUC | MCC | F1 | FP/FN |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 已有全参数 BCE | 3 | .29 | .5807 | .8117 | .5082 | .7698 | 169/84 |
+| 同池随机2视图 | 3 | .40 | .6092 | .8067 | .4971 | .7493 | 129/126 |
+| 浅层高低分2视图 | 3 | .36 | .6059 | .8088 | .4922 | .7538 | 146/112 |
+
+长度组沿用完整原始源码 token 数，表中报告 AUC / MCC：
+
+| Token 组 | Valid（正/负） | BCE | 随机 | 高低分 |
+|---|---:|---:|---:|---:|
+| ≤128 | 194（33/161） | .6908 / .2627 | .7004 / .1610 | .7054 / .1610 |
+| 129–512 | 357（143/214） | .7267 / .3650 | .7232 / .3466 | .7208 / .3212 |
+| 513–2025 | 297（185/112） | .7135 / .3222 | .7071 / .3294 | .7115 / .3439 |
+| >2025 | 166（146/20） | .5603 / .0000 | .5589 / −.0502 | .5695 / −.0409 |
+
+未见注释使用同一605个有效 Valid 函数（覆盖59.66%）：
+
+| 方法 | 原版和变换版同时正确 | Robust Accuracy | 翻转数 | Flip Rate |
+|---|---:|---:|---:|---:|
+| BCE | 315/605 | .5207 | 168/605 | .2777 |
+| 随机 | 433/605 | .7157 | 15/605 | .0248 |
+| 高低分 | 428/605 | .7074 | 21/605 | .0347 |
+
+未见名字仅有8个有效 Valid 函数（覆盖0.79%），三组均为8/8同时正确、0次翻转。
+此分母不足以判断名字鲁棒性收益。两组增强改善了未见注释稳定性，但本轮 clean
+AUC/MCC 均未超过 BCE，高低分选择也未显示出一致优于同池随机的收益。
+完整指标、原始长度组及有效分母见
+[`comparison.metrics.json`](results/codebert_shallow_augmentation_seed42/comparison.metrics.json)。
+相关单元测试及局部风险回归通过，真实 CodeBERT 的两组前向/反向/保存重载 smoke
+确认完整编码器和分类头更新、预测重载一致、两组前向预算相同。正式 checkpoint
+均已严格重载用于 clean 与未见变换评价。
+
 ### 修复引导的局部风险学习
 
 `python -m vulnmechanism.cli local-risk` 扩展同一 `train_model`、输入构造、LoRA、

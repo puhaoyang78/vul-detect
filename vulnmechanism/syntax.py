@@ -256,7 +256,7 @@ def local_identifiers(
 
 
 @lru_cache(maxsize=16384)
-def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]:
+def scope_safe_rename(source_text: str, language: str, *, replacement: str = "local_value") -> tuple[str | None, str]:
     """Alpha-rename one lexically bound variable in a conservative C/C++ subset.
 
     Unknown preprocessor/call semantics, nested functions, and nonlocal bindings
@@ -265,6 +265,8 @@ def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]
     Ineligible inputs remain in the classification cohort, without an invariance
     example; returning the original source would overstate transformation coverage.
     """
+    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', replacement):
+        raise ValueError('replacement must be an ordinary C/C++ identifier')
     source = source_text.encode("utf-8")
     root = parser_for(language).parse(source).root_node
     if root.has_error:
@@ -323,7 +325,6 @@ def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]
     if not used:
         return None, "no_used_local_binding"
     binding = used[0]
-    replacement = "local_value"
     names = {text(n, source) for n in nodes if n.type.endswith("identifier")}
     while replacement in names:
         replacement += "_"
@@ -347,28 +348,36 @@ def semantic_preserving_view(source_text: str, language: str) -> tuple[str | Non
     renamed, reason = scope_safe_rename(source_text, language)
     if renamed is not None:
         return renamed, "rename"
+    transformed, comment_reason = semantic_comment_view(source_text, language)
+    return (transformed, 'comment') if transformed is not None else (None, reason if comment_reason == 'parse_error' else comment_reason)
+
+
+def semantic_comment_view(source_text: str, language: str, comment: str = 'code') -> tuple[str | None, str]:
+    """Insert one unrelated, single-line comment outside macro/call arguments."""
+    if not re.fullmatch(r'[A-Za-z ]+', comment):
+        raise ValueError('comment must contain only ordinary words and spaces')
     encoded = source_text.encode()
     root = parser_for(language).parse(encoded).root_node
     if root.has_error:
-        return None, reason
+        return None, 'parse_error'
     top = [n for n in root.named_children if n.type != "comment"]
     if len(top) != 1:
-        return None, reason
+        return None, 'ambiguous_function'
     function = top[0]
     if function.type == "template_declaration":
         functions = [n for n in walk(function) if n.type == "function_definition"]
         if len(functions) != 1:
-            return None, reason
+            return None, 'ambiguous_function'
         function = functions[0]
     if function.type != "function_definition":
-        return None, reason
+        return None, 'ambiguous_function'
     if any(name in source_text for name in ("__builtin_COLUMN", "__COLUMN__", "source_location")):
         return None, "column_sensitive_source"
     body = function.child_by_field_name("body")
     if body is None or encoded[body.start_byte:body.start_byte+1] != b"{":
         return None, "missing_body"
     at = body.start_byte + 1
-    transformed = (encoded[:at] + b" /* code */ " + encoded[at:]).decode()
+    transformed = (encoded[:at] + f" /* {comment} */ ".encode() + encoded[at:]).decode()
     from .prepare_benchmark import normalized_source
     if (normalized_source(source_text) != normalized_source(transformed)
             or source_text.count("\n") != transformed.count("\n")):
@@ -376,9 +385,63 @@ def semantic_preserving_view(source_text: str, language: str) -> tuple[str | Non
     return transformed, "comment"
 
 
+AUGMENT_NAMES = ('value', 'item', 'count', 'data')
+AUGMENT_COMMENTS = ('note', 'code', 'routine', 'section')
+UNSEEN_NAMES = ('probe_item', 'probe_count', 'probe_data', 'probe_value')
+UNSEEN_COMMENTS = ('orchard margin', 'linen marker', 'cedar passage', 'amber entry')
+
+
+def apply_source_edits(source: str, edits) -> str:
+    """Apply verified character edits; never interpret positions as UTF-8 bytes."""
+    end = 0
+    for a, b, value in edits:
+        if not 0 <= end <= a <= b <= len(source) or not isinstance(value, str):
+            raise ValueError('invalid or overlapping source edits')
+        end = b
+    for a, b, value in reversed(edits):
+        source = source[:a] + value + source[b:]
+    return source
+
+
+def semantic_preserving_candidates(source: str, language: str, *, unseen: bool = False):
+    """At most eight label-free proposals using the existing conservative rules.
+
+    Compact character edits preserve provenance without copying whole functions
+    into the experiment cache. Unseen banks are reserved for robustness only.
+    """
+    from collections import Counter
+    candidates, skipped, seen = [], Counter(), set()
+    original_tokens = source_token_spans(source)
+    names = UNSEEN_NAMES if unseen else AUGMENT_NAMES
+    comments = UNSEEN_COMMENTS if unseen else AUGMENT_COMMENTS
+    for kind, values in (('rename', names), ('comment', comments)):
+        for value in values:
+            transformed, reason = (scope_safe_rename(source, language, replacement=value) if kind == 'rename'
+                                   else semantic_comment_view(source, language, value))
+            if transformed is None:
+                skipped[reason] += 1
+                continue
+            if transformed == source or transformed in seen:
+                skipped['unchanged_or_duplicate'] += 1
+                continue
+            if kind == 'rename':
+                changed_tokens = source_token_spans(transformed)
+                if len(changed_tokens) != len(original_tokens):
+                    raise ValueError('verified rename changed the lexical token count')
+                edits = [(a, b, new) for (old, a, b), (new, _, _) in zip(original_tokens, changed_tokens) if old != new]
+            else:
+                at = next(i for i, (a, b) in enumerate(zip(source, transformed)) if a != b)
+                edits = [(at, at, transformed[at:at + len(transformed)-len(source)])]
+            if apply_source_edits(source, edits) != transformed:
+                raise ValueError('candidate edits do not reconstruct the verified transformation')
+            candidates.append(dict(kind=kind, value=value, edits=edits))
+            seen.add(transformed)
+    return candidates, dict(skipped)
+
+
 # Tokens preserve literals and punctuation; comment/whitespace removal cannot turn
 # a nested method or a call into the complete source definition.
-_SOURCE_TOKEN = re.compile(r'R"(?P<delimiter>[^ ()\\\t\r\n]{0,16})\(.*?\)(?P=delimiter)"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*.*?\*/|[A-Za-z_]\w*|\d+(?:\.\d+)?|>>=|<<=|->\*|\.\.\.|::|->|\+\+|--|&&|\|\||==|!=|<=|>=|<<|>>|\+=|-=|\*=|/=|%=|&=|\|=|\^=|[^\s]', re.S)
+_SOURCE_TOKEN = re.compile(r'R"(?P<delimiter>[^ ()\\\t\r\n]{0,16})\(.*?\)(?P=delimiter)"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*.*?\*/|[^\W\d]\w*|\d+(?:\.\d+)?|>>=|<<=|->\*|\.\.\.|::|->|\+\+|--|&&|\|\||==|!=|<=|>=|<<|>>|\+=|-=|\*=|/=|%=|&=|\|=|\^=|[^\s]', re.S)
 
 
 def source_tokens(source: str) -> tuple[str, ...]:

@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "manifest": "data/benchmark/manifest_sven_commit_disjoint.jsonl",
+  "baseline_checkpoint": "results/codebert_finetuning_seed42/full/lr_1e-05/best.pt",
+  "model": "/home/PublicData/PHY-data/resource/codebert-base",
+  "seed": 42,
+  "training": {
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01
+  },
+  "input_protocol": {
+    "encoder": "roberta",
+    "native_window": 512,
+    "logical_budget": 2048,
+    "source_budget": 2025,
+    "window_source_capacity": 489,
+    "stride": 244,
+    "pooling": "mean over unique source positions; repeated prefix/BOS/EOS averaged across windows",
+    "function_loss": "one BCE per original function"
+  },
+  "encoder_precision": "FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss",
+  "classifier_initialization": "shared base RNG; LoRA initialization isolated; training RNG reset",
+  "initialization": "fresh matching pretrained CodeBERT; identical seed42 linear head",
+  "augmentation": {
+    "max_candidates": 8,
+    "names": [
+      "value",
+      "item",
+      "count",
+      "data"
+    ],
+    "comments": [
+      "note",
+      "code",
+      "routine",
+      "section"
+    ],
+    "source_visibility": "preserve the entire original visible character prefix under the native 2048 protocol",
+    "pool": "largest equal-visible-token-count bucket; ties prefer first proposal bucket; label/score independent",
+    "selection": "fixed two distinct views per function; random seed42 or shallow minimum/maximum; no label access",
+    "loss": "mean BCE over original plus two views, then mean over original functions; insufficient pools use original only"
+  },
+  "shallow": {
+    "folds": 3,
+    "grouping": "existing transitive repair/duplicate groups",
+    "features": "log1p visible tokens/chars/lines + lexical TF-IDF",
+    "tfidf": {
+      "token_pattern": "(?u)\\b[A-Za-z_]\\w*\\b|\\d+|[^\\w\\s]",
+      "lowercase": false,
+      "ngram_range": [
+        1,
+        2
+      ],
+      "min_df": 3,
+      "max_features": 30000,
+      "sublinear_tf": true
+    },
+    "logistic_regression": {
+      "C": 1.0,
+      "solver": "liblinear",
+      "max_iter": 2000,
+      "random_state": 42
+    },
+    "scoring": "frozen fold model scores its heldout function only"
+  },
+  "robustness": {
+    "split": "valid",
+    "names": [
+      "probe_item",
+      "probe_count",
+      "probe_data",
+      "probe_value"
+    ],
+    "comments": [
+      "orchard margin",
+      "linen marker",
+      "cedar passage",
+      "amber entry"
+    ],
+    "selection": "one eligible unseen view per kind, deterministic and independent of labels/model scores"
+  },
+  "selection": "original Valid MCC threshold/epoch and tie-break",
+  "train_functions": 7820,
+  "valid_functions": 1014,
+  "environment": {
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "sklearn": "1.8.0"
+  }
+}

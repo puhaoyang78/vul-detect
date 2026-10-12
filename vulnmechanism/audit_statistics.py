@@ -197,7 +197,7 @@ def normalize_hard_weights(labels, probabilities):
     return hard, raw, weights
 
 
-def shallow_oof_weights(rows, tokenizer, source_budget):
+def shallow_oof_weights(rows, tokenizer, source_budget, *, return_fitted=False):
     """Train-only, three grouped folds; each fit builds its own scaler/vocabulary."""
     if (not rows or any(r['split'] != 'train' for r in rows)
             or len({r['sample_key'] for r in rows}) != len(rows)
@@ -212,13 +212,17 @@ def shallow_oof_weights(rows, tokenizer, source_budget):
         raise ValueError('OOF weighting requires at least three independent groups')
     probabilities = np.full(len(rows), np.nan)
     fold_ids = np.full(len(rows), -1, dtype=int)
-    folds = []
+    folds, fitted = [], []
     for fold, (fit, hold) in enumerate(StratifiedGroupKFold(3, shuffle=True, random_state=42).split(
             np.arange(len(rows)), y, groups), 1):
         if set(groups[fit]) & set(groups[hold]) or set(y[fit]) != {0, 1}:
             raise ValueError('invalid grouped OOF partition')
-        probabilities[hold], dimension, iterations = fit_predict(
-            'lexical_size', fit, hold, blocks, texts, None, None)
+        result = fit_predict('lexical_size', fit, hold, blocks, texts, None, None,
+                             return_fitted=return_fitted)
+        probabilities[hold], dimension, iterations = result[:3]
+        if return_fitted:
+            fitted.append(dict(fold=fold, fit_keys=[rows[i]['sample_key'] for i in fit],
+                heldout_keys=[rows[i]['sample_key'] for i in hold], **result[3]))
         fold_ids[hold] = fold
         folds.append(dict(fold=fold, fit_samples=len(fit), heldout_samples=len(hold),
             fit_positive=int(y[fit].sum()), heldout_positive=int(y[hold].sum()),
@@ -240,7 +244,7 @@ def shallow_oof_weights(rows, tokenizer, source_budget):
         report['classes'][str(label)] = dict(samples=int(members.sum()), hard=int(hard[members].sum()),
             raw_mean=float(raw[members].mean()), normalized_mean=float(weights[members].mean()),
             easy_weight=float(1/raw[members].mean()), hard_weight=float(3/raw[members].mean()))
-    return cache, report
+    return (cache, report, fitted) if return_fitted else (cache, report)
 
 
 def prepare(args, out):
@@ -315,7 +319,9 @@ def feature_blocks(rows):
             'structure':np.c_[sizes,syn,synrate,graph]}
 
 
-def fit_predict(spec, ix, jx, blocks, texts, projects, frozen):
+def fit_predict(spec, ix, jx, blocks, texts, projects, frozen, *, return_fitted=False):
+    if return_fitted and spec != 'lexical_size':
+        raise ValueError('frozen candidate scoring requires the lexical_size OOF model')
     matrices=[]; targets=[]
     stat = ('structure' if spec in ('structure','lexical_structure','project_structure','frozen_clm_structure')
             else 'syntax' if spec=='syntax' else 'size' if spec in ('size','project_size','lexical_size') else None)
@@ -335,7 +341,122 @@ def fit_predict(spec, ix, jx, blocks, texts, projects, frozen):
     with warnings.catch_warnings():
         warnings.simplefilter('error',ConvergenceWarning)
         model.fit(x,blocks['labels'][ix])
-    return model.predict_proba(z)[:,1],int(x.shape[1]),int(model.n_iter_[0])
+    result = (model.predict_proba(z)[:,1], int(x.shape[1]), int(model.n_iter_[0]))
+    return (*result, dict(scaler=scale, vectorizer=vec, classifier=model)) if return_fitted else result
+
+
+def shallow_candidate_scores(fitted, texts, statistics):
+    """Transform/predict only: the held-out function cannot refit any component."""
+    size = size_block([dict(features=f) for f in statistics])
+    matrix = sparse.hstack([sparse.csr_matrix(fitted['scaler'].transform(size)),
+                           fitted['vectorizer'].transform(texts)], format='csr')
+    scores = fitted['classifier'].predict_proba(matrix)[:, 1]
+    if not np.isfinite(scores).all():
+        raise ValueError('nonfinite frozen shallow candidate scores')
+    return scores
+
+
+def visible_semantic_candidates(source, language, tokenizer, source_budget, *, unseen=False, file_name=''):
+    """Reject a view if it displaces any part of the original visible prefix."""
+    from .syntax import semantic_preserving_candidates, apply_source_edits, resolve_language
+    language = resolve_language(source, language, file_name)
+    original, before = visible_source_statistics(source, tokenizer, source_budget)
+    original_ids = tokenizer(source, add_special_tokens=False, truncation=True,
+                             max_length=source_budget)['input_ids']
+    proposed, reasons = semantic_preserving_candidates(source, language, unseen=unseen)
+    reasons = Counter(reasons)
+    kept = []
+    for candidate in proposed:
+        boundary, mapped = before['visible_chars'], before['visible_chars']
+        if any(a < boundary < b for a, b, _ in candidate['edits']):
+            reasons['edit_crosses_visible_boundary'] += 1
+            continue
+        for a, b, value in candidate['edits']:
+            if a < boundary:
+                mapped += len(value) - (b-a)
+        transformed = apply_source_edits(source, candidate['edits'])
+        visible, stats = visible_source_statistics(transformed, tokenizer, source_budget)
+        ids = tokenizer(transformed, add_special_tokens=False, truncation=True,
+                        max_length=source_budget)['input_ids']
+        if stats['visible_chars'] < mapped:
+            reasons['would_displace_original_visible_source'] += 1
+        elif ids == original_ids:
+            reasons['identical_encoder_input'] += 1
+        else:
+            kept.append(dict(candidate, **stats, original_visible_chars=boundary, preserved_visible_chars=mapped))
+    return kept, dict(reasons)
+
+
+def matched_candidate_pool(candidates):
+    """A label/score-independent pool with exactly matched token/window budgets."""
+    groups = defaultdict(list)
+    for candidate in candidates:
+        groups[candidate['visible_tokens']].append(candidate)
+    return max(groups.values(), key=len) if groups else []
+
+
+def select_candidate_views(candidates, *, mode, rng):
+    if mode not in ('random', 'high_low'):
+        raise ValueError('unknown candidate selection mode')
+    if len(candidates) < 2:
+        return []
+    if mode == 'random':
+        return sorted(rng.sample(range(len(candidates)), 2))
+    low = min(range(len(candidates)), key=lambda i: (candidates[i]['shallow_score'], i))
+    high = max((i for i in range(len(candidates)) if i != low),
+               key=lambda i: (candidates[i]['shallow_score'], i))
+    return [low, high]
+
+
+def shallow_augmentation_views(rows, tokenizer, source_budget):
+    """One frozen grouped OOF fit, followed by label-free candidate selection."""
+    import random
+    from .syntax import apply_source_edits
+    cache, oof, fitted = shallow_oof_weights(rows, tokenizer, source_budget, return_fitted=True)
+    entries, skipped = [], Counter()
+    for record, original in zip(rows, cache):
+        candidates, reasons = visible_semantic_candidates(record['raw_source'], record.get('language', 'c'),
+            tokenizer, source_budget, file_name=record.get('file_name',''))
+        pool = matched_candidate_pool(candidates)
+        skipped.update(reasons)
+        skipped['other_token_budget_bucket'] += len(candidates)-len(pool)
+        entries.append(dict(sample_key=record['sample_key'], fold=original['fold'],
+            original_visible_tokens=original['visible_tokens'], proposed_legal=len(candidates),
+            candidates=pool, skip_reasons=reasons))
+    for fold in fitted:
+        texts, stats, positions = [], [], []
+        hold = set(fold['heldout_keys'])
+        for i, (record, entry) in enumerate(zip(rows, entries)):
+            if entry['fold'] != fold['fold']:
+                continue
+            if record['sample_key'] not in hold or record['sample_key'] in fold['fit_keys']:
+                raise ValueError('candidate scored by a non-heldout OOF model')
+            for j, candidate in enumerate(entry['candidates']):
+                source = apply_source_edits(record['raw_source'], candidate['edits'])
+                texts.append(source[:candidate['visible_chars']]); stats.append(candidate); positions.append((i,j))
+        if positions:
+            for (i,j), score in zip(positions, shallow_candidate_scores(fold, texts, stats)):
+                entries[i]['candidates'][j]['shallow_score'] = float(score)
+        # These CPU models are never refit during candidate scoring or training.
+        for estimator, attributes in ((fold['classifier'], ('coef_', 'intercept_')),
+                                      (fold['scaler'], ('mean_', 'var_', 'scale_'))):
+            for attr in attributes:
+                getattr(estimator, attr).flags.writeable = False
+    rng = random.Random(42)
+    for entry in entries:
+        entry['selections'] = {mode: select_candidate_views(entry['candidates'], mode=mode, rng=rng)
+                               for mode in ('random', 'high_low')}
+    eligible = [e for e in entries if len(e['candidates']) >= 2]
+    spans = [max(c['shallow_score'] for c in e['candidates'])-min(c['shallow_score'] for c in e['candidates']) for e in eligible]
+    report = dict(oof=oof, functions=len(rows), augmented_functions=len(eligible),
+        coverage=len(eligible)/len(rows), pool_sizes=dict(Counter(len(e['candidates']) for e in entries)),
+        selection_kinds={mode: dict(Counter(e['candidates'][i]['kind'] for e in eligible
+            for i in e['selections'][mode])) for mode in ('random', 'high_low')},
+        skips=dict(skipped), insufficient_pool=len(entries)-len(eligible),
+        shallow_score_span=dict(mean=float(np.mean(spans)) if spans else None,
+            median=float(np.median(spans)) if spans else None, maximum=max(spans) if spans else None,
+            zero_span_functions=sum(s == 0 for s in spans)))
+    return entries, report, fitted
 
 
 def distributions(rows, tr, va, out):

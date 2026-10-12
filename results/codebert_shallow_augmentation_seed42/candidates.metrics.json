@@ -1,0 +1,115 @@
+{
+  "oof": {
+    "samples": 7820,
+    "groups": 7727,
+    "linked_groups": 93,
+    "max_group_size": 2,
+    "folds": [
+      {
+        "fold": 1,
+        "fit_samples": 5213,
+        "heldout_samples": 2607,
+        "fit_positive": 2606,
+        "heldout_positive": 1304,
+        "fit_groups": 5151,
+        "heldout_groups": 2576,
+        "features": 30003,
+        "iterations": 8
+      },
+      {
+        "fold": 2,
+        "fit_samples": 5213,
+        "heldout_samples": 2607,
+        "fit_positive": 2607,
+        "heldout_positive": 1303,
+        "fit_groups": 5151,
+        "heldout_groups": 2576,
+        "features": 30003,
+        "iterations": 8
+      },
+      {
+        "fold": 3,
+        "fit_samples": 5214,
+        "heldout_samples": 2606,
+        "fit_positive": 2607,
+        "heldout_positive": 1303,
+        "fit_groups": 5152,
+        "heldout_groups": 2575,
+        "features": 30003,
+        "iterations": 9
+      }
+    ],
+    "oof": {
+      "accuracy": 0.7433503836317136,
+      "precision": 0.7351124289597233,
+      "recall": 0.7608695652173914,
+      "f1": 0.7477692597712707,
+      "mcc": 0.4869998007077622,
+      "auc": 0.8168390447472217,
+      "tp": 2975,
+      "tn": 2838,
+      "fp": 1072,
+      "fn": 935,
+      "samples": 7820,
+      "threshold": 0.5,
+      "bce": 0.5231844704895565,
+      "probability_clip_count": 0
+    },
+    "classes": {
+      "0": {
+        "samples": 3910,
+        "hard": 1072,
+        "raw_mean": 1.5483375959079284,
+        "normalized_mean": 0.9999999999999998,
+        "easy_weight": 0.6458539808391146,
+        "hard_weight": 1.9375619425173438
+      },
+      "1": {
+        "samples": 3910,
+        "hard": 935,
+        "raw_mean": 1.4782608695652173,
+        "normalized_mean": 0.9999999999999999,
+        "easy_weight": 0.6764705882352942,
+        "hard_weight": 2.0294117647058827
+      }
+    }
+  },
+  "functions": 7820,
+  "augmented_functions": 4637,
+  "coverage": 0.5929667519181586,
+  "pool_sizes": {
+    "4": 4637,
+    "0": 3183
+  },
+  "selection_kinds": {
+    "random": {
+      "comment": 9154,
+      "rename": 120
+    },
+    "high_low": {
+      "comment": 9154,
+      "rename": 120
+    }
+  },
+  "skips": {
+    "unresolved_macro_or_binding_semantics": 19848,
+    "other_token_budget_bucket": 280,
+    "parse_error": 20768,
+    "would_displace_original_visible_source": 2312,
+    "no_used_local_binding": 20,
+    "ambiguous_function": 108,
+    "unsupported_declarator": 28,
+    "no_local_binding": 312,
+    "nonlocal_identifier": 264,
+    "unsupported_declarator_or_scope": 56,
+    "column_sensitive_source": 4,
+    "unsupported_storage_or_attribute": 12
+  },
+  "insufficient_pool": 3183,
+  "shallow_score_span": {
+    "mean": 0.011133012322590794,
+    "median": 0.009277132264400634,
+    "maximum": 0.11928008551308181,
+    "zero_span_functions": 0
+  }
+}

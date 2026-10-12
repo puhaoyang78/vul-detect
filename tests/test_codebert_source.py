@@ -17,6 +17,89 @@ class CodeTokenizer(TinyTokenizer):
 
 
 class CodeBERTSourceTests(unittest.TestCase):
+    def test_function_view_bce_normalizes_functions_not_flat_views(self):
+        torch.set_num_threads(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);modelpath=root/'encoder'
+            RobertaModel(RobertaConfig(vocab_size=16,hidden_size=16,num_hidden_layers=1,
+                num_attention_heads=2,intermediate_size=32,max_position_embeddings=514,
+                pad_token_id=0,bos_token_id=2,eos_token_id=1,hidden_dropout_prob=0.,attention_probs_dropout_prob=0.)).save_pretrained(modelpath)
+            rows=[dict(dataset='primevul',sample_key=str(i),split='train',label=i%2,
+                raw_source=f'int f{i}(int x){{return x+{i};}}') for i in range(8)]
+            rows += [dict(rows[i],sample_key=f'v{i}',split='valid') for i in range(2)]
+            views={r['sample_key']:([r['raw_source'].replace('x','item'),r['raw_source'].replace('x','data')] if i%3 else []) for i,r in enumerate(rows[:8])}
+            core._seed_everything(42)
+            fresh=core._build_model('codebert_source',str(modelpath),device=torch.device('cpu'),
+                lora_r=16,lora_alpha=32,lora_dropout=.05,
+                target_modules=('attention.self.query','attention.self.key','attention.self.value','attention.output.dense'),
+                gradient_checkpointing=False,fusion_dim=256,fusion_heads=8,finetuning_mode='full')
+            initial=core._cpu_state(fresh.encoder.state_dict())
+            builder=core.InputBuilder(CodeTokenizer(),source_max_length=2048,context_max_length=384)
+            expected=0.
+            for batch,coefficients in core.function_view_batches(rows[:8],views,4):
+                logits=fresh(*builder.codebert_batch(batch,device='cpu'))
+                losses=torch.nn.functional.binary_cross_entropy_with_logits(logits,torch.tensor([r['label'] for r in batch],dtype=torch.float32),reduction='none')
+                expected+=float((losses*losses.new_tensor(coefficients)).sum().detach())/8
+            with patch.object(core.AutoTokenizer,'from_pretrained',return_value=CodeTokenizer()):
+                cp=core.train_model(None,root/'best.pt',records=rows,variant='codebert_source',model_path=str(modelpath),
+                    source_max_length=2048,epochs=1,batch_size=2,gradient_accumulation=4,learning_rate=1e-3,
+                    device='cpu',finetuning_mode='full',function_views=views,augmentation_config=dict(mode='random'))
+                epoch=[json.loads(l) for l in (root/'best.training.jsonl').open() if json.loads(l)['event']=='epoch'][0]
+                self.assertAlmostEqual(epoch['train_loss'],expected,places=6)
+                self.assertEqual(epoch['optimizer_steps'],1)
+                self.assertEqual(epoch['bce_function_forwards'],sum(1+len(v) for v in views.values()))
+                self.assertEqual(cp['augmentation_config'],dict(mode='random'))
+                self.assertFalse(torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'],initial['embeddings.word_embeddings.weight']))
+                loaded=core._load_model(torch.load(root/'best.pt',weights_only=False),device=torch.device('cpu'))
+                before=core._predict_logits(loaded,rows[-2:],builder,variant='codebert_source',excluded_groups=(),batch_size=2,device=torch.device('cpu'))
+                torch.testing.assert_close(before,core.predict_checkpoint(root/'best.pt',rows[-2:],batch_size=2,device='cpu'),rtol=0,atol=0)
+
+    def test_augmentation_entry_uses_shared_trainer_and_matches_forward_budgets(self):
+        from argparse import Namespace
+        from contextlib import redirect_stdout
+        import io
+        from vulnmechanism.cli import _codebert_finetuning,_finetuning_evaluate
+        torch.set_num_threads(2)
+        class OffsetTokenizer(CodeTokenizer):
+            is_fast=True
+            def __call__(self,text,return_offsets_mapping=False,**kwargs):
+                if text=='FORBIDDEN_HELDOUT':raise AssertionError('Test tokenized')
+                result=super().__call__(text,**kwargs)
+                if return_offsets_mapping:result['offset_mapping']=[(i,i+1) for i in range(len(result['input_ids']))]
+                return result
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);modelpath=root/'encoder';manifest=root/'manifest.jsonl';baseline=root/'baseline/best.pt'
+            RobertaModel(RobertaConfig(vocab_size=16,hidden_size=16,num_hidden_layers=1,
+                num_attention_heads=2,intermediate_size=32,max_position_embeddings=514,
+                pad_token_id=0,bos_token_id=2,eos_token_id=1,hidden_dropout_prob=0.,attention_probs_dropout_prob=0.)).save_pretrained(modelpath)
+            rows=[dict(dataset='primevul',sample_key=str(i),split='train',label=i%2,language='c',
+                       function=f'int f{i}(int x){{return x+{i};}}') for i in range(12)]
+            rows += [dict(rows[i],sample_key=f'v{i}',split='valid') for i in range(2)]
+            rows += [dict(rows[0],sample_key='test',split='test',function='FORBIDDEN_HELDOUT')]
+            manifest.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+            args=Namespace(manifest=str(manifest),model=str(modelpath),output_dir=str(root/'augmented'),stage='all',
+                finetuning_mode=None,device='cpu',batch_size=4,gradient_accumulation=2,
+                shallow_augmentation='both',baseline_checkpoint=str(baseline))
+            with patch.object(core.AutoTokenizer,'from_pretrained',return_value=OffsetTokenizer()),redirect_stdout(io.StringIO()):
+                data=[r for r in core._read_jsonl(manifest,source_only=True) if r['split'] in ('train','valid')]
+                cp=core.train_model(None,baseline,records=data,variant='codebert_source',model_path=str(modelpath),
+                    source_max_length=2048,epochs=3,batch_size=4,gradient_accumulation=2,learning_rate=1e-5,device='cpu',finetuning_mode='full')
+                for split in ('train','valid'):_finetuning_evaluate(data,baseline.parent,split,cp,args)
+                result=_codebert_finetuning(args)
+                self.assertEqual(set(result['valid']),{'bce','random','high_low'})
+                self.assertEqual(len(result['matched_training_budgets']),3)
+                self.assertEqual(result['valid']['random']['robustness']['rename']['eligible'],2)
+                self.assertTrue((root/'augmented/oof.models.pkl').exists())
+                for mode in ('random','high_low'):
+                    saved=torch.load(root/f'augmented/{mode}/best.pt',weights_only=False)
+                    self.assertEqual(saved['cohort_members'],cp['cohort_members'])
+                    self.assertEqual(saved['training_config'],cp['training_config'])
+                    self.assertIsNone(saved['sample_weights'])
+                    self.assertIsNone(saved['initial_checkpoint'])
+                    self.assertEqual(saved['augmentation_config']['mode'],mode)
+                with patch.object(core,'train_model',side_effect=AssertionError('completed experiment retrained')):
+                    _codebert_finetuning(args)
+
     def test_full_weighted_bce_uses_sample_mean_and_saves_fixed_weights(self):
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as tmp:

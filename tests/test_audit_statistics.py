@@ -6,6 +6,74 @@ from vulnmechanism.audit_statistics import graph_counts, syntax_counts, summary,
 
 
 class StatisticsAuditTests(unittest.TestCase):
+    def test_semantic_candidates_preserve_visibility_unicode_and_budget(self):
+        from vulnmechanism.syntax import apply_source_edits, source_tokens, semantic_preserving_candidates
+        class Tokenizer:
+            is_fast=True
+            def __call__(self,source,**kwargs):
+                n=min(len(source),kwargs.get('max_length') or len(source))
+                return dict(input_ids=[ord(c) for c in source[:n]],offset_mapping=[(i,i+1) for i in range(n)])
+        source='int f(int x){/* 中文 x */ int y=x; {int x=2;y+=x;} return y+x;}'
+        proposed,_=semantic_preserving_candidates(source,'c')
+        self.assertLessEqual(len(proposed),8)
+        self.assertEqual({c['kind'] for c in proposed},{'comment','rename'})
+        for c in proposed:
+            changed=apply_source_edits(source,c['edits'])
+            self.assertEqual(source.count('\n'),changed.count('\n'))
+            self.assertIn('/* 中文 x */',changed)
+            if c['kind']=='rename':self.assertIn('{int x=2;y+=x;}',changed)
+            else:self.assertEqual(source_tokens(source),source_tokens(changed))
+        candidates,reasons=audit.visible_semantic_candidates(source,'c',Tokenizer(),len(source))
+        self.assertFalse(candidates)
+        self.assertGreater(reasons['would_displace_original_visible_source'],0)
+        candidates,_=audit.visible_semantic_candidates(source,'c',Tokenizer(),len(source)+32)
+        self.assertEqual(len(candidates),8)
+        pool=audit.matched_candidate_pool(candidates)
+        self.assertEqual(len({c['visible_tokens'] for c in pool}),1)
+        long='int f(int unusually_long_name){return unusually_long_name;'+' ' * 100+'}'
+        candidates,_=audit.visible_semantic_candidates(long,'c',Tokenizer(),60)
+        self.assertTrue(any(c['kind']=='rename' for c in candidates))
+        for c in candidates:
+            self.assertGreaterEqual(c['visible_chars'],c['preserved_visible_chars'])
+        self.assertFalse(audit.visible_semantic_candidates('int f(){','c',Tokenizer(),200)[0])
+        unicode,_=semantic_preserving_candidates('int f(int 变量){return 变量;}','c')
+        self.assertEqual(len(unicode),8)
+        mixed,_=audit.visible_semantic_candidates(source,'c/c++',Tokenizer(),len(source)+32)
+        self.assertEqual(len(mixed),8)
+
+    def test_candidate_scoring_is_frozen_heldout_and_selection_has_no_label(self):
+        import random
+        from vulnmechanism.syntax import AUGMENT_NAMES,UNSEEN_NAMES,AUGMENT_COMMENTS,UNSEEN_COMMENTS
+        class Tokenizer:
+            is_fast=True
+            def __call__(self,source,**kwargs):
+                n=min(len(source),kwargs.get('max_length') or len(source))
+                return dict(input_ids=[ord(c) for c in source[:n]],offset_mapping=[(i,i+1) for i in range(n)])
+        rows=[dict(sample_key=str(i),split='train',language='c',label=i%2,counterpart_groups=[f'pair{i//3}'],
+                   raw_source=f'int f{i}(int x){{return x+{i};}}') for i in range(18)]
+        entries,report,fitted=audit.shallow_augmentation_views(rows,Tokenizer(),2048)
+        self.assertEqual(report['augmented_functions'],18)
+        self.assertEqual({e['fold'] for e in entries},{1,2,3})
+        for fold in fitted:
+            self.assertFalse(set(fold['fit_keys']) & set(fold['heldout_keys']))
+            self.assertFalse(fold['classifier'].coef_.flags.writeable)
+            before=fold['classifier'].coef_.copy()
+            audit.shallow_candidate_scores(fold,['int f(){return 0;}'],[dict(visible_tokens=22,visible_chars=22,visible_lines=1)])
+            np.testing.assert_array_equal(before,fold['classifier'].coef_)
+        for e in entries:
+            self.assertEqual(len(e['selections']['random']),2)
+            self.assertEqual(len(e['selections']['high_low']),2)
+            self.assertTrue(e['sample_key'] in fitted[e['fold']-1]['heldout_keys'])
+        pool=[dict(shallow_score=p,label=i%2) for i,p in enumerate([.2,.7,.1,.9])]
+        self.assertEqual(audit.select_candidate_views(pool,mode='high_low',rng=random.Random(42)),[2,3])
+        for c in pool:c['label']=1-c['label']
+        self.assertEqual(audit.select_candidate_views(pool,mode='high_low',rng=random.Random(42)),[2,3])
+        ties=[dict(shallow_score=.5) for _ in range(4)]
+        self.assertEqual(audit.select_candidate_views(ties,mode='high_low',rng=random.Random(42)),[0,3])
+        self.assertEqual(audit.select_candidate_views(ties[:1],mode='high_low',rng=random.Random(42)),[])
+        self.assertFalse(set(AUGMENT_NAMES)&set(UNSEEN_NAMES))
+        self.assertFalse(set(AUGMENT_COMMENTS)&set(UNSEEN_COMMENTS))
+
     def test_visible_statistics_use_character_offsets_and_actual_budget(self):
         class Tokenizer:
             is_fast=True
