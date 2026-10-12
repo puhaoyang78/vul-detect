@@ -200,6 +200,70 @@ LoRA 的选中模型并非 BCE 最小的候选，严格沿用 MCC 选模而未�
 其中 166/1,014 个函数被截断，最多可见 2,025 个源码 token，剩余逻辑预算用于原前缀。
 本轮仅训练和评价 Train/Valid，未运行修复对、Test、SVEN 或 Qwen。
 
+### 浅层模型难例重加权
+
+`codebert-finetuning --shallow-reweighting` 在同一原函数清单上运行一次全参数实验。
+复用 `audit_statistics.py` 的可见源码规模统计、TF-IDF 和 Logistic Regression：
+只在 Train 做 seed=42 的 3 折分组 OOF，每折重新拟合标准化器与词表。
+输入为实际源码预算 2,025 tokens 对应的字符前缀；规模统计取 log1p，词法配置沿用
+原实现（1/2-gram、min_df=3、最多 30,000 特征、C=1）。修复关联以及完整/可见
+规范化源码重复的传递关联保持同折。OOF 阈值固定 .5，错误样本原始权重 3，其他 1，
+再除以各自标签内原始权重均值；训练全程固定，不过采样。
+
+从预训练基座重新开始，使用现有选中全参数 BCE checkpoint 的输入和训练配置
+（默认 LR=1e-5、3 epochs、有效 batch=8），只通过公共 `sample_weights` 路径改变
+`mean(weight * BCEWithLogits)`。Valid 仅用于原选模和阈值规则，不生成权重。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-reweighting --stage all --device cuda:0
+# 可单独准备 Train OOF，或复用完成的训练重导出比较：
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-reweighting --stage prepare
+$PY -m vulnmechanism.cli codebert-finetuning --shallow-reweighting --stage report --device cuda:0
+```
+
+默认结果目录为 `results/codebert_shallow_reweight_seed42`，保存配置、逐样本 OOF/权重、
+折和长度组统计、训练日志、checkpoint、Valid 预测及 `comparison.metrics.json`。
+该入口只运行这一个加权模型，比较现有匹配 BCE，不启动新的 LR 搜索或 Test。
+
+本轮已完成全部 3 epochs，每轮 978 次更新，按原 Valid MCC 选中第 1 轮、阈值 .48。
+后两轮 MCC 分别为 .4685/.4739，低于第 1 轮的 .4971。对照如下：
+
+| 模型 | epoch | 阈值 | Valid BCE | AUC | MCC | FP | FN |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 普通 BCE | 3 | .29 | .5807 | .8117 | .5082 | 169 | 84 |
+| 浅层难例重加权 | 1 | .48 | .5905 | .7847 | .4971 | 129 | 126 |
+
+Valid 长度组按完整原源码 token 数分组；两模型使用相同的实际输入。
+
+| 源码 tokens | N（正/负） | BCE AUC | 加权 AUC | BCE Recall | 加权 Recall | BCE FPR | 加权 FPR |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ≤128 | 194（33/161） | .6908 | .5927 | .2121 | .0000 | .0373 | .0124 |
+| 129–512 | 357（143/214） | .7267 | .7100 | .6643 | .5385 | .2944 | .1822 |
+| 513–2025 | 297（185/112） | .7135 | .6603 | .9459 | .8919 | .7143 | .6071 |
+| >2025 | 166（146/20） | .5603 | .5024 | 1.0000 | .9521 | 1.0000 | 1.0000 |
+
+Train OOF 共 7,820 个函数、7,727 个组，93 个双样本组不跨折；三个 held-out 折分别
+有 2,607/2,607/2,606 个函数。OOF 固定 .5 的 AUC/MCC 为 .8168/.4870，共 2,007
+个难例（正 935、负 1,072）。各长度组的难例覆盖为：
+
+| 源码 tokens | Train N（正/负） | 正例难例/正例数 | 负例难例/负例数 |
+| --- | --- | --- | --- |
+| ≤128 | 1611（199/1412） | 199/199 | 2/1412 |
+| 129–512 | 2662（1123/1539） | 659/1123 | 240/1539 |
+| 513–2025 | 2384（1594/790） | 76/1594 | 661/790 |
+| >2025 | 1163（994/169） | 1/994 | 169/169 |
+
+负例难/易权重为 1.9376/.6459，正例为 2.0294/.6765，各标签内均值为 1。
+本次结果退化：总体 AUC/MCC 下降 .0271/.0111，FP 减少 40，但 FN 增加 42；
+短正例（≤128）检出从 7/33 降至 0/33。长负例（>512）FPR 从 100/132=.7576
+降至 88/132=.6667，但超预算负例仍为 20/20 误报，且四个长度组 AUC 全部下降。
+这次固定重加权未改善目标盲点的整体判别。完整配置、OOF 分布和比较见
+[`comparison.metrics.json`](results/codebert_shallow_reweight_seed42/comparison.metrics.json)。
+24 项相关测试及更新后的针对性复验通过，包含折内拟合隔离、分组、权重归一化、
+加权均值损失、全参数更新和保存重载；正式训练后的真实 CodeBERT checkpoint
+已严格重载完成全量 Valid 推理。
+
 ### 修复引导的局部风险学习
 
 `python -m vulnmechanism.cli local-risk` 扩展同一 `train_model`、输入构造、LoRA、

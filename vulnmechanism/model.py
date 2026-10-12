@@ -1110,8 +1110,8 @@ def train_model(
     if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
             or variant != 'codebert_source' or classifier_head != 'linear'
             or any(x is not None for x in (change_objective, local_objective, synthetic_pairs,
-                                           initial_adapter_state, sample_weights))):
-        raise ValueError('explicit finetuning modes require plain CodeBERT function BCE')
+                                           initial_adapter_state))):
+        raise ValueError('explicit finetuning modes require CodeBERT function BCE without auxiliary losses')
     if classifier_head not in {"linear", "local_risk"} and variant != "codebert_source":
         raise ValueError("alternative heads require codebert_source")
     if variant == 'codebert_source' and source_max_length not in (512, 2048):

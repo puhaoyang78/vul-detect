@@ -214,9 +214,11 @@ def build_parser() -> argparse.ArgumentParser:
     finetuning = sub.add_parser('codebert-finetuning', help='fixed six-run PrimeVul LoRA/full comparison, Train/Valid only')
     finetuning.add_argument('--manifest', default='data/benchmark/manifest_sven_commit_disjoint.jsonl')
     finetuning.add_argument('--model', default='/home/PublicData/PHY-data/resource/codebert-base')
-    finetuning.add_argument('--output-dir', default='results/codebert_finetuning_seed42')
-    finetuning.add_argument('--stage', choices=('smoke', 'train', 'report', 'all'), default='all')
+    finetuning.add_argument('--output-dir', help='default: results/codebert_finetuning_seed42, or codebert_shallow_reweight_seed42')
+    finetuning.add_argument('--stage', choices=('prepare', 'smoke', 'train', 'report', 'all'), default='all')
     finetuning.add_argument('--finetuning-mode', choices=('lora', 'full'), help='train one fixed three-LR family')
+    finetuning.add_argument('--shallow-reweighting', action='store_true', help='one full fine-tuning run with fixed Train-only shallow OOF weights')
+    finetuning.add_argument('--baseline-checkpoint', default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
     finetuning.add_argument('--device', default='cuda:0')
     finetuning.add_argument('--batch-size', type=int, default=4)
     finetuning.add_argument('--gradient-accumulation', type=int, default=2)
@@ -305,6 +307,10 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args):
 
 
 def _codebert_finetuning(args):
+    if getattr(args, 'shallow_reweighting', False):
+        return _codebert_shallow_reweighting(args)
+    if args.stage == 'prepare':
+        raise ValueError('prepare is only used with --shallow-reweighting')
     import csv
     import math
     import torch
@@ -321,7 +327,7 @@ def _codebert_finetuning(args):
     counts = dict(Counter(f"{r['split']}/label_{r['label']}" for r in rows))
     members = {s: [(r['sample_key'], r['label']) for r in rows if r['split'] == s] for s in ('train', 'valid')}
     rates = {'lora': (2e-5, 1e-4, 2e-4), 'full': (1e-5, 2e-5, 5e-5)}
-    root = Path(args.output_dir)
+    root = Path(args.output_dir or 'results/codebert_finetuning_seed42')
     config = dict(manifest=args.manifest, model=args.model, seed=42, source_max_length=2048,
         epochs=3, batch_size=args.batch_size, gradient_accumulation=args.gradient_accumulation,
         weight_decay=.01, gradient_clip=1., lora_r=16, lora_alpha=32, lora_dropout=.05,
@@ -407,6 +413,162 @@ def _codebert_finetuning(args):
         writer=csv.DictWriter(f, fieldnames=list(results[0]))
         writer.writeheader(); writer.writerows(results)
     return summary
+
+
+def _reweighting_strata(items, source_budget, threshold=.5, *, oof=False):
+    from .audit_statistics import summary
+    groups = {}
+    for name, lo, hi in [('<=128', 0, 128), ('129-512', 128, 512),
+                          (f'513-{source_budget}', 512, source_budget),
+                          (f'>{source_budget}', source_budget, float('inf'))]:
+        subset = [r for r in items if lo < r['source_token_count'] <= hi]
+        positive = sum(r['label'] for r in subset)
+        negative = len(subset)-positive
+        result = summary([r['label'] for r in subset],
+                         [r['oof_probability' if oof else 'score'] for r in subset], threshold)
+        result.update(positive=positive, negative=negative,
+                      false_positive_rate=result.get('fp', 0)/negative if negative else None)
+        if oof:
+            result.update(hard_positive=sum(r['hard'] and r['label'] == 1 for r in subset),
+                          hard_negative=sum(r['hard'] and r['label'] == 0 for r in subset))
+        groups[name] = result
+    return groups
+
+
+def _codebert_shallow_reweighting(args):
+    import math
+    import numpy as np
+    import torch
+    import sklearn
+    import transformers
+    from . import model as core, audit_statistics as shallow
+    from .change_learning import write_json
+    if args.stage == 'smoke' or args.finetuning_mode not in (None, 'full'):
+        raise ValueError('shallow reweighting uses full fine-tuning and prepare/train/report/all stages')
+    rows = [r for r in core._read_jsonl(args.manifest, source_only=True)
+            if r['dataset'] == 'primevul' and r['split'] in ('train', 'valid')]
+    train = [r for r in rows if r['split'] == 'train']
+    members = {s: [(r['sample_key'], r['label']) for r in rows if r['split'] == s] for s in ('train', 'valid')}
+    baseline_path = Path(args.baseline_checkpoint)
+    base = torch.load(baseline_path, map_location='cpu', weights_only=False)
+    if (base.get('cohort_members') != members or any(r.get('repair_supplement') for r in rows)
+            or base.get('finetuning_mode') != 'full' or base.get('variant') != 'codebert_source'
+            or base.get('classifier_head') != 'linear' or base.get('sample_weights') is not None
+            or base.get('initial_checkpoint') is not None or base.get('seed') != 42
+            or base.get('source_max_length') != 2048 or base.get('model_path') != args.model
+            or base.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION
+            or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision'))):
+        raise ValueError('requires the matching fresh full-CodeBERT BCE baseline and original manifest')
+    training = base['training_config']
+    if (training['epochs'] != 3 or training['weight_decay'] != .01
+            or training['batch_size'] != args.batch_size
+            or training['gradient_accumulation'] != args.gradient_accumulation
+            or args.batch_size*args.gradient_accumulation != 8):
+        raise ValueError('training budget must match the existing full baseline exactly')
+    history = [json.loads(l) for l in baseline_path.with_suffix('.training.jsonl').open()]
+    budget = [(r['epoch'], r['optimizer_steps']) for r in history if r['event'] == 'epoch']
+    if budget != [(i, math.ceil(len(train)/8)) for i in (1, 2, 3)]:
+        raise ValueError('baseline did not complete the matching three-epoch budget')
+    # Validate both saved cohorts/source identities; these artifacts already exist.
+    for split in ('train', 'valid'):
+        if not all((baseline_path.parent/f'{split}.{suffix}').exists()
+                   for suffix in ('metrics.json', 'predictions.jsonl')):
+            raise FileNotFoundError(f'missing saved baseline {split} evaluation')
+        _finetuning_evaluate(rows, baseline_path.parent, split, base, args)
+    input_protocol = base['input_protocol']
+    source_budget = input_protocol['source_budget']
+    root = Path(args.output_dir or 'results/codebert_shallow_reweight_seed42')
+    config = dict(manifest=args.manifest, baseline_checkpoint=str(baseline_path), model=base['model_path'],
+        seed=42, finetuning_mode='full', training=training, input_protocol=input_protocol,
+        encoder_precision=base['encoder_precision'], classifier_initialization=base['classifier_initialization'],
+        weighting=dict(folds=3, threshold=.5, hard_weight=3., easy_weight=1.,
+            normalization='divide by raw mean within each Train label',
+            features='log1p visible tokens/chars/lines + lexical TF-IDF; fold-local scaler/vocabulary',
+            grouping='transitive counterpart/pair identities and full/visible normalized source duplicates',
+            tfidf=shallow.TFIDF_OPTIONS, logistic_regression=shallow.LR_OPTIONS),
+        selection='original Valid MCC threshold/epoch selection and tie-break',
+        loss='mean(weight * BCEWithLogits); fixed weights; no oversampling',
+        environment=dict(torch=torch.__version__, transformers=transformers.__version__, sklearn=sklearn.__version__),
+        train_functions=len(train), valid_functions=len(members['valid']))
+    config = json.loads(json.dumps(config))
+    config_path = root/'config.metrics.json'
+    if config_path.exists() and json.loads(config_path.read_text()) != config:
+        raise ValueError('existing shallow reweighting configuration differs')
+    if not config_path.exists():
+        write_json(config_path, config)
+    weight_path, oof_path = root/'oof.weights.jsonl', root/'oof.metrics.json'
+    if weight_path.exists() != oof_path.exists():
+        raise FileExistsError('incomplete OOF artifacts; inspect before rerunning')
+    if weight_path.exists():
+        cache = [json.loads(l) for l in weight_path.open()]
+        if [(r['sample_key'], r['label']) for r in cache] != members['train']:
+            raise ValueError('cached OOF training members differ')
+        hard, raw, normalized = shallow.normalize_hard_weights(
+            [r['label'] for r in cache], [r['oof_probability'] for r in cache])
+        if (not np.array_equal(hard, [r['hard'] for r in cache])
+                or not np.array_equal(raw, [r['raw_weight'] for r in cache])
+                or not np.allclose(normalized, [r['weight'] for r in cache], rtol=0, atol=1e-12)):
+            raise ValueError('cached weights disagree with fixed OOF rule')
+        oof = json.loads(oof_path.read_text())
+    else:
+        from transformers import AutoTokenizer
+        cache, oof = shallow.shallow_oof_weights(train, AutoTokenizer.from_pretrained(args.model), source_budget)
+        usage = {r['sample_key']: r for r in (json.loads(l) for l in
+                 (baseline_path.parent/'train.predictions.jsonl').open())}
+        for r in cache:
+            r.update(source_token_count=usage[r['sample_key']]['source_token_count'],
+                     source_truncated=usage[r['sample_key']]['source_truncated'])
+            if r['visible_tokens'] != usage[r['sample_key']]['visible_source_tokens']:
+                raise ValueError('shallow visible budget differs from the encoder input')
+        oof['length_groups'] = _reweighting_strata(cache, source_budget, oof=True)
+        with weight_path.open('x') as f:
+            for r in cache:
+                f.write(json.dumps(r, ensure_ascii=False)+'\n')
+        write_json(oof_path, oof)
+    if args.stage == 'prepare':
+        return dict(config=config, oof=oof)
+    weights = {r['sample_key']: r['weight'] for r in cache}
+    expected = {k: base[k] for k in ('checkpoint_version', 'dataset_schema_version', 'variant', 'model_path',
+        'source_max_length', 'context_max_length', 'lora_r', 'lora_alpha', 'lora_dropout', 'seed',
+        'finetuning_mode', 'classifier_head', 'classifier_initialization', 'encoder_precision',
+        'cohort_members', 'initial_checkpoint', 'training_config', 'input_protocol', 'target_modules')}
+    expected['sample_weights'] = weights
+    del base
+    target = root/'best.pt'
+    if target.exists():
+        cp = torch.load(target, map_location='cpu', weights_only=False)
+        if any(cp.get(k) != v for k, v in expected.items()):
+            raise ValueError('existing weighted checkpoint differs from the baseline protocol/weights')
+        history = [json.loads(l) for l in target.with_suffix('.training.jsonl').open()]
+        if [(r['epoch'], r['optimizer_steps']) for r in history if r['event'] == 'epoch'] != budget:
+            raise ValueError('weighted training budget is incomplete')
+    elif args.stage in ('train', 'all'):
+        cp = core.train_model(None, target, records=rows, variant='codebert_source', model_path=args.model,
+            source_max_length=2048, context_max_length=expected['context_max_length'],
+            lora_r=expected['lora_r'], lora_alpha=expected['lora_alpha'], lora_dropout=expected['lora_dropout'],
+            finetuning_mode='full', seed=42, device=args.device, log_every=25, sample_weights=weights, **training)
+    else:
+        raise FileNotFoundError(target)
+    result = _finetuning_evaluate(rows, root, 'valid', cp, args)
+    if cp['input_protocol'] != input_protocol:
+        raise ValueError('weighted checkpoint input protocol differs')
+    comparisons = {}
+    for mode, folder, metrics in [('bce', baseline_path.parent, json.loads((baseline_path.parent/'valid.metrics.json').read_text())),
+                                   ('weighted', root, result)]:
+        predictions = [json.loads(l) for l in (folder/'valid.predictions.jsonl').open()]
+        comparisons[mode] = dict(checkpoint=str(folder/'best.pt'), selected_epoch=metrics['selected_epoch'],
+            threshold=metrics['decision_threshold'], bce=metrics['bce'], **metrics['metrics'],
+            length_groups=_reweighting_strata(predictions, source_budget, metrics['decision_threshold']))
+        short = [r for r in predictions if r['label'] == 1 and r['source_token_count'] <= 128]
+        long = [r for r in predictions if r['label'] == 0 and r['source_token_count'] > 512]
+        comparisons[mode]['short_positive'] = dict(samples=len(short), detected=sum(r['prediction'] for r in short),
+            recall=sum(r['prediction'] for r in short)/len(short) if short else None, definition='source tokens <=128')
+        comparisons[mode]['long_negative'] = dict(samples=len(long), false_positives=sum(r['prediction'] for r in long),
+            false_positive_rate=sum(r['prediction'] for r in long)/len(long) if long else None,
+            definition='source tokens >512, including truncated functions')
+    report = dict(config=config, oof=oof, valid=comparisons)
+    write_json(root/'comparison.metrics.json', report)
+    return report
 
 
 def _diagnose(args):

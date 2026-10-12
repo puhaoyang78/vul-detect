@@ -38,6 +38,10 @@ MODELS = {
     'CLM_C': 'cfg_dep_cfg_seed42/lm_pretrain_cfg',
 }
 SIZE = ['visible_tokens', 'visible_chars', 'visible_lines']
+TFIDF_OPTIONS = dict(token_pattern=r'(?u)\b[A-Za-z_]\w*\b|\d+|[^\w\s]',
+                     lowercase=False, ngram_range=(1, 2), min_df=3,
+                     max_features=30000, sublinear_tf=True)
+LR_OPTIONS = dict(C=1., solver='liblinear', max_iter=2000, random_state=42)
 SYNTAX = ['ast_nodes','statements','identifiers','unique_identifiers','parameters',
           'declarations','calls','assignments','updates','binary_ops','branches',
           'loops','returns','subscripts','field_access','pointer_expr','ast_depth']
@@ -127,6 +131,118 @@ def summary(y, p, threshold=.5):
             'probability_clip_count':int(np.sum(q!=p))}
 
 
+def visible_source_statistics(source, tokenizer, source_budget):
+    """Character prefix covered by the encoder's actual source-token budget."""
+    if source_budget <= 0 or not tokenizer.is_fast:
+        raise ValueError('visible source statistics require a positive budget and fast tokenizer')
+    enc = tokenizer(source, add_special_tokens=False, truncation=True,
+                    max_length=source_budget, return_offsets_mapping=True)
+    offsets = enc['offset_mapping']
+    if not offsets or any(not 0 <= a <= b <= len(source) for a, b in offsets):
+        raise ValueError('empty or invalid original-source tokenizer offsets')
+    end = max(b for a, b in offsets)
+    visible = source[:end]
+    return visible, dict(visible_tokens=len(enc['input_ids']), visible_chars=end,
+                         visible_lines=visible.count('\n')+1)
+
+
+def size_block(rows):
+    return np.log1p([[r['features'][f] for f in SIZE] for r in rows])
+
+
+def dependency_groups(rows, visible_texts):
+    """Transitive repair identities and full/visible normalized duplicates."""
+    from .prepare_benchmark import normalized_source
+    if len(rows) != len(visible_texts):
+        raise ValueError('grouping requires one visible source per function')
+    parents = list(range(len(rows)))
+    def root(i):
+        while parents[i] != i:
+            parents[i] = parents[parents[i]]
+            i = parents[i]
+        return i
+    seen = {}
+    for i, (r, visible) in enumerate(zip(rows, visible_texts)):
+        keys = [('full', normalized_source(r['raw_source'])),
+                ('visible', normalized_source(visible))]
+        keys += [('repair', g) for g in r.get('counterpart_groups', ())]
+        if r.get('pair_id'):
+            keys.append(('pair', r['pair_id']))
+        for key in keys:
+            if key in seen:
+                a, b = root(i), root(seen[key])
+                parents[max(a, b)] = min(a, b)
+            else:
+                seen[key] = i
+    members = defaultdict(list)
+    for i, r in enumerate(rows):
+        members[root(i)].append(r['sample_key'])
+    names = {i: min(keys) for i, keys in members.items()}
+    return np.array([names[root(i)] for i in range(len(rows))])
+
+
+def normalize_hard_weights(labels, probabilities):
+    labels = np.asarray(labels)
+    probabilities = np.asarray(probabilities)
+    if (labels.shape != probabilities.shape or labels.ndim != 1
+            or set(labels.tolist()) != {0, 1} or not np.isfinite(probabilities).all()
+            or np.any((probabilities < 0) | (probabilities > 1))):
+        raise ValueError('hard weights require both binary labels and finite probabilities')
+    hard = (probabilities >= .5) != labels
+    raw = np.where(hard, 3., 1.)
+    weights = raw.copy()
+    for label in (0, 1):
+        members = labels == label
+        weights[members] /= raw[members].mean()
+    return hard, raw, weights
+
+
+def shallow_oof_weights(rows, tokenizer, source_budget):
+    """Train-only, three grouped folds; each fit builds its own scaler/vocabulary."""
+    if (not rows or any(r['split'] != 'train' for r in rows)
+            or len({r['sample_key'] for r in rows}) != len(rows)
+            or any(type(r['label']) is not int or r['label'] not in (0, 1) for r in rows)):
+        raise ValueError('OOF weighting requires unique original binary Train functions only')
+    texts, features = zip(*(visible_source_statistics(r['raw_source'], tokenizer, source_budget) for r in rows))
+    texts = np.array(texts)
+    y = np.array([r['label'] for r in rows])
+    blocks = {'size': size_block([{'features': f} for f in features]), 'labels': y}
+    groups = dependency_groups(rows, texts)
+    if len(set(groups)) < 3:
+        raise ValueError('OOF weighting requires at least three independent groups')
+    probabilities = np.full(len(rows), np.nan)
+    fold_ids = np.full(len(rows), -1, dtype=int)
+    folds = []
+    for fold, (fit, hold) in enumerate(StratifiedGroupKFold(3, shuffle=True, random_state=42).split(
+            np.arange(len(rows)), y, groups), 1):
+        if set(groups[fit]) & set(groups[hold]) or set(y[fit]) != {0, 1}:
+            raise ValueError('invalid grouped OOF partition')
+        probabilities[hold], dimension, iterations = fit_predict(
+            'lexical_size', fit, hold, blocks, texts, None, None)
+        fold_ids[hold] = fold
+        folds.append(dict(fold=fold, fit_samples=len(fit), heldout_samples=len(hold),
+            fit_positive=int(y[fit].sum()), heldout_positive=int(y[hold].sum()),
+            fit_groups=len(set(groups[fit])), heldout_groups=len(set(groups[hold])),
+            features=dimension, iterations=iterations))
+    if np.any(fold_ids < 1):
+        raise RuntimeError('OOF did not cover every training sample')
+    hard, raw, weights = normalize_hard_weights(y, probabilities)
+    cache = [dict(sample_key=r['sample_key'], label=r['label'], group=str(groups[i]),
+                  fold=int(fold_ids[i]), **features[i], oof_probability=float(probabilities[i]),
+                  oof_prediction=int(probabilities[i] >= .5), hard=bool(hard[i]),
+                  raw_weight=float(raw[i]), weight=float(weights[i])) for i, r in enumerate(rows)]
+    group_sizes = Counter(groups)
+    report = dict(samples=len(rows), groups=len(group_sizes),
+        linked_groups=sum(n > 1 for n in group_sizes.values()), max_group_size=max(group_sizes.values()),
+        folds=folds, oof=summary(y, probabilities, .5), classes={})
+    for label in (0, 1):
+        members = y == label
+        report['classes'][str(label)] = dict(samples=int(members.sum()), hard=int(hard[members].sum()),
+            raw_mean=float(raw[members].mean()), normalized_mean=float(weights[members].mean()),
+            easy_weight=float(1/raw[members].mean()), hard_weight=float(3/raw[members].mean()))
+    return cache, report
+
+
 def prepare(args, out):
     from transformers import AutoTokenizer
     rows=[]
@@ -146,14 +262,12 @@ def prepare(args, out):
     for i,r in enumerate(rows):
         k=r['sample_key'];c=cached[k];src=r['raw_source']
         assert all(c[f]==r[f] for f in ('raw_source','label','split'))
-        enc=tok(src,add_special_tokens=False,truncation=True,max_length=2048,return_offsets_mapping=True)
-        end=max((b for a,b in enc['offset_mapping']),default=0)
-        texts[k]=src[:end]
+        texts[k], sizes=visible_source_statistics(src,tok,2048)
+        end=sizes['visible_chars']
         syn,error=syntax_counts(src,r['resolved_language'],end)
         fullsyn,_=syntax_counts(src,r['resolved_language'],len(src)) if end<len(src) else (syn,error)
         features[k]={'tokens':c['tokens'],'chars':len(src),'lines':src.count('\n')+1,
-            'truncated':int(c['tokens']>2048),'visible_tokens':len(enc['input_ids']),
-            'visible_chars':end,'visible_lines':src[:end].count('\n')+1,
+            'truncated':int(c['tokens']>2048),**sizes,
             'visible_fraction':min(1,2048/max(1,c['tokens'])), 'syntax_error':int(error),
             **syn,**{'full_'+a:v for a,v in fullsyn.items()}}
         for family in ('Bounds','Pointer','Lifetime'):
@@ -193,7 +307,7 @@ def prepare(args, out):
 
 def feature_blocks(rows):
     def block(names): return np.log1p([[r['features'][f] for f in names] for r in rows])
-    sizes=block(SIZE);syn=block(SYNTAX);graph=block(['g_'+f for f in GRAPH])
+    sizes=size_block(rows);syn=block(SYNTAX);graph=block(['g_'+f for f in GRAPH])
     # Rates supplement counts; no test/valid feature selection.
     den=np.maximum(1,np.array([r['features']['visible_tokens'] for r in rows]))[:,None]
     synrate=np.array([[r['features'][f] for f in SYNTAX] for r in rows])/den*100
@@ -204,12 +318,11 @@ def feature_blocks(rows):
 def fit_predict(spec, ix, jx, blocks, texts, projects, frozen):
     matrices=[]; targets=[]
     stat = ('structure' if spec in ('structure','lexical_structure','project_structure','frozen_clm_structure')
-            else 'syntax' if spec=='syntax' else 'size' if spec in ('size','project_size') else None)
+            else 'syntax' if spec=='syntax' else 'size' if spec in ('size','project_size','lexical_size') else None)
     if stat:
         scale=StandardScaler().fit(blocks[stat][ix]);matrices.append(scale.transform(blocks[stat][ix]));targets.append(scale.transform(blocks[stat][jx]))
     if spec.startswith('lexical'):
-        vec=TfidfVectorizer(token_pattern=r'(?u)\b[A-Za-z_]\w*\b|\d+|[^\w\s]',
-                            lowercase=False,ngram_range=(1,2),min_df=3,max_features=30000,sublinear_tf=True)
+        vec=TfidfVectorizer(**TFIDF_OPTIONS)
         matrices.append(vec.fit_transform(texts[ix]));targets.append(vec.transform(texts[jx]))
     if spec.startswith('project'):
         enc=OneHotEncoder(handle_unknown='ignore')
@@ -218,7 +331,7 @@ def fit_predict(spec, ix, jx, blocks, texts, projects, frozen):
         scale=StandardScaler().fit(frozen[ix]);matrices.append(scale.transform(frozen[ix]));targets.append(scale.transform(frozen[jx]))
     x=sparse.hstack([sparse.csr_matrix(m) for m in matrices],format='csr')
     z=sparse.hstack([sparse.csr_matrix(m) for m in targets],format='csr')
-    model=LogisticRegression(C=1.,solver='liblinear',max_iter=2000,random_state=42)
+    model=LogisticRegression(**LR_OPTIONS)
     with warnings.catch_warnings():
         warnings.simplefilter('error',ConvergenceWarning)
         model.fit(x,blocks['labels'][ix])
