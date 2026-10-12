@@ -1,0 +1,68 @@
+{
+  "accuracy": 0.7465483234714004,
+  "precision": 0.7376425855513308,
+  "recall": 0.7652859960552268,
+  "f1": 0.7512100677637948,
+  "mcc": 0.4934432649128357,
+  "auc": 0.8139148567004735,
+  "tp": 388,
+  "tn": 369,
+  "fp": 138,
+  "fn": 119,
+  "samples": 1014,
+  "threshold": 0.29,
+  "pr_auc": 0.789594972961924,
+  "average_precision": 0.7901904437678845,
+  "bce": 0.6598031292614169,
+  "repair": {
+    "pairs": 290,
+    "pairwise_correct": 0.017241379310344827,
+    "ranking_accuracy": 0.3482758620689655,
+    "ties": 26,
+    "input_identical_pairs": 26,
+    "tie_definition": "Identical encoder inputs or exactly equal logits; ties count as incorrect"
+  },
+  "robustness": {
+    "eligible": 642,
+    "total": 1014,
+    "coverage": 0.6331360946745562,
+    "prediction_consistency": 0.82398753894081,
+    "robust_accuracy": 0.6246105919003115,
+    "original_accuracy_same_subset": 0.7227414330218068,
+    "definition": "Robust Accuracy: both original and transformed predictions correct; denominator is eligible transformations only",
+    "by_transformation": {
+      "comment": {
+        "eligible": 635,
+        "prediction_consistency": 0.8220472440944881,
+        "robust_accuracy": 0.6204724409448819
+      },
+      "rename": {
+        "eligible": 7,
+        "prediction_consistency": 1.0,
+        "robust_accuracy": 1.0
+      }
+    }
+  },
+  "trained_on": "primevul",
+  "evaluated_on": "primevul",
+  "split": "test",
+  "objective": "C",
+  "selected_epoch": 2,
+  "smoke_only": false,
+  "input_coverage": {
+    "source_token_budget": 2025,
+    "total_encoder_budget": 2048,
+    "function_coverage": {
+      "test": {
+        "functions": 1298,
+        "source_truncated": 247
+      }
+    },
+    "raw_repair_pairs": 290,
+    "input_visible_repair_pairs": 264,
+    "token_identical_repair_pairs": 26,
+    "raw_safe_views": 642,
+    "input_visible_safe_views": 642,
+    "token_identical_safe_views": 0
+  }
+}

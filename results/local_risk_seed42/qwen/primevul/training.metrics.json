@@ -1,0 +1,81 @@
+{
+  "encoder": "qwen",
+  "trained_on": "primevul",
+  "model_path": "/home/phy/models/Qwen2.5-Coder-7B-Instruct",
+  "seed": 42,
+  "source_max_length": 2048,
+  "epochs": 3,
+  "initial_bce_epochs": 3,
+  "learning_rate": 0.0002,
+  "batch_size": 1,
+  "gradient_accumulation": 8,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "weight_decay": 0.01,
+  "head_learning_rate": 0.0001,
+  "lora_learning_rate": 2e-05,
+  "region_weight": 0.1,
+  "invariance_weight": 0.01,
+  "warmup_epochs": 1,
+  "joint_epochs": 2,
+  "region_ramp_epochs": 1,
+  "hidden_dim": 64,
+  "data_dir": "data/change_learning_seed42",
+  "smoke_only": false,
+  "train_samples": 10105,
+  "valid_samples": 1014,
+  "candidate_coverage": {
+    "training_functions": 10105,
+    "raw_repair_pairs": 2350,
+    "input_visible_repair_pairs": 2259,
+    "input_identical_repair_pairs": 91,
+    "region_functions": 1629,
+    "region_function_coverage": 0.1612073231073726,
+    "vulnerable_function_coverage": 0.4166240409207161,
+    "region_skip_reasons": {
+      "empty_visible_M": 630,
+      "input_identical_repairs": 91
+    },
+    "raw_safe_views": 7054,
+    "local_invariance_views": 6587,
+    "view_filter_counts": {
+      "eligible": 6587,
+      "truncated": 467
+    },
+    "token_budget": "CodeBERT logical total 2048; Qwen source 2048",
+    "source_token_budget": 2048,
+    "full_source_candidates_before_visibility": true
+  },
+  "input_coverage": {
+    "training_functions": 10105,
+    "raw_repair_pairs": 2350,
+    "input_visible_repair_pairs": 2259,
+    "input_identical_repair_pairs": 91,
+    "region_functions": 1629,
+    "region_function_coverage": 0.1612073231073726,
+    "vulnerable_function_coverage": 0.4166240409207161,
+    "region_skip_reasons": {
+      "empty_visible_M": 630,
+      "input_identical_repairs": 91
+    },
+    "raw_safe_views": 7054,
+    "local_invariance_views": 6587,
+    "view_filter_counts": {
+      "eligible": 6587,
+      "truncated": 467
+    },
+    "token_budget": "CodeBERT logical total 2048; Qwen source 2048",
+    "source_token_budget": 2048,
+    "full_source_candidates_before_visibility": true
+  },
+  "selection": "corresponding Valid MCC, existing F1/accuracy/AUC tie-break and threshold selection",
+  "budget": "all functions BCE; 1 frozen-encoder head epoch, 2 joint epochs; two zero/dropout-free auxiliary encodings per joint step in all four groups",
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "device": "cuda:0",
+    "gpu": "NVIDIA GeForce RTX 4090"
+  }
+}

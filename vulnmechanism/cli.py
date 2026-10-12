@@ -193,6 +193,20 @@ def build_parser() -> argparse.ArgumentParser:
     change.add_argument("--ranking-weight", type=float, default=1.0)
     change.add_argument("--smoke-samples", type=int, default=0, help="explicit diagnostic subset; forbids Test/SVEN evaluation")
     change.set_defaults(func=_change_learning)
+
+    local = sub.add_parser('local-risk', help='repair-guided line risk learning, matched A/B/C/D controls')
+    local.add_argument('--stage', choices=('prepare', 'train', 'eval', 'report'), required=True)
+    local.add_argument('--data-dir', default='data/change_learning_seed42')
+    local.add_argument('--output-dir', default='results/local_risk_seed42')
+    local.add_argument('--source-dataset', choices=('primevul', 'cleanvul'), default='primevul')
+    local.add_argument('--encoder', choices=('codebert', 'qwen'), default='codebert')
+    from .change_learning import LOCAL_OBJECTIVES
+    local.add_argument('--objective', choices=LOCAL_OBJECTIVES, help='default: A/B/C/D; C_random is opt-in')
+    local.add_argument('--split', choices=('valid', 'test', 'external_test'), default='valid')
+    _fit_arguments(local)
+    local.set_defaults(model=None, source_max_length=2048, device='cuda:0', local_risk=True)
+    local.add_argument('--smoke-samples', type=int, default=0)
+    local.set_defaults(func=_change_learning)
     return parser
 
 
@@ -209,13 +223,14 @@ def _source_pilot(args):
 def _change_learning(args):
     from . import change_learning
     if args.stage == "prepare":
-        result = change_learning.prepare(args.manifest, args.raw_dir, args.data_dir)
+        result = (change_learning.prepare_local(args.data_dir) if getattr(args, 'local_risk', False)
+                  else change_learning.prepare(args.manifest, args.raw_dir, args.data_dir))
     elif args.stage == "train":
-        result = change_learning.train(args)
+        result = change_learning.train_local(args) if getattr(args, 'local_risk', False) else change_learning.train(args)
     elif args.stage == "eval":
         result = change_learning.evaluate(args)
     else:
-        result = change_learning.report(args.output_dir)
+        result = change_learning.report(args.output_dir, local_risk=getattr(args, 'local_risk', False))
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False), flush=True)
     return result
 

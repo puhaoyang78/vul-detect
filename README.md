@@ -128,6 +128,124 @@ PrimeVul train/valid 仍有 2 个共享提交，PrimeVul/CleanVul 也存在共�
 所有提交均隔离。相同输入的配对按 tie 处理；重算已保存的 45 组早期评价时，分类、鲁棒性、
 阈值及预测文件均核对未变。40 项相关测试、实际 GPU train/save/reload 及完整结果导出通过。
 
+
+### 修复引导的局部风险学习
+
+`python -m vulnmechanism.cli local-risk` 扩展同一 `train_model`、输入构造、LoRA、
+Valid 选模和评价流程。旧 `change-learning` 保留作对照。A 为原 mean pooling + linear BCE；
+B 为行级风险头 + BCE；C 加修复候选区域监督；D 再加语义保持的行级一致性。
+`C_random` 将 C 的候选替换为 seed=42 的等大小完整可见代码行，只在显式指定时运行。
+
+模型只编码单个函数的原始源码。物理代码行保留原始行号，空行、纯注释行、纯花括号行
+不作为风险实例，但仍留在编码器输入。fast tokenizer 的源码字符 offset 与词法字符
+相交；跨行 BPE 按代码字符重叠分摊，CodeBERT 先按全局源码 token 索引平均重复窗口状态。
+CodeBERT 的全局表示沿用原函数汇聚；Qwen 使用最后一个有效 EOS。共享风险头为
+`Linear_1(GELU(W_h h_i + W_g g + b))`，隐藏维度 64；函数 logit 为
+`logsumexp(s_i)-log(m)`。风险头、池化及损失均使用 float32。无有效代码行或 offset 错配报错。
+
+候选由对应训练集完整修复对的词法 token diff 构造，`SequenceMatcher(autojunk=False)`
+保存 equal 区段映射。删除/替换使用旧编辑行及最小语句，控制语句只取头部；纯新增
+在同一 compound block 找相邻直接子语句。新增/修改 if 条件中的参数按位置对应，局部
+声明须由 equal token 区段核验，再在同一块最多三个直接子语句中找首个绑定使用。
+普通调用实参允许参与分析；不按同名猜测、不跨块、不追踪别名/全局变量。解析不可靠
+时仅保留直接删除/替换行。多个 hunk/同一 before 的训练对取并集，之后才与完整可见行
+相交；不为截断重新寻找位置。缓存 `data/change_learning_seed42/local_candidates.jsonl`
+保留原始候选行、equal 映射、生成规则及跳过原因；每个实验的 `candidates.jsonl` 记录
+编码器可见性筛选与覆盖。空/全 M 跳过区域项，全部函数仍接受 BCE。
+
+区域损失 `logsumexp(s_all)-logsumexp(s_M)` 直接取当前分类 batch 的漏洞函数行分数，
+不增加修复函数 ranking 前向，也不对候选外赋安全标签。行级 Bernoulli JS 只用于两端
+均完整进入预算、实际输入不同的原始/语义保持变换，按原行号对齐。训练筛选不改变正式
+鲁棒性分母。四组采用相同确定性变换轮转与辅助编码次数；关闭项权重为零。辅助前向
+关闭 dropout、保留梯度和 gradient checkpointing。
+
+固定 seed=42、source_max_length=2048、LoRA r=16/alpha=32/dropout=.05、有效 batch=8。
+CodeBERT 为含 prefix/BOS/EOS 的逻辑总预算，原生窗口 512、步长为源码窗口容量的一半；
+Qwen 为源码预算再加 prefix/EOS。先复用本实验目录内经过同 cohort/输入/LoRA 核验的
+3-epoch BCE checkpoint；没有匹配结果时自动训练该共同起点。上一轮 512 模型和旧 cohort
+模型不能充当该起点。A 保留原头，B/C/D 的新头初始化相同且不改变编码器随机状态。
+四组追加 3 epochs：第 1 epoch 冻结编码器、仅 BCE 训练头；后 2 epochs 重置优化器，
+LoRA lr=2e-5、头 lr=1e-4、weight decay=.01、梯度裁剪 1。第一个联合 epoch 内区域/
+一致性权重由 0 线性升到 .1/.01，此后固定。基座始终冻结。各源仅用自己的 Valid MCC
+选 epoch/阈值，沿用原 tie-break；Test/SVEN 使用保存的权重和阈值。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+$PY -m vulnmechanism.cli local-risk --stage prepare
+# 真实小样本 train/auxiliary backward/save/reload；正式 Test/SVEN 被禁止。
+$PY -m vulnmechanism.cli local-risk --stage train --encoder codebert --objective D \
+  --smoke-samples 8 --output-dir results/local_risk_smoke_seed42 \
+  --batch-size 4 --gradient-accumulation 2 --device cuda:0
+$PY -m vulnmechanism.cli local-risk --stage train --encoder qwen --objective D \
+  --smoke-samples 8 --output-dir results/local_risk_smoke_seed42 \
+  --batch-size 1 --gradient-accumulation 8 --device cuda:1
+# 每个命令自动训练匹配初始化，再完成 A/B/C/D 的 3-epoch 追加训练。
+$PY -m vulnmechanism.cli local-risk --stage train --encoder codebert --source-dataset primevul \
+  --batch-size 4 --gradient-accumulation 2 --device cuda:0
+$PY -m vulnmechanism.cli local-risk --stage train --encoder codebert --source-dataset cleanvul \
+  --batch-size 4 --gradient-accumulation 2 --device cuda:1
+$PY -m vulnmechanism.cli local-risk --stage train --encoder qwen --source-dataset primevul \
+  --batch-size 1 --gradient-accumulation 8 --device cuda:0
+$PY -m vulnmechanism.cli local-risk --stage train --encoder qwen --source-dataset cleanvul \
+  --batch-size 1 --gradient-accumulation 8 --device cuda:1
+# 各组训练/Valid 选模完成后，统一入口进行完整验证与最终评价。
+for encoder in codebert qwen; do
+  for source in primevul cleanvul; do
+    for split in valid test external_test; do
+      $PY -m vulnmechanism.cli local-risk --stage eval --encoder "$encoder" \
+        --source-dataset "$source" --split "$split" --batch-size 1 --device cuda:0
+    done
+  done
+done
+$PY -m vulnmechanism.cli local-risk --stage report
+# 可选等大小随机区域消融，默认四组不会运行它：
+$PY -m vulnmechanism.cli local-risk --stage train --encoder codebert --objective C_random \
+  --batch-size 4 --gradient-accumulation 2 --device cuda:0
+```
+
+配置、阶段损失、候选覆盖、实际函数/窗口预算及 checkpoint 位于
+`results/local_risk_seed42/{encoder}/{dataset}/`。保存新头和输入协议，严格核验 LoRA/task
+参数键及形状。完整函数、配对、ranking 和鲁棒性指标仍使用既有评价逻辑与分母，输入
+相同的修复对算 tie。小样本额外分别检查区域/一致性损失对风险头和 LoRA 的非零梯度及
+独立更新，并严格保存/重载；这些结果记录为 `smoke_only`，不作性能证据。
+
+已完成 CodeBERT 和 Qwen2.5-Coder-7B 的真实 8 函数 smoke，两者的区域损失和行级 JS
+均分别产生非零风险头/LoRA 梯度、实际参数更新，并通过严格保存重载。
+`results/local_risk_smoke_seed42/{encoder}/primevul/smoke.metrics.json` 保存各项数值。
+相关检查通过 57 个测试；全部 14,307 个 Train/Valid 函数在两个 tokenizer 下均通过
+offset 检查，训练修复候选缓存包含 PrimeVul 2,350 对、CleanVul 1,049 对。
+
+#### 局部风险实验结果（seed=42）
+[完整 48 行指标](results/local_risk_seed42/comparison.metrics.csv) 包含 Valid、Test、SVEN 的全部函数分类、配对、ranking、鲁棒性指标及分母；[配置、预算与消融差值](results/local_risk_seed42/comparison.metrics.json) 保留四组比较。以下使用各源 Valid 选定的权重和阈值。
+| 编码器 | 训练集 | 组别 | Test F1 | Test MCC | Test PR-AUC | SVEN F1 | SVEN MCC | SVEN PR-AUC |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| codebert | primevul | A | 0.7598 | 0.5059 | 0.8074 | 0.5819 | -0.0210 | 0.4963 |
+| codebert | primevul | B | 0.7431 | 0.4833 | 0.7950 | 0.5701 | -0.0263 | 0.4940 |
+| codebert | primevul | C | 0.7512 | 0.4934 | 0.7896 | 0.5743 | -0.0296 | 0.4936 |
+| codebert | primevul | D | 0.7553 | 0.4961 | 0.7873 | 0.5774 | -0.0330 | 0.4937 |
+| codebert | cleanvul | A | 0.4018 | 0.0592 | 0.5388 | 0.3746 | 0.0521 | 0.5232 |
+| codebert | cleanvul | B | 0.0578 | 0.0295 | 0.5335 | 0.0411 | -0.0175 | 0.5207 |
+| codebert | cleanvul | C | 0.0578 | 0.0295 | 0.5335 | 0.0411 | -0.0175 | 0.5207 |
+| codebert | cleanvul | D | 0.0578 | 0.0295 | 0.5335 | 0.0411 | -0.0175 | 0.5207 |
+| qwen | primevul | A | 0.7676 | 0.5201 | 0.8211 | 0.5903 | -0.0248 | 0.5006 |
+| qwen | primevul | B | 0.7603 | 0.4979 | 0.8139 | 0.5889 | -0.0410 | 0.4851 |
+| qwen | primevul | C | 0.7776 | 0.5128 | 0.7465 | 0.6145 | -0.0481 | 0.4948 |
+| qwen | primevul | D | 0.7584 | 0.4838 | 0.8131 | 0.5966 | -0.0425 | 0.4850 |
+| qwen | cleanvul | A | 0.2459 | 0.0578 | 0.5583 | 0.2474 | 0.0462 | 0.5494 |
+| qwen | cleanvul | B | 0.2058 | 0.0735 | 0.5579 | 0.1721 | 0.0747 | 0.5626 |
+| qwen | cleanvul | C | 0.1687 | 0.0597 | 0.5624 | 0.1793 | 0.0672 | 0.5566 |
+| qwen | cleanvul | D | 0.0907 | 0.0413 | 0.5544 | 0.0945 | 0.0472 | 0.5584 |
+
+局部风险头 B 相对 A：8 项 Test/SVEN MCC 比较中，2 项提高、6 项下降、0 项相同。
+
+区域监督 C 相对 B：8 项 Test/SVEN MCC 比较中，2 项提高、4 项下降、2 项相同。
+
+行级一致性 D 相对 C：8 项 Test/SVEN MCC 比较中，2 项提高、4 项下降、2 项相同。
+
+完整方法 D 相对 A：8 项 Test/SVEN MCC 比较中，1 项提高、7 项下降、0 项相同。
+
+上述统计分别对应头部结构、区域监督、一致性及完整方法的贡献；完整表保留其余指标的增减，不依据 Test/SVEN 结果修改方法或阈值。
+
 主 benchmark 规则：PrimeVul 保留官方 split；CleanVul/SVEN 保持 pair 原子性；exact/normalized/counterpart/高置信 near duplicate 按 test-first 优先级清理；SVEN 永远只作 external test。
 
 ## 2. CPG build

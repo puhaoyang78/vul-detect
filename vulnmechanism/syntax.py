@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
@@ -279,6 +281,7 @@ def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]
         "for_range_loop", "gnu_asm_expression", "asm_statement",
         "attribute_specifier", "attribute_declaration", "ms_declspec_modifier",
         "try_statement", "catch_clause",
+        "optional_parameter_declaration",
     } for n in nodes):
         return None, "unresolved_macro_or_binding_semantics"
     if sum(n.type == "function_declarator" for n in nodes) != 1:
@@ -286,41 +289,14 @@ def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]
     body = function.child_by_field_name("body")
     if body is None:
         return None, "missing_body"
-    scope_types = {"compound_statement", "for_statement", "if_statement",
-                   "switch_statement", "while_statement", "do_statement"}
-
-    def declarator_name(n):
-        while n is not None and n.type in {
-            "init_declarator", "pointer_declarator", "array_declarator",
-            "reference_declarator", "parenthesized_declarator",
-        }:
-            n = n.child_by_field_name("declarator")
-        return n if n is not None and n.type == "identifier" else None
-
-    bindings = []
-    for n in nodes:
-        if n.type not in {"parameter_declaration", "declaration"}:
-            continue
-        if n.type == "declaration" and not body.start_byte <= n.start_byte < body.end_byte:
-            continue
-        if any(x.type in {"storage_class_specifier", "attribute_specifier"} for x in walk(n)):
-            return None, "unsupported_storage_or_attribute"
-        declarations = n.children_by_field_name("declarator")
-        for declaration in declarations:
-            name = declarator_name(declaration)
-            if name is None:
-                return None, "unsupported_declarator"
-            if n.type == "parameter_declaration":
-                # Parameters are also visible in later VLA parameter bounds.
-                scope = function
-            else:
-                scope = n.parent
-                while scope is not None and scope.type not in scope_types:
-                    scope = scope.parent
-                if scope is None:
-                    return None, "unsupported_scope"
-            bindings.append(dict(name=text(name, source), declaration=name,
-                                 scope=scope, occurrences=[]))
+    if any(n.type in {"parameter_declaration", "declaration"}
+           and any(x.type in {"storage_class_specifier", "attribute_specifier"} for x in walk(n))
+           for n in nodes):
+        return None, "unsupported_storage_or_attribute"
+    try:
+        bindings = function_bindings(function, source)
+    except ValueError:
+        return None, "unsupported_declarator_or_scope"
     if not bindings:
         return None, "no_local_binding"
     declarations = {(b["declaration"].start_byte, b["declaration"].end_byte): b for b in bindings}
@@ -337,14 +313,9 @@ def scope_safe_rename(source_text: str, language: str) -> tuple[str | None, str]
         # Qualified names may refer to external symbols, not a local variable.
         if n.parent.type in {"qualified_identifier", "scoped_identifier"}:
             return None, "nonlocal_identifier"
-        name = text(n, source)
-        visible = [b for b in bindings if b["name"] == name
-                   and b["declaration"].end_byte <= n.start_byte
-                   and b["scope"].start_byte <= n.start_byte < b["scope"].end_byte]
-        if not visible:
+        binding = resolve_local_binding(n, bindings, source)
+        if binding is None:
             return None, "nonlocal_identifier"
-        binding = min(visible, key=lambda b: (b["scope"].end_byte - b["scope"].start_byte,
-                                              -b["declaration"].start_byte))
         binding["occurrences"].append(n)
     # A used binding is preferable to an unused declaration. Stable order is
     # independent of labels, model scores, and dataset split.
@@ -407,12 +378,256 @@ def semantic_preserving_view(source_text: str, language: str) -> tuple[str | Non
 
 # Tokens preserve literals and punctuation; comment/whitespace removal cannot turn
 # a nested method or a call into the complete source definition.
-_SOURCE_TOKEN = re.compile(r'R"(?P<delimiter>[^ ()\\\t\r\n]{0,16})\(.*?\)(?P=delimiter)"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*.*?\*/|[A-Za-z_]\w*|\d+(?:\.\d+)?|[^\s]', re.S)
+_SOURCE_TOKEN = re.compile(r'R"(?P<delimiter>[^ ()\\\t\r\n]{0,16})\(.*?\)(?P=delimiter)"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*.*?\*/|[A-Za-z_]\w*|\d+(?:\.\d+)?|>>=|<<=|->\*|\.\.\.|::|->|\+\+|--|&&|\|\||==|!=|<=|>=|<<|>>|\+=|-=|\*=|/=|%=|&=|\|=|\^=|[^\s]', re.S)
 
 
 def source_tokens(source: str) -> tuple[str, ...]:
-    return tuple(m.group() for m in _SOURCE_TOKEN.finditer(source)
+    return tuple(value for value, _, _ in source_token_spans(source))
+
+
+@lru_cache(maxsize=16384)
+def source_token_spans(source: str) -> tuple[tuple[str, int, int], ...]:
+    """Lexical tokens with Python character offsets, including literals/operators."""
+    return tuple((m.group(), m.start(), m.end()) for m in _SOURCE_TOKEN.finditer(source)
                  if not m.group().startswith(('//', '/*')))
+
+
+@lru_cache(maxsize=16384)
+def code_line_spans(source: str) -> dict[int, tuple[tuple[int, int], ...]]:
+    """Original physical lines and their code characters; never rewrite source."""
+    starts = [0] + [m.end() for m in re.finditer('\n', source)]
+    spans, tokens = {}, {}
+    for value, left, right in source_token_spans(source):
+        first = bisect_right(starts, left) - 1
+        last = bisect_right(starts, max(left, right - 1)) - 1
+        for line in range(first, last + 1):
+            a, b = max(left, starts[line]), min(right, starts[line + 1] if line + 1 < len(starts) else len(source))
+            # Offset tokenizers can trim whitespace. Non-whitespace lexical
+            # characters establish coverage, including inside multiline literals.
+            for part in re.finditer(r'\S+', source[a:b]):
+                spans.setdefault(line + 1, []).append((a + part.start(), a + part.end()))
+                tokens.setdefault(line + 1, []).append(value)
+    return {line: tuple(parts) for line, parts in spans.items()
+            if any(value not in {'{', '}'} for value in tokens[line])}
+
+
+def byte_character_map(source: str) -> dict[int, int]:
+    result, byte = {0: 0}, 0
+    for char, value in enumerate(source, 1):
+        byte += len(value.encode('utf-8'))
+        result[byte] = char
+    return result
+
+
+_BINDING_SCOPES = {'compound_statement', 'for_statement', 'if_statement',
+                   'switch_statement', 'while_statement', 'do_statement'}
+
+
+def declarator_identifier(node):
+    while node is not None and node.type in {
+        'init_declarator', 'pointer_declarator', 'array_declarator',
+        'reference_declarator', 'parenthesized_declarator',
+    }:
+        node = node.child_by_field_name('declarator')
+    return node if node is not None and node.type == 'identifier' else None
+
+
+def function_bindings(function, source: bytes):
+    """Position/scope bindings, also usable in ordinary call arguments."""
+    body = function.child_by_field_name('body')
+    if body is None:
+        raise ValueError('missing function body')
+    bindings, parameter_index = [], 0
+    for node in walk(function):
+        if node.type not in {'parameter_declaration', 'optional_parameter_declaration', 'declaration'}:
+            continue
+        parameter = node.type != 'declaration'
+        index = parameter_index if parameter else None
+        if parameter:
+            parameter_index += 1
+        if not parameter and not body.start_byte <= node.start_byte < body.end_byte:
+            continue
+        for decl in node.children_by_field_name('declarator'):
+            name = declarator_identifier(decl)
+            if name is None:
+                raise ValueError('unsupported local declarator')
+            scope = function if parameter else node.parent
+            while scope is not None and not parameter and scope.type not in _BINDING_SCOPES:
+                scope = scope.parent
+            if scope is None:
+                raise ValueError('unsupported local scope')
+            bindings.append(dict(name=text(name, source), declaration=name, statement=node,
+                                 scope=scope, parameter_index=index, occurrences=[]))
+    return bindings
+
+
+def resolve_local_binding(node, bindings, source: bytes):
+    if node.type != 'identifier' or node.parent.type in {'qualified_identifier', 'scoped_identifier'}:
+        return None
+    matches = [b for b in bindings if b['name'] == text(node, source)
+               and b['declaration'].end_byte <= node.start_byte
+               and b['scope'].start_byte <= node.start_byte < b['scope'].end_byte]
+    return min(matches, key=lambda b: (b['scope'].end_byte-b['scope'].start_byte,
+                                      -b['declaration'].start_byte)) if matches else None
+
+
+def _statement_extent(node):
+    if node.type == 'compound_statement':
+        return None
+    if node.type in {'if_statement', 'for_statement', 'while_statement', 'do_statement',
+                     'switch_statement', 'for_range_loop'}:
+        bodies = [node.child_by_field_name(field) for field in ('body', 'consequence')]
+        ends = [body.start_byte for body in bodies if body is not None]
+        return (node.start_byte, min(ends)) if ends else None
+    if node.type == 'declaration' or node.type in {
+        'expression_statement', 'return_statement', 'break_statement', 'continue_statement',
+        'goto_statement', 'null_statement', 'throw_statement',
+    }:
+        return node.start_byte, node.end_byte
+    return None
+
+
+def repair_candidate_lines(before: str, after: str, language: str) -> dict:
+    """Full-source token edits and bounded same-block repair-guided candidates."""
+    old, new = source_token_spans(before), source_token_spans(after)
+    opcodes = SequenceMatcher(None, [t[0] for t in old], [t[0] for t in new], autojunk=False).get_opcodes()
+    equal = [dict(before_tokens=[i, j], after_tokens=[k, l],
+                  before_chars=[old[i][1], old[j-1][2]], after_chars=[new[k][1], new[l-1][2]])
+             for tag, i, j, k, l in opcodes if tag == 'equal' and j > i]
+    effective = code_line_spans(before)
+    lines, events, skipped = set(), [], []
+    old_bytes, new_bytes = before.encode(), after.encode()
+    old_map, new_map = byte_character_map(before), byte_character_map(after)
+    old_byte = {char: byte for byte, char in old_map.items()}
+    old_root = parser_for(language).parse(old_bytes).root_node
+    new_root = parser_for(language).parse(new_bytes).root_node
+    old_functions = [n for n in walk(old_root) if n.type == 'function_definition']
+    new_functions = [n for n in walk(new_root) if n.type == 'function_definition']
+    reliable = (not old_root.has_error and not new_root.has_error
+                and len(old_functions) == len(new_functions) == 1
+                and not any(n.type.startswith('preproc_') or n.type in {
+                    'lambda_expression', 'class_specifier', 'struct_specifier',
+                    'for_range_loop', 'gnu_asm_expression', 'asm_statement',
+                } for root in (old_root, new_root) for n in walk(root)))
+
+    def add_span(left, right, rule, **info):
+        chosen, at = set(), bisect_right(effective_ends, left)
+        while at < len(effective_parts) and effective_parts[at][0] < right:
+            a, b, line = effective_parts[at]
+            if b > left:
+                chosen.add(line)
+            at += 1
+        chosen = sorted(chosen)
+        lines.update(chosen)
+        events.append(dict(rule=rule, lines=chosen, **info))
+
+    def add_statement(node, rule, **info):
+        extent = _statement_extent(node)
+        if extent is None:
+            skipped.append('no_noncompound_statement_extent')
+        else:
+            add_span(old_map[extent[0]], old_map[extent[1]], rule, **info)
+
+    old_nodes = list(walk(old_root)) if reliable else []
+    blocks = [n for n in old_nodes if n.type == 'compound_statement']
+    effective_parts = sorted((a, b, line) for line, spans in effective.items() for a, b in spans)
+    effective_ends = [b for _, b, _ in effective_parts]
+
+    def anchor_at(char):
+        byte = old_byte[char]
+        candidates = [n for n in blocks if n.start_byte <= byte < n.end_byte]
+        if not candidates:
+            return None, None, []
+        block = min(candidates, key=lambda n: n.end_byte-n.start_byte)
+        statements = [n for n in block.named_children if n.type != 'comment']
+        following = [n for n in statements if n.end_byte > byte]
+        anchor = following[0] if following else (statements[-1] if statements else None)
+        return block, anchor, statements
+
+    if reliable:
+        try:
+            old_bindings = function_bindings(old_functions[0], old_bytes)
+            new_bindings = function_bindings(new_functions[0], new_bytes)
+        except ValueError:
+            old_bindings, new_bindings = [], []
+            skipped.append('unresolved_local_bindings')
+    else:
+        old_bindings, new_bindings = [], []
+        skipped.append('unreliable_parse_direct_edits_only')
+
+    for tag, i, j, k, l in opcodes:
+        if tag == 'equal':
+            continue
+        for _, left, right in old[i:j]:
+            add_span(left, right, 'edited_old_token', hunk=[tag, i, j, k, l])
+            if reliable:
+                a, b = old_byte[left], old_byte[right]
+                statement = old_root.descendant_for_byte_range(a, b)
+                while statement is not None and _statement_extent(statement) is None:
+                    statement = statement.parent
+                if statement is not None:
+                    add_statement(statement, 'edited_statement')
+        if not reliable:
+            continue
+        char = old[i][1] if i < len(old) else (old[-1][2] if old else 0)
+        block, anchor, statements = anchor_at(char)
+        if tag == 'insert':
+            if anchor is not None:
+                add_statement(anchor, 'insert_same_block_anchor')
+            else:
+                skipped.append('insert_without_same_block_statement')
+        changed_start = new[k][1] if k < len(new) else len(after)
+        changed_end = new[l-1][2] if l > k else changed_start
+        for guard in (n for n in walk(new_root) if n.type == 'if_statement'):
+            condition = guard.child_by_field_name('condition')
+            if condition is None or not (new_map[condition.start_byte] < changed_end
+                                        and new_map[condition.end_byte] > changed_start):
+                continue
+            mapped = []
+            for node in walk(condition):
+                binding = resolve_local_binding(node, new_bindings, new_bytes)
+                if binding is None:
+                    continue
+                if binding['parameter_index'] is not None:
+                    matches = [b for b in old_bindings if b['parameter_index'] == binding['parameter_index']]
+                else:
+                    declaration = binding['statement']
+                    a, b = new_map[declaration.start_byte], new_map[declaration.end_byte]
+                    declaration_tokens = [token for token in new if a <= token[1] and token[2] <= b]
+                    if declaration_tokens and declaration_tokens[-1][0] == ';':
+                        # An inserted statement's identical ';' can be selected
+                        # by SequenceMatcher. Declaration identity is established
+                        # by all type/declarator/initializer tokens, not punctuation.
+                        b = declaration_tokens[-2][2] if len(declaration_tokens) > 1 else a
+                    matches = []
+                    for section in equal:
+                        if section['after_chars'][0] <= a and b <= section['after_chars'][1]:
+                            ni, nj = section['after_tokens']
+                            oi, _ = section['before_tokens']
+                            position = (new_map[binding['declaration'].start_byte], new_map[binding['declaration'].end_byte])
+                            token_index = next((q for q in range(ni, nj) if new[q][1:] == position), None)
+                            if token_index is not None:
+                                old_position = old[oi+token_index-ni][1:]
+                                matches.extend(x for x in old_bindings if x['parameter_index'] is None
+                                    and (old_map[x['declaration'].start_byte], old_map[x['declaration'].end_byte]) == old_position)
+                if len(matches) == 1 and matches[0] not in mapped:
+                    mapped.append(matches[0])
+            if not mapped or anchor is None:
+                skipped.append('guard_without_verified_binding_or_anchor')
+                continue
+            at = statements.index(anchor)
+            for statement in statements[at:at+3]:
+                extent = _statement_extent(statement)
+                if extent is None:
+                    continue
+                used = [resolve_local_binding(n, old_bindings, old_bytes) for n in walk(statement)
+                        if extent[0] <= n.start_byte and n.end_byte <= extent[1]]
+                if any(b in used for b in mapped):
+                    add_statement(statement, 'guard_first_bound_use_within_three',
+                                  bindings=[old_map[b['declaration'].start_byte] for b in mapped])
+                    break
+    return dict(lines=sorted(lines), events=events, skip_reasons=sorted(set(skipped)),
+                equal_token_sections=equal, changed=any(tag != 'equal' for tag, *_ in opcodes))
 
 
 def resolve_language(source: str, language: str, file_name: str = '') -> str:

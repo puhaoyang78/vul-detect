@@ -1,0 +1,30 @@
+{
+  "smoke_only": true,
+  "encoder": "qwen",
+  "trained_on": "primevul",
+  "sample_key": "primevul:0",
+  "candidate_lines": [
+    4,
+    5
+  ],
+  "original_line_alignment": true,
+  "dropout": false,
+  "auxiliary_updates": {
+    "region": {
+      "loss": 1.3375091552734375,
+      "weighted_loss": 0.13375091552734375,
+      "head_gradient_l1": 836.1907247677445,
+      "lora_gradient_l1": 137.29890173859894,
+      "head_update_l1": 45.76069539831951
+    },
+    "local_invariance": {
+      "loss": 5.074490763945505e-05,
+      "weighted_loss": 5.074490445622359e-07,
+      "head_gradient_l1": 0.0791922927367068,
+      "lora_gradient_l1": 0.04977522888475505,
+      "head_update_l1": 32.03244342119433
+    }
+  },
+  "save_reload": true,
+  "input": "single function only; the patch is not an encoder input"
+}

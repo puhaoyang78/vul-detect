@@ -4,6 +4,8 @@ import json
 import math
 import random
 import sys
+from bisect import bisect_right
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -180,7 +182,7 @@ class InputBuilder:
         source = self._encode(str(record["raw_source"]), self.source_max_length)
         return self._with_eos([*self.source_prefix, *source])
 
-    def codebert_batch(self, records, *, device):
+    def codebert_batch(self, records, *, device, return_source_positions=False):
         """Native 512-token windows, half-window stride, one weighted function pool.
 
         source_max_length is the logical total budget, including one copy of
@@ -197,7 +199,7 @@ class InputBuilder:
         if capacity <= 0:
             raise ValueError('task prefix leaves no CodeBERT source capacity')
         stride = capacity // 2
-        sequences, weights, owners = [], [], []
+        sequences, weights, owners, positions = [], [], [], []
         for owner, record in enumerate(records):
             tokens = self._encode(str(record['raw_source']), budget)
             starts = [0]
@@ -213,11 +215,89 @@ class InputBuilder:
                 weights.append([1. / len(starts)] * (1 + len(self.source_prefix)) +
                                [1. / coverage[pos] for pos in range(start, end)] + [1. / len(starts)])
                 owners.append(owner)
+                positions.append([-1] * (1 + len(self.source_prefix)) + list(range(start, end)) + [-1])
         ids, mask = self._pad(sequences, device=device)
         pool_weights = torch.zeros_like(mask, dtype=torch.float32)
         for i, values in enumerate(weights):
             pool_weights[i, :len(values)] = torch.tensor(values, device=device)
-        return ids, mask, torch.tensor(owners, dtype=torch.long, device=device), pool_weights, len(records)
+        result = (ids, mask, torch.tensor(owners, dtype=torch.long, device=device), pool_weights, len(records))
+        if return_source_positions:
+            source_positions = torch.full_like(ids, -1)
+            for i, values in enumerate(positions):
+                source_positions[i, :len(values)] = torch.tensor(values, device=device)
+            return (*result, source_positions)
+        return result
+
+    @lru_cache(maxsize=16384)
+    def local_layout(self, source: str, encoder: str) -> dict:
+        """Source-only fast offsets and lexical character overlap; no supervision."""
+        from .syntax import code_line_spans
+        if not getattr(self.tokenizer, 'is_fast', False):
+            raise ValueError('local risk pooling requires a fast tokenizer')
+        result = self.tokenizer(source, add_special_tokens=False, truncation=False,
+                                return_offsets_mapping=True, verbose=False)
+        tokens, offsets = list(result['input_ids']), list(result['offset_mapping'])
+        if len(tokens) != len(offsets) or tokens != self._encode(source):
+            raise ValueError('source tokenizer IDs/offsets mismatch')
+        if any(not (0 <= a <= b <= len(source)) for a, b in offsets) or any(
+                offsets[i][0] < offsets[i-1][0] for i in range(1, len(offsets))):
+            raise ValueError('source offset mapping is outside Python character coordinates')
+        budget = self.source_max_length - len(self.source_prefix) - 2 if encoder == 'codebert' else self.source_max_length
+        special = set(self.tokenizer.all_special_ids)
+        # A literal may contain e.g. "</s>". Its fast offset is valid source
+        # evidence even though that special token must not enter the line pool.
+        valid_offsets = [(a, b) for a, b in offsets if b > a]
+        merged = []
+        for a, b in valid_offsets:
+            if merged and a <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(b, merged[-1][1]))
+            else:
+                merged.append((a, b))
+        lexical = code_line_spans(source)
+        interval = 0
+        for a, b in sorted(span for spans in lexical.values() for span in spans):
+            while interval < len(merged) and merged[interval][1] <= a:
+                interval += 1
+            if interval == len(merged) or merged[interval][0] > a or merged[interval][1] < b:
+                raise ValueError('source offsets do not cover lexical code characters')
+        parts = sorted((a, b, line) for line, spans in lexical.items() for a, b in spans)
+        ends = [b for _, b, _ in parts]
+        overlaps = {}
+        for index, (token, (a, b)) in enumerate(zip(tokens[:budget], offsets[:budget])):
+            if b <= a or token in special:
+                continue
+            counts = {}
+            at = bisect_right(ends, a)
+            while at < len(parts) and parts[at][0] < b:
+                left, right, line = parts[at]
+                counts[line] = counts.get(line, 0) + max(0, min(b, right) - max(a, left))
+                at += 1
+            total = sum(counts.values())
+            for line, count in counts.items():
+                if count:
+                    overlaps.setdefault(line, []).append((index, count / total))
+        lines = sorted(overlaps)
+        if not lines:
+            raise ValueError('function has no visible effective code lines (m=0)')
+        visible_end = max((b for _, b in offsets[:budget]), default=0)
+        return dict(ids=tokens[:budget], token_count=len(tokens), lines=lines, eos_token_id=self.eos_token_id,
+                    full_lines=[line for line in lines if max(b for _, b in lexical[line]) <= visible_end],
+                    complete=len(tokens) <= budget,
+                    line_weights=[overlaps[line] for line in lines])
+
+    def local_batch(self, records, *, encoder, device):
+        layouts = [self.local_layout(str(r['raw_source']), encoder) for r in records]
+        if encoder == 'codebert':
+            return (*self.codebert_batch(records, device=device, return_source_positions=True), layouts)
+        if self.eos_token_id is None:
+            raise ValueError('Qwen local risk requires an effective EOS token')
+        sequences = [self._with_eos([*self.source_prefix, *layout['ids']]) for layout in layouts]
+        ids, mask = self._pad(sequences, device=device)
+        positions = torch.full_like(ids, -1)
+        for i, layout in enumerate(layouts):
+            start = len(self.source_prefix)
+            positions[i, start:start+len(layout['ids'])] = torch.arange(len(layout['ids']), device=device)
+        return (ids, mask, torch.arange(len(records), device=device), None, len(records), positions, layouts)
 
     def mechanism_text(
         self,
@@ -467,6 +547,62 @@ class MultiPrototypeHead(nn.Module):
         return torch.logsumexp(scores, dim=-1, keepdim=True) - math.log(scores.shape[-1])
 
 
+class LocalRiskHead(nn.Module):
+    """Shared 64-dimensional local/global risk head; no global logit branch."""
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.local = nn.Linear(hidden_size, 64)
+        self.global_context = nn.Linear(hidden_size, 64, bias=False)
+        self.score = nn.Linear(64, 1)
+
+    def forward(self, lines, global_context):
+        scores = self.score(torch.nn.functional.gelu(
+            self.local(lines.float()) + self.global_context(global_context.float()))).squeeze(-1)
+        if scores.numel() == 0:
+            raise ValueError('local risk head received m=0')
+        return torch.logsumexp(scores, dim=0) - math.log(len(scores)), scores
+
+
+def _pool_source_lines(hidden, owners, positions, layouts):
+    """Average duplicate window states by global source token, then pool lines."""
+    if positions.shape != hidden.shape[:2] or len(owners) != len(hidden):
+        raise ValueError('window/source position shape mismatch')
+    result = []
+    for owner, layout in enumerate(layouts):
+        selected = owners == owner
+        indices = positions[selected].reshape(-1)
+        states = hidden[selected].reshape(-1, hidden.shape[-1]).float()
+        keep = indices >= 0
+        indices, states = indices[keep], states[keep]
+        n = len(layout['ids'])
+        if len(indices) == 0 or torch.any(indices >= n):
+            raise ValueError('source token indices missing or outside visible source')
+        sums = states.new_zeros((n, hidden.shape[-1])).index_add(0, indices, states)
+        counts = states.new_zeros(n).index_add(0, indices, states.new_ones(len(indices)))
+        if torch.any(counts <= 0):
+            raise ValueError('visible source token absent from its encoder windows')
+        tokens = sums / counts[:, None]
+        line_indices, token_indices, fractions = [], [], []
+        for i, weights in enumerate(layout['line_weights']):
+            for token, fraction in weights:
+                line_indices.append(i)
+                token_indices.append(token)
+                fractions.append(fraction)
+        line_indices = torch.tensor(line_indices, dtype=torch.long, device=hidden.device)
+        token_indices = torch.tensor(token_indices, dtype=torch.long, device=hidden.device)
+        weights = states.new_tensor(fractions)
+        m = len(layout['lines'])
+        if m == 0:
+            raise ValueError('local risk has no visible code instances (m=0)')
+        totals = states.new_zeros(m).index_add(0, line_indices, weights)
+        if torch.any(totals <= 0):
+            raise ValueError('local code line has zero tokenizer overlap')
+        lines = states.new_zeros((m, states.shape[-1])).index_add(
+            0, line_indices, tokens[token_indices] * weights[:, None]) / totals[:, None]
+        result.append(lines)
+    return result
+
+
 class SequenceVulnerabilityClassifier(nn.Module):
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int,
                  lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool,
@@ -481,10 +617,14 @@ class SequenceVulnerabilityClassifier(nn.Module):
             target_modules=target_modules,
             gradient_checkpointing=gradient_checkpointing,
         )
+        self.variant = variant
+        self.classifier_head = classifier_head
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
-        if classifier_head not in {"linear", "mlp4", "prototype4"}:
+        if classifier_head not in {"linear", "mlp4", "prototype4", "local_risk"}:
             raise ValueError("unknown classifier head")
-        if classifier_head != "linear" and variant != "codebert_source":
+        if classifier_head == 'local_risk' and variant not in {'baseline', 'codebert_source'}:
+            raise ValueError('local risk requires a source-only encoder')
+        if classifier_head not in {"linear", "local_risk"} and variant != "codebert_source":
             raise ValueError("head comparison is restricted to CodeBERT source")
         # Preserve the original encoder initialization and subsequent dropout RNG.
         with torch.random.fork_rng(devices=[]):
@@ -499,6 +639,8 @@ class SequenceVulnerabilityClassifier(nn.Module):
                     head.prototypes.weight.add_(original.weight)
                     head.prototypes.bias.fill_(float(original.bias.detach()))
                 self.task_modules["classifier"] = head
+            elif classifier_head == 'local_risk':
+                self.task_modules['classifier'] = LocalRiskHead(hidden_size)
         # Extra CPU initialization must not alter the encoder/classifier initialization
         # or the subsequent training RNG stream of the baseline control.
         with torch.random.fork_rng(devices=[]):
@@ -511,9 +653,7 @@ class SequenceVulnerabilityClassifier(nn.Module):
 
     def encode(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
                 window_owners=None, pooling_weights=None, function_count=None) -> torch.Tensor:
-        hidden = self.encoder(
-            input_ids=input_ids, attention_mask=attention_mask, use_cache=False
-        ).last_hidden_state
+        hidden = self._source_hidden(input_ids, attention_mask)
         if "source_adapter" in self.task_modules:
             hidden = self.task_modules["source_adapter"](hidden.float(), attention_mask)
         if window_owners is not None:
@@ -524,8 +664,35 @@ class SequenceVulnerabilityClassifier(nn.Module):
             pooled = _masked_mean(hidden, attention_mask).float()
         return pooled
 
+    def _source_hidden(self, input_ids, attention_mask):
+        encoder_grad = torch.is_grad_enabled() and any(p.requires_grad for p in self.encoder.parameters())
+        with torch.set_grad_enabled(encoder_grad):
+            return self.encoder(input_ids=input_ids, attention_mask=attention_mask,
+                                use_cache=False).last_hidden_state
+
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
-                window_owners=None, pooling_weights=None, function_count=None) -> torch.Tensor:
+                window_owners=None, pooling_weights=None, function_count=None,
+                source_positions=None, layouts=None, *, return_local=False) -> torch.Tensor:
+        if self.classifier_head == 'local_risk':
+            if source_positions is None or layouts is None or len(layouts) != function_count:
+                raise ValueError('local risk requires source-only offsets and original line numbers')
+            hidden = self._source_hidden(input_ids, attention_mask)
+            if self.variant == 'codebert_source':
+                global_context = _window_mean(hidden, attention_mask, window_owners, pooling_weights, function_count)
+            else:
+                ends = attention_mask.long().sum(1) - 1
+                if torch.any(ends < 0) or any(int(input_ids[i, end]) != layout['eos_token_id']
+                                            for i, (end, layout) in enumerate(zip(ends, layouts))):
+                    raise ValueError('Qwen global context must use the last effective EOS')
+                global_context = hidden[torch.arange(function_count, device=hidden.device), ends].float()
+            line_features = _pool_source_lines(hidden, window_owners, source_positions, layouts)
+            output, local = [], []
+            for features, context, layout in zip(line_features, global_context, layouts):
+                z, scores = self.task_modules['classifier'](features, context)
+                output.append(z)
+                local.append((layout['lines'], scores))
+            logits = torch.stack(output)
+            return (logits, local) if return_local else logits
         pooled = self.encode(input_ids, attention_mask, window_owners, pooling_weights, function_count)
         return self.task_modules["classifier"](pooled).squeeze(-1)
 
@@ -655,6 +822,21 @@ def _labels(records: list[dict[str, object]], device: torch.device) -> torch.Ten
     )
 
 
+@contextmanager
+def _auxiliary_mode(model):
+    """Disable dropout while retaining gradient checkpointing and gradients."""
+    flags = [(module, module.training) for module in model.modules()]
+    model.eval()
+    for module, _ in flags:
+        if getattr(module, 'gradient_checkpointing', False) and torch.is_grad_enabled():
+            module.training = True
+    try:
+        yield
+    finally:
+        for module, flag in flags:
+            module.training = flag
+
+
 def _forward_batch(
     model,
     records: list[dict[str, object]],
@@ -663,7 +845,13 @@ def _forward_batch(
     variant: str,
     excluded_groups: tuple[str, ...],
     device: torch.device,
+    return_local: bool = False,
 ) -> torch.Tensor:
+    if getattr(model, 'classifier_head', None) == 'local_risk':
+        encoder = 'codebert' if variant == 'codebert_source' else 'qwen'
+        return model(*input_builder.local_batch(records, encoder=encoder, device=device), return_local=return_local)
+    if return_local:
+        raise ValueError('line scores require the local risk classifier')
     if variant == 'codebert_source':
         return model(*input_builder.codebert_batch(records, device=device))
     if variant in _GRAPH_VARIANTS:
@@ -883,9 +1071,11 @@ def train_model(
     invariant_views: list | None = None,
     invariance_weight: float = 1.0,
     ranking_weight: float = 1.0,
+    local_objective: str | None = None,
+    local_regions: dict | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
-    if classifier_head != "linear" and variant != "codebert_source":
+    if classifier_head not in {"linear", "local_risk"} and variant != "codebert_source":
         raise ValueError("alternative heads require codebert_source")
     if variant == 'codebert_source' and source_max_length not in (512, 2048):
         raise ValueError('CodeBERT comparison requires logical length 512 or 2048')
@@ -937,8 +1127,23 @@ def train_model(
         validate_supervision(train_records, repair_pairs, invariant_views)
         if len(repair_pairs) < 2:
             raise ValueError("at least two real pairs are required for the random ranking control")
-    elif repair_pairs is not None or invariant_views is not None:
+    elif repair_pairs is not None or (invariant_views is not None and local_objective is None):
         raise ValueError("repair pairs and invariant views require a change objective")
+
+    if local_objective is not None:
+        from .change_learning import (LOCAL_OBJECTIVES, invariance_loss, line_invariance_loss,
+                                      region_loss, validate_local_supervision)
+        if (local_objective not in LOCAL_OBJECTIVES or variant not in {'baseline', 'codebert_source'}
+                or classifier_head != ('linear' if local_objective == 'A' else 'local_risk')
+                or initial_checkpoint is None or fixed_epochs or change_objective is not None
+                or synthetic_pairs is not None or sample_weights is not None or initial_adapter_state is not None):
+            raise ValueError('local risk requires a matching BCE initialization and source-only Valid selection')
+        if (seed != 42 or source_max_length != 2048 or epochs != 3 or batch_size * gradient_accumulation != 8
+                or (lora_r, lora_alpha, lora_dropout, weight_decay) != (16, 32, .05, .01)):
+            raise ValueError('local risk fixes seed=42, length=2048, LoRA=16/32/.05, 3 epochs and effective batch=8')
+        validate_local_supervision(train_records, local_regions, invariant_views)
+    elif classifier_head == 'local_risk' or local_regions is not None:
+        raise ValueError('local risk heads/regions require a local objective')
 
     graph_config = None
     if variant in _GRAPH_VARIANTS:
@@ -961,7 +1166,7 @@ def train_model(
     if initial_adapter_state is not None and (initial_checkpoint is not None or variant != "baseline"):
         raise ValueError("adapter initialization requires a fresh baseline classifier")
     if initial_checkpoint is not None:
-        if not fixed_epochs:
+        if not fixed_epochs and local_objective is None:
             raise ValueError("checkpoint continuation requires fixed_epochs")
         initial = torch.load(initial_checkpoint, map_location="cpu", weights_only=False)
         expected = dict(checkpoint_version=_CHECKPOINT_VERSION, dataset_schema_version=DATASET_SCHEMA_VERSION,
@@ -969,11 +1174,19 @@ def train_model(
                         source_max_length=source_max_length, context_max_length=context_max_length,
                         lora_r=lora_r, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
                         excluded_groups=excluded_groups,
-                        target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+                        target_modules=(("attention.self.query", "attention.self.key", "attention.self.value", "attention.output.dense")
+                                        if variant == 'codebert_source' else ("q_proj", "k_proj", "v_proj", "o_proj")),
                         fusion_dim=fusion_dim, fusion_heads=fusion_heads)
         for name, value in expected.items():
             if initial.get(name) != value:
                 raise ValueError(f"initial checkpoint mismatch: {name}")
+        if local_objective is not None:
+            members = {split: [(r['sample_key'], r['label']) for r in records if r['split'] == split]
+                       for split in ('train', 'valid')}
+            if (initial.get('classifier_head', 'linear') != 'linear' or initial.get('seed') != 42
+                    or initial.get('cohort_members') != members
+                    or initial.get('training_config', {}).get('epochs') != 3):
+                raise ValueError('initial BCE checkpoint does not match the cohort, head, seed or budget')
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
@@ -983,6 +1196,23 @@ def train_model(
     input_builder = InputBuilder(
         tokenizer, source_max_length=source_max_length, context_max_length=context_max_length
     )
+    if local_objective is not None:
+        encoder_name = 'codebert' if variant == 'codebert_source' else 'qwen'
+        normalized_regions, region_skips = {}, {}
+        bce_encoder_sequences, bce_visible_tokens = 0, 0
+        for record in train_records:
+            layout = input_builder.local_layout(record['raw_source'], encoder_name)
+            bce_visible_tokens += len(layout['ids'])
+            capacity = 512-len(input_builder.source_prefix)-2
+            bce_encoder_sequences += (1+math.ceil(max(0, len(layout['ids'])-capacity)/(capacity//2))
+                                      if encoder_name == 'codebert' else 1)
+            raw = local_regions.get(record['sample_key'], [])
+            chosen = sorted(set(raw) & set(layout['full_lines']))
+            if 0 < len(chosen) < len(layout['lines']):
+                normalized_regions[record['sample_key']] = chosen
+            elif raw:
+                region_skips[record['sample_key']] = 'empty_visible_M' if not chosen else 'all_visible_instances'
+        local_regions = normalized_regions
     target_modules = (("attention.self.query", "attention.self.key", "attention.self.value", "attention.output.dense")
                       if variant == 'codebert_source' else ("q_proj", "k_proj", "v_proj", "o_proj"))
     _seed_everything(seed)
@@ -1004,9 +1234,17 @@ def train_model(
     if initial_adapter_state is not None:
         set_peft_model_state_dict(model.encoder, initial_adapter_state)
     if initial is not None:
-        set_peft_model_state_dict(model.encoder, initial["adapter_state"])
-        model.task_modules.load_state_dict(initial["task_state"])
-    optimizer = torch.optim.AdamW(trainable, lr=learning_rate, weight_decay=weight_decay)
+        _restore_adapter(model.encoder, initial['adapter_state'])
+        if local_objective in {None, 'A'}:
+            model.task_modules.load_state_dict(initial["task_state"], strict=True)
+    if local_objective is not None:
+        lora_parameters = [p for p in model.encoder.parameters() if p.requires_grad]
+        head_parameters = list(model.task_modules.parameters())
+        for parameter in lora_parameters:
+            parameter.requires_grad_(False)
+        optimizer = torch.optim.AdamW(head_parameters, lr=1e-4, weight_decay=.01)
+    else:
+        optimizer = torch.optim.AdamW(trainable, lr=learning_rate, weight_decay=weight_decay)
     loss_fn = nn.BCEWithLogitsLoss(reduction="none")
 
     best_key = (float("-inf"),) * 4
@@ -1019,6 +1257,11 @@ def train_model(
     global_step = 0
 
     for epoch in range(epochs):
+        if local_objective is not None and epoch == 1:
+            for parameter in lora_parameters:
+                parameter.requires_grad_(True)
+            optimizer = torch.optim.AdamW([
+                dict(params=lora_parameters, lr=2e-5), dict(params=head_parameters, lr=1e-4)], weight_decay=.01)
         model.train()
         order = list(range(len(train_records)))
         random.Random(seed + epoch).shuffle(order)
@@ -1040,16 +1283,27 @@ def train_model(
         optimizer_steps = 0
         pending = 0
         num_batches = math.ceil(len(order) / batch_size)
+        if local_objective is not None:
+            local_total, local_count, inv_total, inv_count = 0., 0, 0., 0
+            local_weighted, inv_weighted = 0., 0.
+            empty_aux, auxiliary_forwards = 0, 0
+            auxiliary_encoder_sequences = 0
+            epoch_steps = math.ceil(num_batches / gradient_accumulation)
+            view_order = list(range(len(invariant_views)))
+            random.Random(seed + epoch).shuffle(view_order)
+            phase = 'head_bce' if epoch == 0 else 'joint'
         window_loss, window_samples = 0.0, 0
         bar = tqdm(range(0, len(order), batch_size), total=num_batches,
                    desc=f"{variant} · epoch {epoch+1}/{epochs}", unit="batch",
                    dynamic_ncols=True, mininterval=1, file=sys.stdout, colour="cyan")
         for batch_index, start in enumerate(bar):
             batch = [train_records[index] for index in order[start:start + batch_size]]
-            logits = _forward_batch(
+            prediction = _forward_batch(
                 model, batch, input_builder,
                 variant=variant, excluded_groups=excluded_groups, device=resolved_device,
+                return_local=local_objective is not None and local_objective != 'A',
             )
+            logits, local_scores = prediction if local_objective is not None and local_objective != 'A' else (prediction, None)
             losses = loss_fn(logits, _labels(batch, resolved_device))
             if sample_weights is not None:
                 weights = losses.new_tensor([sample_weights[r["sample_key"]] for r in batch])
@@ -1060,7 +1314,33 @@ def train_model(
             group_start = (batch_index // gradient_accumulation) * gradient_accumulation
             group_end = min(group_start + gradient_accumulation, num_batches)
             group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
-            (loss * len(batch) / group_samples).backward()
+            training_loss = loss * len(batch) / group_samples
+            if local_objective is not None:
+                ramp = (optimizer_steps / max(1, epoch_steps-1)) if epoch == 1 else 1.
+                loc_weight = .1 * ramp if epoch > 0 and local_objective in {'C', 'D', 'C_random'} else 0.
+                inv_weight = .01 * ramp if epoch > 0 and local_objective == 'D' else 0.
+                if epoch > 0 and local_scores is not None:
+                    selected = []
+                    for record, (line_numbers, scores) in zip(batch, local_scores):
+                        if record['label'] == 1:
+                            term = region_loss(scores, line_numbers, local_regions.get(record['sample_key'], []))
+                            if term is not None:
+                                selected.append(term)
+                    if selected:
+                        group_records = [train_records[i] for i in order[group_start*batch_size:min(group_end*batch_size, len(order))]]
+                        group_valid = 0
+                        encoder_name = 'codebert' if variant == 'codebert_source' else 'qwen'
+                        for row in group_records:
+                            if row['label'] == 1:
+                                layout = input_builder.local_layout(row['raw_source'], encoder_name)
+                                candidate = set(local_regions.get(row['sample_key'], [])) & set(layout['full_lines'])
+                                group_valid += 0 < len(candidate) < len(layout['lines'])
+                        term = torch.stack(selected).mean()
+                        training_loss = training_loss + loc_weight * term * len(selected) / group_valid
+                        local_total += float(term.detach()) * len(selected)
+                        local_weighted += loc_weight * float(term.detach()) * len(selected)
+                        local_count += len(selected)
+            training_loss.backward()
             value = float(loss.detach().cpu())
             running_loss += value * len(batch)
             window_loss += value * len(batch)
@@ -1069,6 +1349,27 @@ def train_model(
                             lr=f"{learning_rate:.1e}", refresh=False)
             pending += 1
             if pending == gradient_accumulation or batch_index + 1 == num_batches:
+                if local_objective is not None and epoch > 0:
+                    if invariant_views:
+                        view = invariant_views[view_order[optimizer_steps % len(view_order)]]
+                        with _auxiliary_mode(model):
+                            aux = _forward_batch(model, list(view), input_builder, variant=variant,
+                                excluded_groups=excluded_groups, device=resolved_device, return_local=local_objective != 'A')
+                            term = invariance_loss(aux) if local_objective == 'A' else line_invariance_loss(aux[1])
+                            if not torch.isfinite(term):
+                                raise ValueError('nonfinite local invariance loss')
+                            (inv_weight * term).backward()
+                        inv_total += float(term.detach())
+                        inv_weighted += inv_weight * float(term.detach())
+                        inv_count += 1
+                        auxiliary_forwards += 2
+                        for record in view:
+                            layout = input_builder.local_layout(record['raw_source'], encoder_name)
+                            capacity = 512-len(input_builder.source_prefix)-2
+                            auxiliary_encoder_sequences += (1+math.ceil(max(0,len(layout['ids'])-capacity)/(capacity//2))
+                                if encoder_name == 'codebert' else 1)
+                    else:
+                        empty_aux += 1
                 if change_objective is not None:
                     # Deterministic auxiliary predictions isolate code changes
                     # from dropout noise. Gradients still update the shared model.
@@ -1113,8 +1414,11 @@ def train_model(
                                 lr=f"{learning_rate:.1e}", refresh=False)
                 if global_step == 1 or global_step % log_every == 0 or batch_index+1 == num_batches:
                     history.add(dict(event="step", epoch=epoch+1, step=global_step,
-                                     loss=window_loss/window_samples, learning_rate=learning_rate,
-                                     samples_seen=min(start+len(batch), len(order))))
+                                     loss=window_loss/window_samples, learning_rate=1e-4 if local_objective is not None else learning_rate,
+                                     samples_seen=min(start+len(batch), len(order)),
+                                     **(dict(phase=phase, region_weight=loc_weight, invariance_weight=inv_weight,
+                                             head_learning_rate=1e-4, lora_learning_rate=0. if epoch == 0 else 2e-5)
+                                        if local_objective is not None else {})))
                     window_loss, window_samples = 0.0, 0
 
         validation = None
@@ -1149,6 +1453,19 @@ def train_model(
                 ranking_negative_unique=len({p[1]["sample_key"] for p in ranking_pairs}),
                 total_loss=running_loss / len(train_records)
                     + alpha * invariance_total / optimizer_steps + beta * ranking_total / optimizer_steps)
+        if local_objective is not None:
+            epoch_row.update(local_objective=local_objective, phase=phase,
+                region_loss=local_total/local_count if local_count else None, region_functions=local_count,
+                region_skipped=len(train_records)-local_count,
+                invariance_loss=inv_total/inv_count if inv_count else None, invariance_functions=inv_count,
+                weighted_region_loss=local_weighted/local_count if local_count else 0.,
+                weighted_invariance_loss=inv_weighted/inv_count if inv_count else 0.,
+                empty_invariance_steps=empty_aux, auxiliary_function_forwards=auxiliary_forwards,
+                bce_function_forwards=len(train_records), bce_encoder_sequences=bce_encoder_sequences,
+                bce_visible_source_tokens=bce_visible_tokens, auxiliary_encoder_sequences=auxiliary_encoder_sequences,
+                head_learning_rate=1e-4, lora_learning_rate=0. if epoch == 0 else 2e-5,
+                total_loss=running_loss/len(train_records) + (local_weighted/local_count if local_count else 0.)
+                    + (inv_weighted/inv_count if inv_count else 0.))
         history.add(epoch_row)
         key = ((epoch+1,) if fixed_epochs else
                (validation.mcc, validation.f1, validation.accuracy,
@@ -1185,9 +1502,11 @@ def train_model(
         "initial_checkpoint": str(initial_checkpoint) if initial_checkpoint is not None else None,
         "sample_weights": sample_weights,
         "classifier_head": classifier_head,
+        "cohort_members": {split: [(r['sample_key'], r['label']) for r in records if r['split'] == split]
+                           for split in ('train', 'valid')},
         "training_config": dict(epochs=epochs, batch_size=batch_size,
                                 gradient_accumulation=gradient_accumulation,
-                                learning_rate=learning_rate, weight_decay=weight_decay),
+                                learning_rate=1e-4 if local_objective is not None else learning_rate, weight_decay=weight_decay),
         "adapter_state": best_adapter,
         "task_state": best_task,
         "validation": best_validation.as_json() if best_validation else None,
@@ -1206,6 +1525,22 @@ def train_model(
             auxiliary_function_forwards_per_epoch=4 * optimizer_steps)
         if change_objective == "bce_random_ranking":
             checkpoint["change_supervision"]["random_sampling_protocol"] = "epoch_marginal_matched"
+    if local_objective is not None:
+        checkpoint['local_supervision'] = dict(objective=local_objective,
+            head_version=1 if local_objective != 'A' else None, hidden_dim=64 if local_objective != 'A' else None,
+            region_weight=.1 if local_objective in {'C', 'D', 'C_random'} else 0.,
+            invariance_weight=.01 if local_objective == 'D' else 0.,
+            warmup_epochs=1, joint_epochs=2, optimizer_reset=True,
+            lora_learning_rate=2e-5, head_learning_rate=1e-4, weight_decay=.01, gradient_clip=1.,
+            warmup_loss='BCE only; encoder frozen', ramp='first joint epoch: linear 0 to configured weights',
+            selected_phase='head_bce' if selected_epoch == 1 else 'joint',
+            region_functions=len(local_regions), safe_views=len(invariant_views),
+            region_skips=region_skips,
+            auxiliary_dropout=False, auxiliary_functions_per_joint_step=2 if invariant_views else 0,
+            input='single original function; no patch, candidate, or label dependent input construction',
+            line_pooling='lexical character overlap; duplicate source-window token states averaged first',
+            global_pooling=('existing function mean' if local_objective == 'A' else
+                'existing CodeBERT unique-token function mean' if variant == 'codebert_source' else 'last effective EOS'))
     if variant == 'codebert_source':
         capacity = 512 - len(input_builder.source_prefix) - 2
         checkpoint['input_protocol'] = dict(encoder='roberta', native_window=512,
@@ -1250,6 +1585,10 @@ def predict_checkpoint(checkpoint_path: str | Path, records: list[dict], *,
 
 
 def _load_model(checkpoint: dict[str, object], *, device: torch.device):
+    if checkpoint.get('classifier_head') == 'local_risk':
+        config = checkpoint.get('local_supervision', {})
+        if (config.get('head_version'), config.get('hidden_dim'), checkpoint.get('source_max_length')) != (1, 64, 2048):
+            raise ValueError('local risk head/input checkpoint configuration is incompatible')
     model = _build_model(
         str(checkpoint["variant"]),
         str(checkpoint["model_path"]),
@@ -1265,10 +1604,17 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
         **({"graph_config": checkpoint.get("graph_config")}
            if checkpoint["variant"] in _GRAPH_VARIANTS else {}),
     )
-    set_peft_model_state_dict(model.encoder, checkpoint["adapter_state"])
-    model.task_modules.load_state_dict(checkpoint["task_state"])
+    _restore_adapter(model.encoder, checkpoint['adapter_state'])
+    model.task_modules.load_state_dict(checkpoint["task_state"], strict=True)
     model.eval()
     return model
+
+
+def _restore_adapter(encoder, state):
+    expected = get_peft_model_state_dict(encoder)
+    if set(expected) != set(state) or any(expected[key].shape != state[key].shape for key in expected):
+        raise ValueError('LoRA checkpoint keys/shapes do not exactly match the encoder')
+    set_peft_model_state_dict(encoder, state)
 
 
 def evaluate_model(
