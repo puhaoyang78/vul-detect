@@ -50,6 +50,49 @@ _FUSION_VARIANTS = {"mechanism_fusion"}
 _GRAPH_VARIANTS = {"graph_attributes", "graph_cfg"}
 _CHECKPOINT_VERSION = 8
 _CLASSIFIER_INITIALIZATION = 'shared base RNG; LoRA initialization isolated; training RNG reset'
+CONDITIONAL_LENGTH_CONFIG = dict(version=1, hidden_dim=16, grl_lambda=.05,
+    boundaries=[128, 512, 2025], length='full original CodeBERT source tokens',
+    loss='mean view BCE + mean view length CE per function, then mean over functions',
+    schedule='fixed GRL lambda throughout all epochs; CE coefficient one')
+
+
+def source_length_group(tokens: int) -> int:
+    if type(tokens) is not int or tokens < 0:
+        raise ValueError('source length must be a nonnegative integer token count')
+    return sum(tokens > boundary for boundary in CONDITIONAL_LENGTH_CONFIG['boundaries'])
+
+
+class _GradientReversal(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, scores, weight):
+        ctx.weight = weight
+        return scores.view_as(scores)
+
+    @staticmethod
+    def backward(ctx, gradient):
+        return -ctx.weight * gradient, None
+
+
+class ConditionalLengthHead(nn.Module):
+    """Training-only prediction of original length from (classification logit, y)."""
+    def __init__(self):
+        super().__init__()
+        self.layers = nn.Sequential(nn.Linear(2, 16), nn.GELU(), nn.Linear(16, 4))
+
+    def forward(self, scores, labels, *, grl_lambda=None):
+        if scores.ndim != 1 or labels.shape != scores.shape or not bool(((labels == 0) | (labels == 1)).all()):
+            raise ValueError('conditional length head requires one logit and binary label per view')
+        scores = scores.float()
+        if grl_lambda is not None:
+            if not math.isfinite(grl_lambda) or grl_lambda < 0:
+                raise ValueError('GRL lambda must be finite and nonnegative')
+            scores = _GradientReversal.apply(scores, grl_lambda)
+        return self.layers(torch.stack((scores, labels.detach().float()), dim=-1))
+
+
+def _validate_conditional_length_config(config):
+    if config != CONDITIONAL_LENGTH_CONFIG:
+        raise ValueError('conditional length head configuration is incompatible')
 
 
 @dataclass(frozen=True)
@@ -628,7 +671,7 @@ class SequenceVulnerabilityClassifier(nn.Module):
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int,
                  lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool,
                  variant: str = "baseline", classifier_head: str = "linear",
-                 finetuning_mode: str | None = None) -> None:
+                 finetuning_mode: str | None = None, conditional_length_config: dict | None = None) -> None:
         super().__init__()
         self.encoder, hidden_size = _build_lora_encoder(
             model_path,
@@ -673,6 +716,10 @@ class SequenceVulnerabilityClassifier(nn.Module):
         with torch.random.fork_rng(devices=[]):
             if variant in {"source_attention", "source_bidirectional_attention"}:
                 self.task_modules["source_pool"] = SourceAttentionPool(hidden_size)
+        if conditional_length_config is not None:
+            _validate_conditional_length_config(conditional_length_config)
+            with torch.random.fork_rng(devices=[]):
+                self.task_modules['length_adversary'] = ConditionalLengthHead()
         self.to(device)
 
     def encode(self, input_ids: torch.Tensor, attention_mask: torch.Tensor,
@@ -819,10 +866,15 @@ def _build_model(
     graph_config: dict | None = None,
     classifier_head: str = "linear",
     finetuning_mode: str | None = None,
+    conditional_length_config: dict | None = None,
 ):
     if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
             or variant != 'codebert_source' or classifier_head != 'linear'):
         raise ValueError('explicit finetuning modes require CodeBERT mean pooling and linear head')
+    if conditional_length_config is not None:
+        _validate_conditional_length_config(conditional_length_config)
+        if (variant, finetuning_mode, classifier_head) != ('codebert_source', 'full', 'linear'):
+            raise ValueError('conditional length requires full CodeBERT with the original linear classifier')
     common = dict(
         device=device,
         lora_r=lora_r,
@@ -839,6 +891,7 @@ def _build_model(
         )
     if variant in _SEQUENCE_VARIANTS:
         return SequenceVulnerabilityClassifier(model_path, variant=variant, classifier_head=classifier_head,
+            **({'conditional_length_config': conditional_length_config} if conditional_length_config is not None else {}),
             **({'finetuning_mode': finetuning_mode} if finetuning_mode is not None else {}), **common)
     if variant == "mechanism_fusion":
         return MechanismFusionClassifier(
@@ -1121,6 +1174,7 @@ def train_model(
     finetuning_mode: str | None = None,
     function_views: dict[str, list[str]] | None = None,
     augmentation_config: dict | None = None,
+    conditional_length_config: dict | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
     if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
@@ -1180,6 +1234,11 @@ def train_model(
                 raise ValueError('function views require zero or two distinct transformed sources')
     elif augmentation_config is not None:
         raise ValueError('augmentation configuration requires function views')
+    if conditional_length_config is not None:
+        _validate_conditional_length_config(conditional_length_config)
+        if (function_views is None or augmentation_config['mode'] != 'random'
+                or source_max_length != 2048 or seed != 42):
+            raise ValueError('conditional length requires the seed42 random-view CodeBERT 2048 experiment')
 
     if change_objective is not None:
         from .change_learning import (OBJECTIVES, invariance_loss, random_pair_control,
@@ -1267,6 +1326,12 @@ def train_model(
     input_builder = InputBuilder(
         tokenizer, source_max_length=source_max_length, context_max_length=context_max_length
     )
+    if conditional_length_config is not None:
+        # Compute before expanding views; never bin the transformed or truncated source.
+        train_records = [dict(r, original_length_group=source_length_group(
+            len(input_builder._encode(r['raw_source'])))) for r in train_records]
+        length_counts = {str(y): [sum(r['label'] == y and r['original_length_group'] == g
+            for r in train_records) for g in range(4)] for y in (0, 1)}
     if local_objective is not None:
         encoder_name = 'codebert' if variant == 'codebert_source' else 'qwen'
         normalized_regions, region_skips = {}, {}
@@ -1299,6 +1364,7 @@ def train_model(
         fusion_dim=fusion_dim,
         fusion_heads=fusion_heads,
         classifier_head=classifier_head,
+        **({'conditional_length_config': conditional_length_config} if conditional_length_config is not None else {}),
         **({'finetuning_mode': finetuning_mode} if finetuning_mode is not None else {}),
         **({"graph_config": graph_config} if graph_config is not None else {}),
     )
@@ -1344,6 +1410,7 @@ def train_model(
         random.Random(seed + epoch).shuffle(order)
         optimizer.zero_grad(set_to_none=True)
         running_loss = 0.0
+        length_total, length_window = 0., 0.
         synthetic_total = 0.0
         synthetic_order = list(range(len(synthetic_pairs))) if synthetic_pairs is not None else []
         random.Random(seed + epoch).shuffle(synthetic_order)
@@ -1380,6 +1447,7 @@ def train_model(
             group_end = min(group_start + gradient_accumulation, num_batches)
             group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
             value = 0.
+            length_value = 0.
             for forwarded, coefficients in function_view_batches(batch, function_views, batch_size):
                 prediction = _forward_batch(
                     model, forwarded, input_builder,
@@ -1396,6 +1464,18 @@ def train_model(
                 if not torch.isfinite(loss):
                     raise ValueError(f"non-finite loss in epoch {epoch+1}, batch {batch_index+1}")
                 training_loss = loss * len(batch) / group_samples
+                if conditional_length_config is not None:
+                    length_logits = model.task_modules['length_adversary'](
+                        logits, _labels(forwarded, resolved_device), grl_lambda=conditional_length_config['grl_lambda'])
+                    targets = torch.tensor([r['original_length_group'] for r in forwarded],
+                                           dtype=torch.long, device=resolved_device)
+                    length_losses = torch.nn.functional.cross_entropy(length_logits, targets, reduction='none')
+                    length_loss = (length_losses * length_losses.new_tensor(coefficients)).sum() / len(batch)
+                    if not torch.isfinite(length_loss):
+                        raise ValueError('non-finite conditional length CE')
+                    # CE coefficient is ONE. Only the gradient at s is scaled/reversed.
+                    training_loss = training_loss + length_loss * len(batch) / group_samples
+                    length_value += float(length_loss.detach())
                 if local_objective is not None:
                     ramp = (optimizer_steps / max(1, epoch_steps-1)) if epoch == 1 else 1.
                     loc_weight = .1 * ramp if epoch > 0 and local_objective in {'C', 'D', 'C_random'} else 0.
@@ -1432,6 +1512,8 @@ def train_model(
                     encoder_sequences += sequences
                     encoder_token_slots += sequences * min(512, max(lengths)+len(input_builder.source_prefix)+2)
             running_loss += value * len(batch)
+            length_total += length_value * len(batch)
+            length_window += length_value * len(batch)
             window_loss += value * len(batch)
             window_samples += len(batch)
             bar.set_postfix(loss=f"{window_loss/window_samples:.4f}", step=global_step,
@@ -1505,10 +1587,15 @@ def train_model(
                     history.add(dict(event="step", epoch=epoch+1, step=global_step,
                                      loss=window_loss/window_samples, learning_rate=1e-4 if local_objective is not None else learning_rate,
                                      samples_seen=min(start+len(batch), len(order)),
+                                     **(dict(length_ce=length_window/window_samples,
+                                             total_loss=(window_loss+length_window)/window_samples,
+                                             grl_lambda=conditional_length_config['grl_lambda'])
+                                        if conditional_length_config is not None else {}),
                                      **(dict(phase=phase, region_weight=loc_weight, invariance_weight=inv_weight,
                                              head_learning_rate=1e-4, lora_learning_rate=0. if epoch == 0 else 2e-5)
                                         if local_objective is not None else {})))
                     window_loss, window_samples = 0.0, 0
+                    length_window = 0.
 
         validation = None
         threshold = 0.5
@@ -1535,6 +1622,11 @@ def train_model(
                 bce_function_forwards=view_forwards, bce_encoder_sequences=encoder_sequences,
                 encoder_token_slots=encoder_token_slots,
                 function_loss='mean view BCE per function, then mean over original functions')
+        if conditional_length_config is not None:
+            epoch_row.update(length_ce=length_total/len(train_records),
+                total_loss=(running_loss+length_total)/len(train_records),
+                grl_lambda=conditional_length_config['grl_lambda'],
+                length_functions=len(train_records), length_group_counts=length_counts)
         if synthetic_pairs is not None:
             epoch_row['synthetic_loss'] = synthetic_total / optimizer_steps
             epoch_row['synthetic_objective'] = synthetic_objective
@@ -1614,6 +1706,9 @@ def train_model(
         checkpoint['classifier_initialization'] = _CLASSIFIER_INITIALIZATION
     if function_views is not None:
         checkpoint['augmentation_config'] = augmentation_config
+    if conditional_length_config is not None:
+        checkpoint['conditional_length_config'] = conditional_length_config
+        checkpoint['length_group_counts'] = length_counts
     if synthetic_pairs is not None:
         checkpoint['synthetic_supervision'] = dict(objective=synthetic_objective, weight=1.0,
             pairs_per_optimizer_step=1, unique_pairs=len(synthetic_pairs))
@@ -1687,7 +1782,7 @@ def predict_checkpoint(checkpoint_path: str | Path, records: list[dict], *,
                            batch_size=batch_size, device=resolved)
 
 
-def _load_model(checkpoint: dict[str, object], *, device: torch.device):
+def _load_model(checkpoint: dict[str, object], *, device: torch.device, include_length_head: bool = False):
     mode = checkpoint.get('finetuning_mode')
     if mode not in (None, 'lora', 'full'):
         raise ValueError('unknown checkpoint finetuning mode')
@@ -1700,6 +1795,13 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
         config = checkpoint.get('local_supervision', {})
         if (config.get('head_version'), config.get('hidden_dim'), checkpoint.get('source_max_length')) != (1, 64, 2048):
             raise ValueError('local risk head/input checkpoint configuration is incompatible')
+    length_config = checkpoint.get('conditional_length_config')
+    if length_config is not None:
+        _validate_conditional_length_config(length_config)
+        if checkpoint.get('source_max_length') != 2048:
+            raise ValueError('conditional length checkpoint input budget differs')
+    elif include_length_head:
+        raise ValueError('checkpoint has no conditional length head')
     model = _build_model(
         str(checkpoint["variant"]),
         str(checkpoint["model_path"]),
@@ -1710,6 +1812,7 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
         target_modules=tuple(str(value) for value in checkpoint["target_modules"]),
         gradient_checkpointing=False,
         classifier_head=str(checkpoint.get("classifier_head", "linear")),
+        **({'conditional_length_config': length_config} if length_config is not None else {}),
         **({'finetuning_mode': mode} if mode is not None else {}),
         fusion_dim=int(checkpoint["fusion_dim"]),
         fusion_heads=int(checkpoint["fusion_heads"]),
@@ -1721,6 +1824,9 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
     else:
         _restore_adapter(model.encoder, checkpoint['adapter_state'])
     model.task_modules.load_state_dict(checkpoint["task_state"], strict=True)
+    if length_config is not None and not include_length_head:
+        # Validate/recover every saved parameter strictly, then remove the training-only head.
+        del model.task_modules['length_adversary']
     model.eval()
     return model
 

@@ -341,6 +341,87 @@ AUC/MCC 均未超过 BCE，高低分选择也未显示出一致优于同池随�
 确认完整编码器和分类头更新、预测重载一致、两组前向预算相同。正式 checkpoint
 均已严格重载用于 clean 与未见变换评价。
 
+### 随机增强与分类分数的条件长度去偏
+
+`codebert-finetuning --conditional-length-debiasing` 只新增组合组 C，复用已完成的
+A（全参数 BCE）和 B（同池随机增强）及 B 的候选、两个固定视图和实际前向预算。
+仍从同一预训练 CodeBERT 起点训练3轮，seed=42、lr=1e-5、有效 batch=8、
+AdamW/weight decay=.01、梯度裁剪1，按原始 Valid MCC 和原 tie-break 选模型/阈值。
+原函数和增强视图继续按函数平均 BCE；无法增强的原函数也保留。
+
+训练时在主分类 logit `s` 后接 `Linear(2,16) → GELU → Linear(16,4)`，输入为
+`(s,真实标签y)`，预测完整原函数的 CodeBERT 源码 token 长度组：≤128、129–512、
+513–2025、>2025。所有视图继承原函数长度组，不使用截断后的长度或新增注释的长度。
+长度 CE 与 BCE 均先平均函数内有效视图，再平均原函数，总损失为 `BCE + CE`。
+GRL 仅作用于 `s`：长度头正常最小化 CE，传回主模型的 CE 梯度乘以 `−.05`。
+本次首次组合实验三轮均固定 λ=.05，不使用 ramp 或额外 λ 搜索；辅助头使用公共
+优化器的相同学习率，初始化隔离 RNG。源码编码和推理均不读取真实标签。
+
+checkpoint 保存完整辅助头和原函数长度组计数，严格恢复所有参数后，正常推理
+移除辅助头。长度头诊断使用保存的 clean Valid logits，另与仅从 Train 估计的
+`p(长度组|标签)` 比较 CE/准确率；不使用 Valid 估计先验。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+# 复用 A/B，检查梯度相关单测和真实模型 smoke 后，只训练 C 并评价 Valid
+$PY -m vulnmechanism.cli codebert-finetuning --conditional-length-debiasing --stage all --device cuda:0
+# 分阶段运行；prepare 仅核对已有清单/候选/基线并保存 C 配置
+$PY -m vulnmechanism.cli codebert-finetuning --conditional-length-debiasing --stage prepare
+$PY -m vulnmechanism.cli codebert-finetuning --conditional-length-debiasing --stage smoke --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --conditional-length-debiasing --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --conditional-length-debiasing --stage report --device cuda:0
+```
+
+默认目录 `results/codebert_conditional_length_seed42` 保存 C 的配置、smoke、训练日志、
+checkpoint、clean/未见扰动 Valid 预测和 A/B/C 比较。`--augmentation-dir` 指定已完成
+B 的目录；已有 A/B 预测直接复用。三组使用与既有增强实验完全相同的未见注释/名字、
+有效函数和各自保存的阈值。主报扰动后准确率、原版和扰动版同时正确率、翻转率、
+短正例召回（原长度≤128）、长负例误报率（原长度>512）和各长度组平衡准确率的
+宏平均。空组或缺少一类的组明确报告未定义，并给出宏平均实际有效组数；clean
+结果保留全部原始 Valid 函数。本入口不训练 A/B，不评价 Test/SVEN。
+
+本次 C 已完成三轮，均为978次更新、17,094个函数视图、40,100个滑窗，实际
+padded token 数为19,289,426 / 19,304,164 / 19,310,474，与 B 逐轮一致。
+每轮7,820个原函数均参与长度 CE；其负例长度组计数为1,412/1,539/790/169，
+正例为199/1,123/1,594/994。C 三轮增强 BCE 为.5007/.4145/.3807，
+长度 CE 为1.4432/1.5471/1.5487；按原规则选中第三轮、阈值.46。
+
+未见注释为三组共同的605个 Valid 函数（原长度≤128、129–512、513–2025
+分别150/252/203个，其中正例26/104/130个；>2025无有效扰动）。下表使用
+各自保存的阈值，比例为百分数，宏平均覆盖3个同时含正负例的长度组。
+
+| 组 | 扰动后准确率 | 成对鲁棒正确率 | 翻转率 | 短正例召回（26） | 长负例误报（73） | 长度组宏平均 BA |
+|---|---:|---:|---:|---:|---:|---:|
+| A：BCE | 58.02（351） | 52.07（315） | 27.77（168） | 50.00（13） | 97.26（71） | 55.12 |
+| B：随机增强 | 72.56（439） | 71.57（433） | 2.48（15） | 15.38（4） | 56.16（41） | 62.22 |
+| C：B＋条件长度 GRL | 73.06（442） | 70.74（428） | 4.13（25） | 15.38（4） | 52.05（38） | 62.71 |
+
+前三列括号为正确/翻转数，后两列括号为 TP/FP。C 相对 B 的扰动准确率增加
+0.50个百分点、宏平均 BA 增加0.49个百分点、长负例误报下降4.11个百分点；
+但成对鲁棒正确率下降0.83个百分点、翻转率增加1.65个百分点，短正例召回未变。
+未见名字仅8个函数（7个短负例、1个中长正例）：三组扰动后均为8/8正确，
+A/B 成对正确8/8、0次翻转，C 为7/8、1次翻转。其每个长度组均缺少一类，
+宏平均 BA 未定义，分母不足以判断名字鲁棒性的普遍收益。
+
+clean Valid 保留全部1,014个函数；四档长度组正/负为33/161、143/214、
+185/112、146/20。短正例33个，长负例132个。
+
+| 组 | 阈值 | BCE | AUC | MCC | F1 | FP/FN | 短正例召回 | 长负例误报 | 四组宏平均 BA |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A | .29 | .5807 | .8117 | .5082 | .7698 | 169/84 | 21.21% | 75.76% | 59.71% |
+| B | .40 | .6092 | .8067 | .4971 | .7493 | 129/126 | 12.12% | 64.39% | 58.60% |
+| C | .46 | .6231 | .8033 | .4952 | .7450 | 123/133 | 12.12% | 63.64% | 59.00% |
+
+长度头在原始 Valid 上 CE=1.3805、准确率18.74%，训练集条件先验为
+CE=1.2309、准确率39.35%。长度头未超过仅用标签的先验，不能把其低准确率解释为
+成功去偏。C 本轮只改善部分扰动指标，未显示一致增益；clean AUC/MCC 略降，
+成对稳定性退化。未根据这些结果追加调参或训练。
+完整长度组指标、头/先验的分标签比较和逐轮结果见
+[`comparison.metrics.json`](results/codebert_conditional_length_seed42/comparison.metrics.json)。
+39项相关测试通过，包含 GRL 只反转 logit 梯度、两项函数平均、原长度继承、
+无标签推理、严格保存重载与旧入口回归；真实 CodeBERT smoke 确认编码器、分类头、
+长度头均更新，增强/无法增强函数均参与 CE，正常推理移除辅助头。
+
 ### 修复引导的局部风险学习
 
 `python -m vulnmechanism.cli local-risk` 扩展同一 `train_model`、输入构造、LoRA、

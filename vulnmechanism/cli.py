@@ -221,6 +221,10 @@ def build_parser() -> argparse.ArgumentParser:
     shallow_method.add_argument('--shallow-reweighting', action='store_true', help='one full fine-tuning run with fixed Train-only shallow OOF weights')
     shallow_method.add_argument('--shallow-augmentation', nargs='?', const='both', choices=('both','random','high_low'),
         help='same-pool random/high-low semantic views; default: both new full fine-tuning runs')
+    shallow_method.add_argument('--conditional-length-debiasing', action='store_true',
+        help='only C: existing random views plus label-conditional logit length GRL, lambda=.05')
+    finetuning.add_argument('--augmentation-dir', default='results/codebert_shallow_augmentation_seed42',
+        help='completed random augmentation/cache to reuse for conditional length C')
     finetuning.add_argument('--baseline-checkpoint', default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
     finetuning.add_argument('--device', default='cuda:0')
     finetuning.add_argument('--batch-size', type=int, default=4)
@@ -311,6 +315,8 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None
 
 
 def _codebert_finetuning(args):
+    if getattr(args, 'conditional_length_debiasing', False):
+        return _codebert_conditional_length(args)
     if getattr(args, 'shallow_augmentation', None):
         return _codebert_shallow_augmentation(args)
     if getattr(args, 'shallow_reweighting', False):
@@ -459,7 +465,8 @@ def _matching_full_baseline(args):
             or base.get('initial_checkpoint') is not None or base.get('seed') != 42
             or base.get('source_max_length') != 2048 or base.get('model_path') != args.model
             or base.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION
-            or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision', 'augmentation_config'))):
+            or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision',
+                                       'augmentation_config', 'conditional_length_config'))):
         raise ValueError('requires the matching fresh full-CodeBERT BCE baseline and original manifest')
     training = base['training_config']
     if (training['epochs'] != 3 or training['weight_decay'] != .01
@@ -753,11 +760,10 @@ def _codebert_shallow_augmentation(args):
     return dict(config=config, candidates=preparation, completed_modes=modes)
 
 
-def _augmentation_report(rows, entries, root, config, preparation, base, args):
-    import torch
+def _augmentation_valid_views(rows, base, args):
+    """One shared, fixed unseen perturbation per eligible Valid function and kind."""
     from . import audit_statistics as shallow
     from .syntax import apply_source_edits
-    from .change_learning import write_json
     valid = [r for r in rows if r['split']=='valid']
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -770,6 +776,14 @@ def _augmentation_report(rows, entries, root, config, preparation, base, args):
             if pool:
                 chosen = pool[index % len(pool)]
                 views[kind].append(dict(row,raw_source=apply_source_edits(row['raw_source'],chosen['edits'])))
+    return views
+
+
+def _augmentation_report(rows, entries, root, config, preparation, base, args):
+    import torch
+    from .change_learning import write_json
+    valid = [r for r in rows if r['split']=='valid']
+    views = _augmentation_valid_views(rows, base, args)
     result, histories = {}, []
     for mode in ('bce','random','high_low'):
         checkpoint_path = Path(args.baseline_checkpoint) if mode=='bce' else root/mode/'best.pt'
@@ -801,6 +815,223 @@ def _augmentation_report(rows, entries, root, config, preparation, base, args):
         if mode!='bce': del cp
     if histories[0]!=histories[1]: raise ValueError('random/guided formal training forward budgets differ')
     report = dict(config=config,candidates=preparation,valid=result,matched_training_budgets=histories[0])
+    write_json(root/'comparison.metrics.json',report)
+    return report
+
+
+def _conditional_length_smoke(rows, sources, augmentation, root, base, args):
+    import tempfile
+    import torch
+    from . import model as core
+    from .change_learning import write_json
+    train = [r for r in rows if r['split'] == 'train']
+    chosen = []
+    for y in (0, 1):
+        for covered in (True, False):
+            selected = [r for r in train if r['label'] == y and bool(sources[r['sample_key']]) == covered][:2]
+            if len(selected) != 2:
+                raise ValueError('length smoke needs two augmented/unaugmented Train functions per label')
+            chosen.extend(selected)
+    chosen += [next(r for r in rows if r['split']=='valid' and r['label']==y) for y in (0, 1)]
+    device = core._resolve_device(args.device)
+    core._seed_everything(42)
+    fresh = core._build_model('codebert_source', args.model, device=device,
+        lora_r=16, lora_alpha=32, lora_dropout=.05, target_modules=tuple(base['target_modules']),
+        gradient_checkpointing=False, fusion_dim=256, fusion_heads=8, finetuning_mode='full',
+        conditional_length_config=core.CONDITIONAL_LENGTH_CONFIG)
+    embedding = fresh.encoder.state_dict()['embeddings.word_embeddings.weight'].detach().cpu().clone()
+    initial = core._cpu_state(fresh.task_modules.state_dict())
+    del fresh
+    smoke_views = {r['sample_key']:sources[r['sample_key']] for r in chosen[:8]}
+    smoke_augmentation = dict(augmentation, choices={r['sample_key']:augmentation['choices'][r['sample_key']] for r in chosen[:8]})
+    with tempfile.TemporaryDirectory(prefix='vul_detect_length_smoke_') as tmp:
+        target = Path(tmp)/'best.pt'
+        training = dict(base['training_config'], epochs=1)
+        cp = core.train_model(None,target,records=chosen,variant='codebert_source',model_path=args.model,
+            source_max_length=2048,context_max_length=base['context_max_length'],seed=42,device=args.device,
+            finetuning_mode='full',function_views=smoke_views,augmentation_config=smoke_augmentation,
+            conditional_length_config=core.CONDITIONAL_LENGTH_CONFIG,log_every=1,**training)
+        checks = dict(encoder_updated=not torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'], embedding))
+        for name,prefix in [('classifier_updated','classifier.'),('length_head_updated','length_adversary.')]:
+            checks[name] = any(not torch.equal(cp['task_state'][k],v) for k,v in initial.items() if k.startswith(prefix))
+        restored = core._load_model(cp,device=device,include_length_head=True)
+        tokenizer = core.AutoTokenizer.from_pretrained(args.model)
+        builder = core.InputBuilder(tokenizer,source_max_length=2048,context_max_length=base['context_max_length'])
+        logits = core._predict_logits(restored,chosen[8:],builder,variant='codebert_source',excluded_groups=(),batch_size=4,device=device)
+        for k,v in restored.task_modules.state_dict().items():
+            torch.testing.assert_close(v.detach().cpu(),cp['task_state'][k],rtol=0,atol=0)
+        del restored
+        torch.testing.assert_close(logits,core.predict_checkpoint(target,chosen[8:],batch_size=4,device=args.device),rtol=0,atol=0)
+        inference = core._load_model(cp,device=device)
+        checks.update(save_reload_exact=True,auxiliary_removed_at_inference='length_adversary' not in inference.task_modules)
+        del inference
+        epoch = next(r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch')
+        checks['all_functions_in_length_ce'] = epoch['length_functions']==8 and epoch['length_ce']>0
+        if not all(checks.values()): raise ValueError(f'conditional length smoke failed: {checks}')
+        report = dict(checks=checks,train_members=[r['sample_key'] for r in chosen[:8]],
+            valid_members=[r['sample_key'] for r in chosen[8:]],augmented=4,unaugmented=4,
+            epoch=epoch,conditional_length_config=core.CONDITIONAL_LENGTH_CONFIG)
+    write_json(root/'smoke.metrics.json',report)
+    return report
+
+
+def _codebert_conditional_length(args):
+    import torch
+    from . import model as core
+    from .change_learning import write_json
+    rows, base, budget = _matching_full_baseline(args)
+    train = [r for r in rows if r['split']=='train']
+    augmentation_root = Path(args.augmentation_dir)
+    random_path = augmentation_root/'random/best.pt'
+    random_cp = torch.load(random_path,map_location='cpu',weights_only=False)
+    prior_config = json.loads((augmentation_root/'config.metrics.json').read_text())
+    entries = list(map(json.loads,(augmentation_root/'candidates.jsonl').open()))
+    sources, choices = _augmentation_sources(train,entries,'random')
+    augmentation = dict(mode='random',candidates_cache=str(augmentation_root/'candidates.jsonl'),choices=choices,
+        loss=prior_config['augmentation']['loss'],protocol_version=prior_config['version'])
+    common_keys = ('checkpoint_version','dataset_schema_version','variant','model_path','source_max_length',
+        'context_max_length','lora_r','lora_alpha','lora_dropout','seed','finetuning_mode','classifier_head',
+        'classifier_initialization','encoder_precision','cohort_members','initial_checkpoint','training_config','target_modules')
+    expected = {k:base[k] for k in common_keys}
+    if (any(random_cp.get(k)!=v for k,v in expected.items()) or random_cp.get('augmentation_config')!=augmentation
+            or random_cp.get('sample_weights') is not None or random_cp.get('conditional_length_config') is not None
+            or prior_config['manifest']!=args.manifest or prior_config['model']!=args.model
+            or prior_config['training']!=base['training_config'] or prior_config['input_protocol']!=base['input_protocol']):
+        raise ValueError('requires the completed matching random augmentation B and its original candidate cache')
+    random_history = [r for r in map(json.loads,random_path.with_suffix('.training.jsonl').open()) if r['event']=='epoch']
+    if [(r['epoch'],r['optimizer_steps']) for r in random_history]!=budget:
+        raise ValueError('random B did not complete the matching three epochs')
+    _finetuning_evaluate(rows,random_path.parent,'valid',random_cp,args)
+    original_train = list(map(json.loads,(Path(args.baseline_checkpoint).parent/'train.predictions.jsonl').open()))
+    counts = {str(y):[sum(r['label']==y and core.source_length_group(r['source_token_count'])==g
+        for r in original_train) for g in range(4)] for y in (0,1)}
+    config = dict(version=1,group='C',manifest=args.manifest,model=args.model,seed=42,
+        initialization=prior_config['initialization'],classifier_initialization=base['classifier_initialization'],
+        baseline_checkpoint=args.baseline_checkpoint,random_checkpoint=str(random_path),
+        candidates_cache=str(augmentation_root/'candidates.jsonl'),training=base['training_config'],
+        input_protocol=random_cp['input_protocol'],encoder_precision=base['encoder_precision'],
+        conditional_length=core.CONDITIONAL_LENGTH_CONFIG,length_group_counts=counts,
+        auxiliary_optimizer='same AdamW/lr/weight decay/clip as classifier and full encoder; isolated head RNG',
+        robustness=prior_config['robustness'],selection=prior_config['selection'],
+        train_functions=len(train),valid_functions=len(rows)-len(train),
+        augmented_functions=sum(bool(v) for v in sources.values()),environment=prior_config['environment'])
+    root = Path(args.output_dir or 'results/codebert_conditional_length_seed42')
+    config_path = root/'config.metrics.json'
+    if config_path.exists() and json.loads(config_path.read_text())!=config:
+        raise ValueError('existing conditional length C configuration differs')
+    if not config_path.exists(): write_json(config_path,config)
+    if args.stage=='prepare': return config
+    smoke_path = root/'smoke.metrics.json'
+    if args.stage in ('smoke','all') and not smoke_path.exists():
+        _conditional_length_smoke(rows,sources,augmentation,root,base,args)
+    if args.stage=='smoke': return json.loads(smoke_path.read_text())
+    if not smoke_path.exists() or not all(json.loads(smoke_path.read_text())['checks'].values()):
+        raise ValueError('complete the real conditional-length CodeBERT smoke before training')
+    target = root/'best.pt'
+    if target.exists():
+        cp = torch.load(target,map_location='cpu',weights_only=False)
+        if (any(cp.get(k)!=v for k,v in expected.items()) or cp.get('augmentation_config')!=augmentation
+                or cp.get('conditional_length_config')!=core.CONDITIONAL_LENGTH_CONFIG
+                or cp.get('input_protocol')!=random_cp['input_protocol'] or cp.get('length_group_counts')!=counts
+                or cp.get('sample_weights') is not None):
+            raise ValueError('existing conditional length checkpoint differs')
+    elif args.stage in ('train','all'):
+        if target.with_suffix('.training.jsonl').exists():
+            raise FileExistsError('C training history exists without a completed checkpoint; inspect the running/interrupted job')
+        cp = core.train_model(None,target,records=rows,variant='codebert_source',model_path=args.model,
+            source_max_length=2048,context_max_length=base['context_max_length'],seed=42,device=args.device,
+            finetuning_mode='full',function_views=sources,augmentation_config=augmentation,
+            conditional_length_config=core.CONDITIONAL_LENGTH_CONFIG,log_every=25,**base['training_config'])
+    else: raise FileNotFoundError(target)
+    history = [r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch']
+    budget_keys = ('epoch','optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots')
+    if ([tuple(r[k] for k in budget_keys) for r in history]!=[tuple(r[k] for k in budget_keys) for r in random_history]
+            or cp['length_group_counts']!=counts):
+        raise ValueError('C length bins or training forward budgets differ from the original random experiment')
+    _finetuning_evaluate(rows,root,'valid',cp,args)
+    if args.stage in ('report','all'):
+        return _conditional_length_report(rows,root,augmentation_root,config,base,random_cp,cp,args)
+    return dict(config=config,history=history)
+
+
+def _length_detection_metrics(predictions, original):
+    """Strata always use ORIGINAL function lengths, including for perturbed predictions."""
+    items = [dict(r,source_token_count=original[r['sample_key']]['source_token_count']) for r in predictions]
+    threshold = predictions[0]['threshold'] if predictions else .5
+    groups = _reweighting_strata(items,2025,threshold)
+    for group in groups.values():
+        group['balanced_accuracy'] = (group['recall']+group['tn']/group['negative'])/2 if group['positive'] and group['negative'] else None
+    balanced = [g['balanced_accuracy'] for g in groups.values() if g['balanced_accuracy'] is not None]
+    short = [r for r in items if r['label']==1 and r['source_token_count']<=128]
+    long = [r for r in items if r['label']==0 and r['source_token_count']>512]
+    return dict(length_groups=groups,macro_balanced_accuracy=sum(balanced)/len(balanced) if balanced else None,
+        macro_valid_groups=len(balanced),macro_total_groups=4,
+        macro_definition='unweighted mean across groups containing both labels; empty/single-label groups explicitly undefined',
+        short_positive=dict(samples=len(short),tp=sum(r['prediction']==1 for r in short),
+            recall=sum(r['prediction']==1 for r in short)/len(short) if short else None),
+        long_negative=dict(samples=len(long),fp=sum(r['prediction']==1 for r in long),
+            false_positive_rate=sum(r['prediction']==1 for r in long)/len(long) if long else None))
+
+
+def _conditional_length_report(rows,root,augmentation_root,config,base,random_cp,cp,args):
+    import torch
+    from . import model as core
+    from .change_learning import write_json
+    valid = [r for r in rows if r['split']=='valid']
+    views = _augmentation_valid_views(rows,base,args)
+    result = {}
+    for group,path,checkpoint in [('A',Path(args.baseline_checkpoint),base),
+            ('B',augmentation_root/'random/best.pt',random_cp),('C',root/'best.pt',cp)]:
+        run = path.parent
+        clean = _finetuning_evaluate(rows,run,'valid',checkpoint,args)
+        originals = list(map(json.loads,(run/'valid.predictions.jsonl').open()))
+        original = {r['sample_key']:r for r in originals}
+        robust_run = augmentation_root/'baseline' if group=='A' else run
+        robust = {}
+        for kind,changed in views.items():
+            if changed:
+                _finetuning_evaluate(changed,robust_run,'valid',checkpoint,args,
+                    output_name=f'unseen_{kind}',checkpoint_path=path)
+                predictions = list(map(json.loads,(robust_run/f'unseen_{kind}.predictions.jsonl').open()))
+            else: predictions = []
+            both = sum(r['prediction']==original[r['sample_key']]['prediction']==r['label'] for r in predictions)
+            flipped = sum(r['prediction']!=original[r['sample_key']]['prediction'] for r in predictions)
+            correct = sum(r['prediction']==r['label'] for r in predictions)
+            n = len(predictions)
+            robust[kind] = dict(eligible=n,total=len(valid),coverage=n/len(valid),
+                perturbed_correct=correct,perturbed_accuracy=correct/n if n else None,
+                robust_correct=both,robust_accuracy=both/n if n else None,
+                flipped=flipped,flip_rate=flipped/n if n else None,**_length_detection_metrics(predictions,original))
+        result[group] = dict(checkpoint=str(path),selected_epoch=clean['selected_epoch'],threshold=clean['decision_threshold'],
+            clean=dict(bce=clean['bce'],**clean['metrics'],**_length_detection_metrics(originals,original)),robustness=robust)
+    # Saved clean logits are sufficient; y is used only for auxiliary-head diagnostics.
+    originals = list(map(json.loads,(root/'valid.predictions.jsonl').open()))
+    scores = torch.tensor([r['logit'] for r in originals],dtype=torch.float32)
+    labels = torch.tensor([r['label'] for r in originals],dtype=torch.float32)
+    targets = torch.tensor([core.source_length_group(r['source_token_count']) for r in originals])
+    restored = core._load_model(cp,device=torch.device('cpu'),include_length_head=True)
+    counts = torch.tensor([cp['length_group_counts'][str(y)] for y in (0,1)],dtype=torch.float64)
+    prior = counts/counts.sum(1,keepdim=True)
+    with torch.no_grad():
+        logits = restored.task_modules['length_adversary'](scores,labels)
+        log_prob = logits.log_softmax(-1)
+        prior_prob = prior[labels.long()]
+        head_ce = -log_prob[torch.arange(len(targets)),targets]
+        prior_ce = -prior_prob[torch.arange(len(targets)),targets].log()
+        if not torch.isfinite(prior_ce).all():
+            raise ValueError('a Valid length group has zero probability in its Train-only conditional prior')
+    length = dict(samples=len(targets),train_group_counts=cp['length_group_counts'],train_prior=prior.tolist(),
+        head=dict(cross_entropy=float(head_ce.mean()),accuracy=float((logits.argmax(-1)==targets).float().mean())),
+        label_prior=dict(cross_entropy=float(prior_ce.mean()),accuracy=float((prior_prob.argmax(-1)==targets).float().mean())),
+        evaluated_on='all original Valid functions; saved clean logits; true labels used only by the auxiliary head',by_label={})
+    for y in (0,1):
+        select = labels==y
+        length['by_label'][str(y)] = dict(samples=int(select.sum()),
+            head_ce=float(head_ce[select].mean()),prior_ce=float(prior_ce[select].mean()),
+            head_accuracy=float((logits.argmax(-1)[select]==targets[select]).float().mean()),
+            prior_accuracy=float((prior_prob.argmax(-1)[select]==targets[select]).float().mean()))
+    report = dict(config=config,valid=result,length_head=length,
+        training=[r for r in map(json.loads,(root/'best.training.jsonl').open()) if r['event']=='epoch'])
     write_json(root/'comparison.metrics.json',report)
     return report
 

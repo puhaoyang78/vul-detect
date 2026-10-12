@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "group": "C",
+  "manifest": "data/benchmark/manifest_sven_commit_disjoint.jsonl",
+  "model": "/home/PublicData/PHY-data/resource/codebert-base",
+  "seed": 42,
+  "initialization": "fresh matching pretrained CodeBERT; identical seed42 linear head",
+  "classifier_initialization": "shared base RNG; LoRA initialization isolated; training RNG reset",
+  "baseline_checkpoint": "results/codebert_finetuning_seed42/full/lr_1e-05/best.pt",
+  "random_checkpoint": "results/codebert_shallow_augmentation_seed42/random/best.pt",
+  "candidates_cache": "results/codebert_shallow_augmentation_seed42/candidates.jsonl",
+  "training": {
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01
+  },
+  "input_protocol": {
+    "encoder": "roberta",
+    "native_window": 512,
+    "logical_budget": 2048,
+    "source_budget": 2025,
+    "window_source_capacity": 489,
+    "stride": 244,
+    "pooling": "mean over unique source positions; repeated prefix/BOS/EOS averaged across windows",
+    "function_loss": "mean view BCE per function, then mean over original functions"
+  },
+  "encoder_precision": "FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss",
+  "conditional_length": {
+    "version": 1,
+    "hidden_dim": 16,
+    "grl_lambda": 0.05,
+    "boundaries": [
+      128,
+      512,
+      2025
+    ],
+    "length": "full original CodeBERT source tokens",
+    "loss": "mean view BCE + mean view length CE per function, then mean over functions",
+    "schedule": "fixed GRL lambda throughout all epochs; CE coefficient one"
+  },
+  "length_group_counts": {
+    "0": [
+      1412,
+      1539,
+      790,
+      169
+    ],
+    "1": [
+      199,
+      1123,
+      1594,
+      994
+    ]
+  },
+  "auxiliary_optimizer": "same AdamW/lr/weight decay/clip as classifier and full encoder; isolated head RNG",
+  "robustness": {
+    "split": "valid",
+    "names": [
+      "probe_item",
+      "probe_count",
+      "probe_data",
+      "probe_value"
+    ],
+    "comments": [
+      "orchard margin",
+      "linen marker",
+      "cedar passage",
+      "amber entry"
+    ],
+    "selection": "one eligible unseen view per kind, deterministic and independent of labels/model scores"
+  },
+  "selection": "original Valid MCC threshold/epoch and tie-break",
+  "train_functions": 7820,
+  "valid_functions": 1014,
+  "augmented_functions": 4637,
+  "environment": {
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "sklearn": "1.8.0"
+  }
+}

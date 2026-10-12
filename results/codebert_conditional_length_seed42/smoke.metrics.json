@@ -1,0 +1,80 @@
+{
+  "checks": {
+    "encoder_updated": true,
+    "classifier_updated": true,
+    "length_head_updated": true,
+    "save_reload_exact": true,
+    "auxiliary_removed_at_inference": true,
+    "all_functions_in_length_ce": true
+  },
+  "train_members": [
+    "primevul:101872",
+    "primevul:101896",
+    "primevul:105164",
+    "primevul:111233",
+    "primevul:0",
+    "primevul:1",
+    "primevul:1000",
+    "primevul:10007"
+  ],
+  "valid_members": [
+    "primevul:124772",
+    "primevul:194999"
+  ],
+  "augmented": 4,
+  "unaugmented": 4,
+  "epoch": {
+    "event": "epoch",
+    "variant": "codebert_source",
+    "excluded_groups": [],
+    "epoch": 1,
+    "train_loss": 0.6852944865822792,
+    "optimizer_steps": 1,
+    "validation_threshold": 0.49,
+    "validation": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "mcc": 1.0,
+      "auc": 1.0
+    },
+    "augmentation_mode": "random",
+    "augmented_functions": 4,
+    "bce_function_forwards": 16,
+    "bce_encoder_sequences": 33,
+    "encoder_token_slots": 13506,
+    "function_loss": "mean view BCE per function, then mean over original functions",
+    "length_ce": 1.4186447858810425,
+    "total_loss": 2.1039392724633217,
+    "grl_lambda": 0.05,
+    "length_functions": 8,
+    "length_group_counts": {
+      "0": [
+        2,
+        1,
+        0,
+        1
+      ],
+      "1": [
+        0,
+        2,
+        1,
+        1
+      ]
+    }
+  },
+  "conditional_length_config": {
+    "version": 1,
+    "hidden_dim": 16,
+    "grl_lambda": 0.05,
+    "boundaries": [
+      128,
+      512,
+      2025
+    ],
+    "length": "full original CodeBERT source tokens",
+    "loss": "mean view BCE + mean view length CE per function, then mean over functions",
+    "schedule": "fixed GRL lambda throughout all epochs; CE coefficient one"
+  }
+}
