@@ -56,6 +56,7 @@ def _train(args):
             fusion_dim=args.fusion_dim,
             fusion_heads=args.fusion_heads,
             classifier_head=args.classifier_head,
+            finetuning_mode=args.finetuning_mode,
             excluded_groups=args.exclude_groups,
             seed=args.seed,
             device=args.device,
@@ -125,6 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--fusion-dim", type=int, default=256)
     train.add_argument("--fusion-heads", type=int, default=8)
     train.add_argument("--classifier-head", choices=("linear", "mlp4", "prototype4"), default="linear")
+    train.add_argument('--finetuning-mode', choices=('lora', 'full'),
+                       help='matched CodeBERT BCE modes; omitted retains historical LoRA behavior')
     train.add_argument(
         "--exclude-groups",
         type=_mechanism_groups,
@@ -207,7 +210,203 @@ def build_parser() -> argparse.ArgumentParser:
     local.set_defaults(model=None, source_max_length=2048, device='cuda:0', local_risk=True)
     local.add_argument('--smoke-samples', type=int, default=0)
     local.set_defaults(func=_change_learning)
+
+    finetuning = sub.add_parser('codebert-finetuning', help='fixed six-run PrimeVul LoRA/full comparison, Train/Valid only')
+    finetuning.add_argument('--manifest', default='data/benchmark/manifest_sven_commit_disjoint.jsonl')
+    finetuning.add_argument('--model', default='/home/PublicData/PHY-data/resource/codebert-base')
+    finetuning.add_argument('--output-dir', default='results/codebert_finetuning_seed42')
+    finetuning.add_argument('--stage', choices=('smoke', 'train', 'report', 'all'), default='all')
+    finetuning.add_argument('--finetuning-mode', choices=('lora', 'full'), help='train one fixed three-LR family')
+    finetuning.add_argument('--device', default='cuda:0')
+    finetuning.add_argument('--batch-size', type=int, default=4)
+    finetuning.add_argument('--gradient-accumulation', type=int, default=2)
+    finetuning.set_defaults(func=_codebert_finetuning)
     return parser
+
+
+def _codebert_finetuning_smoke(rows, root, common):
+    import torch
+    from transformers import AutoTokenizer
+    from . import model as core
+    from .change_learning import write_json
+    train = [r for r in rows if r['split'] == 'train']
+    chosen = [r for y in (0, 1) for r in [x for x in train if x['label'] == y][:4]]
+    chosen += [next(r for r in rows if r['split'] == 'valid' and r['label'] == y) for y in (0, 1)]
+    builder = core.InputBuilder(AutoTokenizer.from_pretrained(common['model_path']),
+                                source_max_length=2048, context_max_length=384)
+    report, heads = {}, []
+    for mode in ('lora', 'full'):
+        target = root/'smoke'/mode/'best.pt'
+        if target.exists():
+            raise FileExistsError(f'smoke already exists: {target}; reuse its completed smoke.metrics.json')
+        core._seed_everything(42)
+        fresh = core._build_model('codebert_source', common['model_path'], device=torch.device(common['device']),
+            lora_r=16, lora_alpha=32, lora_dropout=.05,
+            target_modules=('attention.self.query', 'attention.self.key', 'attention.self.value', 'attention.output.dense'),
+            gradient_checkpointing=False, fusion_dim=256, fusion_heads=8, finetuning_mode=mode)
+        heads.append(core._cpu_state(fresh.task_modules.state_dict()))
+        before = {name: p.detach().cpu().clone() for name, p in fresh.encoder.named_parameters()}
+        trainable = {name for name, p in fresh.encoder.named_parameters() if p.requires_grad}
+        if mode == 'lora':
+            assert trainable and all('lora_' in n for n in trainable)
+        else:
+            assert len(trainable) == len(before) and not any('lora_' in n for n in before)
+        del fresh
+        options = dict(common, records=chosen, epochs=1, batch_size=2, gradient_accumulation=4,
+                       learning_rate=2e-5, finetuning_mode=mode)
+        cp = core.train_model(None, target, **options)
+        restored = core._load_model(cp, device=torch.device(common['device']))
+        after = dict(restored.encoder.named_parameters())
+        changed = {name for name in before if not torch.equal(before[name], after[name].detach().cpu())}
+        assert changed and changed <= trainable
+        assert any(not torch.equal(heads[-1][k], cp['task_state'][k]) for k in heads[-1])
+        if mode == 'full':
+            assert any('word_embeddings.weight' in n for n in changed)
+            assert any('attention.self.query.weight' in n for n in changed)
+        expected = core._predict_logits(restored, chosen[-2:], builder, variant='codebert_source',
+            excluded_groups=(), batch_size=2, device=torch.device(common['device']))
+        del restored, after, before
+        actual = core.predict_checkpoint(target, chosen[-2:], batch_size=2, device=common['device'])
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        report[mode] = dict(train_functions=8, valid_functions=2, trainable_encoder_tensors=len(trainable),
+            changed_encoder_tensors=len(changed), frozen_encoder_unchanged=True, classifier_updated=True,
+            save_reload_exact=True, trainable_parameters=cp['trainable_parameters'])
+    assert all(torch.equal(heads[0][k], heads[1][k]) for k in heads[0])
+    report['initial_heads_identical'] = True
+    write_json(root/'smoke.metrics.json', report)
+    return report
+
+
+def _finetuning_evaluate(rows, run, split, checkpoint, args):
+    from . import model as core
+    from .cfg_data import identity
+    from .change_learning import write_json
+    output, predictions = run/f'{split}.metrics.json', run/f'{split}.predictions.jsonl'
+    if output.exists() != predictions.exists():
+        raise FileExistsError(f'incomplete evaluation artifacts: {run}/{split}; inspect before rerunning')
+    if output.exists():
+        cached = [json.loads(l) for l in predictions.open()]
+        expected = [identity(r) for r in rows if r['split'] == split]
+        if expected != [{k:r[k] for k in expected[0]} for r in cached]:
+            raise ValueError(f'cached prediction members/source differ: {predictions}')
+        if any(r['threshold'] != checkpoint['decision_threshold'] for r in cached):
+            raise ValueError('cached evaluation thresholds differ')
+        result = json.loads(output.read_text())
+        if result.get('selected_epoch') != checkpoint['selected_epoch']:
+            raise ValueError('cached selected epoch differs')
+    else:
+        result = core.evaluate_model(None, run/'best.pt', records=rows, split=split, device=args.device,
+                                    batch_size=args.batch_size, prediction_path=predictions)
+        result.update(finetuning_mode=checkpoint['finetuning_mode'],
+                      learning_rate=checkpoint['training_config']['learning_rate'],
+                      selected_epoch=checkpoint['selected_epoch'])
+        write_json(output, result)
+    return result
+
+
+def _codebert_finetuning(args):
+    import csv
+    import math
+    import torch
+    import transformers
+    from collections import Counter
+    from . import model as core
+    from .change_learning import write_json
+    if args.batch_size * args.gradient_accumulation != 8:
+        raise ValueError('CodeBERT comparison requires effective batch=8')
+    rows = [r for r in core._read_jsonl(args.manifest, source_only=True)
+            if r['dataset'] == 'primevul' and r['split'] in ('train', 'valid')]
+    if not rows or any(r.get('repair_supplement') for r in rows):
+        raise ValueError('requires the original pre-recovery PrimeVul classification manifest')
+    counts = dict(Counter(f"{r['split']}/label_{r['label']}" for r in rows))
+    members = {s: [(r['sample_key'], r['label']) for r in rows if r['split'] == s] for s in ('train', 'valid')}
+    rates = {'lora': (2e-5, 1e-4, 2e-4), 'full': (1e-5, 2e-5, 5e-5)}
+    root = Path(args.output_dir)
+    config = dict(manifest=args.manifest, model=args.model, seed=42, source_max_length=2048,
+        epochs=3, batch_size=args.batch_size, gradient_accumulation=args.gradient_accumulation,
+        weight_decay=.01, gradient_clip=1., lora_r=16, lora_alpha=32, lora_dropout=.05,
+        learning_rates={m: list(rs) for m, rs in rates.items()}, counts=counts,
+        input='unchanged pre-recovery PrimeVul functions; no CPG success filtering; Train/Valid only',
+        initialization='fresh common CodeBERT base; identical linear head; isolated LoRA initialization RNG',
+        precision='FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss',
+        selection='Valid MCC then F1/accuracy/AUC; original threshold grid and tie-break',
+        environment=dict(torch=torch.__version__, transformers=transformers.__version__))
+    config_path = root/'config.metrics.json'
+    if config_path.exists():
+        if json.loads(config_path.read_text()) != config:
+            raise ValueError('existing finetuning comparison configuration differs')
+    else:
+        write_json(config_path, config)
+    common = dict(variant='codebert_source', model_path=args.model, source_max_length=2048,
+        context_max_length=384, batch_size=args.batch_size, gradient_accumulation=args.gradient_accumulation,
+        epochs=3, weight_decay=.01, lora_r=16, lora_alpha=32, lora_dropout=.05,
+        seed=42, device=args.device, log_every=25)
+    smoke_path = root/'smoke.metrics.json'
+    if args.stage in ('smoke', 'all'):
+        if smoke_path.exists():
+            smoke = json.loads(smoke_path.read_text())
+            if not smoke.get('initial_heads_identical') or not all(smoke[m]['save_reload_exact'] for m in rates):
+                raise ValueError('existing smoke did not verify both modes')
+        else:
+            smoke = _codebert_finetuning_smoke(rows, root, common)
+        if args.stage == 'smoke':
+            return smoke
+    if args.stage in ('train', 'all'):
+        if not smoke_path.exists():
+            raise ValueError('run --stage smoke successfully before full training')
+        for mode in ([args.finetuning_mode] if args.finetuning_mode else rates):
+            for lr in rates[mode]:
+                run = root/mode/f'lr_{lr:g}'
+                target = run/'best.pt'
+                if target.exists():
+                    cp = torch.load(target, map_location='cpu', weights_only=False)
+                    expected = dict(finetuning_mode=mode, seed=42, source_max_length=2048, model_path=args.model,
+                        cohort_members=members, classifier_head='linear', initial_checkpoint=None,
+                        checkpoint_version=core._CHECKPOINT_VERSION, dataset_schema_version=core.DATASET_SCHEMA_VERSION,
+                        variant='codebert_source', context_max_length=384, trained_on='primevul',
+                        lora_r=16, lora_alpha=32, lora_dropout=.05, sample_weights=None, selection='validation_mcc',
+                        encoder_precision=config['precision'], classifier_initialization=core._CLASSIFIER_INITIALIZATION,
+                        training_config=dict(epochs=3, batch_size=args.batch_size,
+                            gradient_accumulation=args.gradient_accumulation, learning_rate=lr, weight_decay=.01))
+                    if any(cp.get(k) != v for k, v in expected.items()) or any(
+                            k in cp for k in ('change_supervision', 'local_supervision', 'synthetic_supervision')):
+                        raise ValueError(f'existing checkpoint does not match: {target}')
+                    history = [json.loads(l) for l in target.with_suffix('.training.jsonl').read_text().splitlines()]
+                    epochs = [r for r in history if r.get('event') == 'epoch']
+                    if [r['epoch'] for r in epochs] != [1, 2, 3] or any(
+                            r['optimizer_steps'] != math.ceil(len(members['train'])/8) for r in epochs):
+                        raise ValueError(f'incomplete or different training budget: {target}')
+                    print(f'Reusing completed matching run: {target}', flush=True)
+                else:
+                    cp = core.train_model(None, target, records=rows, **common,
+                                          learning_rate=lr, finetuning_mode=mode)
+                _finetuning_evaluate(rows, run, 'valid', cp, args)
+    if args.stage not in ('report', 'all'):
+        return dict(counts=counts, completed_family=args.finetuning_mode)
+    results, selected = [], {}
+    for mode, candidates in rates.items():
+        family = []
+        for lr in candidates:
+            run = root/mode/f'lr_{lr:g}'
+            cp = torch.load(run/'best.pt', map_location='cpu', weights_only=False)
+            if cp.get('cohort_members') != members or cp.get('finetuning_mode') != mode:
+                raise ValueError('report checkpoint cohort/mode differs')
+            result = _finetuning_evaluate(rows, run, 'valid', cp, args)
+            family.append((run, result))
+            results.append(dict(mode=mode, learning_rate=lr, selected_epoch=result['selected_epoch'],
+                threshold=result['decision_threshold'], bce=result['bce'], **result['metrics']))
+        run, valid = max(family, key=lambda item: tuple(item[1]['metrics'][k] for k in ('mcc','f1','accuracy','auc')))
+        cp = torch.load(run/'best.pt', map_location='cpu', weights_only=False)
+        train = _finetuning_evaluate(rows, run, 'train', cp, args)
+        selected[mode] = dict(checkpoint=str(run/'best.pt'), learning_rate=valid['learning_rate'],
+            selected_epoch=valid['selected_epoch'], threshold=valid['decision_threshold'],
+            train=train, valid=valid)
+    summary = dict(config=config, candidates=results, selected=selected)
+    write_json(root/'comparison.metrics.json', summary)
+    with (root/'comparison.metrics.csv').open('w', newline='') as f:
+        writer=csv.DictWriter(f, fieldnames=list(results[0]))
+        writer.writeheader(); writer.writerows(results)
+    return summary
 
 
 def _diagnose(args):

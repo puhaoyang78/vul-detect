@@ -49,6 +49,7 @@ _SEQUENCE_VARIANTS = _SOURCE_VARIANTS | {"raw_cpg", "mechanism_concat"}
 _FUSION_VARIANTS = {"mechanism_fusion"}
 _GRAPH_VARIANTS = {"graph_attributes", "graph_cfg"}
 _CHECKPOINT_VERSION = 8
+_CLASSIFIER_INITIALIZATION = 'shared base RNG; LoRA initialization isolated; training RNG reset'
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,7 @@ class Metrics:
         }
 
 
-def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
+def _read_jsonl(path: str | Path, *, source_only: bool = False) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     seen: set[str] = set()
     with Path(path).open(encoding="utf-8") as handle:
@@ -84,7 +85,7 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
                 raise ValueError(f"invalid JSON at {path}:{line_number}: {error}") from error
             if not isinstance(record, dict):
                 raise ValueError(f"{path}:{line_number}: each JSONL row must be an object")
-            if record.get("schema_version") != DATASET_SCHEMA_VERSION:
+            if not source_only and record.get("schema_version") != DATASET_SCHEMA_VERSION:
                 raise ValueError(
                     f"{path}:{line_number}: dataset schema must be {DATASET_SCHEMA_VERSION}; rebuild the dataset"
                 )
@@ -97,8 +98,14 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
             record_split(record)
             if type(record.get("label")) is not int or record.get("label") not in {0, 1}:
                 raise ValueError(f"{path}:{line_number}: label must be integer 0 or 1")
+            if source_only and 'raw_source' not in record:
+                record['raw_source'] = record.get('function')
             if not isinstance(record.get("raw_source"), str) or not record["raw_source"]:
                 raise ValueError(f"{path}:{line_number}: raw_source is required")
+            if source_only:
+                seen.add(key)
+                records.append(record)
+                continue
             if not isinstance(record.get("cpg_relations"), str) or not record["cpg_relations"]:
                 raise ValueError(f"{path}:{line_number}: cpg_relations is required")
             items = record.get("mechanism_items")
@@ -451,19 +458,28 @@ def _build_lora_encoder(
     lora_dropout: float,
     target_modules: tuple[str, ...],
     gradient_checkpointing: bool,
+    finetuning_mode: str | None = None,
 ):
-    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+    # Explicit CodeBERT modes share FP32 weights, BF16 CUDA autocast and head RNG.
+    # None retains the historical LoRA construction/precision for saved runs.
+    if finetuning_mode not in (None, 'lora', 'full'):
+        raise ValueError('unknown finetuning mode')
+    dtype = torch.bfloat16 if device.type == "cuda" and finetuning_mode is None else torch.float32
     base = AutoModel.from_pretrained(
         model_path,
         trust_remote_code=True,
         dtype=dtype,
         low_cpu_mem_usage=True,
+        **({'add_pooling_layer': False} if finetuning_mode is not None else {}),
     )
     base.config.use_cache = False
     if gradient_checkpointing:
         base.gradient_checkpointing_enable()
         if hasattr(base, "enable_input_require_grads"):
             base.enable_input_require_grads()
+    if finetuning_mode == 'full':
+        base.requires_grad_(True)
+        return base, int(base.config.hidden_size)
     config = LoraConfig(
         task_type=TaskType.FEATURE_EXTRACTION,
         inference_mode=False,
@@ -473,7 +489,12 @@ def _build_lora_encoder(
         target_modules=list(target_modules),
         bias="none",
     )
-    return get_peft_model(base, config), int(base.config.hidden_size)
+    if finetuning_mode == 'lora':
+        with torch.random.fork_rng(devices=[]):
+            encoder = get_peft_model(base, config)
+    else:
+        encoder = get_peft_model(base, config)
+    return encoder, int(base.config.hidden_size)
 
 
 def _masked_mean(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -606,7 +627,8 @@ def _pool_source_lines(hidden, owners, positions, layouts):
 class SequenceVulnerabilityClassifier(nn.Module):
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int,
                  lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool,
-                 variant: str = "baseline", classifier_head: str = "linear") -> None:
+                 variant: str = "baseline", classifier_head: str = "linear",
+                 finetuning_mode: str | None = None) -> None:
         super().__init__()
         self.encoder, hidden_size = _build_lora_encoder(
             model_path,
@@ -616,8 +638,10 @@ class SequenceVulnerabilityClassifier(nn.Module):
             lora_dropout=lora_dropout,
             target_modules=target_modules,
             gradient_checkpointing=gradient_checkpointing,
+            **({'finetuning_mode': finetuning_mode} if finetuning_mode is not None else {}),
         )
         self.variant = variant
+        self.finetuning_mode = finetuning_mode
         self.classifier_head = classifier_head
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
         if classifier_head not in {"linear", "mlp4", "prototype4", "local_risk"}:
@@ -666,7 +690,9 @@ class SequenceVulnerabilityClassifier(nn.Module):
 
     def _source_hidden(self, input_ids, attention_mask):
         encoder_grad = torch.is_grad_enabled() and any(p.requires_grad for p in self.encoder.parameters())
-        with torch.set_grad_enabled(encoder_grad):
+        with torch.set_grad_enabled(encoder_grad), torch.autocast(
+                input_ids.device.type, dtype=torch.bfloat16,
+                enabled=self.finetuning_mode is not None and input_ids.is_cuda):
             return self.encoder(input_ids=input_ids, attention_mask=attention_mask,
                                 use_cache=False).last_hidden_state
 
@@ -792,7 +818,11 @@ def _build_model(
     fusion_heads: int,
     graph_config: dict | None = None,
     classifier_head: str = "linear",
+    finetuning_mode: str | None = None,
 ):
+    if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
+            or variant != 'codebert_source' or classifier_head != 'linear'):
+        raise ValueError('explicit finetuning modes require CodeBERT mean pooling and linear head')
     common = dict(
         device=device,
         lora_r=lora_r,
@@ -808,7 +838,8 @@ def _build_model(
             model_path, variant=variant, graph_config=graph_config, **common
         )
     if variant in _SEQUENCE_VARIANTS:
-        return SequenceVulnerabilityClassifier(model_path, variant=variant, classifier_head=classifier_head, **common)
+        return SequenceVulnerabilityClassifier(model_path, variant=variant, classifier_head=classifier_head,
+            **({'finetuning_mode': finetuning_mode} if finetuning_mode is not None else {}), **common)
     if variant == "mechanism_fusion":
         return MechanismFusionClassifier(
             model_path, fusion_dim=fusion_dim, fusion_heads=fusion_heads, **common
@@ -1073,8 +1104,14 @@ def train_model(
     ranking_weight: float = 1.0,
     local_objective: str | None = None,
     local_regions: dict | None = None,
+    finetuning_mode: str | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
+    if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
+            or variant != 'codebert_source' or classifier_head != 'linear'
+            or any(x is not None for x in (change_objective, local_objective, synthetic_pairs,
+                                           initial_adapter_state, sample_weights))):
+        raise ValueError('explicit finetuning modes require plain CodeBERT function BCE')
     if classifier_head not in {"linear", "local_risk"} and variant != "codebert_source":
         raise ValueError("alternative heads require codebert_source")
     if variant == 'codebert_source' and source_max_length not in (512, 2048):
@@ -1094,7 +1131,7 @@ def train_model(
         raise ValueError("invalid log_every, learning_rate or weight_decay")
     if (dataset_path is None) == (records is None):
         raise ValueError("provide exactly one of dataset_path or records")
-    records = _read_jsonl(dataset_path) if records is None else records
+    records = _read_jsonl(dataset_path, source_only=variant == 'codebert_source') if records is None else records
     sources = {record_dataset(record) for record in records}
     if len(sources) != 1:
         raise ValueError(f"training dataset view must contain exactly one source, got {sorted(sources)}")
@@ -1169,6 +1206,8 @@ def train_model(
         if not fixed_epochs and local_objective is None:
             raise ValueError("checkpoint continuation requires fixed_epochs")
         initial = torch.load(initial_checkpoint, map_location="cpu", weights_only=False)
+        if initial.get('finetuning_mode') != finetuning_mode:
+            raise ValueError('initial checkpoint mismatch: finetuning_mode')
         expected = dict(checkpoint_version=_CHECKPOINT_VERSION, dataset_schema_version=DATASET_SCHEMA_VERSION,
                         trained_on=source_dataset, variant=variant, model_path=model_path,
                         source_max_length=source_max_length, context_max_length=context_max_length,
@@ -1228,15 +1267,21 @@ def train_model(
         fusion_dim=fusion_dim,
         fusion_heads=fusion_heads,
         classifier_head=classifier_head,
+        **({'finetuning_mode': finetuning_mode} if finetuning_mode is not None else {}),
         **({"graph_config": graph_config} if graph_config is not None else {}),
     )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
     if initial_adapter_state is not None:
         set_peft_model_state_dict(model.encoder, initial_adapter_state)
     if initial is not None:
-        _restore_adapter(model.encoder, initial['adapter_state'])
+        if finetuning_mode == 'full':
+            model.encoder.load_state_dict(initial['encoder_state'], strict=True)
+        else:
+            _restore_adapter(model.encoder, initial['adapter_state'])
         if local_objective in {None, 'A'}:
             model.task_modules.load_state_dict(initial["task_state"], strict=True)
+    if finetuning_mode is not None:
+        _seed_everything(seed)
     if local_objective is not None:
         lora_parameters = [p for p in model.encoder.parameters() if p.requires_grad]
         head_parameters = list(model.task_modules.parameters())
@@ -1473,7 +1518,8 @@ def train_model(
         if key > best_key:
             best_key = key
             best_threshold = threshold
-            best_adapter = _cpu_state(get_peft_model_state_dict(model.encoder))
+            best_adapter = _cpu_state(model.encoder.state_dict() if finetuning_mode == 'full'
+                                      else get_peft_model_state_dict(model.encoder))
             best_task = _cpu_state(model.task_modules.state_dict())
             best_validation = validation
             selected_epoch = epoch+1
@@ -1507,11 +1553,15 @@ def train_model(
         "training_config": dict(epochs=epochs, batch_size=batch_size,
                                 gradient_accumulation=gradient_accumulation,
                                 learning_rate=1e-4 if local_objective is not None else learning_rate, weight_decay=weight_decay),
-        "adapter_state": best_adapter,
+        "encoder_state" if finetuning_mode == 'full' else "adapter_state": best_adapter,
         "task_state": best_task,
         "validation": best_validation.as_json() if best_validation else None,
         "trainable_parameters": sum(parameter.numel() for parameter in trainable),
     }
+    if finetuning_mode is not None:
+        checkpoint['finetuning_mode'] = finetuning_mode
+        checkpoint['encoder_precision'] = 'FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss'
+        checkpoint['classifier_initialization'] = _CLASSIFIER_INITIALIZATION
     if synthetic_pairs is not None:
         checkpoint['synthetic_supervision'] = dict(objective=synthetic_objective, weight=1.0,
             pairs_per_optimizer_step=1, unique_pairs=len(synthetic_pairs))
@@ -1585,6 +1635,14 @@ def predict_checkpoint(checkpoint_path: str | Path, records: list[dict], *,
 
 
 def _load_model(checkpoint: dict[str, object], *, device: torch.device):
+    mode = checkpoint.get('finetuning_mode')
+    if mode not in (None, 'lora', 'full'):
+        raise ValueError('unknown checkpoint finetuning mode')
+    if mode is not None and checkpoint.get('encoder_precision') != 'FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss':
+        raise ValueError('finetuning checkpoint precision configuration mismatch')
+    state_key = 'encoder_state' if mode == 'full' else 'adapter_state'
+    if state_key not in checkpoint or ('adapter_state' if mode == 'full' else 'encoder_state') in checkpoint:
+        raise ValueError('checkpoint encoder state does not match finetuning mode')
     if checkpoint.get('classifier_head') == 'local_risk':
         config = checkpoint.get('local_supervision', {})
         if (config.get('head_version'), config.get('hidden_dim'), checkpoint.get('source_max_length')) != (1, 64, 2048):
@@ -1599,12 +1657,16 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device):
         target_modules=tuple(str(value) for value in checkpoint["target_modules"]),
         gradient_checkpointing=False,
         classifier_head=str(checkpoint.get("classifier_head", "linear")),
+        **({'finetuning_mode': mode} if mode is not None else {}),
         fusion_dim=int(checkpoint["fusion_dim"]),
         fusion_heads=int(checkpoint["fusion_heads"]),
         **({"graph_config": checkpoint.get("graph_config")}
            if checkpoint["variant"] in _GRAPH_VARIANTS else {}),
     )
-    _restore_adapter(model.encoder, checkpoint['adapter_state'])
+    if mode == 'full':
+        model.encoder.load_state_dict(checkpoint['encoder_state'], strict=True)
+    else:
+        _restore_adapter(model.encoder, checkpoint['adapter_state'])
     model.task_modules.load_state_dict(checkpoint["task_state"], strict=True)
     model.eval()
     return model
@@ -1618,13 +1680,14 @@ def _restore_adapter(encoder, state):
 
 
 def evaluate_model(
-    dataset_path: str | Path,
+    dataset_path: str | Path | None,
     checkpoint_path: str | Path,
     *,
     split: str,
     batch_size: int = 1,
     device: str = "auto",
     prediction_path: str | Path | None = None,
+    records: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     if prediction_path is not None and Path(prediction_path).exists():
         raise FileExistsError(prediction_path)
@@ -1638,7 +1701,9 @@ def evaluate_model(
         tuple(str(value) for value in checkpoint.get("excluded_groups", ()))
     )
     _validate_variant(variant, excluded_groups)
-    all_records = _read_jsonl(dataset_path)
+    if (dataset_path is None) == (records is None):
+        raise ValueError('provide exactly one of dataset_path or records')
+    all_records = _read_jsonl(dataset_path, source_only=variant == 'codebert_source') if records is None else records
     sources = {record_dataset(record) for record in all_records}
     if len(sources) != 1:
         raise ValueError(f"evaluation dataset view must contain exactly one source, got {sorted(sources)}")
@@ -1677,7 +1742,8 @@ def evaluate_model(
         "positive": sum(int(record["label"]) == 1 for record in records),
         "negative": sum(int(record["label"]) == 0 for record in records),
         "metrics": metrics.as_json(),
-        "mechanism_subgroups": _stratified_metrics(
+        "mechanism_subgroups": {} if variant == 'codebert_source' and any(
+            'mechanism_items' not in r for r in records) else _stratified_metrics(
             records,
             probabilities,
             threshold=threshold,
@@ -1688,6 +1754,8 @@ def evaluate_model(
         from .cfg_metrics import metrics as binary_metrics, decision_boundary
         result['bce'] = float(torch.nn.functional.binary_cross_entropy_with_logits(
             logits.float(), torch.tensor([r['label'] for r in records], dtype=torch.float32)))
+        counts = binary_metrics([r['label'] for r in records], probabilities.tolist(), threshold)
+        result['metrics'].update({key: counts[key] for key in ('tp', 'tn', 'fp', 'fn')})
         result['fixed_0_5'] = binary_metrics([r['label'] for r in records], probabilities.tolist())
         target = Path(prediction_path)
         target.parent.mkdir(parents=True, exist_ok=True)

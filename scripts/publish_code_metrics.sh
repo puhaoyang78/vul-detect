@@ -6,6 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 usage() {
   printf 'Usage: bash scripts/publish_code_metrics.sh [--dry-run | "commit message"]\n' >&2
+  printf '  --dry-run checks selected changes without staging, committing or pushing.\n' >&2
 }
 
 if [[ $# -gt 1 ]]; then
@@ -100,6 +101,29 @@ if [[ ${#files[@]} -eq 0 ]]; then
 else
   printf 'Selected %d code/metric files:\n' "${#files[@]}"
   printf '  %q\n' "${files[@]}"
+fi
+
+# Check the exact proposed commit without changing the real index or object store.
+# In particular, a failed whitespace check must not leave files staged.
+if [[ ${#files[@]} -gt 0 ]]; then
+  check_dir=$(mktemp -d)
+  trap 'rm -rf -- "$check_dir"' EXIT
+  mkdir "$check_dir/objects"
+  cp -- "$(git rev-parse --git-path index)" "$check_dir/index"
+  object_dir=$(cd "$(git rev-parse --git-path objects)" && pwd)
+  (
+    export GIT_INDEX_FILE="$check_dir/index"
+    export GIT_OBJECT_DIRECTORY="$check_dir/objects"
+    export GIT_ALTERNATE_OBJECT_DIRECTORIES="$object_dir${GIT_ALTERNATE_OBJECT_DIRECTORIES:+:$GIT_ALTERNATE_OBJECT_DIRECTORIES}"
+    git add -A -- "${files[@]}"
+    if ! git diff --cached --check; then
+      printf 'Whitespace check failed (e.g. trailing whitespace). Fix the reported file/line and rerun with --dry-run.\n' >&2
+      printf 'Your staging area is unchanged; nothing was committed or pushed.\n' >&2
+      exit 1
+    fi
+  )
+  rm -rf -- "$check_dir"
+  trap - EXIT
 fi
 if "$dry_run"; then
   exit 0

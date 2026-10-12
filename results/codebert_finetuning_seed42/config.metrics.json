@@ -1,0 +1,40 @@
+{
+  "manifest": "data/benchmark/manifest_sven_commit_disjoint.jsonl",
+  "model": "/home/PublicData/PHY-data/resource/codebert-base",
+  "seed": 42,
+  "source_max_length": 2048,
+  "epochs": 3,
+  "batch_size": 4,
+  "gradient_accumulation": 2,
+  "weight_decay": 0.01,
+  "gradient_clip": 1.0,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "learning_rates": {
+    "lora": [
+      2e-05,
+      0.0001,
+      0.0002
+    ],
+    "full": [
+      1e-05,
+      2e-05,
+      5e-05
+    ]
+  },
+  "counts": {
+    "valid/label_0": 507,
+    "valid/label_1": 507,
+    "train/label_1": 3910,
+    "train/label_0": 3910
+  },
+  "input": "unchanged pre-recovery PrimeVul functions; no CPG success filtering; Train/Valid only",
+  "initialization": "fresh common CodeBERT base; identical linear head; isolated LoRA initialization RNG",
+  "precision": "FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss",
+  "selection": "Valid MCC then F1/accuracy/AUC; original threshold grid and tie-break",
+  "environment": {
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3"
+  }
+}

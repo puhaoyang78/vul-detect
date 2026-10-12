@@ -129,6 +129,77 @@ PrimeVul train/valid 仍有 2 个共享提交，PrimeVul/CleanVul 也存在共�
 阈值及预测文件均核对未变。40 项相关测试、实际 GPU train/save/reload 及完整结果导出通过。
 
 
+### CodeBERT LoRA 与全参数微调对照
+
+`python -m vulnmechanism.cli codebert-finetuning` 使用补入修复端之前的
+`data/benchmark/manifest_sven_commit_disjoint.jsonl`：PrimeVul Train 为 3,910 正、3,910 负，
+Valid 为 507 正、507 负。保留官方 target、原划分、去重结果及清单中原有的修复后负例；
+不使用 CPG 构建成功筛选，不恢复其他修复端。仅运行函数分类 Train/Valid。
+
+六组共享 `model.train_model`、CodeBERT 基座、初始线性头、seed=42、2048 逻辑总预算、
+原生 512 窗口/244 步长/去重 mean pooling、BCE、3 epochs、有效 batch=8、AdamW、
+weight decay=.01 和梯度裁剪1。LoRA 的 r/alpha/dropout 为 16/32/.05，候选学习率为
+2e-5、1e-4、2e-4；全参数为 1e-5、2e-5、5e-5。两种方式均使用 FP32 参数和优化器，
+CUDA 编码前向使用 BF16 autocast，汇聚与分类头保持 FP32。LoRA 初始化隔离随机状态，
+保证两组初始头一致；未显式指定微调方式的历史实现及 checkpoint 加载保持原行为。
+原生 pooler 不参与这条 mean pooling 路径，两组均不构建该 pooler。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+# 先验证真实模型两种参数更新范围与保存重载，再完成六组训练和 Valid 评价，
+# 以原 Valid MCC/F1/accuracy/AUC tie-break 各选一组，并补算完整 Train。
+$PY -m vulnmechanism.cli codebert-finetuning --stage all --device cuda:0
+# 也可在 smoke 完成后，用两个 GPU 分别运行固定的三组候选；无需重复训练：
+$PY -m vulnmechanism.cli codebert-finetuning --stage smoke --device cuda:0
+CUDA_VISIBLE_DEVICES=0 $PY -m vulnmechanism.cli codebert-finetuning \
+  --stage train --finetuning-mode lora --device cuda:0
+CUDA_VISIBLE_DEVICES=1 $PY -m vulnmechanism.cli codebert-finetuning \
+  --stage train --finetuning-mode full --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --stage report --device cuda:0
+```
+
+配置、逐步/逐 epoch 日志、checkpoint、Valid 预测与指标保存在
+`results/codebert_finetuning_seed42/{lora,full}/lr_*/`；各自选中模型的完整 Train
+预测与指标保存在同目录，六组比较位于 `comparison.metrics.json/csv`。
+全参数 checkpoint 保存完整编码器状态并严格重载；LoRA 保存 adapter 和分类头。
+已完成结果仅在成员、初始化、训练方式、学习率及三轮预算匹配时复用。
+
+本轮六组均重新训练完成，每组 3 epochs、每轮 978 次优化更新。下表使用各学习率按
+Valid 选中的 epoch；提前选中第 1/2 轮不表示减少训练预算。完整数值见
+[`comparison.metrics.csv`](results/codebert_finetuning_seed42/comparison.metrics.csv)，
+配置和选中模型的完整 Train/Valid 指标见
+[`comparison.metrics.json`](results/codebert_finetuning_seed42/comparison.metrics.json)。
+
+| 方式 | LR | 选中 epoch | 阈值 | Valid BCE | AUC | MCC | F1 | Precision | Recall | FP/FN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LoRA | 2e-5 | 3 | .24 | .6729 | .7799 | .4561 | .7341 | .7175 | .7515 | 150/126 |
+| LoRA（选中） | 1e-4 | 2 | .16 | .8165 | .7965 | .4779 | .7321 | .7510 | .7140 | 120/145 |
+| LoRA | 2e-4 | 1 | .49 | .5707 | .7962 | .4760 | .7308 | .7505 | .7120 | 120/146 |
+| 全参数（选中） | 1e-5 | 3 | .29 | .5807 | .8117 | .5082 | .7698 | .7145 | .8343 | 169/84 |
+| 全参数 | 2e-5 | 2 | .38 | .6237 | .8165 | .4980 | .7226 | .7943 | .6627 | 87/171 |
+| 全参数 | 5e-5 | 1 | .39 | .5719 | .7880 | .4459 | .7264 | .7173 | .7357 | 147/134 |
+
+各自选中模型的完整 Train 使用同一保存阈值，未用 Train 重新选模或调阈值：
+
+| 模型 | 分区 | BCE | AUC | MCC | F1 | Precision | Recall | FP/FN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LoRA 1e-4 / epoch 2 | Train | .5282 | .9030 | .6452 | .8246 | .8151 | .8343 | 740/648 |
+| LoRA 1e-4 / epoch 2 | Valid | .8165 | .7965 | .4779 | .7321 | .7510 | .7140 | 120/145 |
+| 全参数 1e-5 / epoch 3 | Train | .3148 | .9376 | .7375 | .8741 | .8128 | .9453 | 851/214 |
+| 全参数 1e-5 / epoch 3 | Valid | .5807 | .8117 | .5082 | .7698 | .7145 | .8343 | 169/84 |
+
+在这次固定 seed 和预算的比较中，全参数的拟合与验证共同改善：Train/Valid MCC
+分别增加 .0923/.0303，AUC 增加 .0345/.0153，BCE 下降 .2134/.2358。
+Valid 收益伴随取舍：FN 减少 61、FP 增加 49，Precision 下降 .0365。
+全参数仍有 Train→Valid 差距，不能把此次结果解释为所有错误类型均改善。
+LoRA 的选中模型并非 BCE 最小的候选，严格沿用 MCC 选模而未改换评价标准。
+
+两组可训练参数（含分类头）分别为 1,180,417 和 124,055,809。真实 CodeBERT smoke
+验证了相同初始头、正确参数更新范围及保存重载预测完全一致；47 项相关测试与
+更新后的 8 项 CodeBERT 专项测试通过。六组 Valid 预测的源码、顺序和预算一致；
+其中 166/1,014 个函数被截断，最多可见 2,025 个源码 token，剩余逻辑预算用于原前缀。
+本轮仅训练和评价 Train/Valid，未运行修复对、Test、SVEN 或 Qwen。
+
 ### 修复引导的局部风险学习
 
 `python -m vulnmechanism.cli local-risk` 扩展同一 `train_model`、输入构造、LoRA、
