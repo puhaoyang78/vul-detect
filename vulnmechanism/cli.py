@@ -223,6 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
         help='same-pool random/high-low semantic views; default: both new full fine-tuning runs')
     shallow_method.add_argument('--conditional-length-debiasing', action='store_true',
         help='only C: existing random views plus label-conditional logit length GRL, lambda=.05')
+    shallow_method.add_argument('--surface-vat',nargs='?',const='all',choices=('all','random','vat','surface','binding'),
+        help='shared expanded real views: random, ordinary VAT, surface positions, binding-tied surface VAT')
     finetuning.add_argument('--augmentation-dir', default='results/codebert_shallow_augmentation_seed42',
         help='completed random augmentation/cache to reuse for conditional length C')
     finetuning.add_argument('--baseline-checkpoint', default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
@@ -315,6 +317,7 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None
 
 
 def _codebert_finetuning(args):
+    if getattr(args,'surface_vat',None):return _codebert_surface_vat(args)
     if getattr(args, 'conditional_length_debiasing', False):
         return _codebert_conditional_length(args)
     if getattr(args, 'shallow_augmentation', None):
@@ -466,7 +469,7 @@ def _matching_full_baseline(args):
             or base.get('source_max_length') != 2048 or base.get('model_path') != args.model
             or base.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION
             or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision',
-                                       'augmentation_config', 'conditional_length_config'))):
+                                       'augmentation_config', 'conditional_length_config','surface_vat_config'))):
         raise ValueError('requires the matching fresh full-CodeBERT BCE baseline and original manifest')
     training = base['training_config']
     if (training['epochs'] != 3 or training['weight_decay'] != .01
@@ -1032,6 +1035,224 @@ def _conditional_length_report(rows,root,augmentation_root,config,base,random_cp
             prior_accuracy=float((prior_prob.argmax(-1)[select]==targets[select]).float().mean()))
     report = dict(config=config,valid=result,length_head=length,
         training=[r for r in map(json.loads,(root/'best.training.jsonl').open()) if r['event']=='epoch'])
+    write_json(root/'comparison.metrics.json',report)
+    return report
+
+
+def _surface_vat_sources(rows,entries):
+    from .syntax import apply_source_edits
+    if [e['sample_key'] for e in entries]!=[r['sample_key'] for r in rows]:
+        raise ValueError('surface candidate cache members/order differ')
+    sources={};choices={}
+    for row,entry in zip(rows,entries):
+        selected=entry['selections'];pool=entry['candidates']
+        if row['split']=='train':
+            if not isinstance(selected,list) or len(selected)>2 or len(set(selected))!=len(selected):
+                raise ValueError('invalid fixed surface random selection')
+            if any(not 0<=i<len(pool) for i in selected):raise ValueError('surface selection outside candidate pool')
+            sources[row['sample_key']]=[dict(raw_source=apply_source_edits(row['raw_source'],pool[i]['edits']),
+                inserted_comment_spans=pool[i]['inserted_comment_spans']) for i in selected]
+            choices[row['sample_key']]=selected
+    return sources,choices
+
+
+def _surface_vat_smoke(rows,sources,augmentation,root,base,args):
+    import tempfile
+    import torch
+    from . import model as core
+    from .change_learning import write_json
+    train=[r for r in rows if r['split']=='train' and sources[r['sample_key']]]
+    chosen=[r for y in (0,1) for r in [r for r in train if r['label']==y][:4]]
+    if len(chosen)!=8:raise ValueError('surface VAT smoke needs four transformable Train functions per label')
+    chosen+=[next(r for r in rows if r['split']=='valid' and r['label']==y) for y in (0,1)]
+    device=core._resolve_device(args.device)
+    core._seed_everything(42)
+    fresh=core._build_model('codebert_source',args.model,device=device,lora_r=16,lora_alpha=32,lora_dropout=.05,
+        target_modules=tuple(base['target_modules']),gradient_checkpointing=False,fusion_dim=256,fusion_heads=8,finetuning_mode='full')
+    embedding=fresh.encoder.state_dict()['embeddings.word_embeddings.weight'].detach().cpu().clone()
+    head=core._cpu_state(fresh.task_modules.state_dict())
+    tokenizer=core.AutoTokenizer.from_pretrained(args.model)
+    builder=core.InputBuilder(tokenizer,source_max_length=2048,context_max_length=base['context_max_length'])
+    # Real CodeBERT merges `(_`; freezing only that token would leave an
+    # inconsistent partial perturbation of the same underscored binding.
+    from .syntax import surface_binding_layout
+    mixed_source='int f(int _x,int y){use(_x);return _x+y;}'
+    keys,_=builder.surface_tokens(mixed_source,'c','',())
+    offsets=tokenizer(mixed_source,add_special_tokens=False,return_offsets_mapping=True)['offset_mapping']
+    for binding in surface_binding_layout(mixed_source,'c')['bindings']:
+        touched=[keys[i] for i,(a,b) in enumerate(offsets) if any(a<z and b>x for x,z in binding['spans'])]
+        expected=None if binding['name']=='_x' else ('binding',binding['declaration'])
+        if not touched or any(key!=expected for key in touched):
+            raise ValueError('real tokenizer violates whole-binding surface constraints')
+    probe=dict(chosen[0],**sources[chosen[0]['sample_key']][0])
+    signals={}
+    for mode in ('vat','surface','binding'):
+        config=dict(core.SURFACE_VAT_CONFIG,mode=mode)
+        values,info,delta=core.surface_vat_loss(fresh,[probe],builder,config,device=device,noise_seed=42,return_delta=True)
+        gradient=torch.autograd.grad(values.sum(),fresh.task_modules['classifier'].weight)[0]
+        if info['eligible']!=1 or float(values.detach().sum())<=0 or float(gradient.norm())<=0:
+            raise ValueError(f'real {mode} VAT has no consistency signal or classifier gradient')
+        torch.testing.assert_close(delta.square().sum().sqrt(),delta.new_tensor(1.),rtol=1e-5,atol=1e-5)
+        batch,groups,_,_=builder.vat_batch([probe],mode=mode,device=device)
+        if torch.any(delta[groups<0]!=0):raise ValueError('VAT modified a forbidden site')
+        if mode=='binding':
+            for g in groups[groups>=0].unique():
+                selected=delta[groups==g]
+                torch.testing.assert_close(selected,selected[0].expand_as(selected),rtol=0,atol=0)
+        signals[mode]=dict(info,classifier_gradient_norm=float(gradient.norm()),
+            forbidden_zero=True,binding_shared=mode=='binding')
+        del values,gradient,delta
+    del fresh
+    report=dict(signals=signals,checks={},mixed_name_binding_frozen=True,
+        train_members=[r['sample_key'] for r in chosen[:8]],valid_members=[r['sample_key'] for r in chosen[8:]])
+    budgets=[]
+    with tempfile.TemporaryDirectory(prefix='vul_detect_surface_vat_') as tmp:
+        for mode in core.SURFACE_VAT_MODES:
+            target=Path(tmp)/mode/'best.pt'
+            views={r['sample_key']:sources[r['sample_key']] for r in chosen[:8]}
+            config=dict(core.SURFACE_VAT_CONFIG,mode=mode,weight=0. if mode=='random' else 1.)
+            cp=core.train_model(None,target,records=chosen,variant='codebert_source',model_path=args.model,
+                source_max_length=2048,context_max_length=base['context_max_length'],seed=42,device=args.device,
+                finetuning_mode='full',function_views=views,
+                augmentation_config=dict(augmentation,choices={k:augmentation['choices'][k] for k in views}),
+                surface_vat_config=config,log_every=1,**dict(base['training_config'],epochs=1))
+            checks=dict(encoder_updated=not torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'],embedding),
+                classifier_updated=any(not torch.equal(cp['task_state'][k],v) for k,v in head.items()))
+            restored=core._load_model(cp,device=device)
+            before=core._predict_logits(restored,chosen[8:],builder,variant='codebert_source',excluded_groups=(),batch_size=4,device=device)
+            del restored
+            torch.testing.assert_close(before,core.predict_checkpoint(target,chosen[8:],batch_size=4,device=args.device),rtol=0,atol=0)
+            checks['save_reload_exact']=True
+            if not all(checks.values()):raise ValueError(f'{mode} surface smoke failed: {checks}')
+            epoch=next(r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch')
+            budget=tuple(epoch[k] for k in ('optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots',
+                'vat_function_forwards','vat_encoder_sequences','vat_encoder_token_slots'))
+            budgets.append(budget);report['checks'][mode]=checks;report[mode]=epoch
+            del cp
+    if len(set(budgets))!=1:raise ValueError('surface VAT smoke compute budgets differ')
+    report['budgets_identical']=True
+    write_json(root/'smoke.metrics.json',report)
+    return report
+
+
+def _codebert_surface_vat(args):
+    import random
+    import torch
+    from collections import Counter
+    from . import model as core,audit_statistics as data
+    from .change_learning import write_json
+    rows,base,budget=_matching_full_baseline(args)
+    root=Path(args.output_dir or 'results/codebert_surface_vat_seed42')
+    config=dict(version=1,manifest=args.manifest,baseline_checkpoint=args.baseline_checkpoint,model=args.model,
+        seed=42,initialization='fresh matching pretrained CodeBERT; identical seed42 linear head',training=base['training_config'],
+        input_protocol=base['input_protocol'],encoder_precision=base['encoder_precision'],vat=core.SURFACE_VAT_CONFIG,
+        augmentation='up to eight per-binding/name/multiple inline comment/combined proposals; no BPE buckets; fixed random up to two views',
+        function_name='input-only current declaration name; external APIs/callees unchanged',
+        loss='mean BCE over effective views per function; VAT on one deterministic rotating view per function per epoch',
+        selection='original clean Valid MCC threshold/epoch and tie-break; no Test',
+        controls=list(core.SURFACE_VAT_MODES))
+    path=root/'config.metrics.json'
+    if path.exists() and json.loads(path.read_text())!=config:raise ValueError('existing surface VAT configuration differs')
+    if not path.exists():write_json(path,config)
+    cache=root/'candidates.jsonl';coverage_path=root/'candidates.metrics.json'
+    if cache.exists()!=coverage_path.exists():raise FileExistsError('incomplete surface candidate cache')
+    if cache.exists():entries=list(map(json.loads,cache.open()));coverage=json.loads(coverage_path.read_text())
+    else:
+        tokenizer=core.AutoTokenizer.from_pretrained(args.model)
+        rng=random.Random(42);entries=[];coverage={}
+        for split in ('train','valid'):
+            split_rows=[r for r in rows if r['split']==split]
+            kinds=Counter();skipped=Counter();covered=0
+            for index,row in enumerate(split_rows):
+                pool,reasons=data.visible_semantic_candidates(row['raw_source'],row.get('language','c'),tokenizer,
+                    base['input_protocol']['source_budget'],file_name=row.get('file_name',''),unseen=split=='valid',surface=True)
+                if split=='train':selected=sorted(rng.sample(range(len(pool)),min(2,len(pool))))
+                else:
+                    selected={}
+                    for kind in ('comment','local_name','function_name','combined'):
+                        choices=[i for i,c in enumerate(pool) if c['kind']==kind]
+                        if choices:selected[kind]=choices[index%len(choices)]
+                kinds.update({c['kind'] for c in pool});skipped.update(reasons);covered+=bool(selected)
+                entries.append(dict(sample_key=row['sample_key'],split=split,candidates=pool,selections=selected,skip_reasons=reasons))
+                if (index+1)%250==0 or index+1==len(split_rows):
+                    print(f'Surface candidates {split}: {index+1}/{len(split_rows)}, eligible={covered}',flush=True)
+            coverage[split]=dict(total=len(split_rows),covered=covered,coverage=covered/len(split_rows),
+                kinds={k:dict(eligible=v,coverage=v/len(split_rows)) for k,v in kinds.items()},skip_candidates=dict(skipped))
+        by={e['sample_key']:e for e in entries};entries=[by[r['sample_key']] for r in rows]
+        with cache.open('x') as handle:
+            for entry in entries:handle.write(json.dumps(entry)+'\n')
+        write_json(coverage_path,coverage)
+    sources,choices=_surface_vat_sources(rows,entries)
+    augmentation=dict(mode='surface',protocol_version=1,candidates_cache=str(cache),choices=choices,
+        loss='mean view BCE per function, then mean over original functions')
+    if args.stage=='prepare':return dict(config=config,coverage=coverage)
+    smoke=root/'smoke.metrics.json'
+    if args.stage in ('all','smoke') and not smoke.exists():_surface_vat_smoke(rows,sources,augmentation,root,base,args)
+    if args.stage=='smoke':return json.loads(smoke.read_text())
+    if not smoke.exists() or not json.loads(smoke.read_text()).get('budgets_identical'):
+        raise ValueError('complete the real surface VAT smoke before training')
+    modes=core.SURFACE_VAT_MODES if args.surface_vat=='all' else (args.surface_vat,)
+    expected={k:base[k] for k in ('checkpoint_version','dataset_schema_version','variant','model_path','source_max_length',
+        'context_max_length','seed','finetuning_mode','classifier_head','classifier_initialization','encoder_precision',
+        'cohort_members','training_config','initial_checkpoint','target_modules')}
+    for mode in modes:
+        run=root/mode;target=run/'best.pt';vat=dict(core.SURFACE_VAT_CONFIG,mode=mode,weight=0. if mode=='random' else 1.)
+        if target.exists():
+            cp=torch.load(target,map_location='cpu',weights_only=False)
+            if (any(cp.get(k)!=v for k,v in expected.items()) or cp.get('augmentation_config')!=augmentation
+                    or cp.get('surface_vat_config')!=vat or cp.get('sample_weights') is not None):
+                raise ValueError('existing surface VAT checkpoint differs')
+        elif args.stage in ('train','all'):
+            if target.with_suffix('.training.jsonl').exists():raise FileExistsError('surface VAT job is running/interrupted; inspect history')
+            cp=core.train_model(None,target,records=rows,variant='codebert_source',model_path=args.model,
+                source_max_length=2048,context_max_length=base['context_max_length'],seed=42,device=args.device,
+                finetuning_mode='full',function_views=sources,augmentation_config=augmentation,surface_vat_config=vat,
+                log_every=25,**base['training_config'])
+        else:raise FileNotFoundError(target)
+        history=[r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch']
+        if [(r['epoch'],r['optimizer_steps']) for r in history]!=budget:raise ValueError('surface VAT epoch/update budget differs')
+        _finetuning_evaluate(rows,run,'valid',cp,args)
+        del cp
+    if args.stage in ('all','report'):return _surface_vat_report(rows,entries,root,config,coverage,args)
+    return dict(config=config,coverage=coverage,completed_modes=modes)
+
+
+def _surface_vat_report(rows,entries,root,config,coverage,args):
+    import torch
+    from . import model as core
+    from .syntax import apply_source_edits
+    from .change_learning import write_json
+    valid=[r for r in rows if r['split']=='valid'];by={e['sample_key']:e for e in entries}
+    views={kind:[] for kind in ('comment','local_name','function_name','combined')}
+    for row in valid:
+        entry=by[row['sample_key']]
+        for kind,index in entry['selections'].items():
+            candidate=entry['candidates'][index]
+            views[kind].append(dict(row,raw_source=apply_source_edits(row['raw_source'],candidate['edits'])))
+    results={};histories=[]
+    for mode in core.SURFACE_VAT_MODES:
+        run=root/mode;cp=torch.load(run/'best.pt',map_location='cpu',weights_only=False)
+        clean=_finetuning_evaluate(rows,run,'valid',cp,args)
+        originals=list(map(json.loads,(run/'valid.predictions.jsonl').open()));original={r['sample_key']:r for r in originals}
+        robustness={}
+        for kind,changed in views.items():
+            if changed:
+                metrics=_finetuning_evaluate(changed,run,'valid',cp,args,output_name=f'unseen_{kind}')
+                preds=list(map(json.loads,(run/f'unseen_{kind}.predictions.jsonl').open()))
+            else:metrics=None;preds=[]
+            n=len(preds);both=sum(r['prediction']==original[r['sample_key']]['prediction']==r['label'] for r in preds)
+            flips=sum(r['prediction']!=original[r['sample_key']]['prediction'] for r in preds)
+            robustness[kind]=dict(eligible=n,total=len(valid),positive=sum(r['label'] for r in preds),
+                coverage=n/len(valid),detection=metrics,robust_correct=both,robust_accuracy=both/n if n else None,
+                flipped=flips,flip_rate=flips/n if n else None,**_length_detection_metrics(preds,original))
+        results[mode]=dict(checkpoint=str(run/'best.pt'),selected_epoch=cp['selected_epoch'],threshold=cp['decision_threshold'],
+            clean=clean,robustness=robustness)
+        history=[r for r in map(json.loads,(run/'best.training.jsonl').open()) if r['event']=='epoch']
+        histories.append([tuple(r[k] for k in ('epoch','optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots',
+            'vat_function_forwards','vat_encoder_sequences','vat_encoder_token_slots','vat_eligible_functions')) for r in history])
+        results[mode]['training']=history
+    if any(history!=histories[0] for history in histories):raise ValueError('four surface VAT training/data budgets differ')
+    report=dict(config=config,coverage=coverage,valid=results,matched_training_budgets=histories[0])
     write_json(root/'comparison.metrics.json',report)
     return report
 

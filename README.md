@@ -422,6 +422,145 @@ CE=1.2309、准确率39.35%。长度头未超过仅用标签的先验，不能�
 无标签推理、严格保存重载与旧入口回归；真实 CodeBERT smoke 确认编码器、分类头、
 长度头均更新，增强/无法增强函数均参与 CE，正常推理移除辅助头。
 
+### 绑定约束的表面 VAT
+
+统一入口 `codebert-finetuning --surface-vat` 使用同一原 PrimeVul Train/Valid 清单、
+CodeBERT 全参数预训练起点、mean pooling＋linear、2048逻辑预算与原生滑窗去重。
+固定 seed=42、3 epochs、lr=1e-5、AdamW/weight decay=.01、有效 batch=8、梯度裁剪1。
+四组共用重新准备的真实增强和函数顺序，分别从同一预训练权重及同一分类头初始化训练；
+历史随机增强使用不同候选协议，保留历史结果。本轮不运行 Test/SVEN 或多 seed。
+
+| 组 | VAT 权重 | 扰动位置 | 绑定共享 |
+|---|---:|---|---|
+| `random` | 0 | 与普通 VAT 相同的辅助计算，梯度权重0 | 仅滑窗同一源码 token 的副本共享 |
+| `vat` | 1 | 全部有效源码 embedding，排除任务 prefix、特殊 token 和 padding | 同上 |
+| `surface` | 1 | 安全绑定名、当前函数声明名、新插入的无关注释 | 名字各 BPE token 独立 |
+| `binding` | 1 | 同 `surface` | 同一绑定的声明与所有引用、所有名字 BPE pieces 共用一个向量 |
+
+真实增强按具体声明/作用域解析参数和局部变量，普通调用实参可参与；同名 shadowing
+按声明区分，未知声明保留为遮蔽屏障，防止引用错误归给外层变量。可识别的宏/预处理、
+捕获、属性和不可靠绑定保守跳过，仅影响对应绑定。每个合法重命名都核对变换后声明和
+全部引用的对应，字符串、成员名、外部 API、常量值及运算符不修改。
+函数名是明确的输入级扰动：只改当前函数声明名，调用位置和外部 API 保持原样；不改
+源项目文件，也不把这种视图称作整个项目可直接编译的 API 重命名。
+
+最多8个标签无关候选，包含参数/局部绑定名、函数名、多位置不同长度的单行注释和组合。
+注释插在函数体开头及直接子语句之间，不进入调用实参、字面量或预处理行；不同候选
+插入2–3段、长度不同，不改变原始行数。候选不再按等 BPE 长度分桶。
+fast tokenizer offset 校验原代码的可见字符前缀完整保留；有实际输入差异的候选才保留。
+固定随机选最多2个视图，加上原函数后先平均函数内 BCE，再平均原函数。
+无法增强的函数照常参与 BCE；不使用 OOF、High–Low 或额外检测模型。
+
+VAT 在 Transformer 的 word embeddings 进入位置编码/LayerNorm 前添加扰动。
+Tree-sitter UTF-8 字节坐标转换为源码字符坐标，fast offset 映射实际 BPE token。
+一个可见名字 token 混入执行字符时，整个绑定在两种表面对照中均冻结，避免只改声明
+而漏掉某次引用（例如 CodeBERT 的 `(_` token）；仅新插入的无关注释可以扰动，原有注释不作为
+`surface`/`binding` 的自由位置。独立变量按声明身份分组，函数声明名独立成组，
+无关注释按 token 扰动；滑窗中同一源码 token 的副本在所有方法中共享方向。
+先展开共享向量到所有实际编码 token，再按函数归一化 L2 范数，固定 ε=1。
+共享参数的梯度由所有引用汇总，幂迭代方向按实际副本数作度量修正，避免多引用绑定
+仅因副本数量而被额外放大。
+
+采用 [Miyato et al. 的 VAT](https://arxiv.org/abs/1704.03976)：参考分布由同一模型
+stop-gradient 得到，不读取真实标签，最小化 `KL(Bernoulli(p_ref) || Bernoulli(p_adv))`。
+固定 ξ=1e-3、一次幂迭代、VAT 权重1，不搜索超参。辅助前向关闭 dropout、保留梯度，
+使用 FP32 编码器、float64 KL 和范数累加以保留小扰动信号，归一化后的扰动转回 FP32；
+普通 BCE 沿用 BF16 CUDA autocast。每批显式校验实际展开半径，避免极小方向平方下溢。
+显式保留 RoBERTa 原始 position IDs，并使用支持 `autograd.grad` 的非 reentrant checkpointing。
+
+每个原函数每轮选择一个视图作 VAT，按原函数索引和 epoch 在原版及两个固定随机视图
+中轮转。四组使用同一非空表面位置资格集合；空集合保留 BCE，并记录跳过。
+随机增强组也执行三次辅助前向、权重0，以匹配四组前向预算和原函数 dropout 随机序列。
+记录 VAT 值、有效/跳过/零方向数量、展开后范数和实际函数/token/滑窗预算。
+推理只输入单个原函数，不需要扰动或绑定解析；保存权重、输入协议和 VAT 配置并严格恢复。
+
+```bash
+PY=/home/phy/miniconda3/envs/vul-detect/bin/python
+# 正式统一入口：准备、真实模型 smoke、四组训练、Valid 比较
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat --stage all --device cuda:0
+# 分阶段执行
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat --stage prepare
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat --stage smoke --device cuda:0
+# 共享准备和 smoke 完成后，各组可在空闲 GPU 上独立训练
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat random --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat vat --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat surface --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat binding --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --surface-vat --stage report --device cuda:0
+```
+
+正常缓存和产物在 `results/codebert_surface_vat_seed42`：候选字符编辑/注释位置、覆盖与
+跳过原因、smoke、配置、训练日志/checkpoint、clean 与四种未见扰动的 Valid 预测。
+四组只按原始 clean Valid MCC 与原 tie-break 选 epoch/阈值，随后在完全相同的注释、
+局部名字、函数名及组合视图上报告检测指标、原版与扰动版同时正确率及翻转率。
+每种扰动的有效/总函数数和正负数量完整保留；VAT 资格不会缩小正式鲁棒性评价分母。
+
+本轮真实结果（2026-10-13，seed=42，Train/Valid；四组均选第2轮）：
+
+Train 7,820（正/负各3,910），Valid 1,014（正/负各507）。Train 有合法真实增强的
+函数为5,165/7,820（66.05%）；Valid 至少一种未见扰动为685/1,014（67.55%）。
+所有原函数参与 BCE，未评价 Test/SVEN。各组都完成3×978个优化步骤。
+
+| 方法 | 阈值 | clean BCE | AUC | MCC | F1 | Precision | Recall | FP/FN |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 随机增强 | 0.39 | 0.6622 | 0.8137 | 0.4955 | 0.7095 | 0.8101 | 0.6312 | 75/187 |
+| 普通 VAT | 0.17 | 0.7703 | 0.8053 | 0.4873 | 0.7461 | 0.7389 | 0.7535 | 135/125 |
+| 仅表面位置 VAT | 0.23 | 0.7007 | 0.8118 | 0.4937 | 0.7401 | 0.7593 | 0.7219 | 116/141 |
+| 绑定约束 VAT | 0.32 | 0.6154 | 0.8158 | 0.5032 | 0.7475 | 0.7597 | 0.7357 | 118/134 |
+
+| 未见扰动 | 有效/总函数 | 正/负 | 覆盖率 |
+|---|---:|---:|---:|
+| 注释 | 604/1014 | 259/345 | 59.57% |
+| 局部名 | 570/1014 | 271/299 | 56.21% |
+| 函数名 | 656/1014 | 315/341 | 64.69% |
+| 组合 | 529/1014 | 242/287 | 52.17% |
+
+下表均使用上表同一批有效函数和各自 clean Valid 阈值。成对鲁棒正确率要求
+原版与扰动版都正确；翻转率包含纠正和破坏两种方向，不能单独代替准确性。
+
+| 扰动 | 方法 | 扰动 Accuracy | AUC | MCC | F1 | 成对鲁棒正确率 | 翻转率 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 注释 | 随机增强 | 0.7070 | 0.7802 | 0.3958 | 0.5835 | 69.87% | 3.15% |
+| 注释 | 普通 VAT | 0.7152 | 0.7709 | 0.4171 | 0.6641 | 70.86% | 2.48% |
+| 注释 | 仅表面位置 VAT | 0.7152 | 0.7729 | 0.4133 | 0.6518 | 69.87% | 4.30% |
+| 注释 | 绑定约束 VAT | 0.7351 | 0.7817 | 0.4537 | 0.6721 | 70.70% | 5.30% |
+| 局部名 | 随机增强 | 0.7140 | 0.7836 | 0.4364 | 0.6479 | 70.70% | 2.11% |
+| 局部名 | 普通 VAT | 0.7316 | 0.7750 | 0.4613 | 0.7140 | 72.46% | 1.05% |
+| 局部名 | 仅表面位置 VAT | 0.7175 | 0.7766 | 0.4330 | 0.6874 | 70.70% | 2.81% |
+| 局部名 | 绑定约束 VAT | 0.7246 | 0.7846 | 0.4486 | 0.6866 | 70.00% | 5.61% |
+| 函数名 | 随机增强 | 0.7317 | 0.7928 | 0.4695 | 0.6846 | 71.95% | 2.44% |
+| 函数名 | 普通 VAT | 0.7332 | 0.7903 | 0.4654 | 0.7209 | 72.87% | 1.68% |
+| 函数名 | 仅表面位置 VAT | 0.7317 | 0.7919 | 0.4621 | 0.7134 | 71.65% | 3.66% |
+| 函数名 | 绑定约束 VAT | 0.7424 | 0.7998 | 0.4837 | 0.7216 | 71.95% | 4.88% |
+| 组合 | 随机增强 | 0.6938 | 0.7586 | 0.3848 | 0.6029 | 67.67% | 4.73% |
+| 组合 | 普通 VAT | 0.7070 | 0.7550 | 0.4099 | 0.6804 | 69.19% | 3.78% |
+| 组合 | 仅表面位置 VAT | 0.6938 | 0.7590 | 0.3808 | 0.6553 | 67.67% | 5.10% |
+| 组合 | 绑定约束 VAT | 0.7013 | 0.7618 | 0.3955 | 0.6595 | 67.67% | 6.62% |
+
+完整绑定 VAT 相对随机增强的 clean AUC/MCC 小幅提高（+0.0021/+0.0077），
+四类扰动后的 Accuracy 均略高，但局部名的成对鲁棒正确率从70.70%降到70.00%，
+函数名和组合扰动的成对正确率持平，四类翻转率均升高。普通 VAT 的成对鲁棒正确率
+在四类扰动中均最高、翻转率均最低，但 clean AUC/MCC 下降。当前结果未证明
+绑定约束能改善真实离散名字/注释变化下的稳定性；未据这些结果追加方法或调参。
+
+四组实际预算逐轮完全相同：每轮 BCE 为18,096次函数前向、48,357个原生窗口；
+VAT 有效函数为5,178/5,186/5,184，三次辅助前向的实际窗口为67,194/67,131/66,756。
+规范实验的非零方向范数在1±7e-9内，零方向和空资格集合均明确计数。
+逐轮损失、完整预算、所有检测/长度组指标及分母见
+[`comparison.metrics.json`](results/codebert_surface_vat_seed42/comparison.metrics.json)。
+
+54项相关测试通过，其中6项直接测试覆盖具体绑定、shadowing/范围循环、UTF-8 offset、
+混合 `(_` token、滑窗共享、极小方向归一化、梯度/dropout RNG、公共入口及保存重载；
+同时覆盖公共输入、变换和旧入口回归。真实 CodeBERT 的四组 smoke 均确认编码器与分类头更新，
+严格重载预测一致；三种 VAT 均有非零 KL 和分类头梯度，见
+[`smoke.metrics.json`](results/codebert_surface_vat_seed42/smoke.metrics.json)。
+
+实施中修复了 float32 范数下溢和混合 BPE 引用只部分扰动两个问题。早期受影响产物
+保存在 `results/codebert_surface_vat_fp32_norm_seed42` 和
+`results/codebert_surface_vat_mixed_token_seed42`，未纳入上表。普通 VAT 的三轮有效
+集合在整绑定冻结前后完全相同，且源码有效位置及 token 分组不变，已核对后复用其
+完成结果；核对依据记录在正常 smoke 结果中。
+
 ### 修复引导的局部风险学习
 
 `python -m vulnmechanism.cli local-risk` 扩展同一 `train_model`、输入构造、LoRA、

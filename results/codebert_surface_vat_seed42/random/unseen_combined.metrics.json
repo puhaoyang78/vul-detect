@@ -1,0 +1,42 @@
+{
+  "trained_on": "primevul",
+  "evaluated_on": "primevul",
+  "split": "valid",
+  "variant": "codebert_source",
+  "excluded_groups": [],
+  "decision_threshold": 0.39,
+  "samples": 529,
+  "positive": 242,
+  "negative": 287,
+  "metrics": {
+    "accuracy": 0.6937618147448015,
+    "precision": 0.7409638554216867,
+    "recall": 0.5082644628099173,
+    "f1": 0.6029411764705881,
+    "mcc": 0.3848186774901083,
+    "auc": 0.7585740202148185,
+    "tp": 123,
+    "tn": 244,
+    "fp": 43,
+    "fn": 119
+  },
+  "mechanism_subgroups": {},
+  "bce": 0.7111283540725708,
+  "fixed_0_5": {
+    "accuracy": 0.6465028355387523,
+    "precision": 0.7619047619047619,
+    "recall": 0.3305785123966942,
+    "f1": 0.46109510086455335,
+    "mcc": 0.30410068499774445,
+    "auc": 0.7585740202148185,
+    "tp": 80,
+    "tn": 262,
+    "fp": 25,
+    "fn": 162,
+    "samples": 529,
+    "threshold": 0.5
+  },
+  "finetuning_mode": "full",
+  "learning_rate": 1e-05,
+  "selected_epoch": 2
+}

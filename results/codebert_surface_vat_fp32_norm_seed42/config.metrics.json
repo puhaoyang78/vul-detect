@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "manifest": "data/benchmark/manifest_sven_commit_disjoint.jsonl",
+  "baseline_checkpoint": "results/codebert_finetuning_seed42/full/lr_1e-05/best.pt",
+  "model": "/home/PublicData/PHY-data/resource/codebert-base",
+  "seed": 42,
+  "initialization": "fresh matching pretrained CodeBERT; identical seed42 linear head",
+  "training": {
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01
+  },
+  "input_protocol": {
+    "encoder": "roberta",
+    "native_window": 512,
+    "logical_budget": 2048,
+    "source_budget": 2025,
+    "window_source_capacity": 489,
+    "stride": 244,
+    "pooling": "mean over unique source positions; repeated prefix/BOS/EOS averaged across windows",
+    "function_loss": "one BCE per original function"
+  },
+  "encoder_precision": "FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss",
+  "vat": {
+    "version": 1,
+    "epsilon": 1.0,
+    "xi": 0.001,
+    "power_iterations": 1,
+    "weight": 1.0,
+    "precision": "FP32 auxiliary encoder/head; float64 Bernoulli KL",
+    "norm": "per function L2 over expanded actual encoder tokens, including overlapping-window copies",
+    "sampling": "one view per original function per epoch; deterministic rotation through original and fixed random views",
+    "eligibility": "same nonempty surface-site functions in all four controls; others retain BCE"
+  },
+  "augmentation": "up to eight per-binding/name/multiple inline comment/combined proposals; no BPE buckets; fixed random up to two views",
+  "function_name": "input-only current declaration name; external APIs/callees unchanged",
+  "loss": "mean BCE over effective views per function; VAT on one deterministic rotating view per function per epoch",
+  "selection": "original clean Valid MCC threshold/epoch and tie-break; no Test",
+  "controls": [
+    "random",
+    "vat",
+    "surface",
+    "binding"
+  ]
+}

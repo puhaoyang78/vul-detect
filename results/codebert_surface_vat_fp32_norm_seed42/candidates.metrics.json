@@ -1,0 +1,71 @@
+{
+  "train": {
+    "total": 7820,
+    "covered": 5165,
+    "coverage": 0.6604859335038363,
+    "kinds": {
+      "combined": {
+        "eligible": 4062,
+        "coverage": 0.5194373401534527
+      },
+      "local_name": {
+        "eligible": 4340,
+        "coverage": 0.5549872122762148
+      },
+      "function_name": {
+        "eligible": 5026,
+        "coverage": 0.6427109974424552
+      },
+      "comment": {
+        "eligible": 4621,
+        "coverage": 0.5909207161125319
+      }
+    },
+    "skip_candidates": {
+      "parse_error": 2596,
+      "unused_binding": 1071,
+      "macro_ambiguous_binding": 4097,
+      "unsupported_binding": 1416,
+      "opaque_or_preprocessor_binding": 1777,
+      "would_displace_original_visible_source": 3256,
+      "ambiguous_function": 19,
+      "unresolved_same_name": 57,
+      "column_sensitive_source": 9,
+      "identical_encoder_input": 2,
+      "edit_crosses_visible_boundary": 8
+    }
+  },
+  "valid": {
+    "total": 1014,
+    "covered": 685,
+    "coverage": 0.6755424063116371,
+    "kinds": {
+      "combined": {
+        "eligible": 529,
+        "coverage": 0.5216962524654832
+      },
+      "local_name": {
+        "eligible": 570,
+        "coverage": 0.5621301775147929
+      },
+      "function_name": {
+        "eligible": 656,
+        "coverage": 0.6469428007889546
+      },
+      "comment": {
+        "eligible": 604,
+        "coverage": 0.5956607495069034
+      }
+    },
+    "skip_candidates": {
+      "unused_binding": 91,
+      "unsupported_binding": 369,
+      "parse_error": 323,
+      "macro_ambiguous_binding": 891,
+      "would_displace_original_visible_source": 519,
+      "opaque_or_preprocessor_binding": 373,
+      "identical_encoder_input": 2,
+      "edit_crosses_visible_boundary": 2
+    }
+  }
+}

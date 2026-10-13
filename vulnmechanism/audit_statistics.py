@@ -356,14 +356,14 @@ def shallow_candidate_scores(fitted, texts, statistics):
     return scores
 
 
-def visible_semantic_candidates(source, language, tokenizer, source_budget, *, unseen=False, file_name=''):
+def visible_semantic_candidates(source, language, tokenizer, source_budget, *, unseen=False, file_name='', surface=False):
     """Reject a view if it displaces any part of the original visible prefix."""
-    from .syntax import semantic_preserving_candidates, apply_source_edits, resolve_language
+    from .syntax import semantic_preserving_candidates, surface_preserving_candidates, apply_source_edits, resolve_language
     language = resolve_language(source, language, file_name)
     original, before = visible_source_statistics(source, tokenizer, source_budget)
     original_ids = tokenizer(source, add_special_tokens=False, truncation=True,
                              max_length=source_budget)['input_ids']
-    proposed, reasons = semantic_preserving_candidates(source, language, unseen=unseen)
+    proposed, reasons = (surface_preserving_candidates if surface else semantic_preserving_candidates)(source, language, unseen=unseen)
     reasons = Counter(reasons)
     kept = []
     for candidate in proposed:

@@ -495,16 +495,26 @@ def declarator_identifier(node):
     return node if node is not None and node.type == 'identifier' else None
 
 
-def function_bindings(function, source: bytes):
+def function_bindings(function, source: bytes, *, strict=True):
     """Position/scope bindings, also usable in ordinary call arguments."""
     body = function.child_by_field_name('body')
     if body is None:
         raise ValueError('missing function body')
     bindings, parameter_index = [], 0
+    signature_lists=[n for n in walk(function.child_by_field_name('declarator')) if n.type=='parameter_list']
+    signature_parameters=signature_lists[0] if signature_lists else None
     for node in walk(function):
-        if node.type not in {'parameter_declaration', 'optional_parameter_declaration', 'declaration'}:
+        if not strict and node.type=='enumerator':
+            name=node.child_by_field_name('name');scope=node.parent
+            while scope is not None and scope.type not in _BINDING_SCOPES:scope=scope.parent
+            if name is not None and scope is not None:
+                bindings.append(dict(name=text(name,source),declaration=name,statement=node,scope=scope,
+                    parameter_index=None,occurrences=[],supported=False))
             continue
-        parameter = node.type != 'declaration'
+        if node.type not in ({'parameter_declaration','optional_parameter_declaration','declaration'} |
+                            ({'for_range_loop'} if not strict else set())):
+            continue
+        parameter = node.type in {'parameter_declaration','optional_parameter_declaration'}
         index = parameter_index if parameter else None
         if parameter:
             parameter_index += 1
@@ -513,14 +523,42 @@ def function_bindings(function, source: bytes):
         for decl in node.children_by_field_name('declarator'):
             name = declarator_identifier(decl)
             if name is None:
-                raise ValueError('unsupported local declarator')
-            scope = function if parameter else node.parent
-            while scope is not None and not parameter and scope.type not in _BINDING_SCOPES:
+                if strict:
+                    raise ValueError('unsupported local declarator')
+                # Unsupported declarations remain shadowing barriers. Never resolve
+                # their references to a same-name supported outer declaration.
+                declarator = decl.child_by_field_name('declarator') if decl.type == 'init_declarator' else decl
+                names = [n for n in walk(declarator) if n.type == 'identifier'] if declarator is not None else []
+            else:
+                names = [name]
+            scope = function if parameter else node if node.type=='for_range_loop' else node.parent
+            while scope is not None and not parameter and scope.type not in _BINDING_SCOPES|({'for_range_loop'} if not strict else set()):
                 scope = scope.parent
             if scope is None:
-                raise ValueError('unsupported local scope')
-            bindings.append(dict(name=text(name, source), declaration=name, statement=node,
-                                 scope=scope, parameter_index=index, occurrences=[]))
+                if strict: raise ValueError('unsupported local scope')
+                continue
+            opaque = node.parent
+            while opaque is not None and opaque != function and opaque.type not in {
+                    'lambda_expression','class_specifier','struct_specifier','union_specifier','function_definition'}:
+                opaque = opaque.parent
+            supported = name is not None and opaque == function
+            if not strict and parameter and node.parent!=signature_parameters:
+                supported=False
+                scope=node.parent
+                while scope is not None and scope!=function and scope.type not in _BINDING_SCOPES|{'catch_clause','lambda_expression','function_declarator'}:
+                    scope=scope.parent
+                if scope is None:continue
+                if scope.type=='catch_clause' and name is not None and opaque==function:supported=True
+            if not strict and opaque is not None and opaque != function and parameter:
+                scope = opaque
+            if not strict and any(n.type in {'attribute_specifier','attribute_declaration','gnu_asm_expression'}
+                    or n.type == 'storage_class_specifier' and text(n,source) in {'extern','typedef'} for n in walk(node)):
+                supported = False
+            for name_node in names:
+                binding = dict(name=text(name_node, source), declaration=name_node, statement=node,
+                    scope=scope, parameter_index=index if strict or node.parent==signature_parameters else None, occurrences=[])
+                if not strict: binding['supported'] = supported
+                bindings.append(binding)
     return bindings
 
 
@@ -532,6 +570,155 @@ def resolve_local_binding(node, bindings, source: bytes):
                and b['scope'].start_byte <= node.start_byte < b['scope'].end_byte]
     return min(matches, key=lambda b: (b['scope'].end_byte-b['scope'].start_byte,
                                       -b['declaration'].start_byte)) if matches else None
+
+
+@lru_cache(maxsize=16384)
+def surface_binding_layout(source_text: str, language: str) -> dict:
+    """Per-binding source spans; ordinary calls/globals do not reject a function.
+
+    Recognizable macro uses, opaque captures and unsupported declarations reject
+    the affected binding. Unresolved API/type/member names are never surface sites.
+    The legacy scope_safe_rename protocol stays available for saved experiments.
+    """
+    from collections import Counter
+    raw = source_text.encode()
+    root = parser_for(language).parse(raw).root_node
+    if root.has_error: return dict(bindings=[],function_name=[],comment_points=[],reasons={'parse_error':1})
+    nodes = list(walk(root))
+    functions = [n for n in nodes if n.type=='function_definition']
+    if len(functions)!=1: return dict(bindings=[],function_name=[],comment_points=[],reasons={'ambiguous_function':1})
+    function = functions[0];body = function.child_by_field_name('body')
+    if body is None: return dict(bindings=[],function_name=[],comment_points=[],reasons={'missing_body':1})
+    coordinates = byte_character_map(source_text)
+    def span(n): return [coordinates[n.start_byte],coordinates[n.end_byte]]
+    declarator = function.child_by_field_name('declarator')
+    while declarator is not None and declarator.type != 'identifier':
+        if declarator.type in {'qualified_identifier','scoped_identifier'}:
+            declarator = declarator.child_by_field_name('name')
+        else: declarator = declarator.child_by_field_name('declarator')
+    function_name = [span(declarator)] if declarator is not None else []
+    bindings = function_bindings(function,raw,strict=False)
+    by_name={}
+    for b in bindings:by_name.setdefault(b['name'],[]).append(b)
+    declarations = {(b['declaration'].start_byte,b['declaration'].end_byte):b for b in bindings}
+    unsafe = {id(b):set() for b in bindings}
+    for n in nodes:
+        if n.type!='identifier': continue
+        binding = declarations.get((n.start_byte,n.end_byte)) or resolve_local_binding(n,by_name.get(text(n,raw),[]),raw)
+        if binding is None: continue
+        binding['occurrences'].append(n)
+        parent = n.parent
+        while parent is not None and parent != function:
+            if parent.type.startswith('preproc_') or parent.type in {
+                    'lambda_expression','class_specifier','struct_specifier','union_specifier','gnu_asm_expression'}:
+                unsafe[id(binding)].add('opaque_or_preprocessor_binding')
+            if parent.type == 'call_expression':
+                callee = parent.child_by_field_name('function')
+                if callee is not None and callee.type == 'identifier':
+                    name = text(callee,raw)
+                    if name.upper()==name or name in {'min','max','likely','unlikely','offsetof','container_of'}:
+                        unsafe[id(binding)].add('macro_ambiguous_binding')
+            parent = parent.parent
+    # Bare same-name identifiers whose declaration could not be resolved are
+    # evidence of an unsupported binding, not permission to edit a subset.
+    assigned = {(n.start_byte,n.end_byte) for b in bindings for n in b['occurrences']}
+    for n in nodes:
+        if (n.type=='identifier' and body.start_byte<=n.start_byte<body.end_byte
+                and (n.start_byte,n.end_byte) not in assigned
+                and n.parent.type not in {'qualified_identifier','scoped_identifier'}):
+            for b in by_name.get(text(n,raw),[]):unsafe[id(b)].add('unresolved_same_name')
+    result,reasons = [],Counter()
+    column_sensitive = any(v in source_text for v in ('__builtin_COLUMN','__COLUMN__','source_location'))
+    for b in bindings:
+        issues = unsafe[id(b)]
+        if not b['supported']: issues.add('unsupported_binding')
+        if column_sensitive: issues.add('column_sensitive_source')
+        if len(b['occurrences'])<2: issues.add('unused_binding')
+        if issues:
+            reasons.update(issues);continue
+        occurrences = sorted({tuple(span(n)) for n in b['occurrences']})
+        result.append(dict(name=b['name'],declaration=span(b['declaration'])[0],
+            kind='parameter' if b['parameter_index'] is not None else 'local',spans=occurrences))
+    points = [coordinates[body.start_byte+1]]
+    for n in body.named_children:
+        if n.type!='comment' and not n.type.startswith('preproc_'):
+            at = coordinates[n.end_byte]
+            line = source_text[source_text.rfind('\n',0,at)+1:at]
+            if not line.lstrip().startswith('#') and not line.rstrip().endswith('\\'):
+                points.append(at)
+    if column_sensitive: points=[]
+    return dict(bindings=result,function_name=function_name,comment_points=sorted(set(points)),reasons=dict(reasons))
+
+
+def surface_preserving_candidates(source: str, language: str, *, unseen=False):
+    """Eight label-free proposals: bound names, declaration name, comments, combined.
+
+    Function-name views are explicitly input-only: change the current declaration
+    name, never callees/external APIs or project source files. All comments are
+    single-line insertions outside executable token spans and call arguments.
+    """
+    from collections import Counter
+    layout = surface_binding_layout(source,language)
+    skipped = Counter(layout['reasons']);result=[];seen=set()
+    names = ('probe_local','probe_slot') if unseen else ('surface_item','surface_value')
+    fn_names = ('probe_function','probe_routine') if unseen else ('surface_function','surface_routine')
+    words = (('amber orchard entry','cedar linen marker'),('amber orchard entry '*6,'cedar linen marker '*4)) if unseen else (
+        ('routine note','ordinary section'),('routine note '*3,'ordinary section '*2))
+    all_names = {text(n,source.encode()) for n in walk(parser_for(language).parse(source.encode()).root_node) if n.type.endswith('identifier')}
+    def fresh(name):
+        while name in all_names: name += '_'
+        return name
+    def mapped(position,edits): return position+sum(len(v)-(b-a) for a,b,v in edits if b<=position and a<position)
+    def add(kind,edits,renamed=None):
+        edits=sorted(edits)
+        if not edits:return
+        changed=apply_source_edits(source,edits)
+        if changed==source or changed in seen:return
+        if parser_for(language).parse(changed.encode()).root_node.has_error:
+            raise ValueError('surface transformation produced invalid syntax')
+        before_tokens,after_tokens=source_token_spans(source),source_token_spans(changed)
+        if len(before_tokens)!=len(after_tokens):raise ValueError('surface transformation changed executable lexical token count')
+        allowed={(a,b) for a,b,v in edits if b>a}
+        if any(old!=new and (a,b) not in allowed for (old,a,b),(new,_,_) in zip(before_tokens,after_tokens)):
+            raise ValueError('surface transformation changed an execution token')
+        if renamed is not None:
+            new_layout=surface_binding_layout(changed,language)
+            declaration=mapped(renamed['declaration'],edits)
+            matches=[b for b in new_layout['bindings'] if b['declaration']==declaration]
+            expected=[(mapped(a,edits),mapped(a,edits)+len(next(v for x,y,v in edits if (x,y)==(a,b)))) for a,b in renamed['spans']]
+            if len(matches)!=1 or sorted(map(tuple,matches[0]['spans']))!=sorted(expected):
+                raise ValueError('rename failed declaration/reference binding correspondence')
+        insertions=[];shift=0
+        for a,b,value in edits:
+            if a==b: insertions.append([a+shift,a+shift+len(value)])
+            shift += len(value)-(b-a)
+        result.append(dict(kind=kind,edits=edits,inserted_comment_spans=insertions,
+                           function_name_input_only=kind in {'function_name','combined'}))
+        seen.add(changed)
+    bindings=layout['bindings']
+    parameters=[b for b in bindings if b['kind']=='parameter']
+    locals_=[b for b in bindings if b['kind']=='local']
+    selected=([parameters[0],locals_[0]] if parameters and locals_ else bindings[:2])
+    if len(selected)==1:selected*=2
+    rename_edits=[]
+    for index,binding in enumerate(selected):
+        edits=[(a,b,fresh(names[index])) for a,b in binding['spans']]
+        add('local_name',edits,binding);rename_edits.append((edits,binding))
+    function_edits=[]
+    for name in fn_names:
+        edits=[(a,b,fresh(name)) for a,b in layout['function_name']]
+        add('function_name',edits);function_edits.append(edits)
+    comment_edits=[]
+    points=layout['comment_points']
+    for index,texts in enumerate(words):
+        chosen=points[::max(1,len(points)//(index+2))][:index+2]
+        edits=[(at,at,f' /* {texts[j%len(texts)].strip()} */ ') for j,at in enumerate(chosen)]
+        add('comment',edits);comment_edits.append(edits)
+    for i in range(2):
+        renamed=rename_edits[i][1] if i<len(rename_edits) else None
+        edits=(rename_edits[i][0] if renamed is not None else [])+function_edits[i]+comment_edits[i]
+        if function_edits[i] and comment_edits[i] and renamed is not None:add('combined',edits,renamed)
+    return result,dict(skipped)
 
 
 def _statement_extent(node):
