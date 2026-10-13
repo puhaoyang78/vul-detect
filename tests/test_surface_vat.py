@@ -203,8 +203,20 @@ class SurfaceVATTests(unittest.TestCase):
                     epochs=3,batch_size=4,gradient_accumulation=2,learning_rate=1e-5,device='cpu',finetuning_mode='full')
                 for split in ('train','valid'):_finetuning_evaluate(data,baseline.parent,split,cp,args)
                 result=_codebert_finetuning(args)
-                self.assertEqual(set(result['valid']),set(core.SURFACE_VAT_MODES))
+                self.assertEqual(set(result['valid']),{'bce',*core.SURFACE_VAT_MODES})
                 self.assertEqual(len(result['matched_training_budgets']),3)
+                plain=result['valid']['bce']
+                self.assertEqual(plain['checkpoint'],str(baseline))
+                self.assertTrue(plain['reused'])
+                self.assertFalse(plain['data_augmentation']);self.assertFalse(plain['vat'])
+                self.assertEqual(plain['bce_views_per_function'],1)
+                self.assertEqual(plain['threshold'],cp['decision_threshold'])
+                self.assertEqual(plain['selected_epoch'],cp['selected_epoch'])
+                self.assertEqual(result['matched_optimizer_budgets'],[(i,1) for i in (1,2,3)])
+                self.assertFalse((root/'surface/bce/best.pt').exists())
+                for kind in ('comment','local_name','function_name','combined'):
+                    self.assertEqual(plain['robustness'][kind]['eligible'],2)
+                    self.assertTrue((root/f'surface/bce/unseen_{kind}.predictions.jsonl').exists())
                 for mode in core.SURFACE_VAT_MODES:
                     saved=torch.load(root/f'surface/{mode}/best.pt',weights_only=False)
                     self.assertEqual(saved['training_config'],cp['training_config'])

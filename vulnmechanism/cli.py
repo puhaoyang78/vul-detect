@@ -1230,14 +1230,19 @@ def _surface_vat_report(rows,entries,root,config,coverage,args):
             candidate=entry['candidates'][index]
             views[kind].append(dict(row,raw_source=apply_source_edits(row['raw_source'],candidate['edits'])))
     results={};histories=[]
-    for mode in core.SURFACE_VAT_MODES:
-        run=root/mode;cp=torch.load(run/'best.pt',map_location='cpu',weights_only=False)
-        clean=_finetuning_evaluate(rows,run,'valid',cp,args)
-        originals=list(map(json.loads,(run/'valid.predictions.jsonl').open()));original={r['sample_key']:r for r in originals}
+    for mode in ('bce',*core.SURFACE_VAT_MODES):
+        run=root/mode
+        target=Path(args.baseline_checkpoint) if mode=='bce' else run/'best.pt'
+        cp=torch.load(target,map_location='cpu',weights_only=False)
+        # Reuse the validated original BCE model and its clean predictions;
+        # save only the new perturbation evaluations in this experiment.
+        clean_run=target.parent if mode=='bce' else run
+        clean=_finetuning_evaluate(rows,clean_run,'valid',cp,args)
+        originals=list(map(json.loads,(clean_run/'valid.predictions.jsonl').open()));original={r['sample_key']:r for r in originals}
         robustness={}
         for kind,changed in views.items():
             if changed:
-                metrics=_finetuning_evaluate(changed,run,'valid',cp,args,output_name=f'unseen_{kind}')
+                metrics=_finetuning_evaluate(changed,run,'valid',cp,args,output_name=f'unseen_{kind}',checkpoint_path=target)
                 preds=list(map(json.loads,(run/f'unseen_{kind}.predictions.jsonl').open()))
             else:metrics=None;preds=[]
             n=len(preds);both=sum(r['prediction']==original[r['sample_key']]['prediction']==r['label'] for r in preds)
@@ -1245,14 +1250,22 @@ def _surface_vat_report(rows,entries,root,config,coverage,args):
             robustness[kind]=dict(eligible=n,total=len(valid),positive=sum(r['label'] for r in preds),
                 coverage=n/len(valid),detection=metrics,robust_correct=both,robust_accuracy=both/n if n else None,
                 flipped=flips,flip_rate=flips/n if n else None,**_length_detection_metrics(preds,original))
-        results[mode]=dict(checkpoint=str(run/'best.pt'),selected_epoch=cp['selected_epoch'],threshold=cp['decision_threshold'],
+        results[mode]=dict(checkpoint=str(target),selected_epoch=cp['selected_epoch'],threshold=cp['decision_threshold'],
             clean=clean,robustness=robustness)
-        history=[r for r in map(json.loads,(run/'best.training.jsonl').open()) if r['event']=='epoch']
-        histories.append([tuple(r[k] for k in ('epoch','optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots',
-            'vat_function_forwards','vat_encoder_sequences','vat_encoder_token_slots','vat_eligible_functions')) for r in history])
+        history=[r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch']
+        if mode!='bce':
+            histories.append([tuple(r[k] for k in ('epoch','optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots',
+                'vat_function_forwards','vat_encoder_sequences','vat_encoder_token_slots','vat_eligible_functions')) for r in history])
+        else:
+            results[mode].update(reused=True,data_augmentation=False,vat=False,bce_views_per_function=1)
         results[mode]['training']=history
+        del cp
     if any(history!=histories[0] for history in histories):raise ValueError('four surface VAT training/data budgets differ')
-    report=dict(config=config,coverage=coverage,valid=results,matched_training_budgets=histories[0])
+    optimizer_budget=[(r['epoch'],r['optimizer_steps']) for r in results['bce']['training']]
+    if any([(r['epoch'],r['optimizer_steps']) for r in result['training']]!=optimizer_budget for result in results.values()):
+        raise ValueError('BCE and surface VAT optimizer budgets differ')
+    report=dict(config=config,coverage=coverage,valid=results,matched_training_budgets=histories[0],
+        matched_optimizer_budgets=optimizer_budget)
     write_json(root/'comparison.metrics.json',report)
     return report
 
