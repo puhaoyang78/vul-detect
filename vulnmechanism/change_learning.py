@@ -376,7 +376,8 @@ def bernoulli_js(left, right):
     from torch.nn import functional as F
     if left.shape != right.shape:
         raise ValueError('Bernoulli JS shape mismatch')
-    logits = torch.stack((left.float(), right.float()))
+    dtype=torch.float64 if left.dtype==torch.float64 or right.dtype==torch.float64 else torch.float32
+    logits = torch.stack((left.to(dtype), right.to(dtype)))
     log_p = torch.stack((F.logsigmoid(-logits), F.logsigmoid(logits)), dim=-1)
     log_m = torch.logsumexp(log_p, dim=0) - math.log(2)
     return (log_p.exp() * (log_p - log_m)).sum(dim=-1).mean(dim=0)

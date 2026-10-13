@@ -223,8 +223,9 @@ def build_parser() -> argparse.ArgumentParser:
         help='same-pool random/high-low semantic views; default: both new full fine-tuning runs')
     shallow_method.add_argument('--conditional-length-debiasing', action='store_true',
         help='only C: existing random views plus label-conditional logit length GRL, lambda=.05')
-    shallow_method.add_argument('--surface-vat',nargs='?',const='all',choices=('all','random','vat','surface','binding'),
-        help='shared expanded real views: random, ordinary VAT, surface positions, binding-tied surface VAT')
+    shallow_method.add_argument('--robustness',nargs='?',const='all',
+        choices=('all','bce','vat','ours','ours_uniform','ours_no_consistency','ours_no_vat','ours_no_search'),
+        help='main comparison bce/vat/ours; optional ablations are explicitly selected')
     finetuning.add_argument('--augmentation-dir', default='results/codebert_shallow_augmentation_seed42',
         help='completed random augmentation/cache to reuse for conditional length C')
     finetuning.add_argument('--baseline-checkpoint', default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
@@ -297,7 +298,7 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None
     if output.exists() != predictions.exists():
         raise FileExistsError(f'incomplete evaluation artifacts: {run}/{split}; inspect before rerunning')
     if output.exists():
-        cached = [json.loads(l) for l in predictions.open()]
+        with predictions.open() as handle:cached = [json.loads(l) for l in handle]
         expected = [identity(r) for r in rows if r['split'] == split]
         if expected != [{k:r[k] for k in expected[0]} for r in cached]:
             raise ValueError(f'cached prediction members/source differ: {predictions}')
@@ -317,7 +318,7 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None
 
 
 def _codebert_finetuning(args):
-    if getattr(args,'surface_vat',None):return _codebert_surface_vat(args)
+    if getattr(args,'robustness',None):return _codebert_robustness(args)
     if getattr(args, 'conditional_length_debiasing', False):
         return _codebert_conditional_length(args)
     if getattr(args, 'shallow_augmentation', None):
@@ -469,7 +470,7 @@ def _matching_full_baseline(args):
             or base.get('source_max_length') != 2048 or base.get('model_path') != args.model
             or base.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION
             or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision',
-                                       'augmentation_config', 'conditional_length_config','surface_vat_config'))):
+                                       'augmentation_config', 'conditional_length_config','surface_vat_config','robustness_options'))):
         raise ValueError('requires the matching fresh full-CodeBERT BCE baseline and original manifest')
     training = base['training_config']
     if (training['epochs'] != 3 or training['weight_decay'] != .01
@@ -1039,235 +1040,408 @@ def _conditional_length_report(rows,root,augmentation_root,config,base,random_cp
     return report
 
 
-def _surface_vat_sources(rows,entries):
-    from .syntax import apply_source_edits
-    if [e['sample_key'] for e in entries]!=[r['sample_key'] for r in rows]:
-        raise ValueError('surface candidate cache members/order differ')
-    sources={};choices={}
-    for row,entry in zip(rows,entries):
-        selected=entry['selections'];pool=entry['candidates']
-        if row['split']=='train':
-            if not isinstance(selected,list) or len(selected)>2 or len(set(selected))!=len(selected):
-                raise ValueError('invalid fixed surface random selection')
-            if any(not 0<=i<len(pool) for i in selected):raise ValueError('surface selection outside candidate pool')
-            sources[row['sample_key']]=[dict(raw_source=apply_source_edits(row['raw_source'],pool[i]['edits']),
-                inserted_comment_spans=pool[i]['inserted_comment_spans']) for i in selected]
-            choices[row['sample_key']]=selected
-    return sources,choices
+def _robustness_fixed_candidates(rows,materials,root,tokenizer,source_budget):
+    from . import audit_statistics as data
+    from .syntax import SURFACE_OPERATIONS
+    from .change_learning import write_json
+    import random
+    paths={}
+    for bank in ('train','heldout'):
+        name='fixed' if bank=='train' else 'heldout'
+        path=root/f'{name}.candidates.jsonl';paths[name]=path
+        if path.exists():
+            with path.open() as handle:cached=[json.loads(l) for l in handle]
+            if [r['sample_key'] for r in cached]!=[r['sample_key'] for r in rows if r['split']=='valid']:
+                raise ValueError('robustness candidate cache members/order differ')
+            continue
+        entries=[]
+        for index,row in enumerate(r for r in rows if r['split']=='valid'):
+            groups={};reasons={}
+            for kind in (*SURFACE_OPERATIONS,'combined'):
+                combos=([kind],) if kind!='combined' else (
+                    materials['rules']['heldout_combinations'] if bank=='heldout' else
+                    (['local_name','comment_insert'],['local_name','local_name','comment_replace']))
+                candidates=[]
+                for combo in combos:
+                    result=data.search_surface_views([row],None,tokenizer,source_budget,materials,
+                        seed=42,bank=bank,purpose=name+'/'+kind+'/'+','.join(combo),required_combination=combo)[0]
+                    for key,value in result['reasons'].items():reasons[key]=reasons.get(key,0)+value
+                    candidates.extend(c for c in result['visited'] if len(c['units'])==len(combo))
+                rng=random.Random(data.surface_seed(42,0,row['sample_key'],name+'/'+kind))
+                rng.shuffle(candidates)
+                groups[kind]=[{k:v for k,v in c.items() if k!='raw_source'} for c in candidates[:2]]
+            entries.append(dict(sample_key=row['sample_key'],groups=groups,reasons=reasons))
+            if (index+1)%100==0:print(f'{name} candidates {index+1}/'+str(sum(r['split']=='valid' for r in rows)),flush=True)
+        with path.open('x') as handle:
+            for entry in entries:handle.write(json.dumps(entry)+'\n')
+        write_json(root/f'{name}.coverage.metrics.json',{
+            kind:dict(eligible=sum(bool(e['groups'][kind]) for e in entries),total=len(entries),
+                candidates=sum(len(e['groups'][kind]) for e in entries)) for kind in (*SURFACE_OPERATIONS,'combined')})
+    return paths
 
 
-def _surface_vat_smoke(rows,sources,augmentation,root,base,args):
+def _robustness_smoke(rows,root,config,materials,args,baseline):
     import tempfile
     import torch
-    from . import model as core
-    from .change_learning import write_json
-    train=[r for r in rows if r['split']=='train' and sources[r['sample_key']]]
-    chosen=[r for y in (0,1) for r in [r for r in train if r['label']==y][:4]]
-    if len(chosen)!=8:raise ValueError('surface VAT smoke needs four transformable Train functions per label')
+    from . import model as core,audit_statistics as data
+    from .change_learning import bernoulli_js,write_json
+    from .syntax import surface_binding_layout,resolve_language
+    train=[r for r in rows if r['split']=='train']
+    unsupported=[r for r in train if any(k in surface_binding_layout(r['raw_source'],resolve_language(r['raw_source'],r.get('language','c'),r.get('file_name','')))['reasons']
+                                     for k in ('parse_error','ambiguous_function','missing_body'))]
+    if not unsupported:raise ValueError('real smoke requires a Train function without legal syntax transformations')
+    chosen=[r for y in (0,1) for r in [r for r in train if r['label']==y and r['sample_key']!=unsupported[0]['sample_key']][:4]]
+    chosen[0]=unsupported[0]
+    if {r['label'] for r in chosen}!={0,1}:raise ValueError('smoke needs both labels')
     chosen+=[next(r for r in rows if r['split']=='valid' and r['label']==y) for y in (0,1)]
-    device=core._resolve_device(args.device)
+    device=core._resolve_device(args.device);tokenizer=core.AutoTokenizer.from_pretrained(args.model)
+    builder=core.InputBuilder(tokenizer,source_max_length=2048,context_max_length=384)
     core._seed_everything(42)
     fresh=core._build_model('codebert_source',args.model,device=device,lora_r=16,lora_alpha=32,lora_dropout=.05,
-        target_modules=tuple(base['target_modules']),gradient_checkpointing=False,fusion_dim=256,fusion_heads=8,finetuning_mode='full')
-    embedding=fresh.encoder.state_dict()['embeddings.word_embeddings.weight'].detach().cpu().clone()
-    head=core._cpu_state(fresh.task_modules.state_dict())
-    tokenizer=core.AutoTokenizer.from_pretrained(args.model)
-    builder=core.InputBuilder(tokenizer,source_max_length=2048,context_max_length=base['context_max_length'])
-    # Real CodeBERT merges `(_`; freezing only that token would leave an
-    # inconsistent partial perturbation of the same underscored binding.
-    from .syntax import surface_binding_layout
-    mixed_source='int f(int _x,int y){use(_x);return _x+y;}'
-    keys,_=builder.surface_tokens(mixed_source,'c','',())
-    offsets=tokenizer(mixed_source,add_special_tokens=False,return_offsets_mapping=True)['offset_mapping']
-    for binding in surface_binding_layout(mixed_source,'c')['bindings']:
-        touched=[keys[i] for i,(a,b) in enumerate(offsets) if any(a<z and b>x for x,z in binding['spans'])]
-        expected=None if binding['name']=='_x' else ('binding',binding['declaration'])
-        if not touched or any(key!=expected for key in touched):
-            raise ValueError('real tokenizer violates whole-binding surface constraints')
-    probe=dict(chosen[0],**sources[chosen[0]['sample_key']][0])
+        target_modules=tuple(baseline['target_modules']),gradient_checkpointing=False,fusion_dim=256,fusion_heads=8,finetuning_mode='full')
+    initial_embedding=fresh.encoder.state_dict()['embeddings.word_embeddings.weight'].detach().cpu().clone()
+    initial_head=core._cpu_state(fresh.task_modules.state_dict())
+    # Train-only numerical diagnosis at both fresh and already fitted parameters.
+    lengths=[len(builder._encode(r['raw_source'])) for r in train]
+    probe=[]
+    for low,high in ((0,128),(129,512),(513,2025),(2026,10**9)):
+        for y in (0,1):probe.extend([r for r,n in zip(train,lengths) if r['label']==y and low<=n<=high][:2])
+    numeric={};xi=.001
+    fitted=core._load_model(baseline,device=device)
+    for scale in (.001,.01):
+        checks={};lost=0
+        for label,model in (('fresh',fresh),('fitted',fitted)):
+            for alpha in (0.,3.):
+                infos=[]
+                for i in range(0,len(probe),2):
+                    values,info=core.vat_loss(model,probe[i:i+2],builder,dict(core.VAT_CONFIG,xi=scale),
+                        alpha=alpha,device=device,noise_seed=42+i,diagnose=True)
+                    infos.append(info);lost+=info['signal_loss'];del values
+                adversarial=[v for info in infos for v in info['adversarial_kl']]
+                noise=[v for info in infos for v in info['random_kl']]
+                if sum(adversarial)<=sum(noise):
+                    raise ValueError(f'{label} alpha={alpha}: VAT direction does not beat same-radius random noise on Train probes')
+                checks[label+'/'+str(alpha)]=infos
+        numeric[str(scale)]=checks
+        if lost==0:xi=scale;break
+        if scale==.01:raise ValueError('VAT probe still loses nonzero analytical direction signal')
+    del fitted
+    cfg=dict(core.VAT_CONFIG,xi=xi)
     signals={}
-    for mode in ('vat','surface','binding'):
-        config=dict(core.SURFACE_VAT_CONFIG,mode=mode)
-        values,info,delta=core.surface_vat_loss(fresh,[probe],builder,config,device=device,noise_seed=42,return_delta=True)
+    for alpha in (0.,3.):
+        values,info,delta=core.vat_loss(fresh,[chosen[1]],builder,cfg,alpha=alpha,device=device,noise_seed=42,
+                                      return_delta=True,diagnose=True)
         gradient=torch.autograd.grad(values.sum(),fresh.task_modules['classifier'].weight)[0]
-        if info['eligible']!=1 or float(values.detach().sum())<=0 or float(gradient.norm())<=0:
-            raise ValueError(f'real {mode} VAT has no consistency signal or classifier gradient')
-        torch.testing.assert_close(delta.square().sum().sqrt(),delta.new_tensor(1.),rtol=1e-5,atol=1e-5)
-        batch,groups,_,_=builder.vat_batch([probe],mode=mode,device=device)
-        if torch.any(delta[groups<0]!=0):raise ValueError('VAT modified a forbidden site')
-        if mode=='binding':
-            for g in groups[groups>=0].unique():
-                selected=delta[groups==g]
-                torch.testing.assert_close(selected,selected[0].expand_as(selected),rtol=0,atol=0)
-        signals[mode]=dict(info,classifier_gradient_norm=float(gradient.norm()),
-            forbidden_zero=True,binding_shared=mode=='binding')
+        if float(values.detach().sum())<=0 or float(gradient.norm())<=0:raise ValueError('real VAT has no model gradient')
+        signals[str(alpha)]=dict(info,classifier_gradient_norm=float(gradient.norm()))
         del values,gradient,delta
-    del fresh
-    report=dict(signals=signals,checks={},mixed_name_binding_frozen=True,
-        train_members=[r['sample_key'] for r in chosen[:8]],valid_members=[r['sample_key'] for r in chosen[8:]])
-    budgets=[]
-    with tempfile.TemporaryDirectory(prefix='vul_detect_surface_vat_') as tmp:
-        for mode in core.SURFACE_VAT_MODES:
+    proposal=data.search_surface_views([chosen[1]],None,tokenizer,config['source_budget'],materials,
+        seed=42,epoch=1,random_selection=True)[0]['selected']
+    if proposal is None:raise ValueError('real JS smoke requires a legal nonidentity Train view')
+    pair=[chosen[1],dict(chosen[1],raw_source=proposal['raw_source'])]
+    with core._auxiliary_mode(fresh):
+        logits=fresh(*builder.codebert_batch(pair,device=device),force_fp32=True)
+        logits.retain_grad();js=bernoulli_js(logits[:1],logits[1:]).sum()
+        js.backward()
+        if not torch.all(logits.grad.abs()>0):raise ValueError('real JS does not update both prediction branches')
+    report=dict(xi=xi,numerical=numeric,signals=signals,real_js=float(js.detach()),
+        untransformable=unsupported[0]['sample_key'],checks={})
+    del fresh,logits,js
+    with tempfile.TemporaryDirectory(prefix='vul_detect_robustness_smoke_') as tmp:
+        for mode in ('bce','vat','ours'):
             target=Path(tmp)/mode/'best.pt'
-            views={r['sample_key']:sources[r['sample_key']] for r in chosen[:8]}
-            config=dict(core.SURFACE_VAT_CONFIG,mode=mode,weight=0. if mode=='random' else 1.)
+            opts=None if mode=='bce' else core.robustness_config(mode,xi=xi)
             cp=core.train_model(None,target,records=chosen,variant='codebert_source',model_path=args.model,
-                source_max_length=2048,context_max_length=base['context_max_length'],seed=42,device=args.device,
-                finetuning_mode='full',function_views=views,
-                augmentation_config=dict(augmentation,choices={k:augmentation['choices'][k] for k in views}),
-                surface_vat_config=config,log_every=1,**dict(base['training_config'],epochs=1))
-            checks=dict(encoder_updated=not torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'],embedding),
-                classifier_updated=any(not torch.equal(cp['task_state'][k],v) for k,v in head.items()))
+                source_max_length=2048,context_max_length=384,seed=42,device=args.device,finetuning_mode='full',
+                robustness_options=opts,surface_materials=materials if mode=='ours' else None,log_every=1,
+                **dict(config['training'],epochs=1))
+            checks=dict(encoder_updated=not torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'],initial_embedding),
+                classifier_updated=any(not torch.equal(cp['task_state'][k],v) for k,v in initial_head.items()))
             restored=core._load_model(cp,device=device)
-            before=core._predict_logits(restored,chosen[8:],builder,variant='codebert_source',excluded_groups=(),batch_size=4,device=device)
+            expected=core._predict_logits(restored,chosen[8:],builder,variant='codebert_source',excluded_groups=(),batch_size=4,device=device)
             del restored
-            torch.testing.assert_close(before,core.predict_checkpoint(target,chosen[8:],batch_size=4,device=args.device),rtol=0,atol=0)
+            torch.testing.assert_close(expected,core.predict_checkpoint(target,chosen[8:],batch_size=4,device=args.device),rtol=0,atol=0)
             checks['save_reload_exact']=True
-            if not all(checks.values()):raise ValueError(f'{mode} surface smoke failed: {checks}')
-            epoch=next(r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch')
-            budget=tuple(epoch[k] for k in ('optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots',
-                'vat_function_forwards','vat_encoder_sequences','vat_encoder_token_slots'))
-            budgets.append(budget);report['checks'][mode]=checks;report[mode]=epoch
+            if not all(checks.values()):raise ValueError(f'{mode} real smoke failed')
+            with target.with_suffix('.training.jsonl').open() as handle:epochs=[json.loads(l) for l in handle]
+            report['checks'][mode]=dict(checks,epoch=next(r for r in epochs if r['event']=='epoch'))
+            if mode=='ours':
+                with target.with_suffix('.candidates.jsonl').open() as handle:selections=[json.loads(l) for l in handle]
+                missing=next(s for s in selections if s['sample_key']==unsupported[0]['sample_key'])
+                if missing['selected'] is not None:raise ValueError('untransformable real function was falsely augmented')
             del cp
-    if len(set(budgets))!=1:raise ValueError('surface VAT smoke compute budgets differ')
-    report['budgets_identical']=True
     write_json(root/'smoke.metrics.json',report)
     return report
 
 
-def _codebert_surface_vat(args):
-    import random
+def _robustness_summary(originals,views,threshold):
+    import numpy as np
     import torch
-    from collections import Counter
+    from .cfg_metrics import metrics
+    probability=lambda z:torch.sigmoid(torch.tensor(z,dtype=torch.float32)).item()
+    selected=[];worst=[];eligible=[];correct_to_wrong=0;wrong_to_correct=0;robust=0;all_correct=0;attacked=0
+    escape=0;false_alarm=0
+    for row in originals:
+        candidates=views.get(row['sample_key'],[]);y=row['label'];original_correct=row['prediction']==y
+        pool=[dict(logit=row['logit'],prediction=row['prediction'])]+candidates
+        worst_view=max(pool,key=lambda v:float(np.logaddexp(0,v['logit'])-y*v['logit']))
+        worst.append(dict(label=y,score=probability(worst_view['logit'])))
+        if not candidates:continue
+        first=candidates[0];prediction=first['prediction']
+        selected.append(dict(label=y,score=probability(first['logit'])))
+        eligible.append(row);correct=prediction==y
+        robust+=original_correct and correct
+        correct_to_wrong+=original_correct and not correct;wrong_to_correct+=not original_correct and correct
+        protected=original_correct and all(v['prediction']==y for v in candidates);all_correct+=protected
+        failed=original_correct and not protected;attacked+=failed
+        escape+=failed and y==1;false_alarm+=failed and y==0
+    n=len(eligible);original_correct=sum(r['prediction']==r['label'] for r in eligible)
+    positive=sum(r['label'] for r in eligible);negative=n-positive
+    rate=lambda value,denominator:value/denominator if denominator else None
+    return dict(eligible=n,total=len(originals),positive=positive,negative=negative,coverage=rate(n,len(originals)),
+        candidates=sum(len(c) for c in views.values()),
+        perturbed=metrics([r['label'] for r in selected],[r['score'] for r in selected],threshold) if selected else None,
+        worst_complete=metrics([r['label'] for r in worst],[r['score'] for r in worst],threshold),
+        paired_robust_correct=robust,paired_robust_accuracy=rate(robust,n),
+        all_candidates_correct=all_correct,all_candidates_correct_rate=rate(all_correct,n),
+        correct_to_wrong=dict(count=correct_to_wrong,denominator=original_correct,rate=rate(correct_to_wrong,original_correct)),
+        wrong_to_correct=dict(count=wrong_to_correct,denominator=n-original_correct,rate=rate(wrong_to_correct,n-original_correct)),
+        asr=dict(count=attacked,denominator=original_correct,rate=rate(attacked,original_correct)),
+        vulnerability_escape=dict(count=escape,denominator=sum(r['label']==1 and r['prediction']==1 for r in eligible),
+            rate=rate(escape,sum(r['label']==1 and r['prediction']==1 for r in eligible))),
+        benign_false_alarm=dict(count=false_alarm,denominator=sum(r['label']==0 and r['prediction']==0 for r in eligible),
+            rate=rate(false_alarm,sum(r['label']==0 and r['prediction']==0 for r in eligible))))
+
+
+def _robustness_evaluation(rows,run,target,cp,root,materials,args):
+    import torch,time
+    import numpy as np
     from . import model as core,audit_statistics as data
     from .change_learning import write_json
-    rows,base,budget=_matching_full_baseline(args)
-    root=Path(args.output_dir or 'results/codebert_surface_vat_seed42')
-    config=dict(version=1,manifest=args.manifest,baseline_checkpoint=args.baseline_checkpoint,model=args.model,
-        seed=42,initialization='fresh matching pretrained CodeBERT; identical seed42 linear head',training=base['training_config'],
-        input_protocol=base['input_protocol'],encoder_precision=base['encoder_precision'],vat=core.SURFACE_VAT_CONFIG,
-        augmentation='up to eight per-binding/name/multiple inline comment/combined proposals; no BPE buckets; fixed random up to two views',
-        function_name='input-only current declaration name; external APIs/callees unchanged',
-        loss='mean BCE over effective views per function; VAT on one deterministic rotating view per function per epoch',
-        selection='original clean Valid MCC threshold/epoch and tie-break; no Test',
-        controls=list(core.SURFACE_VAT_MODES))
-    path=root/'config.metrics.json'
-    if path.exists() and json.loads(path.read_text())!=config:raise ValueError('existing surface VAT configuration differs')
-    if not path.exists():write_json(path,config)
-    cache=root/'candidates.jsonl';coverage_path=root/'candidates.metrics.json'
-    if cache.exists()!=coverage_path.exists():raise FileExistsError('incomplete surface candidate cache')
-    if cache.exists():entries=list(map(json.loads,cache.open()));coverage=json.loads(coverage_path.read_text())
+    from .cfg_metrics import decision_boundary
+    boundary=decision_boundary(cp['decision_threshold'])
+    valid=[r for r in rows if r['split']=='valid'];by={r['sample_key']:r for r in valid}
+    clean_run=target.parent
+    clean=_finetuning_evaluate(rows,clean_run,'valid',cp,args,checkpoint_path=target)
+    with (clean_run/'valid.predictions.jsonl').open() as handle:originals=[json.loads(l) for l in handle]
+    output=run/'robustness.metrics.json'
+    if output.exists():
+        cached=json.loads(output.read_text())
+        if (cached.get('threshold')!=cp['decision_threshold'] or cached.get('selected_epoch')!=cp['selected_epoch']
+                or cached.get('checkpoint')!=str(target) or cached.get('clean')!=clean):
+            raise ValueError('cached robustness checkpoint/evaluation differs')
+        return cached
+    model=core._load_model(cp,device=core._resolve_device(args.device))
+    builder=core.InputBuilder(core.AutoTokenizer.from_pretrained(args.model),source_max_length=2048,context_max_length=384)
+    costs=dict(calls=0,function_forwards=0,encoder_sequences=0,encoder_token_slots=0,seconds=0.)
+    def score(batch):
+        started=time.monotonic();values=[]
+        with torch.no_grad(),core._auxiliary_mode(model):
+            for at in range(0,len(batch),args.batch_size):
+                grouped=builder.codebert_batch(batch[at:at+args.batch_size],device=core._resolve_device(args.device))
+                values.extend(model(*grouped).detach().cpu().tolist())
+                costs['calls']+=1;costs['function_forwards']+=grouped[-1]
+                costs['encoder_sequences']+=len(grouped[0]);costs['encoder_token_slots']+=grouped[0].numel()
+        costs['seconds']+=time.monotonic()-started
+        return values
+    report=dict(clean=clean,threshold=cp['decision_threshold'],selected_epoch=cp['selected_epoch'],checkpoint=str(target))
+    for name in ('fixed','heldout'):
+        costs.update({k:0 for k in costs});started=time.monotonic()
+        with (root/f'{name}.candidates.jsonl').open() as handle:entries=[json.loads(l) for l in handle]
+        views={};flat=[];index=[]
+        for entry in entries:
+            row=by[entry['sample_key']]
+            for kind,candidates in entry['groups'].items():
+                for ci,candidate in enumerate(candidates):
+                    flat.append(dict(row,raw_source=data.replay_surface_units(row['raw_source'],candidate['units'])))
+                    index.append((row['sample_key'],kind,ci,candidate['strict_semantic']))
+        logits=score(flat) if flat else []
+        for (key,kind,ci,strict),z in zip(index,logits):
+            views.setdefault(kind,{}).setdefault(key,[]).append(dict(logit=z,prediction=int(torch.sigmoid(torch.tensor(z)).item()>=boundary),strict_semantic=strict))
+        report[name]={}
+        from .syntax import SURFACE_OPERATIONS
+        for kind in (*SURFACE_OPERATIONS,'combined'):
+            group=views.get(kind,{})
+            strict={key:[v for v in candidates if v['strict_semantic']] for key,candidates in group.items()}
+            stress={key:[v for v in candidates if not v['strict_semantic']] for key,candidates in group.items()}
+            report[name][kind]=dict(all=_robustness_summary(originals,group,cp['decision_threshold']),
+                strict_semantic=_robustness_summary(originals,strict,cp['decision_threshold']),
+                input_only_stress=_robustness_summary(originals,stress,cp['decision_threshold']))
+        combined={r['sample_key']:[v for group in views.values() for v in group.get(r['sample_key'],[])] for r in originals}
+        report[name+'_overall']=dict(all=_robustness_summary(originals,combined,cp['decision_threshold']),
+            strict_semantic=_robustness_summary(originals,{k:[v for v in vs if v['strict_semantic']] for k,vs in combined.items()},cp['decision_threshold']),
+            input_only_stress=_robustness_summary(originals,{k:[v for v in vs if not v['strict_semantic']] for k,vs in combined.items()},cp['decision_threshold']))
+        with (run/f'{name}.predictions.jsonl').open('x') as handle:
+            for row in originals:handle.write(json.dumps(dict(sample_key=row['sample_key'],label=row['label'],
+                groups={k:g.get(row['sample_key'],[]) for k,g in views.items()}))+'\n')
+        report.setdefault('evaluation_costs',{})[name]=dict(costs,total_seconds=time.monotonic()-started)
+    # Each model receives the same initial generator states, then its own beams.
+    started=time.monotonic();attacks=[];groups={};strict={};stress={};queries=0;original_queries=0
+    original_logits={r['sample_key']:r['logit'] for r in originals}
+    attack_path=run/'adaptive.predictions.jsonl'
+    if attack_path.exists():
+        with attack_path.open() as handle:attacks=[json.loads(l) for l in handle]
     else:
-        tokenizer=core.AutoTokenizer.from_pretrained(args.model)
-        rng=random.Random(42);entries=[];coverage={}
-        for split in ('train','valid'):
-            split_rows=[r for r in rows if r['split']==split]
-            kinds=Counter();skipped=Counter();covered=0
-            for index,row in enumerate(split_rows):
-                pool,reasons=data.visible_semantic_candidates(row['raw_source'],row.get('language','c'),tokenizer,
-                    base['input_protocol']['source_budget'],file_name=row.get('file_name',''),unseen=split=='valid',surface=True)
-                if split=='train':selected=sorted(rng.sample(range(len(pool)),min(2,len(pool))))
-                else:
-                    selected={}
-                    for kind in ('comment','local_name','function_name','combined'):
-                        choices=[i for i,c in enumerate(pool) if c['kind']==kind]
-                        if choices:selected[kind]=choices[index%len(choices)]
-                kinds.update({c['kind'] for c in pool});skipped.update(reasons);covered+=bool(selected)
-                entries.append(dict(sample_key=row['sample_key'],split=split,candidates=pool,selections=selected,skip_reasons=reasons))
-                if (index+1)%250==0 or index+1==len(split_rows):
-                    print(f'Surface candidates {split}: {index+1}/{len(split_rows)}, eligible={covered}',flush=True)
-            coverage[split]=dict(total=len(split_rows),covered=covered,coverage=covered/len(split_rows),
-                kinds={k:dict(eligible=v,coverage=v/len(split_rows)) for k,v in kinds.items()},skip_candidates=dict(skipped))
-        by={e['sample_key']:e for e in entries};entries=[by[r['sample_key']] for r in rows]
-        with cache.open('x') as handle:
-            for entry in entries:handle.write(json.dumps(entry)+'\n')
-        write_json(coverage_path,coverage)
-    sources,choices=_surface_vat_sources(rows,entries)
-    augmentation=dict(mode='surface',protocol_version=1,candidates_cache=str(cache),choices=choices,
-        loss='mean view BCE per function, then mean over original functions')
-    if args.stage=='prepare':return dict(config=config,coverage=coverage)
+        with attack_path.open('x') as handle:
+            for at in range(0,len(valid),args.batch_size):
+                costs.update({k:0 for k in costs});batch_started=time.monotonic()
+                result=data.search_surface_views(valid[at:at+args.batch_size],score,builder.tokenizer,
+                    cp['input_protocol']['source_budget'],materials,seed=42,query_limit=48,
+                    purpose='adaptive',original_logits=original_logits)
+                result[0]['batch_cost']=dict(costs,total_seconds=time.monotonic()-batch_started)
+                for entry in result:
+                    entry['visited']=[{k:v for k,v in c.items() if k!='raw_source'} for c in entry['visited']]
+                    entry['selected']=None if entry['selected'] is None else {k:v for k,v in entry['selected'].items() if k!='raw_source'}
+                    handle.write(json.dumps(entry)+'\n');attacks.append(entry)
+                if (at//args.batch_size+1)%25==0:print(f'adaptive {run.name}: {min(at+args.batch_size,len(valid))}/{len(valid)}',flush=True)
+    if [e['sample_key'] for e in attacks]!=[r['sample_key'] for r in valid]:raise ValueError('incomplete adaptive evaluation; no silent retries')
+    for entry in attacks:
+        queries+=entry['candidate_queries'];original_queries+=entry['original_queries'];key=entry['sample_key']
+        group=[dict(logit=c['logit'],prediction=int(torch.sigmoid(torch.tensor(c['logit'])).item()>=boundary),
+                    strict_semantic=c['strict_semantic']) for c in entry['visited']]
+        group.sort(key=lambda c:float(np.logaddexp(0,c['logit'])-by[key]['label']*c['logit']),reverse=True)
+        groups[key]=group;strict[key]=[c for c in group if c['strict_semantic']]
+        stress[key]=[c for c in group if not c['strict_semantic']]
+    report['adaptive']=dict(all=_robustness_summary(originals,groups,cp['decision_threshold']),
+        strict_semantic=_robustness_summary(originals,strict,cp['decision_threshold']),
+        input_only_stress=_robustness_summary(originals,stress,cp['decision_threshold']),
+        candidate_queries=queries,original_queries=original_queries,query_limit=48,
+        costs={k:sum(e.get('batch_cost',{}).get(k,0) for e in attacks) for k in (*costs,'total_seconds')},
+        per_function_queries={e['sample_key']:e['candidate_queries'] for e in attacks},
+        definition='model-specific width-two depth-three BCE search; original included in worst-case results')
+    del model
+    write_json(output,report)
+    return report
+
+
+def _codebert_robustness(args):
+    import torch,transformers,math
+    from collections import Counter
+    from . import model as core
+    from .syntax import surface_materials,SURFACE_RULES
+    from .change_learning import write_json
+    rows=[r for r in core._read_jsonl(args.manifest,source_only=True) if r['dataset']=='primevul' and r['split'] in ('train','valid')]
+    if not rows or any(r.get('repair_supplement') for r in rows):raise ValueError('requires original PrimeVul classification cohort')
+    root=Path(args.output_dir or 'results/codebert_robustness_seed42');root.mkdir(parents=True,exist_ok=True)
+    training=dict(epochs=3,batch_size=args.batch_size,gradient_accumulation=args.gradient_accumulation,learning_rate=1e-5,weight_decay=.01)
+    if args.batch_size*args.gradient_accumulation!=8:raise ValueError('robustness requires effective batch eight')
+    try:
+        _,base,budget=_matching_full_baseline(args)
+        if base['training_config']!=training or base['selection']!='validation_mcc':raise ValueError('baseline learning rate/selection differs')
+        bce_target=Path(args.baseline_checkpoint);reuse_reason='exact data/source/input/initialization/training/selection match'
+    except (ValueError,FileNotFoundError) as error:
+        base=None;bce_target=root/'bce/best.pt';reuse_reason='retrain: '+str(error)
+        budget=[(i,math.ceil(sum(r['split']=='train' for r in rows)/8)) for i in (1,2,3)]
+    config_path=root/'config.metrics.json';material_path=root/'materials.metrics.json'
+    if material_path.exists():materials=json.loads(material_path.read_text())
+    else:
+        materials=surface_materials([r for r in rows if r['split']=='train']);write_json(material_path,materials)
+    tokenizer=core.AutoTokenizer.from_pretrained(args.model)
+    builder=core.InputBuilder(tokenizer,source_max_length=2048,context_max_length=384)
+    if base is not None:
+        capacity=512-len(builder.source_prefix)-2
+        protocol=dict(encoder='roberta',native_window=512,logical_budget=2048,
+            source_budget=2048-len(builder.source_prefix)-2,window_source_capacity=capacity,stride=capacity//2,
+            pooling='mean over unique source positions; repeated prefix/BOS/EOS averaged across windows',
+            function_loss='one BCE per original function')
+        if base.get('input_protocol')!=protocol or base.get('context_max_length')!=384:
+            base=None;bce_target=root/'bce/best.pt';reuse_reason='retrain: baseline input protocol differs'
+    config=dict(version=1,manifest=args.manifest,model=args.model,seed=42,training=training,
+        source_max_length=2048,source_budget=2048-len(builder.source_prefix)-2,native_window=512,
+        stride=(512-len(builder.source_prefix)-2)//2,initialization=core._CLASSIFIER_INITIALIZATION,
+        head='mean pooling + linear; fresh pretrained full CodeBERT',selection='original clean Valid MCC and tie-break',
+        main_groups=['bce','vat','ours'],vat=core.VAT_CONFIG,
+        surface_rules=SURFACE_RULES,materials=str(material_path),function_name='input-only stress; resolved self-calls updated; separate strict metrics',
+        bce_checkpoint=str(bce_target),bce_reuse_reason=reuse_reason,
+        counts=dict(Counter(f"{r['split']}/label_{r['label']}" for r in rows)),
+        environment=dict(torch=torch.__version__,transformers=transformers.__version__))
+    if config_path.exists():
+        saved=json.loads(config_path.read_text())
+        expected=dict(config,vat=dict(core.VAT_CONFIG,xi=saved['vat']['xi']))
+        if saved!=expected:raise ValueError('existing robustness preparation configuration differs')
+        config=saved
+    else:write_json(config_path,config)
+    if args.stage in ('prepare','report','all'):
+        _robustness_fixed_candidates(rows,materials,root,tokenizer,config['source_budget'])
+    if args.stage=='prepare':return config
     smoke=root/'smoke.metrics.json'
-    if args.stage in ('all','smoke') and not smoke.exists():_surface_vat_smoke(rows,sources,augmentation,root,base,args)
+    if args.stage in ('all','smoke') and not smoke.exists():
+        if base is None:
+            if not bce_target.exists():
+                base=core.train_model(None,bce_target,records=rows,variant='codebert_source',model_path=args.model,
+                    source_max_length=2048,context_max_length=384,seed=42,device=args.device,finetuning_mode='full',**training)
+            else:base=torch.load(bce_target,map_location='cpu',weights_only=False)
+        result=_robustness_smoke(rows,root,config,materials,args,base)
+        config['vat']=dict(core.VAT_CONFIG,xi=result['xi']);write_json(config_path,config)
+    if not smoke.exists():raise ValueError('complete the real three-path smoke before formal training')
     if args.stage=='smoke':return json.loads(smoke.read_text())
-    if not smoke.exists() or not json.loads(smoke.read_text()).get('budgets_identical'):
-        raise ValueError('complete the real surface VAT smoke before training')
-    modes=core.SURFACE_VAT_MODES if args.surface_vat=='all' else (args.surface_vat,)
-    expected={k:base[k] for k in ('checkpoint_version','dataset_schema_version','variant','model_path','source_max_length',
-        'context_max_length','seed','finetuning_mode','classifier_head','classifier_initialization','encoder_precision',
-        'cohort_members','training_config','initial_checkpoint','target_modules')}
+    xi=json.loads(smoke.read_text())['xi']
+    if xi!=config['vat']['xi']:raise ValueError('VAT probe setting differs from the completed smoke')
+    modes=('bce','vat','ours') if args.robustness=='all' else (args.robustness,)
+    results={}
     for mode in modes:
-        run=root/mode;target=run/'best.pt';vat=dict(core.SURFACE_VAT_CONFIG,mode=mode,weight=0. if mode=='random' else 1.)
+        run=root/mode;run.mkdir(exist_ok=True);target=bce_target if mode=='bce' else run/'best.pt'
+        opts=None if mode=='bce' else core.robustness_config(mode,xi=xi)
+        expected_members={split:[(r['sample_key'],r['label']) for r in rows if r['split']==split] for split in ('train','valid')}
         if target.exists():
             cp=torch.load(target,map_location='cpu',weights_only=False)
-            if (any(cp.get(k)!=v for k,v in expected.items()) or cp.get('augmentation_config')!=augmentation
-                    or cp.get('surface_vat_config')!=vat or cp.get('sample_weights') is not None):
-                raise ValueError('existing surface VAT checkpoint differs')
+            if (cp.get('robustness_options')!=opts or cp.get('training_config')!=training or cp.get('cohort_members')!=expected_members
+                    or cp.get('classifier_initialization')!=core._CLASSIFIER_INITIALIZATION or cp.get('model_path')!=args.model
+                    or cp.get('source_max_length')!=2048 or cp.get('classifier_head')!='linear' or cp.get('finetuning_mode')!='full'
+                    or cp.get('initial_checkpoint') is not None or cp.get('sample_weights') is not None
+                    or cp.get('seed')!=42 or cp.get('selection')!='validation_mcc' or cp.get('variant')!='codebert_source'
+                    or cp.get('context_max_length')!=384 or cp.get('input_protocol',{}).get('source_budget')!=config['source_budget']
+                    or cp.get('encoder_precision')!='FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss'
+                    or any(k in cp for k in ('change_supervision','local_supervision','synthetic_supervision','augmentation_config','conditional_length_config'))
+                    or cp.get('surface_materials')!=(materials if opts is not None and opts['source_views'] else None)):
+                raise ValueError('completed robustness checkpoint differs from this experiment')
         elif args.stage in ('train','all'):
-            if target.with_suffix('.training.jsonl').exists():raise FileExistsError('surface VAT job is running/interrupted; inspect history')
+            if target.with_suffix('.training.jsonl').exists():raise FileExistsError('running/interrupted robustness job; inspect before retrying')
             cp=core.train_model(None,target,records=rows,variant='codebert_source',model_path=args.model,
-                source_max_length=2048,context_max_length=base['context_max_length'],seed=42,device=args.device,
-                finetuning_mode='full',function_views=sources,augmentation_config=augmentation,surface_vat_config=vat,
-                log_every=25,**base['training_config'])
+                source_max_length=2048,context_max_length=384,seed=42,device=args.device,finetuning_mode='full',
+                robustness_options=opts,surface_materials=materials if opts is not None and opts['source_views'] else None,
+                log_every=25,**training)
         else:raise FileNotFoundError(target)
-        history=[r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch']
-        if [(r['epoch'],r['optimizer_steps']) for r in history]!=budget:raise ValueError('surface VAT epoch/update budget differs')
-        _finetuning_evaluate(rows,run,'valid',cp,args)
+        with target.with_suffix('.training.jsonl').open() as handle:history=[json.loads(l) for l in handle]
+        if [(r['epoch'],r['optimizer_steps']) for r in history if r['event']=='epoch']!=budget:
+            raise ValueError('robustness optimizer/epoch budget differs')
+        for split in ('train','valid'):_finetuning_evaluate(rows,target.parent,split,cp,args,checkpoint_path=target)
+        if args.stage in ('all','report'):
+            results[mode]=_robustness_evaluation(rows,run,target,cp,root,materials,args)
+            results[mode]['training']=[r for r in history if r['event']=='epoch']
+            epochs=results[mode]['training']
+            results[mode]['training_cost']=dict(optimizer_steps=sum(r['optimizer_steps'] for r in epochs),
+                original_functions=sum(r['split']=='train' for r in rows)*len(epochs),
+                seconds=sum(r['epoch_seconds'] for r in epochs) if all('epoch_seconds' in r for r in epochs) else None,
+                time_scope='epoch wall time including clean Valid selection; historical BCE wall time was not logged',
+                candidate_queries=sum(r.get('candidate_queries',0) for r in epochs),
+                original_search_queries=sum(r.get('original_search_queries',0) for r in epochs),
+                search_seconds=sum(r.get('search_seconds',0.) for r in epochs),
+                encoder_sequences={stage:sum(r.get(field,0) for r in epochs) for stage,field in (
+                    ('bce','bce_encoder_sequences'),('search','search_encoder_sequences'),
+                    ('real_js','real_encoder_sequences'),('vat','vat_encoder_sequences'))})
+            if mode=='bce':results[mode]['training_cost']['encoder_sequences']['bce']=None
         del cp
-    if args.stage in ('all','report'):return _surface_vat_report(rows,entries,root,config,coverage,args)
-    return dict(config=config,coverage=coverage,completed_modes=modes)
-
-
-def _surface_vat_report(rows,entries,root,config,coverage,args):
-    import torch
-    from . import model as core
-    from .syntax import apply_source_edits
-    from .change_learning import write_json
-    valid=[r for r in rows if r['split']=='valid'];by={e['sample_key']:e for e in entries}
-    views={kind:[] for kind in ('comment','local_name','function_name','combined')}
-    for row in valid:
-        entry=by[row['sample_key']]
-        for kind,index in entry['selections'].items():
-            candidate=entry['candidates'][index]
-            views[kind].append(dict(row,raw_source=apply_source_edits(row['raw_source'],candidate['edits'])))
-    results={};histories=[]
-    for mode in ('bce',*core.SURFACE_VAT_MODES):
-        run=root/mode
-        target=Path(args.baseline_checkpoint) if mode=='bce' else run/'best.pt'
-        cp=torch.load(target,map_location='cpu',weights_only=False)
-        # Reuse the validated original BCE model and its clean predictions;
-        # save only the new perturbation evaluations in this experiment.
-        clean_run=target.parent if mode=='bce' else run
-        clean=_finetuning_evaluate(rows,clean_run,'valid',cp,args)
-        originals=list(map(json.loads,(clean_run/'valid.predictions.jsonl').open()));original={r['sample_key']:r for r in originals}
-        robustness={}
-        for kind,changed in views.items():
-            if changed:
-                metrics=_finetuning_evaluate(changed,run,'valid',cp,args,output_name=f'unseen_{kind}',checkpoint_path=target)
-                preds=list(map(json.loads,(run/f'unseen_{kind}.predictions.jsonl').open()))
-            else:metrics=None;preds=[]
-            n=len(preds);both=sum(r['prediction']==original[r['sample_key']]['prediction']==r['label'] for r in preds)
-            flips=sum(r['prediction']!=original[r['sample_key']]['prediction'] for r in preds)
-            robustness[kind]=dict(eligible=n,total=len(valid),positive=sum(r['label'] for r in preds),
-                coverage=n/len(valid),detection=metrics,robust_correct=both,robust_accuracy=both/n if n else None,
-                flipped=flips,flip_rate=flips/n if n else None,**_length_detection_metrics(preds,original))
-        results[mode]=dict(checkpoint=str(target),selected_epoch=cp['selected_epoch'],threshold=cp['decision_threshold'],
-            clean=clean,robustness=robustness)
-        history=[r for r in map(json.loads,target.with_suffix('.training.jsonl').open()) if r['event']=='epoch']
-        if mode!='bce':
-            histories.append([tuple(r[k] for k in ('epoch','optimizer_steps','bce_function_forwards','bce_encoder_sequences','encoder_token_slots',
-                'vat_function_forwards','vat_encoder_sequences','vat_encoder_token_slots','vat_eligible_functions')) for r in history])
-        else:
-            results[mode].update(reused=True,data_augmentation=False,vat=False,bce_views_per_function=1)
-        results[mode]['training']=history
-        del cp
-    if any(history!=histories[0] for history in histories):raise ValueError('four surface VAT training/data budgets differ')
-    optimizer_budget=[(r['epoch'],r['optimizer_steps']) for r in results['bce']['training']]
-    if any([(r['epoch'],r['optimizer_steps']) for r in result['training']]!=optimizer_budget for result in results.values()):
-        raise ValueError('BCE and surface VAT optimizer budgets differ')
-    report=dict(config=config,coverage=coverage,valid=results,matched_training_budgets=histories[0],
-        matched_optimizer_budgets=optimizer_budget)
-    write_json(root/'comparison.metrics.json',report)
-    return report
+    if results:
+        name='comparison.metrics.json' if args.robustness=='all' else f'{args.robustness}.comparison.metrics.json'
+        write_json(root/name,dict(config=config,results=results))
+        import csv
+        with (root/name.replace('.json','.csv')).open('w',newline='') as handle:
+            writer=csv.DictWriter(handle,fieldnames=['method','setting','accuracy','precision','recall','f1','mcc','auc']);writer.writeheader()
+            for method,result in results.items():
+                writer.writerow(dict(method=method,setting='clean',**{k:result['clean']['metrics'][k] for k in writer.fieldnames[2:]}))
+                for setting in ('fixed','heldout'):
+                    m=result[setting+'_overall']['all']['worst_complete']
+                    writer.writerow(dict(method=method,setting=setting+'/all_families/worst_complete',**{k:m[k] for k in writer.fieldnames[2:]}))
+                    for kind,metric in result[setting].items():
+                        m=metric['all']['perturbed']
+                        if m:writer.writerow(dict(method=method,setting=setting+'/'+kind,**{k:m[k] for k in writer.fieldnames[2:]}))
+                        m=metric['all']['worst_complete']
+                        writer.writerow(dict(method=method,setting=setting+'/'+kind+'/worst_complete',**{k:m[k] for k in writer.fieldnames[2:]}))
+                m=result['adaptive']['all']['worst_complete']
+                writer.writerow(dict(method=method,setting='adaptive/worst_complete',**{k:m[k] for k in writer.fieldnames[2:]}))
+        return results
+    return dict(completed_modes=modes,config=config)
 
 
 def _diagnose(args):

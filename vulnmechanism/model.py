@@ -54,19 +54,29 @@ CONDITIONAL_LENGTH_CONFIG = dict(version=1, hidden_dim=16, grl_lambda=.05,
     boundaries=[128, 512, 2025], length='full original CodeBERT source tokens',
     loss='mean view BCE + mean view length CE per function, then mean over functions',
     schedule='fixed GRL lambda throughout all epochs; CE coefficient one')
-SURFACE_VAT_CONFIG = dict(version=2, epsilon=1., xi=.001, power_iterations=1,
-    weight=1., precision='FP32 auxiliary encoder/head; float64 Bernoulli KL and perturbation norms',
+VAT_CONFIG=dict(version=3,epsilon=1.,xi=.001,power_iterations=1,
+    precision='FP32 auxiliary encoder; float64 pooling, linear head, Bernoulli KL and norms',
     norm='per function L2 over expanded actual encoder tokens, including overlapping-window copies',
-    sampling='one view per original function per epoch; deterministic rotation through original and fixed random views',
-    eligibility='same nonempty surface-site functions in all four controls; others retain BCE')
-SURFACE_VAT_MODES = ('random','vat','surface','binding')
+    direction='finite-difference KL gradient; divide by actual copies, multiply soft weights once, normalize')
+ROBUSTNESS_MODES=('bce','vat','ours','ours_uniform','ours_no_consistency','ours_no_vat','ours_no_search')
 
 
-def _validate_surface_vat_config(config):
-    if not isinstance(config,dict) or config.get('mode') not in SURFACE_VAT_MODES or {
-            k:v for k,v in config.items() if k!='mode'} != dict(SURFACE_VAT_CONFIG,
-                weight=0. if config.get('mode')=='random' else 1.):
-        raise ValueError('surface VAT configuration is incompatible')
+def robustness_config(mode,*,xi=.001):
+    if mode not in ROBUSTNESS_MODES or mode=='bce':raise ValueError('BCE has no auxiliary robustness configuration')
+    return dict(version=1,mode=mode,alpha=0. if mode in ('vat','ours_uniform') else 3.,
+        lambda_real=0. if mode in ('vat','ours_no_consistency') else 1.,
+        lambda_vat=0. if mode=='ours_no_vat' else 1.,vat=dict(VAT_CONFIG,xi=xi),
+        beam_width=2,max_depth=3,train_queries=12,attack_queries=48,
+        source_views=mode!='vat',search=mode not in ('vat','ours_no_search'),
+        view_sampling='independent seed/epoch/sample_key coin flip over original and selected view',
+        comment_token_limit=64)
+
+
+def _validate_robustness_config(config):
+    if (not isinstance(config,dict) or config.get('mode') not in ROBUSTNESS_MODES or config.get('mode')=='bce'
+            or not isinstance(config.get('vat'),dict) or config['vat'].get('xi') not in (.001,.01)
+            or config!=robustness_config(config['mode'],xi=config['vat']['xi'])):
+        raise ValueError('robustness configuration is incompatible')
 
 
 def source_length_group(tokens: int) -> int:
@@ -363,8 +373,9 @@ class InputBuilder:
         return (ids, mask, torch.arange(len(records), device=device), None, len(records), positions, layouts)
 
     @lru_cache(maxsize=32768)
-    def surface_tokens(self,source,language,file_name,comments):
-        from .syntax import surface_binding_layout,resolve_language,source_token_spans
+    def surface_tokens(self,source,language,file_name,alpha):
+        """Soft character coverage; ambiguous sites retain global weight one."""
+        from .syntax import surface_binding_layout,resolve_language
         if not getattr(self.tokenizer,'is_fast',False):raise ValueError('surface VAT requires fast source offsets')
         encoded=self.tokenizer(source,add_special_tokens=False,return_offsets_mapping=True,truncation=False,verbose=False)
         if list(encoded['input_ids'])!=self._encode(source):raise ValueError('VAT source token/offset IDs differ')
@@ -372,57 +383,44 @@ class InputBuilder:
         layout=surface_binding_layout(source,resolve_language(source,language,file_name))
         spans=[]
         for binding in layout['bindings']:
-            spans.extend((a,b,('binding',binding['declaration'])) for a,b in binding['spans'])
-        spans.extend((a,b,('function_name',a)) for a,b in layout['function_name'])
-        for a,b in comments:
-            if not 0<=a<b<=len(source) or source_token_spans(source[a:b]) or not source[a:b].strip().startswith('/*'):
-                raise ValueError('VAT comment range is not a verified inserted comment')
-            spans.append((a,b,('comment',a)))
-        character_groups=[None]*len(source)
-        for a,b,key in spans:
-            for j in range(a,b):
-                if character_groups[j] is not None:raise ValueError('VAT surface spans overlap')
-                character_groups[j]=key
-        special=set(getattr(self.tokenizer,'all_special_ids',
-                    [self.pad_token_id,self.eos_token_id,getattr(self.tokenizer,'bos_token_id',None)]))
+            spans.extend(binding['spans'])
+        spans.extend(layout['function_name']+layout['function_references']+layout['comments'])
+        mutable=[False]*len(source)
+        for a,b in spans:
+            if not 0<=a<b<=len(source):raise ValueError('surface character range outside original source')
+            mutable[a:b]=[True]*(b-a)
         budget=self.source_max_length-len(self.source_prefix)-2
-        keys=[];valid=[];mixed_bindings=set()
-        for index,(token,(a,b)) in enumerate(zip(encoded['input_ids'][:budget],encoded['offset_mapping'][:budget])):
+        weights=[]
+        for token,(a,b) in zip(encoded['input_ids'][:budget],encoded['offset_mapping'][:budget]):
             if not 0<=a<=b<=len(source):raise ValueError('VAT offsets must use original Python character coordinates')
-            chars=[character_groups[j] for j in range(a,b) if not source[j].isspace()]
-            allowed=bool(chars) and None not in chars and len(set(chars))==1 and token not in special
-            if not allowed:
-                mixed_bindings.update(key for key in chars if key is not None and key[0]=='binding')
-            key=chars[0] if allowed else None
-            if key is not None and key[0]=='comment':key=('comment_token',index)
-            keys.append(key);valid.append(token not in special and b>a)
-        # E.g. CodeBERT's `(_` token mixes the call operator with a name's
-        # leading underscore. Freezing just that token would perturb different
-        # parts at the declaration and its references. Freeze the whole binding
-        # in both surface controls so every retained occurrence shares a delta.
-        keys=[None if key in mixed_bindings else key for key in keys]
-        return tuple(keys),tuple(valid)
+            weights.append(1.+alpha*sum(mutable[a:b])/max(1,b-a))
+        return tuple(weights)
 
-    def vat_batch(self,records,*,mode,device):
+    def vat_batch(self,records,*,alpha,device):
         batch=self.codebert_batch(records,device=device,return_source_positions=True)
         ids,mask,owners,pooling,n,positions=batch
-        constraints=[self.surface_tokens(r['raw_source'],r.get('language','c'),r.get('file_name',''),
-            tuple(map(tuple,r.get('inserted_comment_spans',[])))) for r in records]
-        eligible=[any(key is not None for key in keys) for keys,valid in constraints]
-        group_rows=[[-1]*ids.shape[1] for _ in range(len(ids))];lookup={};group_owners=[]
+        budget=self.source_max_length-len(self.source_prefix)-2
+        special=set(getattr(self.tokenizer,'all_special_ids',
+            [self.pad_token_id,self.eos_token_id,getattr(self.tokenizer,'bos_token_id',None)]))
+        source_ids=[self._encode(r['raw_source'],budget) for r in records]
+        valid=[[t not in special for t in tokens] for tokens in source_ids]
+        constraints=([self.surface_tokens(r['raw_source'],r.get('language','c'),r.get('file_name',''),alpha) for r in records]
+                     if alpha else [[1.]*len(tokens) for tokens in source_ids])
+        eligible=[any(row) for row in valid]
+        group_rows=[[-1]*ids.shape[1] for _ in range(len(ids))];lookup={};group_owners=[];group_weights=[]
         # Window copies of a source token share a direction even in ordinary VAT.
         source_positions=positions.cpu().tolist()
         for window,owner in enumerate(owners.tolist()):
             if not eligible[owner]:continue
-            keys,valid=constraints[owner]
             for slot,pos in enumerate(source_positions[window]):
-                if pos<0 or not valid[pos] or mode!='vat' and keys[pos] is None:continue
-                key=(owner,keys[pos] if mode=='binding' else ('token',pos))
+                if pos<0 or not valid[owner][pos]:continue
+                key=(owner,pos)
                 if key not in lookup:
-                    lookup[key]=len(lookup);group_owners.append(owner)
+                    lookup[key]=len(lookup);group_owners.append(owner);group_weights.append(constraints[owner][pos])
                 group_rows[window][slot]=lookup[key]
         group_ids=torch.tensor(group_rows,device=device,dtype=torch.long)
-        return (ids,mask,owners,pooling,n),group_ids,torch.tensor(group_owners,device=device,dtype=torch.long),eligible
+        return ((ids,mask,owners,pooling,n),group_ids,torch.tensor(group_owners,device=device,dtype=torch.long),eligible,
+                torch.tensor(group_weights,device=device,dtype=torch.float32))
 
     def mechanism_text(
         self,
@@ -620,17 +618,18 @@ def _masked_mean(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Te
     return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
 
 
-def _window_mean(hidden, mask, owners, weights, function_count):
+def _window_mean(hidden, mask, owners, weights, function_count,*,dtype=torch.float32):
     if (weights.shape != mask.shape or hidden.shape[:2] != mask.shape or
             owners.shape != (len(hidden),) or function_count <= 0 or
             torch.any(owners < 0) or torch.any(owners >= function_count) or
             torch.any(weights < 0) or torch.any(weights[~mask.bool()] != 0)):
         raise ValueError('invalid function window pooling inputs')
+    weights=weights.to(dtype)
     totals = weights.sum(1)
     denominator = totals.new_zeros(function_count).index_add(0, owners, totals)
     if torch.any(denominator <= 0):
         raise ValueError('every function must have visible pooling tokens')
-    sums = (hidden.float() * weights.unsqueeze(-1)).sum(1)
+    sums = (hidden.to(dtype) * weights.unsqueeze(-1)).sum(1)
     return sums.new_zeros((function_count, hidden.shape[-1])).index_add(0, owners, sums) / denominator[:, None]
 
 
@@ -803,7 +802,8 @@ class SequenceVulnerabilityClassifier(nn.Module):
         if "source_adapter" in self.task_modules:
             hidden = self.task_modules["source_adapter"](hidden.float(), attention_mask)
         if window_owners is not None:
-            pooled = _window_mean(hidden, attention_mask, window_owners, pooling_weights, function_count)
+            pooled = _window_mean(hidden, attention_mask, window_owners, pooling_weights, function_count,
+                                  dtype=torch.float64 if force_fp32 else torch.float32)
         elif "source_pool" in self.task_modules:
             pooled = self.task_modules["source_pool"](hidden.float(), attention_mask)
         else:
@@ -855,6 +855,9 @@ class SequenceVulnerabilityClassifier(nn.Module):
             return (logits, local) if return_local else logits
         pooled = self.encode(input_ids, attention_mask, window_owners, pooling_weights, function_count,
                              embedding_delta=embedding_delta,force_fp32=force_fp32)
+        if force_fp32 and self.variant=='codebert_source' and self.classifier_head=='linear':
+            head=self.task_modules['classifier']
+            return torch.nn.functional.linear(pooled.double(),head.weight.double(),head.bias.double()).squeeze(-1)
         return self.task_modules["classifier"](pooled).squeeze(-1)
 
 
@@ -1033,16 +1036,17 @@ def bernoulli_vat_kl(reference,perturbed):
         (1-p)*(torch.nn.functional.logsigmoid(-reference)-torch.nn.functional.logsigmoid(-perturbed)))
 
 
-def surface_vat_loss(model,records,builder,config,*,device,noise_seed,return_delta=False):
-    _validate_surface_vat_config(config)
-    mode='vat' if config['mode']=='random' else config['mode']
-    batch,group_ids,group_owners,eligible=builder.vat_batch(records,mode=mode,device=device)
+def vat_loss(model,records,builder,config,*,alpha,device,noise_seed,return_delta=False,diagnose=False):
+    if (config!=dict(VAT_CONFIG,xi=config.get('xi')) or config.get('xi') not in (.001,.01)
+            or alpha not in (0.,3.)):
+        raise ValueError('global VAT configuration is incompatible')
+    batch,group_ids,group_owners,eligible,weights=builder.vat_batch(records,alpha=alpha,device=device)
     ids,mask,owners,pooling,n=batch
     hidden=model.encoder.config.hidden_size
     if not len(group_owners):
         result=torch.zeros(n,device=device)
         info=dict(eligible=0,zero_direction=0,kl=0.,norm_min=None,norm_max=None,
-                  function_forwards=0,encoder_sequences=0,encoder_token_slots=0)
+                  function_forwards=0,encoder_sequences=0,encoder_token_slots=0,weighted_source_tokens=0)
         return (result,info,torch.zeros((*ids.shape,hidden),device=device)) if return_delta else (result,info)
     generator=torch.Generator(device=device).manual_seed(noise_seed)
     direction=torch.randn((len(group_owners),hidden),device=device,generator=generator,dtype=torch.float32)
@@ -1060,10 +1064,31 @@ def surface_vat_loss(model,records,builder,config,*,device,noise_seed,return_del
         # token-space gradient, then normalize in the expanded token space.
         counts=torch.bincount(group_ids[group_ids>=0],minlength=len(group_owners)).float()
         gradient=gradient/counts[:,None]
-        direction,norms=normalize_vat_groups(gradient,group_ids,group_owners,owners,n,config['epsilon'])
+        weighted=gradient*weights[:,None]
+        direction,norms=normalize_vat_groups(weighted,group_ids,group_owners,owners,n,config['epsilon'])
         delta=expand_vat_groups(direction.detach(),group_ids)
         perturbed=model(*batch,embedding_delta=delta,force_fp32=True)
         losses=bernoulli_vat_kl(reference,perturbed).float()
+        diagnostic={}
+        if diagnose:
+            baseline=torch.zeros_like(gradient,requires_grad=True)
+            logits=model(*batch,embedding_delta=expand_vat_groups(baseline,group_ids),force_fp32=True)
+            jacobian=torch.autograd.grad(logits.sum(),baseline,only_inputs=True)[0].detach()/counts[:,None]
+            local,local_norm=normalize_vat_groups(jacobian,group_ids,group_owners,owners,n,1.)
+            exact=expand_vat_groups(local,group_ids)
+            products=(delta.double()*exact.double()).sum((1,2))
+            cosine=products.new_zeros(n).index_add(0,owners,products).abs()/config['epsilon']
+            random_direction=torch.randn((len(group_owners),hidden),device=device,generator=generator,dtype=torch.float32)
+            random_direction,_=normalize_vat_groups(random_direction,group_ids,group_owners,owners,n,config['epsilon'])
+            random_delta=expand_vat_groups(random_direction,group_ids)
+            with torch.no_grad():random_logits=model(*batch,embedding_delta=random_delta,force_fp32=True)
+            random_kl=bernoulli_vat_kl(reference,random_logits)
+            diagnostic=dict(reference_logits=reference.detach().cpu().tolist(),probe_logits=near.detach().cpu().tolist(),
+                analytical_score_gradient_norm=local_norm.cpu().tolist(),direction_cosine_abs=cosine.cpu().tolist(),
+                signal_loss=sum(bool(e) and (float(norms[i])==0 or float(reference[i])==float(near[i].detach()))
+                                and float(local_norm[i])>0 for i,e in enumerate(eligible)),
+                true_zero=sum(bool(e) and float(local_norm[i])==0 for i,e in enumerate(eligible)),
+                random_kl=random_kl.detach().cpu().tolist(),adversarial_kl=losses.detach().cpu().tolist())
     if torch.any(losses < -1e-7) or not torch.isfinite(losses).all():raise ValueError('invalid VAT KL')
     losses=losses.clamp_min(0)*torch.tensor(eligible,device=device)
     squared=delta.double().square().sum((1,2))
@@ -1074,7 +1099,8 @@ def surface_vat_loss(model,records,builder,config,*,device,noise_seed,return_del
     info=dict(eligible=sum(eligible),zero_direction=sum(e and float(norms[i])==0 for i,e in enumerate(eligible)),
         kl=float(losses.detach().sum()),norm_min=float(active.min()) if len(active) else None,
         norm_max=float(active.max()) if len(active) else None,
-        function_forwards=3*n,encoder_sequences=3*len(ids),encoder_token_slots=3*ids.numel())
+        function_forwards=(5 if diagnose else 3)*n,encoder_sequences=(5 if diagnose else 3)*len(ids),
+        encoder_token_slots=(5 if diagnose else 3)*ids.numel(),weighted_source_tokens=int((weights>1).sum()),**diagnostic)
     return (losses,info,delta.detach()) if return_delta else (losses,info)
 
 
@@ -1332,7 +1358,8 @@ def train_model(
     function_views: dict[str, list[str]] | None = None,
     augmentation_config: dict | None = None,
     conditional_length_config: dict | None = None,
-    surface_vat_config: dict | None = None,
+    robustness_options: dict | None = None,
+    surface_materials: dict | None = None,
 ) -> dict[str, object]:
     variant, excluded_groups = _validate_variant(variant, excluded_groups)
     if finetuning_mode is not None and (finetuning_mode not in {'lora', 'full'}
@@ -1381,14 +1408,14 @@ def train_model(
                 or any(x is not None for x in (sample_weights, change_objective, local_objective,
                                                synthetic_pairs, initial_checkpoint, initial_adapter_state))
                 or fixed_epochs or not isinstance(augmentation_config, dict)
-                or augmentation_config.get('mode') not in ('random', 'high_low','surface')):
+                or augmentation_config.get('mode') not in ('random', 'high_low')):
             raise ValueError('function views require fresh full CodeBERT BCE without other objectives')
         if set(function_views) != {r['sample_key'] for r in train_records}:
             raise ValueError('function views must cover exactly the original Train functions')
         for record in train_records:
             views = function_views[record['sample_key']]
             sources=[v.get('raw_source') if isinstance(v,dict) else v for v in views]
-            if (len(views) not in ((0,1,2) if augmentation_config['mode']=='surface' else (0,2))
+            if (len(views) not in (0,2)
                     or any(not isinstance(s,str) or not s for s in sources)
                     or any(isinstance(v,dict) and set(v)-{'raw_source','inserted_comment_spans'} for v in views)
                     or len(set([record['raw_source'], *sources])) != 1 + len(views)):
@@ -1400,11 +1427,15 @@ def train_model(
         if (function_views is None or augmentation_config['mode'] != 'random'
                 or source_max_length != 2048 or seed != 42):
             raise ValueError('conditional length requires the seed42 random-view CodeBERT 2048 experiment')
-    if surface_vat_config is not None:
-        _validate_surface_vat_config(surface_vat_config)
-        if (function_views is None or augmentation_config['mode']!='surface' or conditional_length_config is not None
-                or seed!=42 or source_max_length!=2048):
-            raise ValueError('surface VAT requires matching fresh full CodeBERT surface views without other objectives')
+    if robustness_options is not None:
+        _validate_robustness_config(robustness_options)
+        if (finetuning_mode!='full' or variant!='codebert_source' or classifier_head!='linear'
+                or any(x is not None for x in (sample_weights,change_objective,local_objective,synthetic_pairs,
+                    initial_checkpoint,initial_adapter_state,conditional_length_config,function_views,augmentation_config))
+                or fixed_epochs or seed!=42 or source_max_length!=2048
+                or robustness_options['source_views'] and not isinstance(surface_materials,dict)
+                or not robustness_options['source_views'] and surface_materials is not None):
+            raise ValueError('robustness requires fresh full CodeBERT; pure VAT has no source views or materials')
 
     if change_objective is not None:
         from .change_learning import (OBJECTIVES, invariance_loss, random_pair_control,
@@ -1534,7 +1565,7 @@ def train_model(
         **({'finetuning_mode': finetuning_mode} if finetuning_mode is not None else {}),
         **({"graph_config": graph_config} if graph_config is not None else {}),
     )
-    if surface_vat_config is not None and resolved_device.type=='cuda':
+    if robustness_options is not None and resolved_device.type=='cuda':
         # autograd.grad for VAT power iteration is incompatible with reentrant checkpointing.
         model.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False})
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
@@ -1582,6 +1613,16 @@ def train_model(
         length_total, length_window = 0., 0.
         vat_total=0.;vat_eligible=0;vat_zero=0
         vat_forwards=0;vat_sequences=0;vat_slots=0;vat_norm_min=None;vat_norm_max=None
+        real_total=0.;real_functions=0;real_forwards=0;real_sequences=0
+        search_queries=0;original_queries=0;search_sequences=0;search_slots=0
+        search_reasons={};transformed_functions=0;search_seconds=0.;epoch_started=None
+        if robustness_options is not None:
+            import time
+            from .audit_statistics import search_surface_views,surface_seed
+            from .change_learning import bernoulli_js
+            epoch_started=time.monotonic()
+            candidate_path=Path(output_path).with_suffix('.candidates.jsonl')
+            candidate_path.parent.mkdir(parents=True,exist_ok=True)
         synthetic_total = 0.0
         synthetic_order = list(range(len(synthetic_pairs))) if synthetic_pairs is not None else []
         random.Random(seed + epoch).shuffle(synthetic_order)
@@ -1619,7 +1660,36 @@ def train_model(
             group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
             value = 0.
             length_value = 0.
-            for forwarded, coefficients in function_view_batches(batch, function_views, batch_size):
+            dynamic_views=None;selections=[]
+            if robustness_options is not None and robustness_options['source_views']:
+                started=time.monotonic()
+                def score(rows):
+                    nonlocal search_sequences,search_slots
+                    with torch.no_grad(),_auxiliary_mode(model):
+                        values=[]
+                        for at in range(0,len(rows),batch_size):
+                            grouped=input_builder.codebert_batch(rows[at:at+batch_size],device=resolved_device)
+                            search_sequences+=len(grouped[0]);search_slots+=grouped[0].numel()
+                            values.extend(model(*grouped).detach().cpu().tolist())
+                    return values
+                selections=search_surface_views(batch,score,input_builder.tokenizer,
+                    source_max_length-len(input_builder.source_prefix)-2,surface_materials,
+                    seed=seed,epoch=epoch+1,random_selection=not robustness_options['search'])
+                search_seconds+=time.monotonic()-started
+                dynamic_views={r['sample_key']:([dict(raw_source=s['selected']['raw_source'])] if s['selected'] else [])
+                               for r,s in zip(batch,selections)}
+                transformed_functions+=sum(s['selected'] is not None for s in selections)
+                search_queries+=sum(s['candidate_queries'] for s in selections);original_queries+=sum(s['original_queries'] for s in selections)
+                with candidate_path.open('a',encoding='utf-8') as handle:
+                    for selection in selections:
+                        for reason,count in selection['reasons'].items():search_reasons[reason]=search_reasons.get(reason,0)+count
+                        chosen=selection['selected']
+                        handle.write(json.dumps(dict(sample_key=selection['sample_key'],epoch=epoch+1,
+                            selected=None if chosen is None else {k:v for k,v in chosen.items() if k!='raw_source'},
+                            visited=[{k:v for k,v in c.items() if k!='raw_source'} for c in selection['visited']],
+                            candidate_queries=selection['candidate_queries'],original_queries=selection['original_queries'],
+                            loss_delta=selection['loss_delta'],reasons=selection['reasons']))+'\n')
+            for forwarded, coefficients in function_view_batches(batch, dynamic_views if dynamic_views is not None else function_views, batch_size):
                 prediction = _forward_batch(
                     model, forwarded, input_builder,
                     variant=variant, excluded_groups=excluded_groups, device=resolved_device,
@@ -1674,7 +1744,7 @@ def train_model(
                             local_count += len(selected)
                 training_loss.backward()
                 value += float(loss.detach().cpu())
-                if function_views is not None:
+                if function_views is not None or robustness_options is not None:
                     capacity = 512 - len(input_builder.source_prefix) - 2
                     budget = source_max_length - len(input_builder.source_prefix) - 2
                     lengths = [len(input_builder._encode(r['raw_source'], budget)) for r in forwarded]
@@ -1682,19 +1752,29 @@ def train_model(
                     view_forwards += len(forwarded)
                     encoder_sequences += sequences
                     encoder_token_slots += sequences * min(512, max(lengths)+len(input_builder.source_prefix)+2)
-            if surface_vat_config is not None:
-                vat_rows=[]
-                for index,record in zip(order[start:start+batch_size],batch):
-                    candidates=[dict(raw_source=record['raw_source']),*function_views[record['sample_key']]]
-                    view=candidates[(epoch+index)%len(candidates)]
-                    vat_rows.append(dict(record,**view))
-                # Checkpoint recomputation must see the same dropout flags as
-                # the auxiliary forward. Keep the mode through backward too.
+            if robustness_options is not None and robustness_options['lambda_real']:
+                paired=[(r,s['selected']) for r,s in zip(batch,selections) if s['selected'] is not None]
                 with _auxiliary_mode(model):
-                    terms,info=surface_vat_loss(model,vat_rows,input_builder,surface_vat_config,
+                    for at in range(0,len(paired),max(1,batch_size//2)):
+                        part=paired[at:at+max(1,batch_size//2)]
+                        originals=[r for r,c in part];changed=[dict(r,raw_source=c['raw_source']) for r,c in part]
+                        grouped=input_builder.codebert_batch(originals+changed,device=resolved_device)
+                        logits=model(*grouped,force_fp32=True)
+                        terms=bernoulli_js(logits[:len(part)],logits[len(part):])
+                        (robustness_options['lambda_real']*terms.sum()/group_samples).backward()
+                        real_total+=float(terms.detach().sum());real_functions+=len(part)
+                        real_forwards+=2*len(part);real_sequences+=len(grouped[0])
+            if robustness_options is not None and robustness_options['lambda_vat']:
+                vat_rows=[]
+                for i,record in enumerate(batch):
+                    selected=selections[i]['selected'] if selections else None
+                    rng=random.Random(surface_seed(seed,epoch+1,record['sample_key'],'vat-view'))
+                    vat_rows.append(dict(record,raw_source=selected['raw_source']) if selected is not None and rng.randrange(2) else record)
+                with _auxiliary_mode(model):
+                    terms,info=vat_loss(model,vat_rows,input_builder,robustness_options['vat'],alpha=robustness_options['alpha'],
                         device=resolved_device,noise_seed=seed+epoch*len(order)+start)
                     if terms.requires_grad:
-                        (surface_vat_config['weight']*terms.sum()/group_samples).backward()
+                        (robustness_options['lambda_vat']*terms.sum()/group_samples).backward()
                 vat_total+=float(terms.detach().sum())
                 vat_eligible+=info['eligible'];vat_zero+=info['zero_direction']
                 vat_forwards+=info['function_forwards'];vat_sequences+=info['encoder_sequences'];vat_slots+=info['encoder_token_slots']
@@ -1817,13 +1897,26 @@ def train_model(
                 total_loss=(running_loss+length_total)/len(train_records),
                 grl_lambda=conditional_length_config['grl_lambda'],
                 length_functions=len(train_records), length_group_counts=length_counts)
-        if surface_vat_config is not None:
-            weight=0. if surface_vat_config['mode']=='random' else surface_vat_config['weight']
-            epoch_row.update(surface_vat_mode=surface_vat_config['mode'],vat_loss=vat_total/len(train_records),
+        if robustness_options is not None:
+            if function_views is None:
+                epoch_row.update(augmented_functions=0,bce_function_forwards=view_forwards,
+                    bce_encoder_sequences=encoder_sequences,encoder_token_slots=encoder_token_slots,
+                    function_loss='one BCE per original function')
+            weight=robustness_options['lambda_vat']
+            epoch_row.update(robustness_mode=robustness_options['mode'],vat_loss=vat_total/len(train_records),
                 vat_weight=weight,vat_eligible_functions=vat_eligible,vat_skipped_functions=len(train_records)-vat_eligible,
                 vat_zero_direction_functions=vat_zero,vat_norm_min=vat_norm_min,vat_norm_max=vat_norm_max,
                 vat_function_forwards=vat_forwards,vat_encoder_sequences=vat_sequences,vat_encoder_token_slots=vat_slots,
-                total_loss=running_loss/len(train_records)+weight*vat_total/len(train_records))
+                real_js=real_total/len(train_records),real_js_functions=real_functions,
+                real_function_forwards=real_forwards,real_encoder_sequences=real_sequences,
+                augmented_functions=transformed_functions,
+                function_loss='mean original/selected BCE per function, then mean over original functions'
+                    if robustness_options['source_views'] else 'one BCE per original function',
+                candidate_queries=search_queries,original_search_queries=original_queries,
+                search_encoder_sequences=search_sequences,search_encoder_token_slots=search_slots,
+                search_seconds=search_seconds,epoch_seconds=time.monotonic()-epoch_started,
+                search_reasons=search_reasons,
+                total_loss=(running_loss+weight*vat_total+robustness_options['lambda_real']*real_total)/len(train_records))
         if synthetic_pairs is not None:
             epoch_row['synthetic_loss'] = synthetic_total / optimizer_steps
             epoch_row['synthetic_objective'] = synthetic_objective
@@ -1906,8 +1999,9 @@ def train_model(
     if conditional_length_config is not None:
         checkpoint['conditional_length_config'] = conditional_length_config
         checkpoint['length_group_counts'] = length_counts
-    if surface_vat_config is not None:
-        checkpoint['surface_vat_config']=surface_vat_config
+    if robustness_options is not None:
+        checkpoint['robustness_options']=robustness_options
+        if surface_materials is not None:checkpoint['surface_materials']=surface_materials
     if synthetic_pairs is not None:
         checkpoint['synthetic_supervision'] = dict(objective=synthetic_objective, weight=1.0,
             pairs_per_optimizer_step=1, unique_pairs=len(synthetic_pairs))
@@ -1944,7 +2038,8 @@ def train_model(
             window_source_capacity=capacity, stride=capacity//2,
             pooling='mean over unique source positions; repeated prefix/BOS/EOS averaged across windows',
             function_loss=('mean view BCE per function, then mean over original functions'
-                           if function_views is not None else 'one BCE per original function'))
+                           if function_views is not None or robustness_options is not None and robustness_options['source_views']
+                           else 'one BCE per original function'))
     if graph_config is not None:
         checkpoint["graph_config"] = graph_config
     target = Path(output_path)
@@ -2001,11 +2096,23 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device, include_
             raise ValueError('conditional length checkpoint input budget differs')
     elif include_length_head:
         raise ValueError('checkpoint has no conditional length head')
-    if checkpoint.get('surface_vat_config') is not None:
-        _validate_surface_vat_config(checkpoint['surface_vat_config'])
+    if checkpoint.get('robustness_options') is not None:
+        _validate_robustness_config(checkpoint['robustness_options'])
         if (mode!='full' or checkpoint.get('variant')!='codebert_source' or checkpoint.get('classifier_head')!='linear'
-                or checkpoint.get('source_max_length')!=2048 or checkpoint.get('augmentation_config',{}).get('mode')!='surface'):
-            raise ValueError('surface VAT checkpoint input/encoder configuration differs')
+                or checkpoint.get('source_max_length')!=2048
+                or checkpoint.get('augmentation_config') is not None
+                or bool(checkpoint.get('surface_materials'))!=checkpoint['robustness_options']['source_views']):
+            raise ValueError('robustness checkpoint input/encoder configuration differs')
+        builder=InputBuilder(AutoTokenizer.from_pretrained(checkpoint['model_path']),
+            source_max_length=checkpoint['source_max_length'],context_max_length=checkpoint['context_max_length'])
+        capacity=512-len(builder.source_prefix)-2
+        protocol=dict(encoder='roberta',native_window=512,logical_budget=2048,
+            source_budget=2048-len(builder.source_prefix)-2,window_source_capacity=capacity,stride=capacity//2,
+            pooling='mean over unique source positions; repeated prefix/BOS/EOS averaged across windows',
+            function_loss=('mean view BCE per function, then mean over original functions'
+                if checkpoint['robustness_options']['source_views'] else 'one BCE per original function'))
+        if checkpoint.get('input_protocol')!=protocol:
+            raise ValueError('robustness checkpoint input protocol differs from the public builder')
     model = _build_model(
         str(checkpoint["variant"]),
         str(checkpoint["model_path"]),

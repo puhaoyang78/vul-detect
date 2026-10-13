@@ -583,12 +583,13 @@ def surface_binding_layout(source_text: str, language: str) -> dict:
     from collections import Counter
     raw = source_text.encode()
     root = parser_for(language).parse(raw).root_node
-    if root.has_error: return dict(bindings=[],function_name=[],comment_points=[],reasons={'parse_error':1})
+    empty=dict(bindings=[],function_name=[],function_references=[],comments=[],comment_points=[])
+    if root.has_error: return dict(empty,reasons={'parse_error':1})
     nodes = list(walk(root))
     functions = [n for n in nodes if n.type=='function_definition']
-    if len(functions)!=1: return dict(bindings=[],function_name=[],comment_points=[],reasons={'ambiguous_function':1})
+    if len(functions)!=1: return dict(empty,reasons={'ambiguous_function':1})
     function = functions[0];body = function.child_by_field_name('body')
-    if body is None: return dict(bindings=[],function_name=[],comment_points=[],reasons={'missing_body':1})
+    if body is None: return dict(empty,reasons={'missing_body':1})
     coordinates = byte_character_map(source_text)
     def span(n): return [coordinates[n.start_byte],coordinates[n.end_byte]]
     declarator = function.child_by_field_name('declarator')
@@ -639,85 +640,168 @@ def surface_binding_layout(source_text: str, language: str) -> dict:
         occurrences = sorted({tuple(span(n)) for n in b['occurrences']})
         result.append(dict(name=b['name'],declaration=span(b['declaration'])[0],
             kind='parameter' if b['parameter_index'] is not None else 'local',spans=occurrences))
-    points = [coordinates[body.start_byte+1]]
-    for n in body.named_children:
-        if n.type!='comment' and not n.type.startswith('preproc_'):
-            at = coordinates[n.end_byte]
-            line = source_text[source_text.rfind('\n',0,at)+1:at]
-            if not line.lstrip().startswith('#') and not line.rstrip().endswith('\\'):
-                points.append(at)
-    if column_sensitive: points=[]
-    return dict(bindings=result,function_name=function_name,comment_points=sorted(set(points)),reasons=dict(reasons))
+    def safe_position(at):
+        first=source_text.rfind('\n',0,at)+1
+        last=source_text.find('\n',at)
+        line=source_text[first:last if last>=0 else len(source_text)]
+        previous=source_text[:max(0,first-1)].rsplit('\n',1)[-1]
+        return not (column_sensitive or line.lstrip().startswith('#') or line.rstrip().endswith('\\')
+                    or previous.rstrip().endswith('\\'))
+    def opaque(n):
+        while n is not None and n!=function:
+            if n.type.startswith('preproc_') or n.type in {'lambda_expression','class_specifier','struct_specifier','gnu_asm_expression'}:
+                return True
+            if n.type=='call_expression':
+                callee=n.child_by_field_name('function')
+                if callee is not None and callee.type=='identifier' and text(callee,raw).isupper():return True
+            n=n.parent
+        return False
+    points=[];comments=[]
+    for n in nodes:
+        if n.type=='compound_statement' and body.start_byte<=n.start_byte and n.end_byte<=body.end_byte and not opaque(n):
+            points.append(coordinates[n.start_byte+1])
+            points.extend(coordinates[c.end_byte] for c in n.named_children
+                          if c.type!='comment' and not c.type.startswith('preproc_'))
+        if n.type=='comment' and not opaque(n):
+            a,b=span(n)
+            directive=re.search(r'(?i)clang[ -]?format|NOLINT|cppcheck|IWYU|fall[ -]?through|@|pragma|coverage|lint:',source_text[a:b])
+            if not directive and all(safe_position(p) for p in range(a,b+1) if p==a or source_text[p-1:p]=='\n'):
+                comments.append([a,b])
+    points=[p for p in points if safe_position(p)]
+    references=[]
+    observable=any(v in source_text for v in ('__func__','__FUNCTION__','__PRETTY_FUNCTION__','__FUNCDNAME__','source_location'))
+    macro=any(n.type.startswith('preproc_') or n.type=='call_expression' and
+        n.child_by_field_name('function') is not None and text(n.child_by_field_name('function'),raw).isupper() for n in nodes)
+    name=text(declarator,raw) if declarator is not None else None
+    ambiguous=any(b['name']==name for b in bindings)
+    for n in nodes:
+        if n.type=='identifier' and n!=declarator and text(n,raw)==name:
+            parent=n.parent
+            if parent is not None and parent.type=='call_expression' and parent.child_by_field_name('function')==n:
+                references.append(span(n))
+            else:ambiguous=True
+    if observable or macro or ambiguous or column_sensitive:
+        function_name=[];references=[]
+        reasons['function_name_observable_or_unresolved']+=1
+    return dict(bindings=result,function_name=function_name,function_references=references,comments=comments,
+                comment_points=sorted(set(points)),reasons=dict(reasons))
 
 
-def surface_preserving_candidates(source: str, language: str, *, unseen=False):
-    """Eight label-free proposals: bound names, declaration name, comments, combined.
+SURFACE_OPERATIONS=('local_name','function_name','comment_insert','comment_delete','comment_replace')
+SURFACE_RULES=dict(train_names=['natural','snake_number','camel_pair'],
+    heldout_names=['pascal_number','prefix_pair'],train_comments=['word_list','numbered_phrase'],
+    heldout_comments=['bracketed_list','hyphen_phrase'],
+    heldout_combinations=[['function_name','comment_replace'],['local_name','comment_delete','comment_insert']])
 
-    Function-name views are explicitly input-only: change the current declaration
-    name, never callees/external APIs or project source files. All comments are
-    single-line insertions outside executable token spans and call arguments.
+
+def surface_materials(records,seed=42):
+    """Label-blind Train-only names and ordinary comment words; fixed rule holdout."""
+    import random
+    names=set();words=set()
+    for row in records:
+        if row['split']!='train':raise ValueError('surface materials accept Train functions only')
+        source=row['raw_source'];language=resolve_language(source,row.get('language','c'),row.get('file_name',''))
+        layout=surface_binding_layout(source,language)
+        names.update(b['name'] for b in layout['bindings'] if re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_]{0,47}',b['name']))
+        for a,b in layout['comments']:
+            content=source[a:b]
+            if re.search(r'(?i)cve|cwe|vuln|security|patch|fix|bug|overflow|underflow',content):continue
+            words.update(w.lower() for w in re.findall(r'\b[a-zA-Z]{3,16}\b',content))
+    if len(names)<6 or len(words)<6:raise ValueError('insufficient Train-only surface naming/comment material')
+    rng=random.Random(seed);names=sorted(names);words=sorted(words)
+    rng.shuffle(names);rng.shuffle(words)
+    # Cap only the material bank, not the eligible bindings of each function.
+    names=names[:2048];words=words[:1024]
+    ni=max(2,len(names)//4);wi=max(2,len(words)//4)
+    return dict(source='Train safe binding names and ordinary comment words; no labels/CVE/patch metadata',
+        train=dict(names=names[ni:],words=words[wi:]),heldout=dict(names=names[:ni],words=words[:wi]),rules=SURFACE_RULES)
+
+
+def surface_preserving_candidates(source: str, language: str, *, rng, materials, tokenizer,
+                                  bank='train',kinds=None,used_bindings=(),comment_tokens=0,
+                                  limit=4,proposal_limit=24):
+    """Bounded dynamic single-edit proposals, with per-edit binding validation.
+
+    Composition calls this on the newly edited source, never on old coordinates.
+    Function renames synchronize resolved self-calls and are input-only stress:
+    external project references are unavailable from a single function.
     """
     from collections import Counter
-    layout = surface_binding_layout(source,language)
-    skipped = Counter(layout['reasons']);result=[];seen=set()
-    names = ('probe_local','probe_slot') if unseen else ('surface_item','surface_value')
-    fn_names = ('probe_function','probe_routine') if unseen else ('surface_function','surface_routine')
-    words = (('amber orchard entry','cedar linen marker'),('amber orchard entry '*6,'cedar linen marker '*4)) if unseen else (
-        ('routine note','ordinary section'),('routine note '*3,'ordinary section '*2))
-    all_names = {text(n,source.encode()) for n in walk(parser_for(language).parse(source.encode()).root_node) if n.type.endswith('identifier')}
-    def fresh(name):
-        while name in all_names: name += '_'
-        return name
-    def mapped(position,edits): return position+sum(len(v)-(b-a) for a,b,v in edits if b<=position and a<position)
-    def add(kind,edits,renamed=None):
-        edits=sorted(edits)
-        if not edits:return
-        changed=apply_source_edits(source,edits)
-        if changed==source or changed in seen:return
+    if bank not in ('train','heldout') or limit<1 or proposal_limit<limit:raise ValueError('invalid surface proposal budget')
+    layout=surface_binding_layout(source,language);skipped=Counter(layout['reasons']);result=[];seen=set()
+    if any(k in layout['reasons'] for k in ('parse_error','ambiguous_function','missing_body')):return result,dict(skipped)
+    raw=source.encode();all_names={text(n,raw) for n in walk(parser_for(language).parse(raw).root_node) if n.type.endswith('identifier')}
+    tokens=source_token_spans(source);token_index={a:i for i,(_,a,b) in enumerate(tokens)}
+    categories=list(kinds or SURFACE_OPERATIONS);rng.shuffle(categories)
+    data=materials[bank];rules=materials['rules']
+    name_rules=rules['train_names' if bank=='train' else 'heldout_names']
+    comment_rules=rules['train_comments' if bank=='train' else 'heldout_comments']
+    def name():
+        rule=rng.choice(name_rules);first=rng.choice(data['names']);second=rng.choice(data['names'])
+        if rule=='natural':value=first
+        elif rule=='snake_number':value=f'{first}_{rng.randrange(2,1000)}'
+        elif rule=='camel_pair':value=first+'_'+second[:1].upper()+second[1:]
+        elif rule=='pascal_number':value=first[:1].upper()+first[1:]+str(rng.randrange(2,1000))
+        elif rule=='prefix_pair':value=second[:8]+'_'+first
+        else:raise ValueError('unknown naming rule')
+        return value,rule
+    def comment():
+        rule=rng.choice(comment_rules);parts=[rng.choice(data['words']) for _ in range(rng.randrange(1,9))]
+        if rule=='word_list':value=' '.join(parts)
+        elif rule=='numbered_phrase':value=str(rng.randrange(2,1000))+' '+' '.join(parts)
+        elif rule=='bracketed_list':value='['+', '.join(parts)+']'
+        elif rule=='hyphen_phrase':value=' - '.join(parts)
+        else:raise ValueError('unknown comment rule')
+        return ' /* '+value+' */ ',rule
+    def mapped(position,edits):return position+sum(len(v)-(b-a) for a,b,v in edits if b<=position and a<position)
+    for attempt in range(proposal_limit):
+        if len(result)>=limit:break
+        kind=categories[attempt%len(categories)];binding=None;added=0;rule=None;unit_id=None
+        if kind=='local_name':
+            eligible=[b for b in layout['bindings'] if token_index[b['declaration']] not in used_bindings]
+            if not eligible:skipped['no_unused_safe_binding']+=1;continue
+            binding=rng.choice(eligible);value,rule=name();unit_id=token_index[binding['declaration']]
+            if value in all_names:skipped['name_collision']+=1;continue
+            edits=[(a,b,value) for a,b in binding['spans']]
+        elif kind=='function_name':
+            if not layout['function_name'] or 'function' in used_bindings:skipped['no_safe_function_name']+=1;continue
+            value,rule=name();unit_id='function'
+            if value in all_names:skipped['name_collision']+=1;continue
+            edits=[(a,b,value) for a,b in layout['function_name']+layout['function_references']]
+        elif kind in ('comment_insert','comment_delete','comment_replace'):
+            sites=layout['comment_points'] if kind=='comment_insert' else layout['comments']
+            if not sites:skipped['no_'+kind+'_site']+=1;continue
+            site=rng.choice(sites);a,b=(site,site) if kind=='comment_insert' else site
+            if kind=='comment_delete':value=' '+('\n'*source[a:b].count('\n'));rule='remove_ordinary_comment'
+            else:
+                value,rule=comment();added=len(tokenizer(value,add_special_tokens=False)['input_ids'])
+                if comment_tokens+added>64:skipped['comment_token_budget']+=1;continue
+                value+='\n'*source[a:b].count('\n')
+            edits=[(a,b,value)]
+        else:raise ValueError('unknown surface edit category')
+        edits=sorted(edits);changed=apply_source_edits(source,edits)
+        if changed==source or changed in seen:skipped['duplicate_source']+=1;continue
         if parser_for(language).parse(changed.encode()).root_node.has_error:
-            raise ValueError('surface transformation produced invalid syntax')
-        before_tokens,after_tokens=source_token_spans(source),source_token_spans(changed)
-        if len(before_tokens)!=len(after_tokens):raise ValueError('surface transformation changed executable lexical token count')
-        allowed={(a,b) for a,b,v in edits if b>a}
-        if any(old!=new and (a,b) not in allowed for (old,a,b),(new,_,_) in zip(before_tokens,after_tokens)):
-            raise ValueError('surface transformation changed an execution token')
-        if renamed is not None:
-            new_layout=surface_binding_layout(changed,language)
-            declaration=mapped(renamed['declaration'],edits)
-            matches=[b for b in new_layout['bindings'] if b['declaration']==declaration]
-            expected=[(mapped(a,edits),mapped(a,edits)+len(next(v for x,y,v in edits if (x,y)==(a,b)))) for a,b in renamed['spans']]
+            skipped['edited_parse_error']+=1;continue
+        after=source_token_spans(changed);allowed={(a,b) for a,b,value in edits if b>a and kind in ('local_name','function_name')}
+        if (source.count('\n')!=changed.count('\n') or len(tokens)!=len(after)
+                or any(old!=new and (a,b) not in allowed for (old,a,b),(new,_,_) in zip(tokens,after))):
+            raise ValueError('surface edit changed execution tokens or physical line count')
+        if binding is not None:
+            matches=[b for b in surface_binding_layout(changed,language)['bindings'] if b['declaration']==mapped(binding['declaration'],edits)]
+            expected=[(mapped(a,edits),mapped(a,edits)+len(value)) for a,b in binding['spans']]
             if len(matches)!=1 or sorted(map(tuple,matches[0]['spans']))!=sorted(expected):
-                raise ValueError('rename failed declaration/reference binding correspondence')
-        insertions=[];shift=0
-        for a,b,value in edits:
-            if a==b: insertions.append([a+shift,a+shift+len(value)])
-            shift += len(value)-(b-a)
-        result.append(dict(kind=kind,edits=edits,inserted_comment_spans=insertions,
-                           function_name_input_only=kind in {'function_name','combined'}))
+                skipped['renamed_binding_unverified']+=1;continue
+        if kind=='function_name':
+            updated=surface_binding_layout(changed,language)
+            expected=[(mapped(a,edits),mapped(a,edits)+len(value)) for a,b in layout['function_name']+layout['function_references']]
+            if sorted(map(tuple,updated['function_name']+updated['function_references']))!=sorted(expected):
+                skipped['renamed_function_unverified']+=1;continue
+        result.append(dict(kind=kind,edits=edits,raw_source=changed,rule=rule,binding_token_index=unit_id,
+            added_comment_tokens=added,strict_semantic=kind!='function_name',
+            function_name_input_only=kind=='function_name',validation='parse, lexical tokens, physical lines and binding correspondence'))
         seen.add(changed)
-    bindings=layout['bindings']
-    parameters=[b for b in bindings if b['kind']=='parameter']
-    locals_=[b for b in bindings if b['kind']=='local']
-    selected=([parameters[0],locals_[0]] if parameters and locals_ else bindings[:2])
-    if len(selected)==1:selected*=2
-    rename_edits=[]
-    for index,binding in enumerate(selected):
-        edits=[(a,b,fresh(names[index])) for a,b in binding['spans']]
-        add('local_name',edits,binding);rename_edits.append((edits,binding))
-    function_edits=[]
-    for name in fn_names:
-        edits=[(a,b,fresh(name)) for a,b in layout['function_name']]
-        add('function_name',edits);function_edits.append(edits)
-    comment_edits=[]
-    points=layout['comment_points']
-    for index,texts in enumerate(words):
-        chosen=points[::max(1,len(points)//(index+2))][:index+2]
-        edits=[(at,at,f' /* {texts[j%len(texts)].strip()} */ ') for j,at in enumerate(chosen)]
-        add('comment',edits);comment_edits.append(edits)
-    for i in range(2):
-        renamed=rename_edits[i][1] if i<len(rename_edits) else None
-        edits=(rename_edits[i][0] if renamed is not None else [])+function_edits[i]+comment_edits[i]
-        if function_edits[i] and comment_edits[i] and renamed is not None:add('combined',edits,renamed)
+    skipped['proposals_attempted']+=attempt+1
     return result,dict(skipped)
 
 
