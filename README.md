@@ -436,7 +436,8 @@ CE=1.2309、准确率39.35%。长度头未超过仅用标签的先验，不能�
 初始化。输入仍为单函数，mean pooling＋linear，2048逻辑预算、512原生滑窗、半源码
 窗口容量步长和重复位置汇聚。固定 seed=42、3 epochs、lr=1e-5、AdamW、
 weight_decay=.01、batch_size=4×gradient_accumulation=2、梯度裁剪1。各组按原始
-clean Valid MCC、F1、Accuracy、阈值接近0.5的原 tie-break 选模。只使用 Train/Valid。
+clean Valid MCC、F1、Accuracy、阈值接近0.5的原 tie-break 选模。训练和选模只使用 Train/Valid；
+显式 `--stage test` 使用已保存的权重和阈值完成 Test 评价。
 BCE 仅在原始源码/标签/划分/初始化/输入/训练和选择规则匹配时复用已完成 checkpoint；
 历史增强 VAT 与本轮纯 VAT 不混用。
 
@@ -471,6 +472,14 @@ VAT 参考 stop-gradient、最终方向 detach，扰动前向对模型有梯度�
 负例误报、正负覆盖和真实查询/运行成本。所有阈值固定为各模型 clean Valid 阈值。
 默认不运行消融；显式支持 `ours_uniform`、`ours_no_consistency`、
 `ours_no_vat`、`ours_no_search`，最后一项使用同动态机制随机选一个合法视图。
+`--robustness all --include-ablations` 明确纳入四个消融；未指定该开关时仍只处理三组主实验。
+
+| 消融 | 唯一关闭项 | 保留项 |
+|---|---|---|
+| `ours_no_search` | 按模型 BCE 选择视图 | 同动态候选随机取一个变体，视图 BCE、JS、软权重 VAT |
+| `ours_uniform` | 位置软加权，alpha=0 | 搜索、视图 BCE、JS、全局 VAT |
+| `ours_no_consistency` | 真实 JS | 搜索、视图 BCE、软权重 VAT |
+| `ours_no_vat` | 连续 VAT | 搜索、视图 BCE、双侧 JS |
 
 ```bash
 PY=/home/phy/miniconda3/envs/vul-detect/bin/python
@@ -481,11 +490,20 @@ $PY -m vulnmechanism.cli codebert-finetuning --robustness all --stage smoke --de
 $PY -m vulnmechanism.cli codebert-finetuning --robustness vat --stage train --device cuda:0
 $PY -m vulnmechanism.cli codebert-finetuning --robustness ours --stage train --device cuda:1
 $PY -m vulnmechanism.cli codebert-finetuning --robustness all --stage report --device cuda:0
+# 显式追加四个消融；已完成的主实验会复用
+$PY -m vulnmechanism.cli codebert-finetuning --robustness all --include-ablations --stage smoke --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --robustness all --include-ablations --stage all --device cuda:0
+# 全部训练和 Valid 选模完成后，七个固定模型进行 Test 评价
+$PY -m vulnmechanism.cli codebert-finetuning --robustness all --include-ablations --stage test --device cuda:0
 ```
 
 产物位于 `results/codebert_robustness_seed42`：必要配置/素材、固定及留出编辑、
 smoke、逐轮候选、训练日志/checkpoint、Train/Valid 预测及 JSON/CSV 比较。
 推理和 checkpoint 重载只输入一个函数，不需要真实标签、搜索或辅助输入。
+Test 使用原清单的1,014个函数（正/负各507）；共享训练侧素材及预先划分的扰动规则，
+分别评价 clean、固定、留出及各模型自适应扰动，不重选阈值或调训练设置。
+Test 预测、候选和指标使用 `test.` 前缀，与原 Valid 产物分开；七组汇总为
+`ablation.comparison.metrics.json/csv`（Valid）和 `test.ablation.comparison.metrics.json/csv`（Test）。
 
 本轮主实验结果（2026-10-13，seed=42，仅 Train/Valid）：
 
@@ -552,7 +570,7 @@ VAT 为0.010524/0.013568/0.012747。纯 VAT 的 VAT 均值为0.013765/0.016707/0
 
 本轮完整方法提升了预定义随机/留出/自适应表面扰动鲁棒性；自适应最坏 Accuracy 相对纯 VAT 增加12.33个百分点，
 ASR 从31.01%降到5.97%。只看严格语义保持变换也有改善。clean AUROC/MCC 均未超过 BCE，
-clean Recall 从83.43%降至71.40%，不能报告为原始函数分类的普遍提升。本轮未运行模块消融，不能据此分别归因。
+clean Recall 从83.43%降至71.40%，不能报告为原始函数分类的普遍提升。以上三组主实验不能分别归因；四个模块消融的补充结果见下文。
 
 59项直接相关及公共输入/变换/损失测试通过。真实 CodeBERT smoke 覆盖三条训练路径、编码器和分类头更新、
 精确保存重载，以及无法合法变换的真实 Train 函数 `primevul:1000`；真实 JS 两侧均有梯度。
@@ -569,6 +587,118 @@ Train 侧16个不同长度/标签的数值样本在预训练与已拟合 checkpo
 [comparison.metrics.json](results/codebert_robustness_seed42/comparison.metrics.json)、
 [comparison.metrics.csv](results/codebert_robustness_seed42/comparison.metrics.csv) 和
 [smoke.metrics.json](results/codebert_robustness_seed42/smoke.metrics.json)。
+
+### Test 与四个模块消融（2026-10-14，seed=42）
+
+四个消融各从相同预训练 CodeBERT 起点完成3×978个优化步骤；已有 bce/vat/ours 严格复用。
+Train/Valid/Test 均使用原 `manifest_sven_commit_disjoint.jsonl`，没有重新划分、补入修复端或按 CPG 筛选。
+Test 是清单内的1,014个函数（正/负各507），不是官方完整 Test 的规模。所有训练设置在 Test 前固定，
+epoch 和阈值只按 clean Valid 选择；`ours_no_vat` 选第2轮，其余六组选第3轮，均实际训练了3轮。
+
+补充消融的 clean Valid 和完整分母自适应评价如下；三组主实验的对应数值见上表。
+
+| 方法 | Epoch/阈值 | Valid BCE | Accuracy | Precision | Recall | F1 | MCC | AUROC | FP/FN | 自适应最坏 Accuracy | ASR |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| ours_no_search | 3/0.42 | 0.5839 | 0.7465 | 0.7648 | 0.7120 | 0.7375 | 0.4943 | 0.8120 | 111/146 | 0.6884 | 11.94% (59/494) |
+| ours_uniform | 3/0.41 | 0.5735 | 0.7426 | 0.7412 | 0.7456 | 0.7434 | 0.4852 | 0.8038 | 132/129 | 0.7101 | 6.79% (33/486) |
+| ours_no_consistency | 3/0.42 | 0.5706 | 0.7485 | 0.7603 | 0.7258 | 0.7427 | 0.4976 | 0.8088 | 116/139 | 0.7249 | 4.91% (24/489) |
+| ours_no_vat | 2/0.26 | 0.6643 | 0.7446 | 0.7531 | 0.7278 | 0.7402 | 0.4894 | 0.8090 | 121/138 | 0.7120 | 6.78% (33/487) |
+
+七个固定模型的 clean Test：
+
+| 方法 | Epoch/阈值 | Test BCE | Accuracy | Precision | Recall | F1 | MCC | AUROC | FP/FN |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| bce | 3/0.29 | 0.5394 | 0.7485 | 0.7086 | 0.8442 | 0.7705 | 0.5064 | 0.8325 | 176/79 |
+| vat | 3/0.31 | 0.5694 | 0.7544 | 0.7539 | 0.7554 | 0.7547 | 0.5089 | 0.8384 | 125/124 |
+| ours | 3/0.45 | 0.5117 | 0.7525 | 0.7510 | 0.7554 | 0.7532 | 0.5049 | 0.8373 | 127/124 |
+| ours_no_search | 3/0.42 | 0.5278 | 0.7574 | 0.7615 | 0.7495 | 0.7555 | 0.5149 | 0.8399 | 119/127 |
+| ours_uniform | 3/0.41 | 0.5142 | 0.7594 | 0.7440 | 0.7909 | 0.7667 | 0.5198 | 0.8392 | 138/106 |
+| ours_no_consistency | 3/0.42 | 0.5204 | 0.7475 | 0.7427 | 0.7574 | 0.7500 | 0.4952 | 0.8368 | 133/123 |
+| ours_no_vat | 2/0.26 | 0.6040 | 0.7643 | 0.7587 | 0.7751 | 0.7668 | 0.5287 | 0.8444 | 125/114 |
+
+Test 扰动评价保留全部1,014个函数作为最坏检测分母，原输入包含在集合内；下表汇总全部六类变换，
+函数名及含函数名的组合属于单独标记的 input-only stress。固定候选覆盖608（正289/负319），
+留出候选596（正279/负317），各模型自适应均覆盖609（正287/负322）。全部候选正确率使用609个
+有候选函数作分母；ASR 使用其中原版预测正确的函数作分母，不把不可变换函数计作攻击失败。
+
+| 方法 | 固定最坏 Accuracy | 留出最坏 Accuracy | 自适应最坏 Accuracy | 自适应 MCC | 自适应 AUROC | 全部候选正确率 | 自适应 ASR（失败/原正确） |
+|---|---:|---:|---:|---:|---:|---:|---|
+| bce | 0.6124 | 0.6243 | 0.5582 | 0.1324 | 0.4231 | 39.24% | 44.68% (193/432) |
+| vat | 0.7012 | 0.7101 | 0.6341 | 0.2735 | 0.6461 | 51.56% | 27.98% (122/436) |
+| ours | 0.7387 | 0.7416 | 0.7219 | 0.4441 | 0.8013 | 66.67% | 7.09% (31/437) |
+| ours_no_search | 0.7367 | 0.7387 | 0.6992 | 0.3988 | 0.7755 | 62.07% | 13.50% (59/437) |
+| ours_uniform | 0.7446 | 0.7475 | 0.7288 | 0.4597 | 0.8063 | 67.00% | 7.06% (31/439) |
+| ours_no_consistency | 0.7318 | 0.7367 | 0.7209 | 0.4421 | 0.8016 | 66.01% | 6.29% (27/429) |
+| ours_no_vat | 0.7406 | 0.7465 | 0.7160 | 0.4320 | 0.7926 | 65.52% | 10.94% (49/448) |
+
+严格语义保持的自适应集合覆盖606（正284/负322）；最坏检测仍使用完整1,014个函数。
+
+| 方法 | 严格最坏 Accuracy | MCC | AUROC | ASR（失败/原正确） |
+|---|---:|---:|---:|---|
+| bce | 0.5710 | 0.1606 | 0.4492 | 41.96% (180/429) |
+| vat | 0.6391 | 0.2837 | 0.6536 | 27.02% (117/433) |
+| ours | 0.7278 | 0.4558 | 0.8055 | 5.76% (25/434) |
+| ours_no_search | 0.7061 | 0.4125 | 0.7855 | 11.98% (52/434) |
+| ours_uniform | 0.7337 | 0.4694 | 0.8104 | 5.96% (26/436) |
+| ours_no_consistency | 0.7239 | 0.4480 | 0.8052 | 5.63% (24/426) |
+| ours_no_vat | 0.7199 | 0.4399 | 0.7984 | 10.11% (45/445) |
+
+共同 Test 候选的逐类覆盖如下；每类所有七组均使用相同函数和视图，完整分类、成对/全部候选正确率、
+翻转方向和 ASR 保存在 JSON。自适应攻击各模型独立选束，并没有强制使用相同最终变体。
+
+| 类型 | 固定N（正/负） | 留出N（正/负） |
+|---|---|---|
+| 局部/参数名 | 535 (269/266) | 512 (248/264) |
+| 函数名 stress | 318 (113/205) | 319 (114/205) |
+| 注释插入 | 570 (255/315) | 566 (253/313) |
+| 注释删除 | 267 (164/103) | 269 (166/103) |
+| 注释替换 | 275 (170/105) | 271 (167/104) |
+| 组合 | 506 (242/264) | 252 (155/97) |
+
+完整方法在 Test 自适应最坏 Accuracy 上相对 BCE/纯 VAT 增加16.37/8.78个百分点，
+但 clean MCC 比 BCE 低0.0015，F1 也较低，收益主要体现为抗扰动，不能概括为 clean 分类全面提升。
+四个消融的结论如下，评价后没有重选配置或阈值：
+
+- 搜索：完整方法较 `ours_no_search` 的自适应 Accuracy 高2.27个百分点，ASR 从13.50%降至7.09%；
+  Valid 对应差值也是正向（+2.76个百分点），支持难视图选择对本次抗扰动任务的作用，clean 分类没有同步改善。
+- 位置软加权：`ours_uniform` 在 Test 的 clean MCC 和自适应 Accuracy 都更高；Valid 的完整方法略高。
+  两个划分方向不一致，没有证据支持软加权的稳定增益。
+- 真实一致性：Test 自适应 Accuracy 仅相差1/1,014个函数，去掉 JS 的 ASR 反而更低；
+  Valid 去掉 JS 的 clean MCC 和自适应 Accuracy 也更高，独立贡献尚不明确。
+- 连续 VAT：完整方法较 `ours_no_vat` 的 Test 自适应 Accuracy 高0.59个百分点，ASR 从10.94%降至7.09%；
+  正例逃逸从25/210降至8/197，但 clean MCC/AUROC 从0.5287/0.8444降至0.5049/0.8373，存在分类与鲁棒性的取舍。
+
+消融的实际三轮训练成本（wall time 包括 clean Valid 选模）：
+
+| 方法 | 训练分钟 | 候选/原版评分查询 | 编码窗口 | 候选生成与选择分钟 |
+|---|---:|---|---:|---:|
+| ours_no_search | 146.41 | 0/0 | 366856 | 53.98 |
+| ours_uniform | 175.26 | 159601/14541 | 713705 | 85.49 |
+| ours_no_consistency | 157.34 | 159487/14541 | 650791 | 85.83 |
+| ours_no_vat | 137.78 | 159421/14541 | 508681 | 85.55 |
+
+Test 自适应搜索的实际预算为每函数最多48个候选评分、束宽2/深度3：
+
+| 方法 | 候选查询 | 编码窗口 | 搜索秒 |
+|---|---:|---:|---:|
+| bce | 24438 | 55089 | 620.07 |
+| vat | 24786 | 55584 | 589.09 |
+| ours | 24512 | 55173 | 599.98 |
+| ours_no_search | 24574 | 55286 | 619.94 |
+| ours_uniform | 24491 | 55242 | 616.45 |
+| ours_no_consistency | 24475 | 55149 | 615.47 |
+| ours_no_vat | 24527 | 55606 | 615.85 |
+
+`ours_no_search` 的候选生成仍需词法/绑定和可见性检查，但不查询模型。消融只关闭对应项，
+不额外执行已关闭的 JS/VAT 来凑前向预算；函数顺序、初始化、epoch 和优化步数相同。
+11项相关测试通过，覆盖四个开关、Test 固定权重/阈值及缓存复用。四条真实 CodeBERT smoke
+均确认编码器/分类头更新及精确保存重载；无合法变体的 `primevul:1000` 仍正常参与训练。
+
+完整 Valid 和 Test 指标、覆盖及正负分母、逐类与 strict/stress 结果、预测和逐轮成本分别见
+[ablation.comparison.metrics.json](results/codebert_robustness_seed42/ablation.comparison.metrics.json)、
+[test.ablation.comparison.metrics.json](results/codebert_robustness_seed42/test.ablation.comparison.metrics.json)、
+[Test CSV](results/codebert_robustness_seed42/test.ablation.comparison.metrics.csv) 和
+[ablations.smoke.metrics.json](results/codebert_robustness_seed42/ablations.smoke.metrics.json)。
 
 ### 历史：绑定约束的表面 VAT
 

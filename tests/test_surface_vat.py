@@ -251,7 +251,7 @@ class SurfaceVATTests(unittest.TestCase):
         self.assertEqual(report['asr']['denominator'],1);self.assertEqual(report['asr']['count'],1)
         self.assertEqual(report['wrong_to_correct']['count'],1);self.assertEqual(report['worst_complete']['accuracy'],1/3)
 
-    def test_public_three_paths_updates_reload_and_reuse(self):
+    def test_public_paths_ablations_frozen_test_and_reuse(self):
         from vulnmechanism.cli import _codebert_finetuning, _finetuning_evaluate
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,6 +294,71 @@ class SurfaceVATTests(unittest.TestCase):
                     for k in ('fixed','heldout'):self.assertEqual(len(result[mode][k]),6)
                 args.stage='train'
                 with patch.object(core,'train_model',side_effect=AssertionError('completed experiment retrained')):_codebert_finetuning(args)
+                args.stage='smoke';args.include_ablations=True
+                ablation_smoke=_codebert_finetuning(args)['ablations']
+                ablations=('ours_no_search','ours_uniform','ours_no_consistency','ours_no_vat')
+                self.assertEqual(set(ablation_smoke['checks']),set(ablations))
+                for mode in ablations:
+                    check=ablation_smoke['checks'][mode]
+                    self.assertTrue(check['encoder_updated']);self.assertTrue(check['classifier_updated'])
+                    self.assertTrue(check['save_reload_exact'])
+                    args.robustness=mode;args.include_ablations=False;args.stage='all'
+                    vat_patch=(patch.object(core,'vat_loss',side_effect=AssertionError('disabled VAT executed'))
+                               if mode=='ours_no_vat' else patch.object(core,'vat_loss',wraps=core.vat_loss))
+                    js_patch=(patch('vulnmechanism.change_learning.bernoulli_js',side_effect=AssertionError('disabled JS executed'))
+                              if mode=='ours_no_consistency' else patch('vulnmechanism.change_learning.bernoulli_js',wraps=bernoulli_js))
+                    with vat_patch as vat_calls,js_patch,patch.object(data,'search_surface_views',wraps=data.search_surface_views) as searches:
+                        ablated=_codebert_finetuning(args)[mode]
+                    saved=torch.load(root/f'robustness/{mode}/best.pt',weights_only=False)
+                    expected=dict(core.robustness_config('ours'),mode=mode)
+                    field,value={'ours_no_search':('search',False),'ours_uniform':('alpha',0.),
+                                 'ours_no_consistency':('lambda_real',0.),'ours_no_vat':('lambda_vat',0.)}[mode]
+                    expected[field]=value
+                    self.assertEqual(saved['robustness_options'],expected)
+                    self.assertEqual(saved['cohort_members'],cp['cohort_members'])
+                    self.assertEqual(set(saved['task_state']),set(cp['task_state']))
+                    self.assertEqual(saved['training_config'],cp['training_config'])
+                    if mode=='ours_uniform':self.assertEqual({c.kwargs['alpha'] for c in vat_calls.call_args_list},{0.})
+                    if mode=='ours_no_search':
+                        training_searches=[c for c in searches.call_args_list if c.kwargs.get('epoch')]
+                        self.assertTrue(training_searches)
+                        self.assertTrue(all(c.kwargs['random_selection'] for c in training_searches))
+                    for epoch in ablated['training']:
+                        self.assertEqual(epoch['optimizer_steps'],1);self.assertEqual(epoch['augmented_functions'],7)
+                        if mode=='ours_no_search':
+                            self.assertEqual(epoch['candidate_queries'],0);self.assertEqual(epoch['original_search_queries'],0)
+                            self.assertEqual(epoch['search_encoder_sequences'],0)
+                        if mode=='ours_no_consistency':
+                            self.assertEqual(epoch['real_js'],0);self.assertEqual(epoch['real_function_forwards'],0)
+                        else:self.assertGreater(epoch['real_js'],0)
+                        if mode=='ours_no_vat':
+                            self.assertEqual(epoch['vat_loss'],0);self.assertEqual(epoch['vat_function_forwards'],0)
+                        else:self.assertGreater(epoch['vat_loss'],0)
+                original_report=(root/'robustness/comparison.metrics.json').read_bytes()
+                rows[-1]['function']='int heldout(int orchard){return api(orchard);}'
+                rows.append(dict(rows[-1],sample_key='heldout_positive',label=1))
+                manifest.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+                args.stage='test';args.robustness='all';args.include_ablations=True
+                with patch.object(core,'train_model',side_effect=AssertionError('Test trained a model')),\
+                        patch.object(core,'_select_validation_threshold',side_effect=AssertionError('Test selected a threshold')):
+                    tested=_codebert_finetuning(args)
+                self.assertEqual(set(tested),{'bce','vat','ours',*ablations})
+                self.assertEqual((root/'robustness/comparison.metrics.json').read_bytes(),original_report)
+                self.assertTrue((root/'robustness/test.ablation.comparison.metrics.json').exists())
+                self.assertTrue((root/'robustness/test.fixed.candidates.jsonl').exists())
+                for mode,report in tested.items():
+                    self.assertEqual(report['clean']['split'],'test');self.assertEqual(report['clean']['samples'],2)
+                    self.assertEqual(report['adaptive']['all']['total'],2)
+                    target=baseline if mode=='bce' else root/f'robustness/{mode}/best.pt'
+                    selected=torch.load(target,weights_only=False)
+                    self.assertEqual(report['threshold'],selected['decision_threshold'])
+                    self.assertEqual(report['selected_epoch'],selected['selected_epoch'])
+                    prediction_path=root/f'robustness/{mode}/test.predictions.jsonl'
+                    with prediction_path.open() as handle:predictions=[json.loads(l) for l in handle]
+                    self.assertEqual([p['sample_key'] for p in predictions],['heldout','heldout_positive'])
+                    self.assertTrue(all(p['threshold']==selected['decision_threshold'] for p in predictions))
+                with patch.object(core,'_load_model',side_effect=AssertionError('completed Test reloaded an encoder')):
+                    self.assertEqual(_codebert_finetuning(args),tested)
                 bad_input=dict(saved,input_protocol=dict(saved['input_protocol'],stride=999))
                 with self.assertRaisesRegex(ValueError,'input protocol differs'):
                     core._load_model(bad_input,device=torch.device('cpu'))

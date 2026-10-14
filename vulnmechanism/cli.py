@@ -211,11 +211,11 @@ def build_parser() -> argparse.ArgumentParser:
     local.add_argument('--smoke-samples', type=int, default=0)
     local.set_defaults(func=_change_learning)
 
-    finetuning = sub.add_parser('codebert-finetuning', help='fixed six-run PrimeVul LoRA/full comparison, Train/Valid only')
+    finetuning = sub.add_parser('codebert-finetuning', help='CodeBERT fine-tuning and robustness comparisons with Valid-selected checkpoints')
     finetuning.add_argument('--manifest', default='data/benchmark/manifest_sven_commit_disjoint.jsonl')
     finetuning.add_argument('--model', default='/home/PublicData/PHY-data/resource/codebert-base')
     finetuning.add_argument('--output-dir', help='experiment-specific result directory')
-    finetuning.add_argument('--stage', choices=('prepare', 'smoke', 'train', 'report', 'all'), default='all')
+    finetuning.add_argument('--stage', choices=('prepare', 'smoke', 'train', 'report', 'test', 'all'), default='all')
     finetuning.add_argument('--finetuning-mode', choices=('lora', 'full'), help='train one fixed three-LR family')
     shallow_method = finetuning.add_mutually_exclusive_group()
     shallow_method.add_argument('--shallow-reweighting', action='store_true', help='one full fine-tuning run with fixed Train-only shallow OOF weights')
@@ -232,6 +232,8 @@ def build_parser() -> argparse.ArgumentParser:
     finetuning.add_argument('--device', default='cuda:0')
     finetuning.add_argument('--batch-size', type=int, default=4)
     finetuning.add_argument('--gradient-accumulation', type=int, default=2)
+    finetuning.add_argument('--include-ablations', action='store_true',
+                           help='with --robustness all, explicitly include the four robustness ablations')
     finetuning.set_defaults(func=_codebert_finetuning)
     return parser
 
@@ -319,6 +321,8 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None
 
 def _codebert_finetuning(args):
     if getattr(args,'robustness',None):return _codebert_robustness(args)
+    if args.stage=='test' or getattr(args,'include_ablations',False):
+        raise ValueError('test stage and --include-ablations require --robustness')
     if getattr(args, 'conditional_length_debiasing', False):
         return _codebert_conditional_length(args)
     if getattr(args, 'shallow_augmentation', None):
@@ -1040,22 +1044,26 @@ def _conditional_length_report(rows,root,augmentation_root,config,base,random_cp
     return report
 
 
-def _robustness_fixed_candidates(rows,materials,root,tokenizer,source_budget):
+def _robustness_fixed_candidates(rows,materials,root,tokenizer,source_budget,*,split='valid'):
     from . import audit_statistics as data
     from .syntax import SURFACE_OPERATIONS
     from .change_learning import write_json
     import random
+    if split not in ('valid','test'):raise ValueError('robustness evaluation requires Valid or Test')
+    evaluation_rows=[r for r in rows if r['split']==split]
+    if not evaluation_rows:raise ValueError(f'{split} split is empty')
+    prefix='' if split=='valid' else 'test.'
     paths={}
     for bank in ('train','heldout'):
         name='fixed' if bank=='train' else 'heldout'
-        path=root/f'{name}.candidates.jsonl';paths[name]=path
+        path=root/f'{prefix}{name}.candidates.jsonl';paths[name]=path
         if path.exists():
             with path.open() as handle:cached=[json.loads(l) for l in handle]
-            if [r['sample_key'] for r in cached]!=[r['sample_key'] for r in rows if r['split']=='valid']:
+            if [r['sample_key'] for r in cached]!=[r['sample_key'] for r in evaluation_rows]:
                 raise ValueError('robustness candidate cache members/order differ')
             continue
         entries=[]
-        for index,row in enumerate(r for r in rows if r['split']=='valid'):
+        for index,row in enumerate(evaluation_rows):
             groups={};reasons={}
             for kind in (*SURFACE_OPERATIONS,'combined'):
                 combos=([kind],) if kind!='combined' else (
@@ -1071,16 +1079,16 @@ def _robustness_fixed_candidates(rows,materials,root,tokenizer,source_budget):
                 rng.shuffle(candidates)
                 groups[kind]=[{k:v for k,v in c.items() if k!='raw_source'} for c in candidates[:2]]
             entries.append(dict(sample_key=row['sample_key'],groups=groups,reasons=reasons))
-            if (index+1)%100==0:print(f'{name} candidates {index+1}/'+str(sum(r['split']=='valid' for r in rows)),flush=True)
+            if (index+1)%100==0:print(f'{split} {name} candidates {index+1}/{len(evaluation_rows)}',flush=True)
         with path.open('x') as handle:
             for entry in entries:handle.write(json.dumps(entry)+'\n')
-        write_json(root/f'{name}.coverage.metrics.json',{
+        write_json(root/f'{prefix}{name}.coverage.metrics.json',{
             kind:dict(eligible=sum(bool(e['groups'][kind]) for e in entries),total=len(entries),
                 candidates=sum(len(e['groups'][kind]) for e in entries)) for kind in (*SURFACE_OPERATIONS,'combined')})
     return paths
 
 
-def _robustness_smoke(rows,root,config,materials,args,baseline):
+def _robustness_smoke(rows,root,config,materials,args,baseline,*,modes=('bce','vat','ours'),output_name='smoke.metrics.json'):
     import tempfile
     import torch
     from . import model as core,audit_statistics as data
@@ -1148,12 +1156,12 @@ def _robustness_smoke(rows,root,config,materials,args,baseline):
         untransformable=unsupported[0]['sample_key'],checks={})
     del fresh,logits,js
     with tempfile.TemporaryDirectory(prefix='vul_detect_robustness_smoke_') as tmp:
-        for mode in ('bce','vat','ours'):
+        for mode in modes:
             target=Path(tmp)/mode/'best.pt'
             opts=None if mode=='bce' else core.robustness_config(mode,xi=xi)
             cp=core.train_model(None,target,records=chosen,variant='codebert_source',model_path=args.model,
                 source_max_length=2048,context_max_length=384,seed=42,device=args.device,finetuning_mode='full',
-                robustness_options=opts,surface_materials=materials if mode=='ours' else None,log_every=1,
+                robustness_options=opts,surface_materials=materials if opts is not None and opts['source_views'] else None,log_every=1,
                 **dict(config['training'],epochs=1))
             checks=dict(encoder_updated=not torch.equal(cp['encoder_state']['embeddings.word_embeddings.weight'],initial_embedding),
                 classifier_updated=any(not torch.equal(cp['task_state'][k],v) for k,v in initial_head.items()))
@@ -1165,12 +1173,12 @@ def _robustness_smoke(rows,root,config,materials,args,baseline):
             if not all(checks.values()):raise ValueError(f'{mode} real smoke failed')
             with target.with_suffix('.training.jsonl').open() as handle:epochs=[json.loads(l) for l in handle]
             report['checks'][mode]=dict(checks,epoch=next(r for r in epochs if r['event']=='epoch'))
-            if mode=='ours':
+            if opts is not None and opts['source_views']:
                 with target.with_suffix('.candidates.jsonl').open() as handle:selections=[json.loads(l) for l in handle]
                 missing=next(s for s in selections if s['sample_key']==unsupported[0]['sample_key'])
                 if missing['selected'] is not None:raise ValueError('untransformable real function was falsely augmented')
             del cp
-    write_json(root/'smoke.metrics.json',report)
+    write_json(root/output_name,report)
     return report
 
 
@@ -1213,18 +1221,21 @@ def _robustness_summary(originals,views,threshold):
             rate=rate(false_alarm,sum(r['label']==0 and r['prediction']==0 for r in eligible))))
 
 
-def _robustness_evaluation(rows,run,target,cp,root,materials,args):
+def _robustness_evaluation(rows,run,target,cp,root,materials,args,*,split='valid'):
     import torch,time
     import numpy as np
     from . import model as core,audit_statistics as data
     from .change_learning import write_json
     from .cfg_metrics import decision_boundary
     boundary=decision_boundary(cp['decision_threshold'])
-    valid=[r for r in rows if r['split']=='valid'];by={r['sample_key']:r for r in valid}
-    clean_run=target.parent
-    clean=_finetuning_evaluate(rows,clean_run,'valid',cp,args,checkpoint_path=target)
-    with (clean_run/'valid.predictions.jsonl').open() as handle:originals=[json.loads(l) for l in handle]
-    output=run/'robustness.metrics.json'
+    if split not in ('valid','test'):raise ValueError('robustness evaluation requires Valid or Test')
+    evaluation_rows=[r for r in rows if r['split']==split];by={r['sample_key']:r for r in evaluation_rows}
+    if not evaluation_rows:raise ValueError(f'{split} split is empty')
+    prefix='' if split=='valid' else 'test.'
+    clean_run=target.parent if split=='valid' else run
+    clean=_finetuning_evaluate(rows,clean_run,split,cp,args,checkpoint_path=target)
+    with (clean_run/f'{split}.predictions.jsonl').open() as handle:originals=[json.loads(l) for l in handle]
+    output=run/f'{prefix}robustness.metrics.json'
     if output.exists():
         cached=json.loads(output.read_text())
         if (cached.get('threshold')!=cp['decision_threshold'] or cached.get('selected_epoch')!=cp['selected_epoch']
@@ -1245,9 +1256,10 @@ def _robustness_evaluation(rows,run,target,cp,root,materials,args):
         costs['seconds']+=time.monotonic()-started
         return values
     report=dict(clean=clean,threshold=cp['decision_threshold'],selected_epoch=cp['selected_epoch'],checkpoint=str(target))
+    if split=='test':report['split']=split
     for name in ('fixed','heldout'):
         costs.update({k:0 for k in costs});started=time.monotonic()
-        with (root/f'{name}.candidates.jsonl').open() as handle:entries=[json.loads(l) for l in handle]
+        with (root/f'{prefix}{name}.candidates.jsonl').open() as handle:entries=[json.loads(l) for l in handle]
         views={};flat=[];index=[]
         for entry in entries:
             row=by[entry['sample_key']]
@@ -1271,21 +1283,21 @@ def _robustness_evaluation(rows,run,target,cp,root,materials,args):
         report[name+'_overall']=dict(all=_robustness_summary(originals,combined,cp['decision_threshold']),
             strict_semantic=_robustness_summary(originals,{k:[v for v in vs if v['strict_semantic']] for k,vs in combined.items()},cp['decision_threshold']),
             input_only_stress=_robustness_summary(originals,{k:[v for v in vs if not v['strict_semantic']] for k,vs in combined.items()},cp['decision_threshold']))
-        with (run/f'{name}.predictions.jsonl').open('x') as handle:
+        with (run/f'{prefix}{name}.predictions.jsonl').open('x') as handle:
             for row in originals:handle.write(json.dumps(dict(sample_key=row['sample_key'],label=row['label'],
                 groups={k:g.get(row['sample_key'],[]) for k,g in views.items()}))+'\n')
         report.setdefault('evaluation_costs',{})[name]=dict(costs,total_seconds=time.monotonic()-started)
     # Each model receives the same initial generator states, then its own beams.
     started=time.monotonic();attacks=[];groups={};strict={};stress={};queries=0;original_queries=0
     original_logits={r['sample_key']:r['logit'] for r in originals}
-    attack_path=run/'adaptive.predictions.jsonl'
+    attack_path=run/f'{prefix}adaptive.predictions.jsonl'
     if attack_path.exists():
         with attack_path.open() as handle:attacks=[json.loads(l) for l in handle]
     else:
         with attack_path.open('x') as handle:
-            for at in range(0,len(valid),args.batch_size):
+            for at in range(0,len(evaluation_rows),args.batch_size):
                 costs.update({k:0 for k in costs});batch_started=time.monotonic()
-                result=data.search_surface_views(valid[at:at+args.batch_size],score,builder.tokenizer,
+                result=data.search_surface_views(evaluation_rows[at:at+args.batch_size],score,builder.tokenizer,
                     cp['input_protocol']['source_budget'],materials,seed=42,query_limit=48,
                     purpose='adaptive',original_logits=original_logits)
                 result[0]['batch_cost']=dict(costs,total_seconds=time.monotonic()-batch_started)
@@ -1293,8 +1305,8 @@ def _robustness_evaluation(rows,run,target,cp,root,materials,args):
                     entry['visited']=[{k:v for k,v in c.items() if k!='raw_source'} for c in entry['visited']]
                     entry['selected']=None if entry['selected'] is None else {k:v for k,v in entry['selected'].items() if k!='raw_source'}
                     handle.write(json.dumps(entry)+'\n');attacks.append(entry)
-                if (at//args.batch_size+1)%25==0:print(f'adaptive {run.name}: {min(at+args.batch_size,len(valid))}/{len(valid)}',flush=True)
-    if [e['sample_key'] for e in attacks]!=[r['sample_key'] for r in valid]:raise ValueError('incomplete adaptive evaluation; no silent retries')
+                if (at//args.batch_size+1)%25==0:print(f'{split} adaptive {run.name}: {min(at+args.batch_size,len(evaluation_rows))}/{len(evaluation_rows)}',flush=True)
+    if [e['sample_key'] for e in attacks]!=[r['sample_key'] for r in evaluation_rows]:raise ValueError('incomplete adaptive evaluation; no silent retries')
     for entry in attacks:
         queries+=entry['candidate_queries'];original_queries+=entry['original_queries'];key=entry['sample_key']
         group=[dict(logit=c['logit'],prediction=int(torch.sigmoid(torch.tensor(c['logit'])).item()>=boundary),
@@ -1320,8 +1332,17 @@ def _codebert_robustness(args):
     from . import model as core
     from .syntax import surface_materials,SURFACE_RULES
     from .change_learning import write_json
-    rows=[r for r in core._read_jsonl(args.manifest,source_only=True) if r['dataset']=='primevul' and r['split'] in ('train','valid')]
+    all_rows=[r for r in core._read_jsonl(args.manifest,source_only=True) if r['dataset']=='primevul' and r['split'] in ('train','valid','test')]
+    rows=[r for r in all_rows if r['split'] in ('train','valid')]
     if not rows or any(r.get('repair_supplement') for r in rows):raise ValueError('requires original PrimeVul classification cohort')
+    ablations=('ours_no_search','ours_uniform','ours_no_consistency','ours_no_vat')
+    include_ablations=getattr(args,'include_ablations',False)
+    if include_ablations and args.robustness!='all':raise ValueError('--include-ablations requires --robustness all')
+    modes=(('bce','vat','ours')+(ablations if include_ablations else ())) if args.robustness=='all' else (args.robustness,)
+    needs_ablation=any(mode in ablations for mode in modes)
+    if args.stage=='test' and (not any(r['split']=='test' for r in all_rows)
+                              or any(r.get('repair_supplement') for r in all_rows if r['split']=='test')):
+        raise ValueError('requires the original nonempty PrimeVul Test cohort')
     root=Path(args.output_dir or 'results/codebert_robustness_seed42');root.mkdir(parents=True,exist_ok=True)
     training=dict(epochs=3,batch_size=args.batch_size,gradient_accumulation=args.gradient_accumulation,learning_rate=1e-5,weight_decay=.01)
     if args.batch_size*args.gradient_accumulation!=8:raise ValueError('robustness requires effective batch eight')
@@ -1374,10 +1395,25 @@ def _codebert_robustness(args):
         result=_robustness_smoke(rows,root,config,materials,args,base)
         config['vat']=dict(core.VAT_CONFIG,xi=result['xi']);write_json(config_path,config)
     if not smoke.exists():raise ValueError('complete the real three-path smoke before formal training')
-    if args.stage=='smoke':return json.loads(smoke.read_text())
     xi=json.loads(smoke.read_text())['xi']
     if xi!=config['vat']['xi']:raise ValueError('VAT probe setting differs from the completed smoke')
-    modes=('bce','vat','ours') if args.robustness=='all' else (args.robustness,)
+    ablation_smoke=root/'ablations.smoke.metrics.json'
+    if needs_ablation and args.stage in ('all','smoke') and not ablation_smoke.exists():
+        if base is None:base=torch.load(bce_target,map_location='cpu',weights_only=False)
+        result=_robustness_smoke(rows,root,config,materials,args,base,modes=ablations,output_name=ablation_smoke.name)
+        if result['xi']!=xi:raise ValueError('ablation smoke differs from the frozen common VAT setting')
+    if needs_ablation:
+        if not ablation_smoke.exists():raise ValueError('complete --include-ablations --stage smoke before ablation training')
+        checked=json.loads(ablation_smoke.read_text())
+        if checked['xi']!=xi or set(checked['checks'])!=set(ablations):raise ValueError('ablation smoke configuration differs')
+    if args.stage=='smoke':
+        result=json.loads(smoke.read_text())
+        if needs_ablation:result['ablations']=checked
+        return result
+    if args.stage=='test':
+        missing=[mode for mode in modes if not (bce_target if mode=='bce' else root/mode/'best.pt').exists()]
+        if missing:raise FileNotFoundError(f'Test requires completed Valid-selected checkpoints: {missing}')
+        _robustness_fixed_candidates(all_rows,materials,root,tokenizer,config['source_budget'],split='test')
     results={}
     for mode in modes:
         run=root/mode;run.mkdir(exist_ok=True);target=bce_target if mode=='bce' else run/'best.pt'
@@ -1406,8 +1442,9 @@ def _codebert_robustness(args):
         if [(r['epoch'],r['optimizer_steps']) for r in history if r['event']=='epoch']!=budget:
             raise ValueError('robustness optimizer/epoch budget differs')
         for split in ('train','valid'):_finetuning_evaluate(rows,target.parent,split,cp,args,checkpoint_path=target)
-        if args.stage in ('all','report'):
-            results[mode]=_robustness_evaluation(rows,run,target,cp,root,materials,args)
+        if args.stage in ('all','report','test'):
+            results[mode]=_robustness_evaluation(all_rows if args.stage=='test' else rows,run,target,cp,root,materials,args,
+                                              split='test' if args.stage=='test' else 'valid')
             results[mode]['training']=[r for r in history if r['event']=='epoch']
             epochs=results[mode]['training']
             results[mode]['training_cost']=dict(optimizer_steps=sum(r['optimizer_steps'] for r in epochs),
@@ -1423,8 +1460,13 @@ def _codebert_robustness(args):
             if mode=='bce':results[mode]['training_cost']['encoder_sequences']['bce']=None
         del cp
     if results:
-        name='comparison.metrics.json' if args.robustness=='all' else f'{args.robustness}.comparison.metrics.json'
-        write_json(root/name,dict(config=config,results=results))
+        name=('ablation.comparison.metrics.json' if include_ablations else 'comparison.metrics.json') if args.robustness=='all' else f'{args.robustness}.comparison.metrics.json'
+        report_config=dict(config,ablation_groups=list(ablations)) if include_ablations else config
+        if args.stage=='test':
+            name='test.'+name
+            report_config=dict(report_config,evaluation_split='test',evaluation_counts=dict(Counter(
+                f"label_{r['label']}" for r in all_rows if r['split']=='test')))
+        write_json(root/name,dict(config=report_config,results=results))
         import csv
         with (root/name.replace('.json','.csv')).open('w',newline='') as handle:
             writer=csv.DictWriter(handle,fieldnames=['method','setting','accuracy','precision','recall','f1','mcc','auc']);writer.writeheader()

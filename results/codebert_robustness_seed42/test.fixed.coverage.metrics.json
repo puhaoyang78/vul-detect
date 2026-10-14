@@ -1,0 +1,32 @@
+{
+  "local_name": {
+    "eligible": 535,
+    "total": 1014,
+    "candidates": 1043
+  },
+  "function_name": {
+    "eligible": 318,
+    "total": 1014,
+    "candidates": 635
+  },
+  "comment_insert": {
+    "eligible": 570,
+    "total": 1014,
+    "candidates": 1132
+  },
+  "comment_delete": {
+    "eligible": 267,
+    "total": 1014,
+    "candidates": 458
+  },
+  "comment_replace": {
+    "eligible": 275,
+    "total": 1014,
+    "candidates": 542
+  },
+  "combined": {
+    "eligible": 506,
+    "total": 1014,
+    "candidates": 1011
+  }
+}
