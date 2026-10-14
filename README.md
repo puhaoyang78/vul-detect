@@ -107,9 +107,9 @@ Python入口为`vulnmechanism.model.predict_checkpoint(checkpoint, [{"raw_source
 ## 历史归档
 
 见[研究归档索引](docs/EXPERIMENT_HISTORY.md)。清理前完整源码、数据、模型、日志、预测、素材和候选已备份，历史结果不能与当前不同cohort直接比较。
-保留整个当前11组实验目录、整个全参数/LoRA基线目录、全部data及未解决的workspace文件。历史资源通过仓库外备份/隔离区恢复。
+保留整个当前11组实验目录、整个全参数/LoRA基线目录、全部data及未解决的workspace文件。历史资源从仓库外完整备份恢复。
 本地详细清理报告、逐文件清单、依赖和恢复证据位于`cleanup_audit/20261014094242Z`。
-当前cleanup分支等待用户审核；发布脚本拒绝从cleanup分支推送，只允许`--dry-run`。
+2026-10-14已按用户确认删除7.93 GiB隔离重复副本，完整备份保留。发布脚本继续拒绝从cleanup分支推送，只允许`--dry-run`；正式发布需正常合并到main。
 
 ## 下一阶段：高质量修复对监督（尚未验证）
 
