@@ -1,3 +1,0 @@
-{"event": "step", "epoch": 1, "step": 1, "loss": 0.6695868149399757, "learning_rate": 1e-05, "samples_seen": 8}
-{"event": "step", "epoch": 1, "step": 25, "loss": 0.6720123890166482, "learning_rate": 1e-05, "samples_seen": 200}
-{"event": "step", "epoch": 1, "step": 50, "loss": 0.6177106721699238, "learning_rate": 1e-05, "samples_seen": 400}

@@ -1,2 +1,0 @@
-{"event": "step", "epoch": 1, "step": 1, "loss": 0.5891503095626831, "learning_rate": 0.0002, "samples_seen": 8}
-{"event": "epoch", "variant": "codebert_source", "excluded_groups": [], "epoch": 1, "train_loss": 0.5891503095626831, "optimizer_steps": 1, "validation_threshold": 0.5, "validation": {"accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.0}, "change_objective": "full", "invariance_loss": 1.6723352018743753e-06, "ranking_loss": 0.6922840476036072, "auxiliary_function_forwards": 4, "total_loss": 1.2814360295014922}

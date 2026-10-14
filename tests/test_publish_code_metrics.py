@@ -80,12 +80,12 @@ class PublishCodeMetricsTests(unittest.TestCase):
 
     def test_valid_dry_run_does_not_change_index_or_remote(self):
         self.write("README.md", "Updated code.\n")
-        self.write("results/run/test.metrics.json", '{"f1": 0.5}\n')
+        self.write("results/codebert_robustness_seed42/test.metrics.json", '{"f1": 0.5}\n')
         self.write("results/run/best.pt", "Local checkpoint.\n")
         index = (self.repo / ".git/index").read_bytes()
         result = self.publish("--dry-run")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("results/run/test.metrics.json", result.stdout)
+        self.assertIn("results/codebert_robustness_seed42/test.metrics.json", result.stdout)
         self.assertNotIn("best.pt", result.stdout)
         self.assertEqual((self.repo / ".git/index").read_bytes(), index)
         self.assert_unpublished()
@@ -93,8 +93,8 @@ class PublishCodeMetricsTests(unittest.TestCase):
     def test_publishes_code_metrics_and_unstaged_deletions(self):
         self.write("README.md", "Updated code.\n")
         self.write("tests/new test.py", "value = 1\n")
-        self.write("results/run/test.metrics.json", '{"f1": 0.5}\n')
-        self.write("results/run/best.training.jsonl", '{"epoch": 1}\n')
+        self.write("results/codebert_robustness_seed42/test.metrics.json", '{"f1": 0.5}\n')
+        self.write("results/codebert_robustness_seed42/best.training.jsonl", '{"epoch": 1}\n')
         self.write("results/run/best.pt", "Local checkpoint.\n")
         self.write("results/run/predictions.jsonl", '{"prediction": 1}\n')
         self.write("data/functions.jsonl", '{"source": "local"}\n')
@@ -103,7 +103,8 @@ class PublishCodeMetricsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         committed = set(self.git("diff", "--name-only", self.initial_head, "HEAD").stdout.splitlines())
         self.assertEqual(committed, {"README.md", "docs/obsolete.md", "tests/new test.py",
-                                     "results/run/test.metrics.json", "results/run/best.training.jsonl"})
+                                     "results/codebert_robustness_seed42/test.metrics.json",
+                                     "results/codebert_robustness_seed42/best.training.jsonl"})
         remote_head = self.git("--git-dir", str(self.remote), "rev-parse", "refs/heads/main")
         self.assertEqual(remote_head.stdout, self.git("rev-parse", "HEAD").stdout)
 
@@ -115,6 +116,26 @@ class PublishCodeMetricsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside code/metric scope", result.stderr)
         self.assertEqual((self.repo / ".git/index").read_bytes(), index)
+        self.assert_unpublished()
+
+    def test_retired_metrics_are_not_selected(self):
+        self.write('results/cfg_abc_seed42/new.metrics.json','{"auc": 0.5}\n')
+        self.write('results/codebert_surface_vat_seed42/new.metrics.json','{"auc": 0.5}\n')
+        result=self.publish('--dry-run')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertNotIn('new.metrics.json',result.stdout)
+        self.assert_unpublished()
+
+    def test_cleanup_branch_blocks_publication_and_allows_dry_run(self):
+        self.git('switch','-c','cleanup/fixture')
+        self.write('README.md','Reviewed locally.\n')
+        result=self.publish('Must wait for review')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('require the requested review',result.stderr)
+        self.assert_unpublished()
+        result=self.publish('--dry-run')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('README.md',result.stdout)
         self.assert_unpublished()
 
 

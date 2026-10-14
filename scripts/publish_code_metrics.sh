@@ -30,20 +30,24 @@ branch=$(git symbolic-ref --quiet --short HEAD) || {
   exit 1
 }
 git remote get-url --push origin >/dev/null
+if [[ $branch == cleanup/* && $dry_run == false ]]; then
+  printf 'Cleanup branches require the requested review before publishing; use --dry-run for local inspection.\n' >&2
+  exit 1
+fi
 if [[ -n "$(git ls-files -u)" ]]; then
   printf 'Resolve merge conflicts before publishing.\n' >&2
   exit 1
 fi
 
 # Code locations in this repository. In particular, workspace/ and data/ are excluded.
-code_paths=(.gitattributes .gitignore .github README.md RUN_FORMAL_BENCHMARK.md
-            RUN_GRAPH_ABC.md requirements.txt docs scripts tests vulnmechanism)
+code_paths=(.gitattributes .gitignore .github README.md
+            requirements.txt docs scripts tests vulnmechanism)
 
 is_code_path() {
   local path=$1
   case "$path" in
     *.pt|*.pth|*.ckpt|*.safetensors|*.bin|*.onnx|*.gguf) return 1 ;;
-    .gitattributes|.gitignore|README.md|RUN_FORMAL_BENCHMARK.md|RUN_GRAPH_ABC.md|\
+    .gitattributes|.gitignore|README.md|\
     requirements.txt|.github/*|docs/*|scripts/*|tests/*|vulnmechanism/*) return 0 ;;
   esac
   return 1
@@ -51,16 +55,13 @@ is_code_path() {
 
 is_metric_result() {
   local path=$1
-  [[ $path == results/* ]] || return 1
+  case "$path" in
+    results/codebert_robustness_seed42/*|results/codebert_finetuning_seed42/full/lr_1e-05/*) ;;
+    *) return 1 ;;
+  esac
   case "${path##*/}" in
     *metrics*.json|*metrics*.csv|comparison*.json|comparison*.csv|history.jsonl|\
     *.training.jsonl|alignment_coverage.json|ddg_audit.json|probe_results.json|results.json)
-      return 0 ;;
-  esac
-  case "$path" in
-    results/cfg_ddg_audit_seed42.json|results/cpg_debug/*.audit.json|\
-    results/cpg_debug/batch_equivalence.json|results/cpg_debug/export_format_equivalence.json|\
-    results/cpg_debug/historical_statistics.json|results/cpg_debug/integrity_checks.json)
       return 0 ;;
   esac
   return 1
