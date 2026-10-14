@@ -58,16 +58,18 @@ VAT_CONFIG=dict(version=3,epsilon=1.,xi=.001,power_iterations=1,
     precision='FP32 auxiliary encoder; float64 pooling, linear head, Bernoulli KL and norms',
     norm='per function L2 over expanded actual encoder tokens, including overlapping-window copies',
     direction='finite-difference KL gradient; divide by actual copies, multiply soft weights once, normalize')
-ROBUSTNESS_MODES=('bce','vat','ours','ours_uniform','ours_no_consistency','ours_no_vat','ours_no_search')
+ROBUSTNESS_INCREMENTAL_MODES=('random_aug_bce','hard_aug_bce','random_aug_vat','hard_aug_vat')
+ROBUSTNESS_MODES=('bce','vat','ours','ours_uniform','ours_no_consistency','ours_no_vat','ours_no_search')+ROBUSTNESS_INCREMENTAL_MODES
 
 
 def robustness_config(mode,*,xi=.001):
     if mode not in ROBUSTNESS_MODES or mode=='bce':raise ValueError('BCE has no auxiliary robustness configuration')
-    return dict(version=1,mode=mode,alpha=0. if mode in ('vat','ours_uniform') else 3.,
-        lambda_real=0. if mode in ('vat','ours_no_consistency') else 1.,
-        lambda_vat=0. if mode=='ours_no_vat' else 1.,vat=dict(VAT_CONFIG,xi=xi),
+    incremental=mode in ROBUSTNESS_INCREMENTAL_MODES
+    return dict(version=1,mode=mode,alpha=0. if mode in ('vat','ours_uniform') or incremental else 3.,
+        lambda_real=0. if mode in ('vat','ours_no_consistency') or incremental else 1.,
+        lambda_vat=0. if mode in ('ours_no_vat','random_aug_bce','hard_aug_bce') else 1.,vat=dict(VAT_CONFIG,xi=xi),
         beam_width=2,max_depth=3,train_queries=12,attack_queries=48,
-        source_views=mode!='vat',search=mode not in ('vat','ours_no_search'),
+        source_views=mode!='vat',search=mode not in ('vat','ours_no_search','random_aug_bce','random_aug_vat'),
         view_sampling='independent seed/epoch/sample_key coin flip over original and selected view',
         comment_token_limit=64)
 
@@ -1674,7 +1676,8 @@ def train_model(
                     return values
                 selections=search_surface_views(batch,score,input_builder.tokenizer,
                     source_max_length-len(input_builder.source_prefix)-2,surface_materials,
-                    seed=seed,epoch=epoch+1,random_selection=not robustness_options['search'])
+                    seed=seed,epoch=epoch+1,query_limit=robustness_options['train_queries'],
+                    random_selection=not robustness_options['search'])
                 search_seconds+=time.monotonic()-started
                 dynamic_views={r['sample_key']:([dict(raw_source=s['selected']['raw_source'])] if s['selected'] else [])
                                for r,s in zip(batch,selections)}

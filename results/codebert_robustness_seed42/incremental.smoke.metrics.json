@@ -1,0 +1,1519 @@
+{
+  "xi": 0.001,
+  "numerical": {
+    "0.001": {
+      "fresh/0.0": [
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0019489817786961794,
+          "norm_min": 0.9999999995092492,
+          "norm_max": 1.0000000002919422,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 670,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.17144495857297593,
+            -0.1909611070183043
+          ],
+          "probe_logits": [
+            -0.17144560993927382,
+            -0.19096070594110082
+          ],
+          "analytical_score_gradient_norm": [
+            0.0973039994033752,
+            0.1071842394488153
+          ],
+          "direction_cosine_abs": [
+            0.999999998167193,
+            0.9999999973951456
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            6.897829688958337e-09,
+            4.471701929125967e-08
+          ],
+          "adversarial_kl": [
+            0.0008483122219331563,
+            0.001100669614970684
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0025065001100301743,
+          "norm_min": 0.9999999996065695,
+          "norm_max": 1.0000000004228171,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 1070,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.19969954052515648,
+            -0.17655531739918
+          ],
+          "probe_logits": [
+            -0.19969953769269627,
+            -0.1765551122193462
+          ],
+          "analytical_score_gradient_norm": [
+            0.10986867818980786,
+            0.13381085663616335
+          ],
+          "direction_cosine_abs": [
+            0.9999999988264047,
+            0.9999999974152494
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            7.189251959456014e-10,
+            8.768106392038986e-09
+          ],
+          "adversarial_kl": [
+            0.0014779305784031749,
+            0.0010285694152116776
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0014688358642160892,
+          "norm_min": 0.9999999996138096,
+          "norm_max": 0.9999999997778468,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3060,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.08948223827606236,
+            -0.11605185238788704
+          ],
+          "probe_logits": [
+            -0.08948219322031045,
+            -0.11605221843813912
+          ],
+          "analytical_score_gradient_norm": [
+            0.12253225798991643,
+            0.09101032465739656
+          ],
+          "direction_cosine_abs": [
+            0.9999999972485546,
+            0.9999999994667639
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.8675139466602553e-10,
+            1.976466138357022e-08
+          ],
+          "adversarial_kl": [
+            0.0008382763480767608,
+            0.0006305595743469894
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0013256929814815521,
+          "norm_min": 0.9999999997893158,
+          "norm_max": 1.00000000121792,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3610,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.13608946245790876,
+            -0.08741407767866904
+          ],
+          "probe_logits": [
+            -0.13608953622574954,
+            -0.08741423044395917
+          ],
+          "analytical_score_gradient_norm": [
+            0.09956867645611002,
+            0.08111161123741004
+          ],
+          "direction_cosine_abs": [
+            0.999999998910034,
+            0.9999999997862512
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            5.532226991354655e-11,
+            3.352738771002548e-12
+          ],
+          "adversarial_kl": [
+            0.0009146010270342231,
+            0.0004110919253434986
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00014004968397784978,
+          "norm_min": 1.0000000002264025,
+          "norm_max": 1.0000000029802285,
+          "function_forwards": 10,
+          "encoder_sequences": 45,
+          "encoder_token_slots": 23040,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.01779829969774492,
+            -0.11386240232629972
+          ],
+          "probe_logits": [
+            -0.0177978974791239,
+            -0.11386234591407136
+          ],
+          "analytical_score_gradient_norm": [
+            1.1596229024751024,
+            0.033997984211429765
+          ],
+          "direction_cosine_abs": [
+            1.0000000011854635,
+            1.0000000006529568
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            2.4336200762879322e-08,
+            4.501463191116501e-11
+          ],
+          "adversarial_kl": [
+            1.9654348761832807e-06,
+            0.00013808424409944564
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0003710448509082198,
+          "norm_min": 0.9999999998085486,
+          "norm_max": 1.0000000001145122,
+          "function_forwards": 10,
+          "encoder_sequences": 30,
+          "encoder_token_slots": 15360,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.102234004355197,
+            -0.10989250143105639
+          ],
+          "probe_logits": [
+            -0.10223404858151326,
+            -0.10989248106256727
+          ],
+          "analytical_score_gradient_norm": [
+            0.03433414824798244,
+            0.05244323636588372
+          ],
+          "direction_cosine_abs": [
+            0.9999999990839243,
+            0.999999999017312
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            5.6830849789725685e-11,
+            8.479896677799921e-10
+          ],
+          "adversarial_kl": [
+            0.00014705173089168966,
+            0.00022399312001653016
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00011584413005039096,
+          "norm_min": 0.9999999998967671,
+          "norm_max": 1.0000000001605234,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.07815509698732324,
+            -0.10526063216971605
+          ],
+          "probe_logits": [
+            -0.0781551086762114,
+            -0.10526064591542231
+          ],
+          "analytical_score_gradient_norm": [
+            0.02771288173408916,
+            0.022896259706565034
+          ],
+          "direction_cosine_abs": [
+            0.9999999998809155,
+            0.99999999922011
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.523405816532131e-11,
+            2.7748208633391046e-12
+          ],
+          "adversarial_kl": [
+            6.424357707146555e-05,
+            5.1600556616904214e-05
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00011914651986444369,
+          "norm_min": 0.9999999987913424,
+          "norm_max": 1.0000000001292626,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -0.04416399295222634,
+            -0.07004729864257726
+          ],
+          "probe_logits": [
+            -0.044163966409322554,
+            -0.07004730670011562
+          ],
+          "analytical_score_gradient_norm": [
+            0.02607872811013197,
+            0.034722381799864775
+          ],
+          "direction_cosine_abs": [
+            0.9999999996099085,
+            0.9999999677853046
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            6.888274499236471e-13,
+            1.4201270060947788e-13
+          ],
+          "adversarial_kl": [
+            7.487093535019085e-05,
+            4.427558451425284e-05
+          ]
+        }
+      ],
+      "fresh/3.0": [
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.001558074844069779,
+          "norm_min": 1.000000000604015,
+          "norm_max": 1.000000001283457,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 670,
+          "weighted_source_tokens": 9,
+          "reference_logits": [
+            -0.17144495857297593,
+            -0.1909611070183043
+          ],
+          "probe_logits": [
+            -0.17144560993927382,
+            -0.19096070594110082
+          ],
+          "analytical_score_gradient_norm": [
+            0.0973039994033752,
+            0.1071842394488153
+          ],
+          "direction_cosine_abs": [
+            0.8837090183542895,
+            0.8208683886112004
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            6.897829688958337e-09,
+            4.471701929125967e-08
+          ],
+          "adversarial_kl": [
+            0.0007375210407190025,
+            0.0008205538033507764
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0021841677371412516,
+          "norm_min": 0.9999999996065695,
+          "norm_max": 1.000000000149962,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 1070,
+          "weighted_source_tokens": 7,
+          "reference_logits": [
+            -0.19969954052515648,
+            -0.17655531739918
+          ],
+          "probe_logits": [
+            -0.19969953769269627,
+            -0.1765551122193462
+          ],
+          "analytical_score_gradient_norm": [
+            0.10986867818980786,
+            0.13381085663616335
+          ],
+          "direction_cosine_abs": [
+            0.9999999988264047,
+            0.8020611645172157
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            7.189251959456014e-10,
+            8.768106392038986e-09
+          ],
+          "adversarial_kl": [
+            0.0014779305784031749,
+            0.0007062371587380767
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0013316903496161103,
+          "norm_min": 1.0000000000481664,
+          "norm_max": 1.0000000006975223,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3060,
+          "weighted_source_tokens": 53,
+          "reference_logits": [
+            -0.08948223827606236,
+            -0.11605185238788704
+          ],
+          "probe_logits": [
+            -0.08948219322031045,
+            -0.11605221843813912
+          ],
+          "analytical_score_gradient_norm": [
+            0.12253225798991643,
+            0.09101032465739656
+          ],
+          "direction_cosine_abs": [
+            0.9256151272888586,
+            0.8820530079487461
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.8675139466602553e-10,
+            1.976466138357022e-08
+          ],
+          "adversarial_kl": [
+            0.0008114968659356236,
+            0.0005201934836804867
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0010841648327186704,
+          "norm_min": 1.000000000066859,
+          "norm_max": 1.000000000233588,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3610,
+          "weighted_source_tokens": 82,
+          "reference_logits": [
+            -0.13608946245790876,
+            -0.08741407767866904
+          ],
+          "probe_logits": [
+            -0.13608953622574954,
+            -0.08741423044395917
+          ],
+          "analytical_score_gradient_norm": [
+            0.09956867645611002,
+            0.08111161123741004
+          ],
+          "direction_cosine_abs": [
+            0.8932782172050204,
+            0.881154027208447
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            5.532226991354655e-11,
+            3.352738771002548e-12
+          ],
+          "adversarial_kl": [
+            0.0007591693429276347,
+            0.0003249954606872052
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0001076480039046146,
+          "norm_min": 0.9999999992518794,
+          "norm_max": 0.9999999999112957,
+          "function_forwards": 10,
+          "encoder_sequences": 45,
+          "encoder_token_slots": 23040,
+          "weighted_source_tokens": 237,
+          "reference_logits": [
+            -0.01779829969774492,
+            -0.11386240232629972
+          ],
+          "probe_logits": [
+            -0.0177978974791239,
+            -0.11386234591407136
+          ],
+          "analytical_score_gradient_norm": [
+            1.1596229024751024,
+            0.033997984211429765
+          ],
+          "direction_cosine_abs": [
+            0.9977186398548517,
+            0.8643780482481902
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            2.4336200762879322e-08,
+            4.501463191116501e-11
+          ],
+          "adversarial_kl": [
+            2.0449620024010073e-06,
+            0.00010560304508544505
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00031251070322468877,
+          "norm_min": 1.0000000001145122,
+          "norm_max": 1.000000000222199,
+          "function_forwards": 10,
+          "encoder_sequences": 30,
+          "encoder_token_slots": 15360,
+          "weighted_source_tokens": 112,
+          "reference_logits": [
+            -0.102234004355197,
+            -0.10989250143105639
+          ],
+          "probe_logits": [
+            -0.10223404858151326,
+            -0.10989248106256727
+          ],
+          "analytical_score_gradient_norm": [
+            0.03433414824798244,
+            0.05244323636588372
+          ],
+          "direction_cosine_abs": [
+            0.9999999990839243,
+            0.8171980385110791
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            5.6830849789725685e-11,
+            8.479896677799921e-10
+          ],
+          "adversarial_kl": [
+            0.00014705173089168966,
+            0.0001654589723329991
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00010380071762483567,
+          "norm_min": 0.9999999998876761,
+          "norm_max": 1.0000000001605234,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 327,
+          "reference_logits": [
+            -0.07815509698732324,
+            -0.10526063216971605
+          ],
+          "probe_logits": [
+            -0.0781551086762114,
+            -0.10526064591542231
+          ],
+          "analytical_score_gradient_norm": [
+            0.02771288173408916,
+            0.022896259706565034
+          ],
+          "direction_cosine_abs": [
+            0.9999999998809155,
+            0.8455095151641359
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.523405816532131e-11,
+            2.7748208633391046e-12
+          ],
+          "adversarial_kl": [
+            6.424357707146555e-05,
+            3.9557144191348925e-05
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00011897103831870481,
+          "norm_min": 0.9999999993229698,
+          "norm_max": 1.0000000001292626,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 6,
+          "reference_logits": [
+            -0.04416399295222634,
+            -0.07004729864257726
+          ],
+          "probe_logits": [
+            -0.044163966409322554,
+            -0.07004730670011562
+          ],
+          "analytical_score_gradient_norm": [
+            0.02607872811013197,
+            0.034722381799864775
+          ],
+          "direction_cosine_abs": [
+            0.9999999996099085,
+            0.9945604343185559
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            6.888274499236471e-13,
+            1.4201270060947788e-13
+          ],
+          "adversarial_kl": [
+            7.487093535019085e-05,
+            4.4100102968513966e-05
+          ]
+        }
+      ],
+      "fitted/0.0": [
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.001923782634548843,
+          "norm_min": 1.0000000005671688,
+          "norm_max": 1.000000000788232,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 670,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -5.272549287318302,
+            -5.256662355123884
+          ],
+          "probe_logits": [
+            -5.272554556061278,
+            -5.256658247683225
+          ],
+          "analytical_score_gradient_norm": [
+            1.2046645371273934,
+            0.9679683500828452
+          ],
+          "direction_cosine_abs": [
+            0.9999999984754553,
+            0.9999999976179241
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            5.1917258569907494e-08,
+            2.794848663621163e-08
+          ],
+          "adversarial_kl": [
+            0.00044226087629795074,
+            0.0014815217582508922
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 3.3122618198394775,
+          "norm_min": 1.0000000002712106,
+          "norm_max": 1.0000000004995497,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 1070,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            1.5905130835378622,
+            2.1799715792516867
+          ],
+          "probe_logits": [
+            1.5904713830394304,
+            2.1799662191029996
+          ],
+          "analytical_score_gradient_norm": [
+            8.023768848682256,
+            2.5773493599957793
+          ],
+          "direction_cosine_abs": [
+            1.0000000006770549,
+            0.9999999985517222
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            0.00015848166213406484,
+            3.492424753417673e-06
+          ],
+          "adversarial_kl": [
+            1.9073858261108398,
+            1.4048759937286377
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0446314662694931,
+          "norm_min": 0.9999999996566554,
+          "norm_max": 1.0000000003401468,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3060,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -2.406272462772312,
+            -4.778195958771054
+          ],
+          "probe_logits": [
+            -2.4062731815650675,
+            -4.778199914802899
+          ],
+          "analytical_score_gradient_norm": [
+            2.563562866950905,
+            1.3428851866099591
+          ],
+          "direction_cosine_abs": [
+            1.00000000026292,
+            0.9999999994928781
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.6624748325539578e-06,
+            2.1183579060790776e-07
+          ],
+          "adversarial_kl": [
+            0.04427800700068474,
+            0.00035346084041520953
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0020927630830556154,
+          "norm_min": 1.000000000141245,
+          "norm_max": 1.0000000004835454,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3610,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            -2.359588869958742,
+            3.184597710285581
+          ],
+          "probe_logits": [
+            -2.359589733022779,
+            3.184599939568109
+          ],
+          "analytical_score_gradient_norm": [
+            2.8874744367142564,
+            2.015951814306833
+          ],
+          "direction_cosine_abs": [
+            1.0000000006553291,
+            0.9999999993268485
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.3651274588424422e-06,
+            5.426382445126158e-09
+          ],
+          "adversarial_kl": [
+            0.0015603899955749512,
+            0.0005323730292730033
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.043855004012584686,
+          "norm_min": 0.9999999997097778,
+          "norm_max": 1.0000000002606944,
+          "function_forwards": 10,
+          "encoder_sequences": 45,
+          "encoder_token_slots": 23040,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            1.9236926324184698,
+            0.6705469786786622
+          ],
+          "probe_logits": [
+            1.923705362895308,
+            0.6705467466095097
+          ],
+          "analytical_score_gradient_norm": [
+            4.96258925956212,
+            0.6045417617790698
+          ],
+          "direction_cosine_abs": [
+            0.9999999989746038,
+            0.9999999997116384
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            4.4884199372886933e-07,
+            3.4102954713581784e-09
+          ],
+          "adversarial_kl": [
+            0.027087729424238205,
+            0.01676727458834648
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00031409019720740616,
+          "norm_min": 0.9999999985640698,
+          "norm_max": 0.9999999995063382,
+          "function_forwards": 10,
+          "encoder_sequences": 30,
+          "encoder_token_slots": 15360,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            2.568234408453413,
+            3.6958286829936258
+          ],
+          "probe_logits": [
+            2.5682343510785746,
+            3.695830081877528
+          ],
+          "analytical_score_gradient_norm": [
+            0.35613670333983033,
+            0.42432008358038215
+          ],
+          "direction_cosine_abs": [
+            0.9999999987344441,
+            0.9999999998072728
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            3.5137036397727686e-10,
+            8.397570857546395e-10
+          ],
+          "adversarial_kl": [
+            0.0002556497056502849,
+            5.8440480643184856e-05
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.038465339690446854,
+          "norm_min": 0.9999999990395834,
+          "norm_max": 0.9999999997161961,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            3.001907566074487,
+            1.611361826661189
+          ],
+          "probe_logits": [
+            3.0019082810683044,
+            1.611359338416448
+          ],
+          "analytical_score_gradient_norm": [
+            2.1497461636274626,
+            1.9075597405409905
+          ],
+          "direction_cosine_abs": [
+            0.9999999991025789,
+            0.9999999982448159
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            2.5385587931694867e-08,
+            9.594127172014811e-07
+          ],
+          "adversarial_kl": [
+            0.002379792043939233,
+            0.036085546016693115
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0533117800951004,
+          "norm_min": 0.999999999380638,
+          "norm_max": 1.000000000569188,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 0,
+          "reference_logits": [
+            2.4635261905372925,
+            1.0882616867461135
+          ],
+          "probe_logits": [
+            2.4635269759521643,
+            1.0882618989151291
+          ],
+          "analytical_score_gradient_norm": [
+            1.9073250371375818,
+            1.156338749965414
+          ],
+          "direction_cosine_abs": [
+            0.9999999999644007,
+            0.999999999961297
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            4.358956492841136e-08,
+            1.4694845821265233e-09
+          ],
+          "adversarial_kl": [
+            0.0026758599560707808,
+            0.050635918974876404
+          ]
+        }
+      ],
+      "fitted/3.0": [
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.0018298040376976132,
+          "norm_min": 1.0000000001077876,
+          "norm_max": 1.0000000005784577,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 670,
+          "weighted_source_tokens": 9,
+          "reference_logits": [
+            -5.272549287318302,
+            -5.256662355123884
+          ],
+          "probe_logits": [
+            -5.272554556061278,
+            -5.256658247683225
+          ],
+          "analytical_score_gradient_norm": [
+            1.2046645371273934,
+            0.9679683500828452
+          ],
+          "direction_cosine_abs": [
+            0.8975208302898918,
+            0.9294994851895992
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            5.1917258569907494e-08,
+            2.794848663621163e-08
+          ],
+          "adversarial_kl": [
+            0.0005010287277400494,
+            0.0013287753099575639
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 2.0633957386016846,
+          "norm_min": 0.9999999995545326,
+          "norm_max": 1.0000000004995497,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 1070,
+          "weighted_source_tokens": 7,
+          "reference_logits": [
+            1.5905130835378622,
+            2.1799715792516867
+          ],
+          "probe_logits": [
+            1.5904713830394304,
+            2.1799662191029996
+          ],
+          "analytical_score_gradient_norm": [
+            8.023768848682256,
+            2.5773493599957793
+          ],
+          "direction_cosine_abs": [
+            1.0000000006770549,
+            0.8008281387484073
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            0.00015848166213406484,
+            3.492424753417673e-06
+          ],
+          "adversarial_kl": [
+            1.9073858261108398,
+            0.1560099869966507
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.009886275976896286,
+          "norm_min": 0.9999999997001683,
+          "norm_max": 1.0000000006519174,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3060,
+          "weighted_source_tokens": 53,
+          "reference_logits": [
+            -2.406272462772312,
+            -4.778195958771054
+          ],
+          "probe_logits": [
+            -2.4062731815650675,
+            -4.778199914802899
+          ],
+          "analytical_score_gradient_norm": [
+            2.563562866950905,
+            1.3428851866099591
+          ],
+          "direction_cosine_abs": [
+            0.8845929157799262,
+            0.9635758404087207
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.6624748325539578e-06,
+            2.1183579060790776e-07
+          ],
+          "adversarial_kl": [
+            0.009476963430643082,
+            0.0004093124298378825
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.01489891018718481,
+          "norm_min": 0.9999999986062916,
+          "norm_max": 0.9999999999658015,
+          "function_forwards": 10,
+          "encoder_sequences": 10,
+          "encoder_token_slots": 3610,
+          "weighted_source_tokens": 82,
+          "reference_logits": [
+            -2.359588869958742,
+            3.184597710285581
+          ],
+          "probe_logits": [
+            -2.359589733022779,
+            3.184599939568109
+          ],
+          "analytical_score_gradient_norm": [
+            2.8874744367142564,
+            2.015951814306833
+          ],
+          "direction_cosine_abs": [
+            0.8464980379350628,
+            0.957593095348454
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            1.3651274588424422e-06,
+            5.426382445126158e-09
+          ],
+          "adversarial_kl": [
+            0.01427845936268568,
+            0.0006204508244991302
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.043422967195510864,
+          "norm_min": 0.9999999988928402,
+          "norm_max": 1.000000000115445,
+          "function_forwards": 10,
+          "encoder_sequences": 45,
+          "encoder_token_slots": 23040,
+          "weighted_source_tokens": 237,
+          "reference_logits": [
+            1.9236926324184698,
+            0.6705469786786622
+          ],
+          "probe_logits": [
+            1.923705362895308,
+            0.6705467466095097
+          ],
+          "analytical_score_gradient_norm": [
+            4.96258925956212,
+            0.6045417617790698
+          ],
+          "direction_cosine_abs": [
+            0.9506146180553019,
+            0.8347056873816155
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            4.4884199372886933e-07,
+            3.4102954713581784e-09
+          ],
+          "adversarial_kl": [
+            0.030418092384934425,
+            0.013004875741899014
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.00032291992101818323,
+          "norm_min": 0.9999999985640698,
+          "norm_max": 0.9999999992710461,
+          "function_forwards": 10,
+          "encoder_sequences": 30,
+          "encoder_token_slots": 15360,
+          "weighted_source_tokens": 112,
+          "reference_logits": [
+            2.568234408453413,
+            3.6958286829936258
+          ],
+          "probe_logits": [
+            2.5682343510785746,
+            3.695830081877528
+          ],
+          "analytical_score_gradient_norm": [
+            0.35613670333983033,
+            0.42432008358038215
+          ],
+          "direction_cosine_abs": [
+            0.9999999987344441,
+            0.9243234550815089
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            3.5137036397727686e-10,
+            8.397570857546395e-10
+          ],
+          "adversarial_kl": [
+            0.0002556497056502849,
+            6.727022264385596e-05
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.043623797595500946,
+          "norm_min": 0.9999999997161961,
+          "norm_max": 1.0000000006946452,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 327,
+          "reference_logits": [
+            3.001907566074487,
+            1.611361826661189
+          ],
+          "probe_logits": [
+            3.0019082810683044,
+            1.611359338416448
+          ],
+          "analytical_score_gradient_norm": [
+            2.1497461636274626,
+            1.9075597405409905
+          ],
+          "direction_cosine_abs": [
+            0.9999999991025789,
+            0.8839299331367155
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            2.5385587931694867e-08,
+            9.594127172014811e-07
+          ],
+          "adversarial_kl": [
+            0.002379792043939233,
+            0.04124400392174721
+          ]
+        },
+        {
+          "eligible": 2,
+          "zero_direction": 0,
+          "kl": 0.05349340662360191,
+          "norm_min": 0.999999999380638,
+          "norm_max": 0.9999999997958722,
+          "function_forwards": 10,
+          "encoder_sequences": 80,
+          "encoder_token_slots": 40960,
+          "weighted_source_tokens": 6,
+          "reference_logits": [
+            2.4635261905372925,
+            1.0882616867461135
+          ],
+          "probe_logits": [
+            2.4635269759521643,
+            1.0882618989151291
+          ],
+          "analytical_score_gradient_norm": [
+            1.9073250371375818,
+            1.156338749965414
+          ],
+          "direction_cosine_abs": [
+            0.9999999999644007,
+            0.9931055999917964
+          ],
+          "signal_loss": 0,
+          "true_zero": 0,
+          "random_kl": [
+            4.358956492841136e-08,
+            1.4694845821265233e-09
+          ],
+          "adversarial_kl": [
+            0.0026758599560707808,
+            0.050817545503377914
+          ]
+        }
+      ]
+    }
+  },
+  "signals": {
+    "0.0": {
+      "eligible": 1,
+      "zero_direction": 0,
+      "kl": 0.00110067636705935,
+      "norm_min": 1.0000000003160139,
+      "norm_max": 1.0000000003160139,
+      "function_forwards": 5,
+      "encoder_sequences": 5,
+      "encoder_token_slots": 335,
+      "weighted_source_tokens": 0,
+      "reference_logits": [
+        -0.1909611380599921
+      ],
+      "probe_logits": [
+        -0.1909610701555934
+      ],
+      "analytical_score_gradient_norm": [
+        0.10718422215250802
+      ],
+      "direction_cosine_abs": [
+        0.9999999999619814
+      ],
+      "signal_loss": 0,
+      "true_zero": 0,
+      "random_kl": [
+        1.987761702766243e-08
+      ],
+      "adversarial_kl": [
+        0.00110067636705935
+      ],
+      "classifier_gradient_norm": 0.46162062883377075
+    },
+    "3.0": {
+      "eligible": 1,
+      "zero_direction": 0,
+      "kl": 0.0008205632329918444,
+      "norm_min": 1.0000000007263143,
+      "norm_max": 1.0000000007263143,
+      "function_forwards": 5,
+      "encoder_sequences": 5,
+      "encoder_token_slots": 335,
+      "weighted_source_tokens": 6,
+      "reference_logits": [
+        -0.1909611380599921
+      ],
+      "probe_logits": [
+        -0.1909610701555934
+      ],
+      "analytical_score_gradient_norm": [
+        0.10718422215250802
+      ],
+      "direction_cosine_abs": [
+        0.82087123846485
+      ],
+      "signal_loss": 0,
+      "true_zero": 0,
+      "random_kl": [
+        1.987761702766243e-08
+      ],
+      "adversarial_kl": [
+        0.0008205632329918444
+      ],
+      "classifier_gradient_norm": 0.39825239777565
+    }
+  },
+  "real_js": 2.75893822696265e-06,
+  "untransformable": "primevul:1000",
+  "checks": {
+    "random_aug_bce": {
+      "encoder_updated": true,
+      "classifier_updated": true,
+      "save_reload_exact": true,
+      "epoch": {
+        "event": "epoch",
+        "variant": "codebert_source",
+        "excluded_groups": [],
+        "epoch": 1,
+        "train_loss": 0.7006871551275253,
+        "optimizer_steps": 1,
+        "validation_threshold": 0.5,
+        "validation": {
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "mcc": 1.0,
+          "auc": 1.0
+        },
+        "augmented_functions": 6,
+        "bce_function_forwards": 14,
+        "bce_encoder_sequences": 30,
+        "encoder_token_slots": 14132,
+        "function_loss": "mean original/selected BCE per function, then mean over original functions",
+        "robustness_mode": "random_aug_bce",
+        "vat_loss": 0.0,
+        "vat_weight": 0.0,
+        "vat_eligible_functions": 0,
+        "vat_skipped_functions": 8,
+        "vat_zero_direction_functions": 0,
+        "vat_norm_min": null,
+        "vat_norm_max": null,
+        "vat_function_forwards": 0,
+        "vat_encoder_sequences": 0,
+        "vat_encoder_token_slots": 0,
+        "real_js": 0.0,
+        "real_js_functions": 0,
+        "real_function_forwards": 0,
+        "real_encoder_sequences": 0,
+        "candidate_queries": 0,
+        "original_search_queries": 0,
+        "search_encoder_sequences": 0,
+        "search_encoder_token_slots": 0,
+        "search_seconds": 0.5558963529765606,
+        "epoch_seconds": 1.5674729730235413,
+        "search_reasons": {
+          "no_comment_delete_site": 11,
+          "no_comment_replace_site": 14,
+          "proposals_attempted": 139,
+          "no_safe_function_name": 8,
+          "heldout_operator_combination": 5,
+          "parse_error": 2,
+          "unused_binding": 10,
+          "unsupported_binding": 5,
+          "macro_ambiguous_binding": 15,
+          "function_name_observable_or_unresolved": 5,
+          "no_unused_safe_binding": 4,
+          "duplicate_source_or_input": 1
+        },
+        "total_loss": 0.7006871551275253
+      }
+    },
+    "hard_aug_bce": {
+      "encoder_updated": true,
+      "classifier_updated": true,
+      "save_reload_exact": true,
+      "epoch": {
+        "event": "epoch",
+        "variant": "codebert_source",
+        "excluded_groups": [],
+        "epoch": 1,
+        "train_loss": 0.7019222676753998,
+        "optimizer_steps": 1,
+        "validation_threshold": 0.5,
+        "validation": {
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "mcc": 1.0,
+          "auc": 1.0
+        },
+        "augmented_functions": 6,
+        "bce_function_forwards": 14,
+        "bce_encoder_sequences": 30,
+        "encoder_token_slots": 14136,
+        "function_loss": "mean original/selected BCE per function, then mean over original functions",
+        "robustness_mode": "hard_aug_bce",
+        "vat_loss": 0.0,
+        "vat_weight": 0.0,
+        "vat_eligible_functions": 0,
+        "vat_skipped_functions": 8,
+        "vat_zero_direction_functions": 0,
+        "vat_norm_min": null,
+        "vat_norm_max": null,
+        "vat_function_forwards": 0,
+        "vat_encoder_sequences": 0,
+        "vat_encoder_token_slots": 0,
+        "real_js": 0.0,
+        "real_js_functions": 0,
+        "real_function_forwards": 0,
+        "real_encoder_sequences": 0,
+        "candidate_queries": 68,
+        "original_search_queries": 6,
+        "search_encoder_sequences": 113,
+        "search_encoder_token_slots": 45523,
+        "search_seconds": 1.127165965968743,
+        "epoch_seconds": 1.749567943974398,
+        "search_reasons": {
+          "no_comment_delete_site": 13,
+          "no_comment_replace_site": 13,
+          "proposals_attempted": 145,
+          "no_safe_function_name": 12,
+          "heldout_operator_combination": 4,
+          "parse_error": 2,
+          "unused_binding": 10,
+          "unsupported_binding": 5,
+          "macro_ambiguous_binding": 15,
+          "function_name_observable_or_unresolved": 5,
+          "no_unused_safe_binding": 5
+        },
+        "total_loss": 0.7019222676753998
+      }
+    },
+    "random_aug_vat": {
+      "encoder_updated": true,
+      "classifier_updated": true,
+      "save_reload_exact": true,
+      "epoch": {
+        "event": "epoch",
+        "variant": "codebert_source",
+        "excluded_groups": [],
+        "epoch": 1,
+        "train_loss": 0.7006871551275253,
+        "optimizer_steps": 1,
+        "validation_threshold": 0.5,
+        "validation": {
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "mcc": 1.0,
+          "auc": 1.0
+        },
+        "augmented_functions": 6,
+        "bce_function_forwards": 14,
+        "bce_encoder_sequences": 30,
+        "encoder_token_slots": 14132,
+        "function_loss": "mean original/selected BCE per function, then mean over original functions",
+        "robustness_mode": "random_aug_vat",
+        "vat_loss": 0.0005077042442280799,
+        "vat_weight": 1.0,
+        "vat_eligible_functions": 8,
+        "vat_skipped_functions": 0,
+        "vat_zero_direction_functions": 0,
+        "vat_norm_min": 0.9999999993743085,
+        "vat_norm_max": 1.000000003058041,
+        "vat_function_forwards": 24,
+        "vat_encoder_sequences": 63,
+        "vat_encoder_token_slots": 32256,
+        "real_js": 0.0,
+        "real_js_functions": 0,
+        "real_function_forwards": 0,
+        "real_encoder_sequences": 0,
+        "candidate_queries": 0,
+        "original_search_queries": 0,
+        "search_encoder_sequences": 0,
+        "search_encoder_token_slots": 0,
+        "search_seconds": 1.1282728869700804,
+        "epoch_seconds": 2.3907235639635473,
+        "search_reasons": {
+          "no_comment_delete_site": 11,
+          "no_comment_replace_site": 14,
+          "proposals_attempted": 139,
+          "no_safe_function_name": 8,
+          "heldout_operator_combination": 5,
+          "parse_error": 2,
+          "unused_binding": 10,
+          "unsupported_binding": 5,
+          "macro_ambiguous_binding": 15,
+          "function_name_observable_or_unresolved": 5,
+          "no_unused_safe_binding": 4,
+          "duplicate_source_or_input": 1
+        },
+        "total_loss": 0.7011948593717534
+      }
+    },
+    "hard_aug_vat": {
+      "encoder_updated": true,
+      "classifier_updated": true,
+      "save_reload_exact": true,
+      "epoch": {
+        "event": "epoch",
+        "variant": "codebert_source",
+        "excluded_groups": [],
+        "epoch": 1,
+        "train_loss": 0.7019222676753998,
+        "optimizer_steps": 1,
+        "validation_threshold": 0.5,
+        "validation": {
+          "accuracy": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "mcc": 1.0,
+          "auc": 1.0
+        },
+        "augmented_functions": 6,
+        "bce_function_forwards": 14,
+        "bce_encoder_sequences": 30,
+        "encoder_token_slots": 14136,
+        "function_loss": "mean original/selected BCE per function, then mean over original functions",
+        "robustness_mode": "hard_aug_vat",
+        "vat_loss": 0.000482734787510708,
+        "vat_weight": 1.0,
+        "vat_eligible_functions": 8,
+        "vat_skipped_functions": 0,
+        "vat_zero_direction_functions": 0,
+        "vat_norm_min": 0.9999999993207564,
+        "vat_norm_max": 1.0000000014849464,
+        "vat_function_forwards": 24,
+        "vat_encoder_sequences": 63,
+        "vat_encoder_token_slots": 32256,
+        "real_js": 0.0,
+        "real_js_functions": 0,
+        "real_function_forwards": 0,
+        "real_encoder_sequences": 0,
+        "candidate_queries": 68,
+        "original_search_queries": 6,
+        "search_encoder_sequences": 113,
+        "search_encoder_token_slots": 45523,
+        "search_seconds": 1.0211266690166667,
+        "epoch_seconds": 2.2713979539694265,
+        "search_reasons": {
+          "no_comment_delete_site": 13,
+          "no_comment_replace_site": 13,
+          "proposals_attempted": 145,
+          "no_safe_function_name": 12,
+          "heldout_operator_combination": 4,
+          "parse_error": 2,
+          "unused_binding": 10,
+          "unsupported_binding": 5,
+          "macro_ambiguous_binding": 15,
+          "function_name_observable_or_unresolved": 5,
+          "no_unused_safe_binding": 5
+        },
+        "total_loss": 0.7024050024629105
+      }
+    }
+  }
+}

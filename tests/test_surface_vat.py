@@ -251,7 +251,7 @@ class SurfaceVATTests(unittest.TestCase):
         self.assertEqual(report['asr']['denominator'],1);self.assertEqual(report['asr']['count'],1)
         self.assertEqual(report['wrong_to_correct']['count'],1);self.assertEqual(report['worst_complete']['accuracy'],1/3)
 
-    def test_public_paths_ablations_frozen_test_and_reuse(self):
+    def test_public_paths_incremental_ablations_frozen_test_and_reuse(self):
         from vulnmechanism.cli import _codebert_finetuning, _finetuning_evaluate
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as tmp:
@@ -335,16 +335,83 @@ class SurfaceVATTests(unittest.TestCase):
                             self.assertEqual(epoch['vat_loss'],0);self.assertEqual(epoch['vat_function_forwards'],0)
                         else:self.assertGreater(epoch['vat_loss'],0)
                 original_report=(root/'robustness/comparison.metrics.json').read_bytes()
+                args.robustness='all';args.stage='report';args.include_ablations=True
+                with patch.object(core,'train_model',side_effect=AssertionError('old ablation retrained')):
+                    _codebert_finetuning(args)
+                old_ablation_report=(root/'robustness/ablation.comparison.metrics.json').read_bytes()
+                args.stage='smoke';args.include_incremental=True
+                incremental_smoke=_codebert_finetuning(args)['incremental']
+                incremental=core.ROBUSTNESS_INCREMENTAL_MODES
+                self.assertEqual(set(incremental_smoke['checks']),set(incremental))
+                for mode in incremental:
+                    self.assertTrue(all(incremental_smoke['checks'][mode][k] for k in
+                                        ('encoder_updated','classifier_updated','save_reload_exact')))
+                    args.robustness=mode;args.stage='all';args.include_ablations=False;args.include_incremental=False
+                    use_vat=mode.endswith('_vat');use_search=mode.startswith('hard_')
+                    vat_patch=(patch.object(core,'vat_loss',wraps=core.vat_loss) if use_vat else
+                               patch.object(core,'vat_loss',side_effect=AssertionError('BCE increment used VAT')))
+                    with vat_patch as vat_calls,\
+                            patch('vulnmechanism.change_learning.bernoulli_js',side_effect=AssertionError('increment used JS')),\
+                            patch.object(data,'search_surface_views',wraps=data.search_surface_views) as searches:
+                        added=_codebert_finetuning(args)[mode]
+                    saved=torch.load(root/f'robustness/{mode}/best.pt',weights_only=False)
+                    opts=saved['robustness_options']
+                    self.assertEqual((opts['alpha'],opts['lambda_real'],opts['lambda_vat'],opts['search'],opts['source_views']),
+                                     (0.,0.,float(use_vat),use_search,True))
+                    self.assertEqual(saved['cohort_members'],cp['cohort_members'])
+                    self.assertEqual(saved['training_config'],cp['training_config'])
+                    self.assertEqual(set(saved['task_state']),set(cp['task_state']))
+                    training_searches=[c for c in searches.call_args_list if c.kwargs.get('epoch')]
+                    self.assertTrue(training_searches)
+                    self.assertTrue(all(c.kwargs['query_limit']==12 and c.kwargs['random_selection']!=use_search
+                                        for c in training_searches))
+                    if use_vat:self.assertEqual({c.kwargs['alpha'] for c in vat_calls.call_args_list},{0.})
+                    for epoch in added['training']:
+                        self.assertEqual(epoch['optimizer_steps'],1);self.assertEqual(epoch['augmented_functions'],7)
+                        self.assertEqual(epoch['bce_function_forwards'],15)
+                        self.assertEqual(epoch['real_js'],0);self.assertEqual(epoch['real_function_forwards'],0)
+                        self.assertEqual(epoch['real_encoder_sequences'],0)
+                        if use_vat:
+                            self.assertGreater(epoch['vat_loss'],0);self.assertEqual(epoch['vat_eligible_functions'],8)
+                        else:self.assertEqual(epoch['vat_loss'],0);self.assertEqual(epoch['vat_function_forwards'],0)
+                        if use_search:self.assertGreater(epoch['candidate_queries'],0)
+                        else:
+                            self.assertEqual(epoch['candidate_queries'],0);self.assertEqual(epoch['original_search_queries'],0)
+                            self.assertEqual(epoch['search_encoder_sequences'],0)
+                    candidates=[json.loads(l) for l in (root/f'robustness/{mode}/best.candidates.jsonl').read_text().splitlines()]
+                    self.assertTrue(all(len(s['visited'])<=12 for s in candidates))
+                    if use_search:
+                        self.assertTrue(all(s['selected']['loss']==max(c['loss'] for c in s['visited'])
+                                            for s in candidates if s['selected'] is not None))
+                random_records=[[json.loads(l) for l in (root/f'robustness/{mode}/best.candidates.jsonl').read_text().splitlines()]
+                                for mode in ('random_aug_bce','random_aug_vat')]
+                self.assertEqual(*random_records)
+                args.stage='report';args.robustness='all';args.include_incremental=True
+                with patch.object(core,'train_model',side_effect=AssertionError('completed increment retrained')):
+                    combined=_codebert_finetuning(args)
+                self.assertEqual(set(combined),{'bce','vat','ours',*ablations,*incremental})
+                self.assertEqual((root/'robustness/comparison.metrics.json').read_bytes(),original_report)
+                self.assertEqual((root/'robustness/ablation.comparison.metrics.json').read_bytes(),old_ablation_report)
+                self.assertTrue((root/'robustness/incremental.comparison.metrics.json').exists())
                 rows[-1]['function']='int heldout(int orchard){return api(orchard);}'
                 rows.append(dict(rows[-1],sample_key='heldout_positive',label=1))
                 manifest.write_text(''.join(json.dumps(r)+'\n' for r in rows))
-                args.stage='test';args.robustness='all';args.include_ablations=True
+                args.stage='test';args.robustness='all';args.include_ablations=True;args.include_incremental=False
                 with patch.object(core,'train_model',side_effect=AssertionError('Test trained a model')),\
                         patch.object(core,'_select_validation_threshold',side_effect=AssertionError('Test selected a threshold')):
                     tested=_codebert_finetuning(args)
                 self.assertEqual(set(tested),{'bce','vat','ours',*ablations})
                 self.assertEqual((root/'robustness/comparison.metrics.json').read_bytes(),original_report)
                 self.assertTrue((root/'robustness/test.ablation.comparison.metrics.json').exists())
+                old_test_report=(root/'robustness/test.ablation.comparison.metrics.json').read_bytes()
+                args.include_incremental=True
+                with patch.object(core,'train_model',side_effect=AssertionError('incremental Test trained a model')),\
+                        patch.object(core,'_select_validation_threshold',side_effect=AssertionError('incremental Test selected a threshold')):
+                    tested=_codebert_finetuning(args)
+                self.assertEqual(set(tested),{'bce','vat','ours',*ablations,*incremental})
+                self.assertEqual((root/'robustness/test.ablation.comparison.metrics.json').read_bytes(),old_test_report)
+                self.assertEqual((root/'robustness/ablation.comparison.metrics.json').read_bytes(),old_ablation_report)
+                self.assertTrue((root/'robustness/test.incremental.comparison.metrics.json').exists())
                 self.assertTrue((root/'robustness/test.fixed.candidates.jsonl').exists())
                 for mode,report in tested.items():
                     self.assertEqual(report['clean']['split'],'test');self.assertEqual(report['clean']['samples'],2)

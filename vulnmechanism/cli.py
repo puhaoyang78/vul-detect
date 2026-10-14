@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .benchmark_view import FORMAL_DATASETS, dataset_view
 from .dataset import build_function_dataset
-from .model import MODEL_VARIANTS, evaluate_model, train_model
+from .model import MODEL_VARIANTS, ROBUSTNESS_MODES, evaluate_model, train_model
 from .semantics import MECHANISM_GROUPS, validate_mechanism_groups
 
 
@@ -224,8 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
     shallow_method.add_argument('--conditional-length-debiasing', action='store_true',
         help='only C: existing random views plus label-conditional logit length GRL, lambda=.05')
     shallow_method.add_argument('--robustness',nargs='?',const='all',
-        choices=('all','bce','vat','ours','ours_uniform','ours_no_consistency','ours_no_vat','ours_no_search'),
-        help='main comparison bce/vat/ours; optional ablations are explicitly selected')
+        choices=('all',)+ROBUSTNESS_MODES,
+        help='main comparison bce/vat/ours; ablations and augmentation/VAT increments are explicitly selected')
     finetuning.add_argument('--augmentation-dir', default='results/codebert_shallow_augmentation_seed42',
         help='completed random augmentation/cache to reuse for conditional length C')
     finetuning.add_argument('--baseline-checkpoint', default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
@@ -234,6 +234,8 @@ def build_parser() -> argparse.ArgumentParser:
     finetuning.add_argument('--gradient-accumulation', type=int, default=2)
     finetuning.add_argument('--include-ablations', action='store_true',
                            help='with --robustness all, explicitly include the four robustness ablations')
+    finetuning.add_argument('--include-incremental', action='store_true',
+                           help='with --robustness all, include the seven existing methods and four augmentation/VAT increments')
     finetuning.set_defaults(func=_codebert_finetuning)
     return parser
 
@@ -321,8 +323,8 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args, *, output_name=None
 
 def _codebert_finetuning(args):
     if getattr(args,'robustness',None):return _codebert_robustness(args)
-    if args.stage=='test' or getattr(args,'include_ablations',False):
-        raise ValueError('test stage and --include-ablations require --robustness')
+    if args.stage=='test' or getattr(args,'include_ablations',False) or getattr(args,'include_incremental',False):
+        raise ValueError('test stage and robustness group flags require --robustness')
     if getattr(args, 'conditional_length_debiasing', False):
         return _codebert_conditional_length(args)
     if getattr(args, 'shallow_augmentation', None):
@@ -1336,10 +1338,14 @@ def _codebert_robustness(args):
     rows=[r for r in all_rows if r['split'] in ('train','valid')]
     if not rows or any(r.get('repair_supplement') for r in rows):raise ValueError('requires original PrimeVul classification cohort')
     ablations=('ours_no_search','ours_uniform','ours_no_consistency','ours_no_vat')
-    include_ablations=getattr(args,'include_ablations',False)
+    incremental=core.ROBUSTNESS_INCREMENTAL_MODES
+    include_incremental=getattr(args,'include_incremental',False)
+    include_ablations=getattr(args,'include_ablations',False) or include_incremental
+    if include_incremental and args.robustness!='all':raise ValueError('--include-incremental requires --robustness all')
     if include_ablations and args.robustness!='all':raise ValueError('--include-ablations requires --robustness all')
-    modes=(('bce','vat','ours')+(ablations if include_ablations else ())) if args.robustness=='all' else (args.robustness,)
+    modes=(('bce','vat','ours')+(ablations if include_ablations else ())+(incremental if include_incremental else ())) if args.robustness=='all' else (args.robustness,)
     needs_ablation=any(mode in ablations for mode in modes)
+    needs_incremental=any(mode in incremental for mode in modes)
     if args.stage=='test' and (not any(r['split']=='test' for r in all_rows)
                               or any(r.get('repair_supplement') for r in all_rows if r['split']=='test')):
         raise ValueError('requires the original nonempty PrimeVul Test cohort')
@@ -1406,9 +1412,20 @@ def _codebert_robustness(args):
         if not ablation_smoke.exists():raise ValueError('complete --include-ablations --stage smoke before ablation training')
         checked=json.loads(ablation_smoke.read_text())
         if checked['xi']!=xi or set(checked['checks'])!=set(ablations):raise ValueError('ablation smoke configuration differs')
+    incremental_smoke=root/'incremental.smoke.metrics.json'
+    if needs_incremental and args.stage in ('all','smoke') and not incremental_smoke.exists():
+        if base is None:base=torch.load(bce_target,map_location='cpu',weights_only=False)
+        result=_robustness_smoke(rows,root,config,materials,args,base,modes=incremental,output_name=incremental_smoke.name)
+        if result['xi']!=xi:raise ValueError('incremental smoke differs from the frozen common VAT setting')
+    if needs_incremental:
+        if not incremental_smoke.exists():raise ValueError('complete --include-incremental --stage smoke before incremental training')
+        incremental_checked=json.loads(incremental_smoke.read_text())
+        if incremental_checked['xi']!=xi or set(incremental_checked['checks'])!=set(incremental):
+            raise ValueError('incremental smoke configuration differs')
     if args.stage=='smoke':
         result=json.loads(smoke.read_text())
         if needs_ablation:result['ablations']=checked
+        if needs_incremental:result['incremental']=incremental_checked
         return result
     if args.stage=='test':
         missing=[mode for mode in modes if not (bce_target if mode=='bce' else root/mode/'best.pt').exists()]
@@ -1460,8 +1477,12 @@ def _codebert_robustness(args):
             if mode=='bce':results[mode]['training_cost']['encoder_sequences']['bce']=None
         del cp
     if results:
-        name=('ablation.comparison.metrics.json' if include_ablations else 'comparison.metrics.json') if args.robustness=='all' else f'{args.robustness}.comparison.metrics.json'
+        name=('incremental.comparison.metrics.json' if include_incremental else
+              'ablation.comparison.metrics.json' if include_ablations else 'comparison.metrics.json') if args.robustness=='all' else f'{args.robustness}.comparison.metrics.json'
         report_config=dict(config,ablation_groups=list(ablations)) if include_ablations else config
+        if include_incremental:
+            report_config=dict(report_config,incremental_groups=list(incremental),
+                               incremental_options={mode:core.robustness_config(mode,xi=xi) for mode in incremental})
         if args.stage=='test':
             name='test.'+name
             report_config=dict(report_config,evaluation_split='test',evaluation_counts=dict(Counter(
