@@ -1,0 +1,65 @@
+{
+  "dataset": "primevul",
+  "seed": 42,
+  "raw_root": "/home/PublicData/PHY-data/vul_detect/data",
+  "native": {
+    "train": {
+      "samples": 175797,
+      "positive": 4862,
+      "negative": 170935
+    },
+    "valid": {
+      "samples": 23948,
+      "positive": 593,
+      "negative": 23355
+    },
+    "test": {
+      "samples": 24788,
+      "positive": 549,
+      "negative": 24239
+    }
+  },
+  "removed": {
+    "normalized_duplicate_rows": 778,
+    "near_duplicate_groups_merged": 10992,
+    "same_label_duplicate_rows_removed": 7378,
+    "conflict_groups": 2937,
+    "conflict_rows": 7329
+  },
+  "natural": {
+    "train": {
+      "samples": 163384,
+      "positive": 1975,
+      "negative": 161409
+    },
+    "valid": {
+      "samples": 22906,
+      "positive": 269,
+      "negative": 22637
+    },
+    "test": {
+      "samples": 23536,
+      "positive": 203,
+      "negative": 23333
+    }
+  },
+  "balanced": {
+    "train": {
+      "samples": 3950,
+      "positive": 1975,
+      "negative": 1975
+    },
+    "valid": {
+      "samples": 538,
+      "positive": 269,
+      "negative": 269
+    },
+    "test": {
+      "samples": 406,
+      "positive": 203,
+      "negative": 203
+    }
+  },
+  "deduplication": "within dataset; exact, lexical normalization, token 5-gram Jaccard >= 0.90; connected components; conflicting labels removed; test > valid > train",
+  "sampling": "random.Random(42), stable source order, sample each class to the minority count"
+}

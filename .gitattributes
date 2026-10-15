@@ -1,1 +1,5 @@
-results/**/*comparison*.csv text eol=crlf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.csv text eol=lf

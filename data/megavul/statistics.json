@@ -1,0 +1,71 @@
+{
+  "dataset": "megavul",
+  "seed": 42,
+  "raw_root": "/home/PublicData/PHY-data/vul_detect/data",
+  "native": {
+    "train": {
+      "samples": 217678,
+      "positive": 11889,
+      "negative": 205789
+    },
+    "valid": {
+      "samples": 106845,
+      "positive": 4669,
+      "negative": 102176
+    },
+    "test": {
+      "samples": 29350,
+      "positive": 1417,
+      "negative": 27933
+    }
+  },
+  "removed": {
+    "normalized_duplicate_rows": 3209,
+    "exact_duplicate_rows": 12749,
+    "near_duplicate_groups_merged": 9749,
+    "same_label_duplicate_rows_removed": 25310,
+    "conflict_groups": 306,
+    "conflict_rows": 703
+  },
+  "natural": {
+    "train": {
+      "samples": 199971,
+      "positive": 10584,
+      "negative": 189387
+    },
+    "valid": {
+      "samples": 100196,
+      "positive": 4316,
+      "negative": 95880
+    },
+    "test": {
+      "samples": 27693,
+      "positive": 1274,
+      "negative": 26419
+    }
+  },
+  "balanced": {
+    "train": {
+      "samples": 21168,
+      "positive": 10584,
+      "negative": 10584
+    },
+    "valid": {
+      "samples": 8632,
+      "positive": 4316,
+      "negative": 4316
+    },
+    "test": {
+      "samples": 2548,
+      "positive": 1274,
+      "negative": 1274
+    }
+  },
+  "deduplication": "within dataset; exact, lexical normalization, token 5-gram Jaccard >= 0.90; connected components; conflicting labels removed; test > valid > train",
+  "sampling": "random.Random(42), stable source order, sample each class to the minority count",
+  "projects": {
+    "train": 848,
+    "valid": 106,
+    "test": 107
+  }
+}

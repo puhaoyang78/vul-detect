@@ -1,3 +1,1 @@
-"""CPG-guided vulnerability-semantic learning for C/C++ functions."""
-
-__all__ = []
+"""Dynamic hard augmentation for C/C++ function vulnerability detection."""
