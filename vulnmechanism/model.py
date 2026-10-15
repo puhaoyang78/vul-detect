@@ -372,6 +372,26 @@ def _window_mean(hidden, mask, owners, weights, function_count,*,dtype=torch.flo
     return sums.new_zeros((function_count, hidden.shape[-1])).index_add(0, owners, sums) / denominator[:, None]
 
 
+def region_mean(hidden, mask, owners, weights, function_count, source_positions, region_token_weights):
+    """Read original-source positions with exactly the existing window coverage."""
+    if source_positions.shape != mask.shape or len(region_token_weights) != function_count:
+        raise ValueError('region/source position shape mismatch')
+    selected = torch.zeros_like(weights, dtype=torch.float32)
+    for owner, values in enumerate(region_token_weights):
+        values = weights.new_tensor(values, dtype=torch.float32)
+        if values.ndim != 1 or not torch.isfinite(values).all() or torch.any(values < 0) or torch.any(values > 1):
+            raise ValueError('invalid region token weights')
+        windows = owners == owner
+        positions = source_positions[windows]
+        valid = (positions >= 0) & mask[windows].bool()
+        if not valid.any() or int(positions[valid].max()) + 1 != len(values):
+            raise ValueError('region token weights differ from actual source positions')
+        gathered = torch.zeros_like(positions, dtype=torch.float32)
+        gathered[valid] = values[positions[valid]]
+        selected[windows] = gathered
+    return _window_mean(hidden, mask, owners, weights * selected, function_count)
+
+
 class SequenceVulnerabilityClassifier(nn.Module):
 
     def __init__(self, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int, lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool, variant: str='codebert_source', classifier_head: str='linear', finetuning_mode: str | None=None, conditional_length_config: dict | None=None) -> None:
@@ -410,6 +430,16 @@ class SequenceVulnerabilityClassifier(nn.Module):
             head = self.task_modules['classifier']
             return torch.nn.functional.linear(pooled.double(), head.weight.double(), head.bias.double()).squeeze(-1)
         return self.task_modules['classifier'](pooled).squeeze(-1)
+
+    def region_readout(self, input_ids, attention_mask, window_owners, pooling_weights,
+                       function_count, source_positions, region_token_weights):
+        """Training/diagnosis only; a complete single version enters the encoder."""
+        hidden = self._source_hidden(input_ids, attention_mask)
+        local = region_mean(hidden, attention_mask, window_owners, pooling_weights,
+                            function_count, source_positions, region_token_weights)
+        head = self.task_modules['classifier']
+        global_pool = _window_mean(hidden, attention_mask, window_owners, pooling_weights, function_count)
+        return head(local).squeeze(-1), local, head(global_pool).squeeze(-1)
 
 def _build_model(variant: str, model_path: str, *, device: torch.device, lora_r: int, lora_alpha: int, lora_dropout: float, target_modules: tuple[str, ...], gradient_checkpointing: bool, fusion_dim: int, fusion_heads: int, graph_config: dict | None=None, classifier_head: str='linear', finetuning_mode: str | None=None, conditional_length_config: dict | None=None):
     if variant != 'codebert_source' or classifier_head != 'linear' or graph_config is not None or conditional_length_config is not None:
@@ -722,6 +752,9 @@ def train_model(dataset_path: str | Path | None, output_path: str | Path, *,
     finetuning_mode: str | None = None,
     robustness_options: dict | None = None,
     surface_materials: dict | None = None,
+    repair_supervision: dict | None = None,
+    repair_pairs: list[dict] | None = None,
+    repair_pairs_path: str | None = None,
 ) -> dict[str, object]:
     if variant != 'codebert_source' or classifier_head != 'linear' or excluded_groups:
         raise ValueError('current training supports CodeBERT mean pooling and linear BCE only')
@@ -760,6 +793,14 @@ def train_model(dataset_path: str | Path | None, output_path: str | Path, *,
         _validate_robustness_config(robustness_options)
         if finetuning_mode != 'full' or 'codebert_source' != 'codebert_source' or 'linear' != 'linear' or any((x is not None for x in (None, None, None, None, None, None, None, None, None))) or False or (seed != 42) or (source_max_length != 2048) or (robustness_options['source_views'] and (not isinstance(surface_materials, dict))) or (not robustness_options['source_views'] and surface_materials is not None):
             raise ValueError('robustness requires fresh full CodeBERT; pure VAT has no source views or materials')
+    if repair_supervision is not None:
+        from .repair_supervision import validate_config, auxiliary_schedule, auxiliary_scale, local_losses, region_readouts
+        validate_config(repair_supervision)
+        if (finetuning_mode != 'full' or robustness_options is None
+                or robustness_options['mode'] != 'hard_aug_bce' or not repair_pairs or not repair_pairs_path):
+            raise ValueError('repair supervision requires hard_aug_bce, full CodeBERT and prepared audit pairs')
+    elif repair_pairs is not None or repair_pairs_path is not None:
+        raise ValueError('audit data require an explicit repair supervision mode')
     graph_config = None
     initial = None
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -829,6 +870,13 @@ def train_model(dataset_path: str | Path | None, output_path: str | Path, *,
         optimizer_steps = 0
         pending = 0
         num_batches = math.ceil(len(order) / batch_size)
+        if repair_supervision is not None:
+            audit_steps = math.ceil(num_batches / gradient_accumulation)
+            audit_schedule = auxiliary_schedule(repair_pairs, audit_steps, seed=seed, epoch=epoch + 1)
+            audit_scale = auxiliary_scale(audit_steps, len(repair_pairs), repair_supervision['lambda_audit'])
+            audit_state, audit_contrast, audit_count = 0., 0., 0
+            audit_anchors, audit_no_positive, audit_forwards, audit_sequences, audit_slots = 0, 0, 0, 0, 0
+            audit_seconds = 0.
         window_loss, window_samples = (0.0, 0)
         view_forwards, encoder_sequences, encoder_token_slots = (0, 0, 0)
         bar = tqdm(range(0, len(order), batch_size), total=num_batches, desc=f"{'codebert_source'} · epoch {epoch + 1}/{epochs}", unit='batch', dynamic_ncols=True, mininterval=1, file=sys.stdout, colour='cyan')
@@ -911,8 +959,29 @@ def train_model(dataset_path: str | Path | None, output_path: str | Path, *,
             bar.set_postfix(loss=f'{window_loss / window_samples:.4f}', step=global_step, lr=f'{learning_rate:.1e}', refresh=False)
             pending += 1
             if pending == gradient_accumulation or batch_index + 1 == num_batches:
-                if None is not None and epoch > 0:
-                    empty_aux += 1
+                if repair_supervision is not None:
+                    started = time.monotonic()
+                    # Backward remains INSIDE auxiliary mode: checkpointed
+                    # recomputation must see the same disabled dropout flags.
+                    with _auxiliary_mode(model):
+                        for indices in audit_schedule.get(optimizer_steps, []):
+                            pairs = [repair_pairs[index] for index in indices]
+                            vectors, local_logits, _, cost = region_readouts(model, input_builder, pairs, device=resolved_device)
+                            audit_forwards += cost['function_forwards']
+                            audit_sequences += cost['encoder_sequences']
+                            audit_slots += cost['encoder_token_slots']
+                            state, contrast, info = local_losses(vectors, local_logits, pairs,
+                                            beta=repair_supervision['beta'], tau=repair_supervision['tau'])
+                            auxiliary = audit_scale * (state + repair_supervision['beta'] * contrast).sum()
+                            if not torch.isfinite(auxiliary):
+                                raise ValueError('non-finite audited local supervision loss')
+                            auxiliary.backward()
+                            audit_state += float(state.detach().sum())
+                            audit_contrast += float(contrast.detach().sum())
+                            audit_count += len(pairs)
+                            audit_anchors += info['contrast_anchors']
+                            audit_no_positive += info['no_positive_anchors']
+                    audit_seconds += time.monotonic() - started
                 torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -933,6 +1002,17 @@ def train_model(dataset_path: str | Path | None, output_path: str | Path, *,
             epoch_row.update(augmented_functions=0, bce_function_forwards=view_forwards, bce_encoder_sequences=encoder_sequences, encoder_token_slots=encoder_token_slots, function_loss='one BCE per original function')
             weight = robustness_options['lambda_vat']
             epoch_row.update(robustness_mode=robustness_options['mode'], vat_loss=vat_total / len(train_records), vat_weight=weight, vat_eligible_functions=vat_eligible, vat_skipped_functions=len(train_records) - vat_eligible, vat_zero_direction_functions=vat_zero, vat_norm_min=vat_norm_min, vat_norm_max=vat_norm_max, vat_function_forwards=vat_forwards, vat_encoder_sequences=vat_sequences, vat_encoder_token_slots=vat_slots, real_js=real_total / len(train_records), real_js_functions=real_functions, real_function_forwards=real_forwards, real_encoder_sequences=real_sequences, augmented_functions=transformed_functions, function_loss='mean original/selected BCE per function, then mean over original functions' if robustness_options['source_views'] else 'one BCE per original function', candidate_queries=search_queries, original_search_queries=original_queries, search_encoder_sequences=search_sequences, search_encoder_token_slots=search_slots, search_seconds=search_seconds, epoch_seconds=time.monotonic() - epoch_started, search_reasons=search_reasons, total_loss=(running_loss + weight * vat_total + robustness_options['lambda_real'] * real_total) / len(train_records))
+        if repair_supervision is not None:
+            if audit_count != len(repair_pairs):
+                raise RuntimeError('not every qualified audit pair was used exactly once this epoch')
+            epoch_row.update(repair_supervision=repair_supervision['mode'], audit_pairs=audit_count,
+                             audit_state_loss=audit_state / audit_count, audit_contrast_loss=audit_contrast / audit_count,
+                             audit_contrast_anchors=audit_anchors, audit_no_positive_anchors=audit_no_positive,
+                             audit_function_forwards=audit_forwards, audit_encoder_sequences=audit_sequences,
+                             audit_encoder_token_slots=audit_slots, audit_seconds=audit_seconds,
+                             audit_weight=repair_supervision['lambda_audit'], audit_beta=repair_supervision['beta'],
+                             audit_scale_per_update=audit_scale)
+            epoch_row['total_loss'] += repair_supervision['lambda_audit'] * (audit_state + repair_supervision['beta'] * audit_contrast) / audit_count
         history.add(epoch_row)
         key = (validation.mcc, validation.f1, validation.accuracy, validation.auc if validation.auc is not None else float('-inf'))
         if key > best_key:
@@ -953,6 +1033,11 @@ def train_model(dataset_path: str | Path | None, output_path: str | Path, *,
         checkpoint['robustness_options'] = robustness_options
         if surface_materials is not None:
             checkpoint['surface_materials'] = surface_materials
+    if repair_supervision is not None:
+        checkpoint['repair_supervision'] = repair_supervision
+        checkpoint['repair_pairs_path'] = str(repair_pairs_path)
+        checkpoint['repair_training_members'] = [dict(sample_id=pair['sample_id'], dataset=pair['dataset'],
+                                                      event_id=pair['event_id'], group=pair['group']) for pair in repair_pairs]
     capacity = 512 - len(input_builder.source_prefix) - 2
     checkpoint['input_protocol'] = dict(encoder='roberta', native_window=512, logical_budget=source_max_length, source_budget=source_max_length - len(input_builder.source_prefix) - 2, window_source_capacity=capacity, stride=capacity // 2, pooling='mean over unique source positions; repeated prefix/BOS/EOS averaged across windows', function_loss='mean view BCE per function, then mean over original functions' if None is not None or (robustness_options is not None and robustness_options['source_views']) else 'one BCE per original function')
     target = Path(output_path)
@@ -985,6 +1070,14 @@ def _load_model(checkpoint: dict[str, object], *, device: torch.device, include_
     if checkpoint.get('variant') != 'codebert_source' or checkpoint.get('classifier_head', 'linear') != 'linear' or checkpoint.get('conditional_length_config') is not None:
         raise ValueError('historical model architecture requires the archived implementation')
     mode = checkpoint.get('finetuning_mode')
+    if checkpoint.get('repair_supervision') is not None:
+        from .repair_supervision import validate_config
+        validate_config(checkpoint['repair_supervision'])
+        members = checkpoint.get('repair_training_members')
+        if (mode != 'full' or (checkpoint.get('robustness_options') or {}).get('mode') != 'hard_aug_bce'
+                or not isinstance(members, list) or not members or not checkpoint.get('repair_pairs_path')
+                or len({(row['dataset'], row['sample_id']) for row in members}) != len(members)):
+            raise ValueError('invalid repair-supervised checkpoint metadata')
     if mode not in (None, 'lora', 'full'):
         raise ValueError('unknown checkpoint finetuning mode')
     if mode is not None and checkpoint.get('encoder_precision') != 'FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss':

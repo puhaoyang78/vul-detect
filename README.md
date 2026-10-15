@@ -111,16 +111,81 @@ Python入口为`vulnmechanism.model.predict_checkpoint(checkpoint, [{"raw_source
 本地详细清理报告、逐文件清单、依赖和恢复证据位于`cleanup_audit/20261014094242Z`。
 2026-10-14已按用户确认删除7.93 GiB隔离重复副本，完整备份保留。发布脚本继续拒绝从cleanup分支推送，只允许`--dry-run`；正式发布需正常合并到main。
 
-## 下一阶段：高质量修复对监督（尚未验证）
+## 审计引导的安全差异表示学习
 
-已保留相邻项目的`high_quality_repair_pairs.json`（1,279条）及源身份/配对核查、原数据准备工具。
-计划研究安全相关特征判别辅助任务，主任务仍是单函数0/1；不能把任意修复差异直接转成无条件函数标签。
-此方向尚未实现或验证，本次没有新增训练。未来需要VAT时复用当前全局组件，不建立第二套VAT。
+`--repair-supervision`是与`hard_aug_bce`配合的正交开关：`none`保持原路径；`state`增加已审计区域的局部状态BCE；`state_contrast`再增加同机理、独立修复事件内的成对监督对比。`all`只展开这三组，不运行VAT、历史消融或Test。
+主任务仍是单函数源码分类，保持原困难搜索、2048逻辑预算、原生滑窗、去重mean pooling及线性头。修复两端分别完整编码，训练时从原位置并集读出区域，复用同一个线性头；辅助after=0只表示审计范围内的修复约束状态，不加入函数负类。
+
+对比形式借鉴[PairCFR论文](https://aclanthology.org/2024.acl-long.646/)及[作者损失实现](https://github.com/Siki-cloud/PairCFR/blob/main/runimdb/run/bert_sentiment_loss.py)，在区域向量上计算`logaddexp(positive, logsumexp(negatives)) - positive`。正例须同机理、同状态、来自独立修复事件；负例为同机理相反状态，包含本对另一端。`other`等不明确类别仅做合格的状态监督。这是局部机理改造，不是全文分类复现。
+
+总目标固定为`L_hard + 0.1*(L_state + beta*L_contrast)`，state的beta=0，state_contrast的beta=0.1，tau=0.1。每轮每对做一次状态训练，同组通常2对；独立随机采样、均匀安排到原优化步，辅助梯度为`0.1*S/N*sum(pair_losses)`，不再次除以主batch或梯度累积。辅助前向及反向均关闭dropout并保留梯度。
+
+准备阶段只在相邻`knowledge-guided-vulnerability-detection`内查找源文件，写入同名`data/high_quality_repair_pairs.json`。删除顶层heldout_exclusion及61对官方Valid、45对官方Test来源；随后按现有规范化/近重复规则、原idx、CVE及修复提交隔离PrimeVul Valid/Test、SVEN和已删除事件。现有审计源码和provenance保留；来源冲突或用户已修改的目标文件会明确报错。
+当前源过滤为1,279→1,173，额外跨集合排除131对后保留1,042对。915对通过区域与全部词法差异可见性检查；每轮850对具有独立组内正例、65对只做状态监督。位置的右端为开区间，source_text核对字符/UTF-8边界；CRLF仅用于比较，输入不改写。纯注释/空白位置不入区域池，重叠标注和滑窗副本不重复计数。实际区域或代码差异截断则整对跳过辅助损失。
+
+```bash
+$PY -m vulnmechanism.cli codebert-finetuning --robustness hard_aug_bce --repair-supervision all --stage prepare
+$PY -m vulnmechanism.cli codebert-finetuning --robustness hard_aug_bce --repair-supervision all --stage smoke --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --robustness hard_aug_bce --repair-supervision all --stage train --device cuda:0
+$PY -m vulnmechanism.cli codebert-finetuning --robustness hard_aug_bce --repair-supervision all --stage report --device cuda:0
+```
+
+结果位于`results/codebert_repair_supervision_seed42`；B/C分别保存于state/state_contrast，A严格匹配后复用原hard_aug_bce路径。三组从相同预训练起点，3轮、batch=4、accumulation=2、lr=1e-5；仅Clean Valid MCC及原tie-break选epoch/阈值。
+固定及留出候选直接复用当前候选库，自适应攻击按同预算各自搜索。独立局部诊断只读被删除的61对官方Valid，按位置和可见性预先固定47对；state阈值固定0.5，同时报告两端正确、排序、原全局分类器分数变化及字符/token长度方向对照。局部标签不用于全函数安全评价。本轮不运行新的Test，正式效果以保存的Train/Valid及鲁棒性结果为准。
+新checkpoint仅增加辅助配置和训练成员引用，模型参数结构不变；普通单函数推理和旧checkpoint不要求审计数据文件存在。
+
+本轮实际结果如下，全部为seed=42、同一原始PrimeVul清单。A=none，B=state，C=state_contrast；A匹配并复用原模型，B/C各完成3轮，没有新增Test。完整配置、成员、损失、22个局部机理分组、长度分组和成本见[三组JSON](results/codebert_repair_supervision_seed42/comparison.metrics.json)及[CSV](results/codebert_repair_supervision_seed42/comparison.metrics.csv)。
+
+| 集合/方法 | Accuracy | Precision | Recall | F1 | MCC | AUROC |
+|---|---:|---:|---:|---:|---:|---:|
+| Train A | 0.8538 | 0.8087 | 0.9269 | 0.8638 | 0.7153 | 0.9328 |
+| Train B | 0.8183 | 0.8069 | 0.8368 | 0.8216 | 0.6370 | 0.8988 |
+| Train C | 0.8639 | 0.8259 | 0.9223 | 0.8714 | 0.7329 | 0.9362 |
+| Valid A | 0.7367 | 0.7069 | 0.8087 | 0.7544 | 0.4784 | 0.8083 |
+| Valid B | 0.7465 | 0.7717 | 0.7002 | 0.7342 | 0.4952 | 0.8052 |
+| Valid C | 0.7535 | 0.7324 | 0.7988 | 0.7642 | 0.5090 | 0.8149 |
+
+A/B/C选中epoch为3/1/3，阈值为0.41/0.49/0.38。Train/Valid分别完整保留7,820/1,014个函数。
+
+下表Accuracy/MCC/AUROC为包含原版的完整最坏情况；ASR以各模型在可扰动函数中原本预测正确者为分母，全部候选正确率以可扰动函数为分母。固定、留出、自适应的可扰动函数分别为662/657/655，完整分母均为1,014。
+
+| 方法/扰动 | Accuracy | MCC | AUROC | ASR | 全部候选正确率 |
+|---|---:|---:|---:|---:|---:|
+| A/固定 | 0.7170 | 0.4396 | 0.7842 | 4.12% | 70.24% |
+| B/固定 | 0.7239 | 0.4499 | 0.7831 | 4.68% | 70.69% |
+| C/固定 | 0.7258 | 0.4535 | 0.7873 | 5.63% | 70.85% |
+| A/留出 | 0.7209 | 0.4473 | 0.7860 | 3.33% | 70.78% |
+| B/留出 | 0.7268 | 0.4560 | 0.7837 | 4.11% | 71.08% |
+| C/留出 | 0.7278 | 0.4570 | 0.7900 | 5.27% | 71.08% |
+| A/自适应 | 0.6874 | 0.3815 | 0.7508 | 10.42% | 65.65% |
+| B/自适应 | 0.7012 | 0.4044 | 0.7544 | 9.47% | 67.18% |
+| C/自适应 | 0.6982 | 0.3984 | 0.7564 | 11.38% | 66.56% |
+
+独立局部Valid使用预先固定的47/61对，14对因区域/改动不可见跳过；不把这些局部标签用于全函数安全评价。
+
+| 方法 | 局部状态Accuracy | 两端同时正确 | before>after排序 | 全局before−after平均logit |
+|---|---:|---:|---:|---:|
+| A | 48.94% | 0/47 | 21/47（44.68%） | −0.1174 |
+| B | 51.06% | 1/47 | 30/47（63.83%） | −0.0310 |
+| C | 51.06% | 2/47 | 36/47（76.60%） | −0.0395 |
+
+47对按原字符长度为after更长42、更短3、相同2；按实际可见源码token数为33/2/12。10对完整函数超预算，但所标区域和全部词法差异可见。以下仅作配对方向诊断，ties计0.5，两种方向均列出，没有根据Valid选择方向：
+
+| 长度线索 | 更长者风险高 | 更短者风险高 | ties |
+|---|---:|---:|---:|
+| 完整源码字符数 | 8.51% | 91.49% | 2 |
+| 完整源码token数 | 9.57% | 90.43% | 3 |
+| 实际可见源码token数 | 17.02% | 82.98% | 12 |
+
+A/B/C训练耗时为118.11/132.07/132.80分钟，包含每轮Clean Valid选模，各2,934个主优化步。B/C各额外执行5,490次辅助函数编码、19,404个原生窗口；辅助部分累计802.40/821.11秒。B/C在两块RTX4090上并行运行，报告的是各组实际epoch耗时；不把历史A的墙钟差异全部归因于方法。
+
+本轮C的Train和Clean Valid分类指标有所改善，但抗扰动收益有取舍：C的自适应完整准确率低于B，三类ASR均高于A。局部排序提高，却未伴随明显的局部状态分类改善；简单长度方向对照仍很强，因此不能据此宣称已确认安全机理表示学习。实际输入token数相同的12对中，A/B/C排序正确为6/12、12/12、11/12，单独的总输入token数也不能解释全部排序变化。
+另有两对审计原文与官方函数存在共同语法尾部差异；原idx、side、CVE、完整fix提交一致，差异保存于preparation.metrics.json，原文及provenance没有改写。
 
 ## 主线测试
 
 ```bash
 $PY -m py_compile vulnmechanism/*.py
-$PY -m unittest tests.test_mainline tests.test_codebert_source tests.test_surface_vat tests.test_prepare_benchmark tests.test_benchmark_view tests.test_training_progress tests.test_publish_code_metrics -v
+$PY -m unittest tests.test_mainline tests.test_codebert_source tests.test_surface_vat tests.test_repair_supervision tests.test_prepare_benchmark tests.test_benchmark_view tests.test_training_progress tests.test_publish_code_metrics -v
 bash scripts/publish_code_metrics.sh --dry-run
 ```

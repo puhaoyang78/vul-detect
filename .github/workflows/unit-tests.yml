@@ -29,6 +29,6 @@ jobs:
       - name: Run unit tests without model downloads
         run: >-
           python -m unittest -v
-          tests.test_mainline tests.test_codebert_source tests.test_surface_vat
+          tests.test_mainline tests.test_codebert_source tests.test_surface_vat tests.test_repair_supervision
           tests.test_prepare_benchmark tests.test_benchmark_view
           tests.test_training_progress tests.test_publish_code_metrics

@@ -51,7 +51,8 @@ def _matching_full_baseline(args):
             or base.get('source_max_length') != 2048 or base.get('model_path') != args.model
             or base.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION
             or any(k in base for k in ('change_supervision', 'local_supervision', 'synthetic_supervision',
-                                       'augmentation_config', 'conditional_length_config','surface_vat_config','robustness_options'))):
+                                       'augmentation_config', 'conditional_length_config','surface_vat_config','robustness_options',
+                                       'repair_supervision','repair_training_members'))):
         raise ValueError('requires the matching fresh full-CodeBERT BCE baseline and original manifest')
     training = base['training_config']
     if (training['epochs'] != 3 or training['weight_decay'] != .01
@@ -70,6 +71,24 @@ def _matching_full_baseline(args):
             raise FileNotFoundError(f'missing saved baseline {split} evaluation')
         _finetuning_evaluate(rows, baseline_path.parent, split, base, args)
     return rows, base, budget
+
+
+def _check_robustness_checkpoint(cp, rows, opts, materials, training, args, source_budget):
+    from . import model as core
+    expected_members = {split: [(r['sample_key'], r['label']) for r in rows if r['split'] == split]
+                        for split in ('train', 'valid')}
+    if (cp.get('robustness_options') != opts or cp.get('training_config') != training
+            or cp.get('cohort_members') != expected_members
+            or cp.get('classifier_initialization') != core._CLASSIFIER_INITIALIZATION or cp.get('model_path') != args.model
+            or cp.get('source_max_length') != 2048 or cp.get('classifier_head') != 'linear' or cp.get('finetuning_mode') != 'full'
+            or cp.get('initial_checkpoint') is not None or cp.get('sample_weights') is not None
+            or cp.get('seed') != 42 or cp.get('selection') != 'validation_mcc' or cp.get('variant') != 'codebert_source'
+            or cp.get('context_max_length') != 384 or cp.get('input_protocol', {}).get('source_budget') != source_budget
+            or cp.get('encoder_precision') != 'FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss'
+            or any(k in cp for k in ('change_supervision', 'local_supervision', 'synthetic_supervision',
+                                     'augmentation_config', 'conditional_length_config'))
+            or cp.get('surface_materials') != (materials if opts is not None and opts['source_views'] else None)):
+        raise ValueError('completed robustness checkpoint differs from this experiment')
 
 
 def _robustness_fixed_candidates(rows,materials,root,tokenizer,source_budget,*,split='valid'):
@@ -428,16 +447,9 @@ def _codebert_robustness(args):
         expected_members={split:[(r['sample_key'],r['label']) for r in rows if r['split']==split] for split in ('train','valid')}
         if target.exists():
             cp=torch.load(target,map_location='cpu',weights_only=False)
-            if (cp.get('robustness_options')!=opts or cp.get('training_config')!=training or cp.get('cohort_members')!=expected_members
-                    or cp.get('classifier_initialization')!=core._CLASSIFIER_INITIALIZATION or cp.get('model_path')!=args.model
-                    or cp.get('source_max_length')!=2048 or cp.get('classifier_head')!='linear' or cp.get('finetuning_mode')!='full'
-                    or cp.get('initial_checkpoint') is not None or cp.get('sample_weights') is not None
-                    or cp.get('seed')!=42 or cp.get('selection')!='validation_mcc' or cp.get('variant')!='codebert_source'
-                    or cp.get('context_max_length')!=384 or cp.get('input_protocol',{}).get('source_budget')!=config['source_budget']
-                    or cp.get('encoder_precision')!='FP32 weights/optimizer; BF16 CUDA autocast; FP32 head/pooling/loss'
-                    or any(k in cp for k in ('change_supervision','local_supervision','synthetic_supervision','augmentation_config','conditional_length_config'))
-                    or cp.get('surface_materials')!=(materials if opts is not None and opts['source_views'] else None)):
-                raise ValueError('completed robustness checkpoint differs from this experiment')
+            _check_robustness_checkpoint(cp,rows,opts,materials,training,args,config['source_budget'])
+            if cp.get('repair_supervision') is not None:
+                raise ValueError('repair-supervised checkpoint cannot masquerade as a robustness-only result')
         elif args.stage in ('train','all'):
             if target.with_suffix('.training.jsonl').exists():raise FileExistsError('running/interrupted robustness job; inspect before retrying')
             cp=core.train_model(None,target,records=rows,variant='codebert_source',model_path=args.model,
@@ -498,7 +510,218 @@ def _codebert_robustness(args):
 
 
 
+def _repair_smoke(rows, pairs, root, materials, args):
+    import tempfile
+    import torch
+    from . import model as core, repair_supervision as audit
+    from .artifacts import write_json
+    train = [r for r in rows if r['split'] == 'train']
+    chosen = [r for label in (0, 1) for r in [r for r in train if r['label'] == label][:4]]
+    chosen += [next(r for r in rows if r['split'] == 'valid' and r['label'] == label) for label in (0, 1)]
+    selected = None
+    short = [pair for pair in pairs if max(r['actual_tokens'] for r in pair['regions']) < 256 and pair['group'] is not None]
+    for pair in short:
+        partner = next((other for other in short if other['group'] == pair['group']
+                        and other['event_id'] != pair['event_id']), None)
+        if partner:
+            selected = [pair, partner]
+            break
+    if not selected:
+        raise ValueError('smoke requires two short independent audited repairs of one mechanism')
+    device = core._resolve_device(args.device)
+    builder = core.InputBuilder(core.AutoTokenizer.from_pretrained(args.model), source_max_length=2048, context_max_length=384)
+    core._seed_everything(42)
+    fresh = core._build_model('codebert_source', args.model, device=device, lora_r=16, lora_alpha=32,
+            lora_dropout=.05, target_modules=(), gradient_checkpointing=device.type == 'cuda',
+            fusion_dim=256, fusion_heads=8, finetuning_mode='full')
+    if device.type == 'cuda':
+        fresh.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
+    embedding = fresh.encoder.get_input_embeddings().weight
+    initial_embedding = embedding.detach().cpu().clone()
+    initial_head = core._cpu_state(fresh.task_modules.state_dict())
+    with core._auxiliary_mode(fresh):
+        vectors, logits, _, _ = audit.region_readouts(fresh, builder, selected, device=device)
+        state, contrast, info = audit.local_losses(vectors, logits, selected, beta=.1, tau=.1)
+        state_gradient = torch.autograd.grad(state.mean(), (embedding, fresh.task_modules['classifier'].weight), retain_graph=True)
+        contrast_gradient = torch.autograd.grad(contrast.mean(), embedding)[0]
+    signals = dict(state_encoder_gradient=float(state_gradient[0].norm()), state_head_gradient=float(state_gradient[1].norm()),
+                   contrast_encoder_gradient=float(contrast_gradient.norm()), contrast_anchors=info['contrast_anchors'])
+    if min(signals[k] for k in ('state_encoder_gradient', 'state_head_gradient', 'contrast_encoder_gradient')) <= 0:
+        raise ValueError('real auxiliary gradients are zero')
+    # A small local-only direction check uses the same public encoder/readout.
+    optimizer = torch.optim.AdamW(fresh.parameters(), lr=1e-5, weight_decay=.01)
+    values = []
+    for step in range(5):
+        with core._auxiliary_mode(fresh):
+            vectors, logits, _, _ = audit.region_readouts(fresh, builder, selected[:1], device=device)
+            state, _, _ = audit.local_losses(vectors, logits, selected[:1], beta=0., tau=.1)
+            values.append(dict(loss=float(state.detach().mean()), margin=float((logits[0] - logits[1]).detach())))
+            if step < 4:
+                state.mean().backward()
+        if step < 4:
+            torch.nn.utils.clip_grad_norm_(fresh.parameters(), 1.)
+            optimizer.step(); optimizer.zero_grad(set_to_none=True)
+    if values[-1]['loss'] >= values[0]['loss'] or values[-1]['margin'] <= values[0]['margin']:
+        raise ValueError('local-only real smoke did not move in the supervised direction')
+    del fresh, optimizer, state_gradient, contrast_gradient, vectors, logits, state, contrast, embedding
+    if device.type == 'cuda':torch.cuda.empty_cache()
+    checks = {}
+    with tempfile.TemporaryDirectory(prefix='repair-smoke-') as temporary:
+        for mode in ('state', 'state_contrast'):
+            target = Path(temporary) / mode / 'best.pt'
+            cp = core.train_model(None, target, records=chosen, variant='codebert_source', model_path=args.model,
+                    source_max_length=2048, context_max_length=384, seed=42, device=args.device, finetuning_mode='full',
+                    epochs=1, batch_size=4, gradient_accumulation=2, learning_rate=1e-5, weight_decay=.01,
+                    robustness_options=core.robustness_config('hard_aug_bce'), surface_materials=materials,
+                    repair_supervision=audit.supervision_config(mode), repair_pairs=selected, repair_pairs_path=args.repair_pairs)
+            encoder_updated = not torch.equal(initial_embedding, cp['encoder_state']['embeddings.word_embeddings.weight'])
+            head_updated = any(not torch.equal(value, cp['task_state'][key]) for key, value in initial_head.items())
+            memory_model = core._load_model(cp, device=device)
+            first = core._predict_logits(memory_model, chosen[-2:], builder, variant='codebert_source',
+                                         excluded_groups=(), batch_size=2, device=device)
+            del memory_model
+            second = core.predict_checkpoint(target, chosen[-2:], device=args.device, batch_size=2)
+            torch.testing.assert_close(first, second, rtol=0, atol=0)
+            history = [json.loads(line) for line in target.with_suffix('.training.jsonl').open() if json.loads(line)['event'] == 'epoch']
+            if not encoder_updated or not head_updated or history[0]['audit_pairs'] != 2:
+                raise ValueError('real repair smoke update/member check failed')
+            if mode == 'state_contrast' and history[0]['audit_contrast_anchors'] != 4:
+                raise ValueError('real smoke contrast positives missing')
+            checks[mode] = dict(encoder_updated=encoder_updated, shared_head_updated=head_updated,
+                               save_reload_exact=True, memory_vs_serialized_checkpoint_exact=True, epoch=history[0])
+            del cp
+    result = dict(kind='real CodeBERT smoke, not formal results', pair_members=[p['sample_id'] for p in selected],
+                  signals=signals, local_direction=values, checks=checks)
+    write_json(root / 'smoke.metrics.json', result)
+    return result
+
+
+def _codebert_repair_supervision(args):
+    import math
+    import torch
+    from collections import Counter
+    from . import model as core, repair_supervision as audit
+    from .artifacts import write_json
+    if args.robustness != 'hard_aug_bce' or args.include_incremental or args.stage == 'test':
+        raise ValueError('repair supervision supports only hard_aug_bce and Train/Valid stages; no VAT/Test/history')
+    if args.batch_size != 4 or args.gradient_accumulation != 2:
+        raise ValueError('repair experiment requires batch=4, accumulation=2')
+    root = Path(args.output_dir or 'results/codebert_repair_supervision_seed42')
+    reference = Path('results/codebert_robustness_seed42')
+    if root.resolve() == reference.resolve():
+        raise ValueError('new repair results must not overwrite existing robustness results')
+    all_records = core._read_jsonl(args.manifest, source_only=True)
+    rows = [r for r in all_records if r['dataset'] == 'primevul' and r['split'] in ('train', 'valid')]
+    _, base, budget = _matching_full_baseline(args)
+    training = dict(epochs=3, batch_size=4, gradient_accumulation=2, learning_rate=1e-5, weight_decay=.01)
+    if base['training_config'] != training:
+        raise ValueError('existing full baseline training configuration differs')
+    del base
+    materials = json.loads((reference / 'materials.metrics.json').read_text())
+    opts = core.robustness_config('hard_aug_bce')
+    tokenizer = core.AutoTokenizer.from_pretrained(args.model)
+    builder = core.InputBuilder(tokenizer, source_max_length=2048, context_max_length=384)
+    source_budget = 2048 - len(builder.source_prefix) - 2
+    a_target = reference / 'hard_aug_bce/best.pt'
+    a = torch.load(a_target, map_location='cpu', weights_only=False)
+    _check_robustness_checkpoint(a, rows, opts, materials, training, args, source_budget)
+    if a.get('repair_supervision') is not None:
+        raise ValueError('A must be the unmodified matching hard_aug_bce checkpoint')
+    del a
+    neighbor = Path(__file__).resolve().parents[2] / 'knowledge-guided-vulnerability-detection'
+    samples, valid_samples, preparation = audit.copy_training_source(neighbor, args.repair_pairs, all_records)
+    pairs, region_stats = audit.prepare_regions(samples, builder)
+    valid_pairs, valid_stats = audit.prepare_regions(valid_samples, builder)
+    if not pairs:
+        raise ValueError('no eligible audited training regions')
+    positive_coverage = []
+    for epoch in (1, 2, 3):
+        schedule = audit.auxiliary_schedule(pairs, budget[0][1], seed=42, epoch=epoch)
+        batches = [batch for grouped in schedule.values() for batch in grouped]
+        positive_coverage.append(dict(epoch=epoch, pairs=len(pairs), batches=len(batches),
+                                      positive_pairs=sum(len(batch) for batch in batches if len(batch) == 2),
+                                      state_only_pairs=sum(len(batch) for batch in batches if len(batch) == 1)))
+    root.mkdir(parents=True, exist_ok=True)
+    config = dict(version=1, manifest=args.manifest, model=args.model, seed=42, training=training,
+                  counts=dict(Counter(f"{r['split']}/label_{r['label']}" for r in rows)),
+                  source_max_length=2048, source_budget=source_budget, native_window=512, stride=(512 - len(builder.source_prefix) - 2) // 2,
+                  initialization=core._CLASSIFIER_INITIALIZATION, a_checkpoint=str(a_target), repair_pairs=args.repair_pairs,
+                  supervision={mode: audit.supervision_config(mode) for mode in ('state', 'state_contrast')},
+                  selection='original clean Valid MCC and tie-break; local diagnosis never selects models')
+    stats = dict(copy=preparation, train_regions=region_stats, local_valid_regions=valid_stats, positive_coverage=positive_coverage)
+    for name, value in [('config.metrics.json', config), ('preparation.metrics.json', stats)]:
+        path = root / name
+        if path.exists() and json.loads(path.read_text()) != value:
+            raise ValueError(f'existing repair preparation differs: {path}')
+        if not path.exists():write_json(path, value)
+    if args.stage == 'prepare':return stats
+    smoke = root / 'smoke.metrics.json'
+    if args.stage in ('smoke', 'all') and not smoke.exists():
+        _repair_smoke(rows, pairs, root, materials, args)
+    if args.stage == 'smoke':return json.loads(smoke.read_text())
+    if args.stage in ('train', 'all') and not smoke.exists():
+        raise ValueError('complete real repair smoke before training')
+    _robustness_fixed_candidates(rows, materials, reference, tokenizer, source_budget)
+    modes = audit.MODES if args.repair_supervision == 'all' else (args.repair_supervision,)
+    results = {}
+    for mode in modes:
+        run = reference / 'hard_aug_bce' if mode == 'none' else root / mode
+        run.mkdir(exist_ok=True)
+        target = a_target if mode == 'none' else run / 'best.pt'
+        repair_config = None if mode == 'none' else audit.supervision_config(mode)
+        members = [dict(sample_id=p['sample_id'], dataset=p['dataset'], event_id=p['event_id'], group=p['group']) for p in pairs]
+        if target.exists():
+            cp = torch.load(target, map_location='cpu', weights_only=False)
+            _check_robustness_checkpoint(cp, rows, opts, materials, training, args, source_budget)
+            if cp.get('repair_supervision') != repair_config or mode != 'none' and (cp.get('repair_training_members') != members or cp.get('repair_pairs_path') != args.repair_pairs):
+                raise ValueError('existing checkpoint does not match this auxiliary training')
+        elif args.stage in ('train', 'all'):
+            if target.with_suffix('.training.jsonl').exists():
+                raise FileExistsError('running/interrupted repair job; inspect before retrying')
+            cp = core.train_model(None, target, records=rows, variant='codebert_source', model_path=args.model,
+                                  source_max_length=2048, context_max_length=384, seed=42, device=args.device,
+                                  finetuning_mode='full', robustness_options=opts, surface_materials=materials,
+                                  repair_supervision=repair_config, repair_pairs=pairs, repair_pairs_path=args.repair_pairs,
+                                  log_every=25, **training)
+        else:
+            raise FileNotFoundError(target)
+        epochs = [json.loads(line) for line in target.with_suffix('.training.jsonl').open() if json.loads(line)['event'] == 'epoch']
+        if [(e['epoch'], e['optimizer_steps']) for e in epochs] != budget:
+            raise ValueError('repair experiment optimizer/epoch budget differs')
+        train_result = _finetuning_evaluate(rows, run, 'train', cp, args, checkpoint_path=target)
+        _finetuning_evaluate(rows, run, 'valid', cp, args, checkpoint_path=target)
+        if args.stage in ('all', 'report'):
+            formal = _robustness_evaluation(rows, run, target, cp, reference, materials, args)
+            local_output = root / 'none' if mode == 'none' else run
+            local_output.mkdir(exist_ok=True)
+            local = audit.evaluate_local(target, valid_pairs, local_output / 'local_valid.metrics.json', device=args.device)
+            results[mode] = dict(formal, train=train_result, local_valid=local, training=epochs,
+                                 training_cost=dict(optimizer_steps=sum(e['optimizer_steps'] for e in epochs),
+                                     seconds=sum(e['epoch_seconds'] for e in epochs),
+                                     candidate_queries=sum(e['candidate_queries'] for e in epochs),
+                                     auxiliary_seconds=sum(e.get('audit_seconds', 0.) for e in epochs),
+                                     auxiliary_function_forwards=sum(e.get('audit_function_forwards', 0) for e in epochs),
+                                     auxiliary_encoder_sequences=sum(e.get('audit_encoder_sequences', 0) for e in epochs)))
+        del cp
+    if results:
+        name = 'comparison.metrics.json' if args.repair_supervision == 'all' else f'{args.repair_supervision}.comparison.metrics.json'
+        write_json(root / name, dict(config=config, results=results))
+        import csv
+        with (root / name.replace('.json', '.csv')).open('w', newline='') as handle:
+            fields = ['method', 'setting', 'accuracy', 'precision', 'recall', 'f1', 'mcc', 'auc']
+            writer = csv.DictWriter(handle, fieldnames=fields);writer.writeheader()
+            for mode, result in results.items():
+                settings = {'train': result['train']['metrics'], 'clean_valid': result['clean']['metrics'],
+                            **{name: result[name]['all']['worst_complete'] for name in ('fixed_overall', 'heldout_overall', 'adaptive')}}
+                for setting, metrics in settings.items():
+                    writer.writerow(dict(method=mode, setting=setting, **{key: metrics[key] for key in fields[2:]}))
+        return results
+    return dict(completed_modes=modes, config=config)
+
+
 def _codebert_finetuning(args):
+    if getattr(args, 'repair_supervision', 'none') != 'none':
+        return _codebert_repair_supervision(args)
     if getattr(args,'include_incremental',False) and (args.robustness!='all' or args.stage not in ('report','test')):
         raise ValueError('historical methods are report/test only; they cannot start training')
     return _codebert_robustness(args)
@@ -524,6 +747,8 @@ def build_parser():
     fit.add_argument('--output-dir')
     fit.add_argument('--stage',choices=('prepare','smoke','train','report','test','all'),default='all')
     fit.add_argument('--robustness',nargs='?',const='all',default='hard_aug_bce',choices=('all',)+ROBUSTNESS_MODES)
+    fit.add_argument('--repair-supervision', default='none', choices=('none', 'state', 'state_contrast', 'all'))
+    fit.add_argument('--repair-pairs', default='data/high_quality_repair_pairs.json')
     fit.add_argument('--include-history','--include-incremental',dest='include_incremental',action='store_true',
                      help='report/test all eleven saved methods; historical methods cannot train')
     fit.add_argument('--baseline-checkpoint',default='results/codebert_finetuning_seed42/full/lr_1e-05/best.pt')
