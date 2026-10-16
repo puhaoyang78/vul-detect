@@ -1,4 +1,4 @@
-"""Clean, fixed/held-out/adaptive robustness and fixed-threshold MegaVul evaluation."""
+"""Shared Test robustness and bidirectional transfer with source-Valid thresholds."""
 
 from __future__ import annotations
 from argparse import Namespace
@@ -7,16 +7,15 @@ import json
 from pathlib import Path
 import torch
 from .artifacts import write_json
-from .data import read_jsonl, write_jsonl
+from .data import DATASETS, read_jsonl, test_rows, write_jsonl
 from .metrics import decision_boundary, metrics
 from . import model as core
 from .training import METHODS, prepare_materials
 
 
-def _finetuning_evaluate(rows, run, split, checkpoint, args):
-    rows = [r for r in rows if r["split"] == split]
-    output = run / f"{split}.metrics.json"
-    predictions = run / f"{split}.predictions.jsonl"
+def _evaluate_clean(rows, run, name, checkpoint, args):
+    output = run / f"{name}.metrics.json"
+    predictions = run / f"{name}.predictions.jsonl"
     if output.exists():
         cached = read_jsonl(predictions)
         if [(r["sample_key"], r["label"]) for r in cached] != [
@@ -30,12 +29,15 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args):
         source_max_length=checkpoint["source_max_length"],
     )
     model = core.load_model(checkpoint, device, model_path=args.model)
-    logits = core.predict_logits(model, rows, builder, device=device, batch_size=args.batch_size)
+    logits = core.predict_logits(
+        model, rows, builder, device=device, batch_size=args.batch_size
+    )
     scores = logits.sigmoid().tolist()
     threshold = checkpoint["decision_threshold"]
     result = dict(
         selected_epoch=checkpoint["selected_epoch"],
-        split=split,
+        dataset=rows[0]["dataset"],
+        split=rows[0]["split"],
         metrics=metrics([r["label"] for r in rows], scores, threshold),
         bce=float(
             torch.nn.functional.binary_cross_entropy_with_logits(
@@ -61,22 +63,19 @@ def _finetuning_evaluate(rows, run, split, checkpoint, args):
     return result
 
 
-def _robustness_fixed_candidates(rows, materials, root, tokenizer, source_budget, *, split="valid"):
+def _robustness_fixed_candidates(rows, materials, root, tokenizer, source_budget):
     from . import augmentation as data
     from .syntax import SURFACE_OPERATIONS
     from .artifacts import write_json
     import random
 
-    if split not in ("valid", "test"):
-        raise ValueError("robustness evaluation requires Valid or Test")
-    evaluation_rows = [r for r in rows if r["split"] == split]
-    if not evaluation_rows:
-        raise ValueError(f"{split} split is empty")
-    prefix = "" if split == "valid" else "test."
+    if not rows or any(r["split"] != "test" for r in rows):
+        raise ValueError("robustness evaluation requires nonempty Test rows")
+    evaluation_rows = rows
     paths = {}
     for bank in ("train", "heldout"):
         name = "fixed" if bank == "train" else "heldout"
-        path = root / f"{prefix}{name}.candidates.jsonl"
+        path = root / f"{name}.candidates.jsonl"
         paths[name] = path
         if path.exists():
             with path.open() as handle:
@@ -116,20 +115,24 @@ def _robustness_fixed_candidates(rows, materials, root, tokenizer, source_budget
                     )[0]
                     for key, value in result["reasons"].items():
                         reasons[key] = reasons.get(key, 0) + value
-                    candidates.extend(c for c in result["visited"] if len(c["units"]) == len(combo))
-                rng = random.Random(data.surface_seed(42, 0, row["sample_key"], name + "/" + kind))
+                    candidates.extend(
+                        c for c in result["visited"] if len(c["units"]) == len(combo)
+                    )
+                rng = random.Random(
+                    data.surface_seed(42, 0, row["sample_key"], name + "/" + kind)
+                )
                 rng.shuffle(candidates)
                 groups[kind] = [
                     {k: v for k, v in c.items() if k != "raw_source"} for c in candidates[:2]
                 ]
             entries.append(dict(sample_key=row["sample_key"], groups=groups, reasons=reasons))
             if (index + 1) % 100 == 0:
-                print(f"{split} {name} candidates {index+1}/{len(evaluation_rows)}", flush=True)
+                print(f"Test {name} candidates {index+1}/{len(evaluation_rows)}", flush=True)
         with path.open("x") as handle:
             for entry in entries:
                 handle.write(json.dumps(entry) + "\n")
         write_json(
-            root / f"{prefix}{name}.coverage.metrics.json",
+            root / f"{name}.coverage.metrics.json",
             {
                 kind: dict(
                     eligible=sum(bool(e["groups"][kind]) for e in entries),
@@ -163,7 +166,9 @@ def _robustness_summary(originals, views, threshold):
         y = row["label"]
         original_correct = row["prediction"] == y
         pool = [dict(logit=row["logit"], prediction=row["prediction"])] + candidates
-        worst_view = max(pool, key=lambda v: float(np.logaddexp(0, v["logit"]) - y * v["logit"]))
+        worst_view = max(
+            pool, key=lambda v: float(np.logaddexp(0, v["logit"]) - y * v["logit"])
+        )
         worst.append(dict(label=y, score=probability(worst_view["logit"])))
         if not candidates:
             continue
@@ -198,7 +203,9 @@ def _robustness_summary(originals, views, threshold):
             if selected
             else None
         ),
-        worst_complete=metrics([r["label"] for r in worst], [r["score"] for r in worst], threshold),
+        worst_complete=metrics(
+            [r["label"] for r in worst], [r["score"] for r in worst], threshold
+        ),
         paired_robust_correct=robust,
         paired_robust_accuracy=rate(robust, n),
         all_candidates_correct=all_correct,
@@ -224,12 +231,14 @@ def _robustness_summary(originals, views, threshold):
         benign_false_alarm=dict(
             count=false_alarm,
             denominator=sum(r["label"] == 0 and r["prediction"] == 0 for r in eligible),
-            rate=rate(false_alarm, sum(r["label"] == 0 and r["prediction"] == 0 for r in eligible)),
+            rate=rate(
+                false_alarm, sum(r["label"] == 0 and r["prediction"] == 0 for r in eligible)
+            ),
         ),
     )
 
 
-def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, split="valid"):
+def _robustness_evaluation(rows, run, target, cp, root, materials, args):
     import torch, time
     import numpy as np
     from . import model as core, augmentation as data
@@ -237,17 +246,14 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
     from .metrics import decision_boundary
 
     boundary = decision_boundary(cp["decision_threshold"])
-    if split not in ("valid", "test"):
-        raise ValueError("robustness evaluation requires Valid or Test")
-    evaluation_rows = [r for r in rows if r["split"] == split]
-    by = {r["sample_key"]: r for r in evaluation_rows}
-    if not evaluation_rows:
-        raise ValueError(f"{split} split is empty")
-    prefix = "" if split == "valid" else "test."
-    clean = _finetuning_evaluate(rows, run, split, cp, args)
-    with (run / f"{split}.predictions.jsonl").open() as handle:
+    evaluation_rows = rows
+    by = {r["sample_key"]: r for r in rows}
+    if not rows or any(r["split"] != "test" for r in rows):
+        raise ValueError("robustness evaluation requires nonempty Test rows")
+    clean = _evaluate_clean(rows, run, "test", cp, args)
+    with (run / "test.predictions.jsonl").open() as handle:
         originals = [json.loads(l) for l in handle]
-    output = run / f"{prefix}robustness.metrics.json"
+    output = run / "robustness.metrics.json"
     if output.exists():
         cached = json.loads(output.read_text())
         if (
@@ -260,7 +266,8 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
         return cached
     model = core.load_model(cp, device=core.resolve_device(args.device))
     builder = core.InputBuilder(
-        core.AutoTokenizer.from_pretrained(args.model), source_max_length=2048
+        core.AutoTokenizer.from_pretrained(args.model),
+        source_max_length=cp["source_max_length"],
     )
     costs = dict(
         calls=0, function_forwards=0, encoder_sequences=0, encoder_token_slots=0, seconds=0.0
@@ -288,12 +295,11 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
         selected_epoch=cp["selected_epoch"],
         checkpoint=str(target),
     )
-    if split == "test":
-        report["split"] = split
+    report["split"] = "test"
     for name in ("fixed", "heldout"):
         costs.update({k: 0 for k in costs})
         started = time.monotonic()
-        with (root / f"{prefix}{name}.candidates.jsonl").open() as handle:
+        with (root / f"{name}.candidates.jsonl").open() as handle:
             entries = [json.loads(l) for l in handle]
         views = {}
         flat = []
@@ -335,11 +341,17 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
             }
             report[name][kind] = dict(
                 all=_robustness_summary(originals, group, cp["decision_threshold"]),
-                strict_semantic=_robustness_summary(originals, strict, cp["decision_threshold"]),
-                input_only_stress=_robustness_summary(originals, stress, cp["decision_threshold"]),
+                strict_semantic=_robustness_summary(
+                    originals, strict, cp["decision_threshold"]
+                ),
+                input_only_stress=_robustness_summary(
+                    originals, stress, cp["decision_threshold"]
+                ),
             )
         combined = {
-            r["sample_key"]: [v for group in views.values() for v in group.get(r["sample_key"], [])]
+            r["sample_key"]: [
+                v for group in views.values() for v in group.get(r["sample_key"], [])
+            ]
             for r in originals
         }
         report[name + "_overall"] = dict(
@@ -355,7 +367,7 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
                 cp["decision_threshold"],
             ),
         )
-        with (run / f"{prefix}{name}.predictions.jsonl").open("x") as handle:
+        with (run / f"{name}.predictions.jsonl").open("x") as handle:
             for row in originals:
                 handle.write(
                     json.dumps(
@@ -379,7 +391,7 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
     queries = 0
     original_queries = 0
     original_logits = {r["sample_key"]: r["logit"] for r in originals}
-    attack_path = run / f"{prefix}adaptive.predictions.jsonl"
+    attack_path = run / "adaptive.predictions.jsonl"
     if attack_path.exists():
         with attack_path.open() as handle:
             attacks = [json.loads(l) for l in handle]
@@ -404,7 +416,8 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
                 )
                 for entry in result:
                     entry["visited"] = [
-                        {k: v for k, v in c.items() if k != "raw_source"} for c in entry["visited"]
+                        {k: v for k, v in c.items() if k != "raw_source"}
+                        for c in entry["visited"]
                     ]
                     entry["selected"] = (
                         None
@@ -415,7 +428,7 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
                     attacks.append(entry)
                 if (at // args.batch_size + 1) % 25 == 0:
                     print(
-                        f"{split} adaptive {run.name}: {min(at+args.batch_size,len(evaluation_rows))}/{len(evaluation_rows)}",
+                        f"{cp['dataset']}/{run.name} Test adaptive: {min(at+args.batch_size,len(evaluation_rows))}/{len(evaluation_rows)}",
                         flush=True,
                     )
     if [e["sample_key"] for e in attacks] != [r["sample_key"] for r in evaluation_rows]:
@@ -458,141 +471,86 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args, *, spli
     return report
 
 
-def prepare_candidates(data_dir, output_dir, model_path, *, splits=("valid", "test")):
-    root = Path(output_dir)
-    materials = prepare_materials(data_dir, root)
+def prepare_candidates(data_dir, output_dir, model_path, dataset):
+    root = Path(output_dir) / dataset
+    materials = prepare_materials(data_dir, output_dir, dataset)
     tokenizer = core.AutoTokenizer.from_pretrained(model_path)
     builder = core.InputBuilder(tokenizer)
     budget = builder.source_max_length - len(builder.source_prefix) - 2
-    for split in splits:
-        rows = read_jsonl(Path(data_dir) / f"{split}.jsonl")
-        _robustness_fixed_candidates(rows, materials, root, tokenizer, budget, split=split)
+    rows = test_rows(Path(data_dir) / dataset)
+    _robustness_fixed_candidates(rows, materials, root, tokenizer, budget)
 
 
-def evaluate_primevul(
-    data_dir,
-    output_dir,
-    methods=METHODS,
-    *,
-    device="auto",
-    splits=("valid", "test"),
-    robust=True,
-):
-    root = Path(output_dir)
-    materials = prepare_materials(data_dir, root) if robust else None
+def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", robust=True):
+    if dataset not in DATASETS:
+        raise ValueError(f"unknown dataset: {dataset}")
+    root = Path(output_dir) / dataset
+    target_dataset = next(d for d in DATASETS if d != dataset)
+    valid = read_jsonl(Path(data_dir) / dataset / "valid.jsonl")
+    own_test = test_rows(Path(data_dir) / dataset)
+    target_test = test_rows(Path(data_dir) / target_dataset)
+    materials = prepare_materials(data_dir, output_dir, dataset) if robust else None
     for method in methods:
         run = root / method
         if not (run / "training.metrics.json").exists():
-            raise ValueError(f"{method}: all training epochs must finish before evaluation")
+            raise ValueError(f"{dataset}/{method}: training must finish before evaluation")
         checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
+        if checkpoint["dataset"] != dataset:
+            raise ValueError("checkpoint training dataset differs")
         args = Namespace(
             model=checkpoint["model_path"],
             device=device,
             batch_size=checkpoint["training_config"]["batch_size"],
         )
-        for split in splits:
-            rows = read_jsonl(Path(data_dir) / f"{split}.jsonl")
-            _finetuning_evaluate(rows, run, split, checkpoint, args)
-            if robust:
-                prefix = "" if split == "valid" else "test."
-                if not all(
-                    (root / f"{prefix}{name}.candidates.jsonl").exists()
-                    for name in ("fixed", "heldout")
-                ):
-                    prepare_candidates(data_dir, root, checkpoint["model_path"], splits=(split,))
-                _robustness_evaluation(
-                    rows, run, run / "best.pt", checkpoint, root, materials, args, split=split
-                )
+        _evaluate_clean(valid, run, "valid", checkpoint, args)
+        _evaluate_clean(own_test, run, "test", checkpoint, args)
+        _evaluate_clean(target_test, run, f"{target_dataset}.test", checkpoint, args)
+        if robust:
+            if not all(
+                (root / f"{name}.candidates.jsonl").exists() for name in ("fixed", "heldout")
+            ):
+                prepare_candidates(data_dir, output_dir, checkpoint["model_path"], dataset)
+            _robustness_evaluation(
+                own_test, run, run / "best.pt", checkpoint, root, materials, args
+            )
         del checkpoint
 
 
-def evaluate_megavul(data_dir, output_dir, methods=METHODS, *, device="auto"):
-    """Infer natural Valid once; use its subset for balanced Valid. Never read Test."""
-    rows = read_jsonl(Path(data_dir) / "valid.natural.jsonl")
-    balanced_keys = {r["sample_key"] for r in read_jsonl(Path(data_dir) / "valid.jsonl")}
-    if not balanced_keys or not balanced_keys.issubset({r["sample_key"] for r in rows}):
-        raise ValueError("MegaVul balanced Valid must be a subset of natural Valid")
-    device = core.resolve_device(device)
-    for method in methods:
-        run = Path(output_dir) / method
-        output = run / "megavul.valid.metrics.json"
-        if output.exists():
-            continue
-        if not (run / "training.metrics.json").exists():
-            raise ValueError(f"{method}: unfinished training")
-        checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
-        builder = core.InputBuilder(
-            core.AutoTokenizer.from_pretrained(checkpoint["model_path"]),
-            source_max_length=checkpoint["source_max_length"],
-        )
-        model = core.load_model(checkpoint, device)
-        logits = core.predict_logits(
-            model,
-            rows,
-            builder,
-            device=device,
-            batch_size=checkpoint["training_config"]["batch_size"],
-        )
-        threshold = checkpoint["decision_threshold"]
-        predictions = [
-            dict(
-                sample_key=r["sample_key"],
-                label=r["label"],
-                logit=float(z),
-                score=p,
-                prediction=int(p >= decision_boundary(threshold)),
-                threshold=threshold,
-            )
-            for r, z, p in zip(rows, logits, logits.sigmoid().tolist())
-        ]
-        write_jsonl(run / "megavul.valid.predictions.jsonl", predictions)
-        subset = [p for p in predictions if p["sample_key"] in balanced_keys]
-        result = dict(
-            selected_epoch=checkpoint["selected_epoch"],
-            threshold=threshold,
-            natural=metrics(
-                [r["label"] for r in predictions], [r["score"] for r in predictions], threshold
-            ),
-            balanced=metrics([r["label"] for r in subset], [r["score"] for r in subset], threshold),
-        )
-        write_json(output, result)
-        del model, checkpoint
-
-
-def report(output_dir):
+def report(output_dir, data_dir):
     root = Path(output_dir)
-    rows, shifts, training_runs = [], {}, {}
+    rows, training_runs = [], {}
     metric_names = ("accuracy", "precision", "recall", "f1", "mcc", "auc", "auprc")
-    for method in METHODS:
-        run = root / method
-        training = json.loads((run / "training.metrics.json").read_text())
-        training_runs[method] = training
-        clean = {}
-        for split in ("valid", "test"):
-            clean[split] = json.loads((run / f"{split}.metrics.json").read_text())["metrics"]
-            rows.append(
-                dict(
-                    method=method,
-                    dataset="primevul",
-                    split=split,
-                    view="clean",
-                    selected_epoch=training["selected_epoch"],
-                    **clean[split],
-                )
+    for dataset in DATASETS:
+        target_dataset = next(d for d in DATASETS if d != dataset)
+        training_runs[dataset] = {}
+        for method in METHODS:
+            run = root / dataset / method
+            training = json.loads((run / "training.metrics.json").read_text())
+            training_runs[dataset][method] = training
+            common = dict(
+                training_dataset=dataset,
+                method=method,
+                selected_epoch=training["selected_epoch"],
             )
-            prefix = "" if split == "valid" else "test."
-            robustness = json.loads((run / f"{prefix}robustness.metrics.json").read_text())
+            clean = {}
+            for split in ("valid", "test"):
+                clean[split] = json.loads((run / f"{split}.metrics.json").read_text())[
+                    "metrics"
+                ]
+                rows.append(
+                    dict(common, dataset=dataset, split=split, view="clean", **clean[split])
+                )
+            robustness = json.loads((run / "robustness.metrics.json").read_text())
             for setting in ("fixed", "heldout", "adaptive"):
                 value = robustness[setting if setting == "adaptive" else setting + "_overall"]
                 for kind in ("all", "strict_semantic", "input_only_stress"):
                     result = value[kind]
                     rows.append(
                         dict(
-                            method=method,
-                            dataset="primevul",
-                            split=split,
+                            common,
+                            dataset=dataset,
+                            split="test",
                             view=f"{setting}/{kind}",
-                            selected_epoch=training["selected_epoch"],
                             **result["worst_complete"],
                             asr=result["asr"]["rate"],
                             asr_count=result["asr"]["count"],
@@ -600,35 +558,33 @@ def report(output_dir):
                             eligible=result["eligible"],
                         )
                     )
-        target = json.loads((run / "megavul.valid.metrics.json").read_text())
-        shifts[method] = {}
-        for view in ("balanced", "natural"):
+            target = json.loads((run / f"{target_dataset}.test.metrics.json").read_text())[
+                "metrics"
+            ]
+            differences = {
+                f"delta_{key}": (
+                    target[key] - clean["test"][key]
+                    if target[key] is not None and clean["test"][key] is not None
+                    else None
+                )
+                for key in metric_names
+            }
             rows.append(
                 dict(
-                    method=method,
-                    dataset="megavul",
-                    split="valid",
-                    view=view,
-                    selected_epoch=training["selected_epoch"],
-                    **target[view],
+                    common,
+                    dataset=target_dataset,
+                    split="test",
+                    view="transfer",
+                    **target,
+                    **differences,
                 )
             )
-            shifts[method][view] = {
-                f"minus_primevul_{split}": {
-                    key: (
-                        target[view][key] - clean[split][key]
-                        if target[view][key] is not None and clean[split][key] is not None
-                        else None
-                    )
-                    for key in metric_names
-                }
-                for split in ("valid", "test")
-            }
-    write_json(
-        root / "comparison.json",
-        dict(training=training_runs, results=rows, cross_dataset_change=shifts),
-    )
+    data = {
+        d: json.loads((Path(data_dir) / d / "statistics.json").read_text()) for d in DATASETS
+    }
+    write_json(root / "comparison.json", dict(data=data, training=training_runs, results=rows))
     fields = [
+        "training_dataset",
         "method",
         "dataset",
         "split",
@@ -645,9 +601,17 @@ def report(output_dir):
         "asr_count",
         "asr_denominator",
         "eligible",
+        *(f"delta_{key}" for key in metric_names),
     ]
     with (root / "comparison.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer = csv.DictWriter(
+            handle, fieldnames=fields, extrasaction="ignore", lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(rows)
-    return dict(methods=len(METHODS), rows=len(rows), comparison=str(root / "comparison.csv"))
+    return dict(
+        datasets=len(DATASETS),
+        models=len(DATASETS) * len(METHODS),
+        rows=len(rows),
+        comparison=str(root / "comparison.csv"),
+    )

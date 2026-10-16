@@ -12,7 +12,7 @@ from tests.test_codebert_source import CodeTokenizer
 from vulnmechanism import model as core
 from vulnmechanism.cli import main
 from vulnmechanism.data import read_jsonl, write_jsonl
-from vulnmechanism.evaluation import evaluate_megavul
+from vulnmechanism.evaluation import evaluate, report
 from vulnmechanism.metrics import metrics, select_threshold
 
 
@@ -28,51 +28,138 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(threshold, 0.5)
         self.assertEqual(selected["mcc"], 1.0)
 
-    def test_megavul_balanced_reuses_natural_predictions_and_never_reads_test(self):
+    def test_both_directions_use_only_source_valid_and_independent_target_test(self):
+        for dataset, target in (("primevul", "megavul"), ("megavul", "primevul")):
+            with self.subTest(dataset=dataset), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for d in (dataset, target):
+                    rows = [
+                        dict(
+                            sample_key=f"{d}:{i}",
+                            raw_source=f"int f{i}(){{return {i};}}",
+                            label=i % 2,
+                            dataset=d,
+                            split="test",
+                            train_overlap=[dataset] if i == 3 else [],
+                        )
+                        for i in range(4)
+                    ]
+                    write_jsonl(root / "data" / d / "test.jsonl", rows)
+                valid = [
+                    dict(
+                        sample_key=f"v{i}",
+                        raw_source=f"valid {i}",
+                        label=i,
+                        dataset=dataset,
+                        split="valid",
+                    )
+                    for i in (0, 1)
+                ]
+                write_jsonl(root / "data" / dataset / "valid.jsonl", valid)
+                (root / "data" / target / "valid.jsonl").write_text(
+                    "TARGET VALID MUST NEVER BE READ"
+                )
+                run = root / "runs" / dataset / "bce"
+                run.mkdir(parents=True)
+                (run / "training.metrics.json").write_text("{}")
+                torch.save(
+                    dict(
+                        dataset=dataset,
+                        model_path="fixture",
+                        source_max_length=2048,
+                        decision_threshold=0.73,
+                        selected_epoch=2,
+                        training_config=dict(batch_size=2),
+                    ),
+                    run / "best.pt",
+                )
+
+                def predict(model, rows, builder, **kwargs):
+                    self.assertEqual(kwargs["batch_size"], 2)
+                    return torch.logit(
+                        torch.tensor([0.1 if r["label"] == 0 else 0.7 for r in rows])
+                    )
+
+                with patch.object(
+                    core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()
+                ), patch.object(core, "load_model", return_value=object()), patch.object(
+                    core, "predict_logits", side_effect=predict
+                ) as predictor:
+                    evaluate(
+                        root / "data",
+                        root / "runs",
+                        dataset,
+                        ("bce",),
+                        device="cpu",
+                        robust=False,
+                    )
+                self.assertEqual(predictor.call_count, 3)
+                result = json.loads((run / f"{target}.test.metrics.json").read_text())
+                self.assertEqual(result["dataset"], target)
+                self.assertEqual(result["split"], "test")
+                self.assertEqual(result["selected_epoch"], 2)
+                self.assertEqual(result["metrics"]["threshold"], 0.73)
+                self.assertEqual(result["metrics"]["samples"], 3)
+                self.assertEqual(result["metrics"]["confusion_matrix"], [[2, 0], [1, 0]])
+                saved = read_jsonl(run / f"{target}.test.predictions.jsonl")
+                self.assertEqual(
+                    [r["sample_key"] for r in saved], [f"{target}:{i}" for i in range(3)]
+                )
+                self.assertTrue(all(r["threshold"] == 0.73 for r in saved))
+
+    def test_report_contains_twelve_models_and_both_test_transfer_deltas(self):
+        from vulnmechanism.data import DATASETS
+        from vulnmechanism.training import METHODS
+        from vulnmechanism.artifacts import write_json
+        import csv
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            rows = [
-                dict(
-                    sample_key=str(i),
-                    raw_source="int f(){return 0;}",
-                    label=i % 2,
-                    dataset="megavul",
-                    split="valid",
+            for dataset in DATASETS:
+                write_json(root / "data" / dataset / "statistics.json", dict(dataset=dataset))
+                target = next(d for d in DATASETS if d != dataset)
+                for method in METHODS:
+                    run = root / "runs" / dataset / method
+                    threshold = 0.73 if dataset == "primevul" else 0.61
+                    own = metrics([0, 1], [0.1, 0.9], threshold)
+                    transferred = metrics([0, 1], [0.9, 0.1], threshold)
+                    write_json(
+                        run / "training.metrics.json", dict(dataset=dataset, selected_epoch=2)
+                    )
+                    for split in ("valid", "test"):
+                        write_json(run / f"{split}.metrics.json", dict(metrics=own))
+                    write_json(run / f"{target}.test.metrics.json", dict(metrics=transferred))
+                    result = dict(
+                        worst_complete=transferred,
+                        asr=dict(count=2, denominator=2, rate=1.0),
+                        eligible=2,
+                    )
+                    bank = {
+                        kind: result
+                        for kind in ("all", "strict_semantic", "input_only_stress")
+                    }
+                    write_json(
+                        run / "robustness.metrics.json",
+                        dict(fixed_overall=bank, heldout_overall=bank, adaptive=bank),
+                    )
+            summary = report(root / "runs", root / "data")
+            self.assertEqual((summary["models"], summary["rows"]), (12, 144))
+            result = json.loads((root / "runs/comparison.json").read_text())
+            transferred = [r for r in result["results"] if r["view"] == "transfer"]
+            self.assertEqual(len(transferred), 12)
+            self.assertTrue(
+                all(
+                    r["delta_accuracy"] == -1.0 and r["delta_mcc"] == -2.0 for r in transferred
                 )
-                for i in range(3)
-            ]
-            write_jsonl(root / "data/valid.natural.jsonl", rows)
-            write_jsonl(root / "data/valid.jsonl", rows[:2])
-            (root / "data/test.jsonl").write_text("TEST MUST NEVER BE PARSED")
-            run = root / "runs/bce"
-            run.mkdir(parents=True)
-            (run / "training.metrics.json").write_text("{}")
-            torch.save(
-                dict(
-                    model_path="fixture",
-                    source_max_length=2048,
-                    decision_threshold=0.73,
-                    selected_epoch=2,
-                    training_config=dict(batch_size=2),
-                ),
-                run / "best.pt",
             )
-            with patch.object(
-                core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()
-            ), patch.object(core, "load_model", return_value=object()), patch.object(
-                core, "predict_logits", return_value=torch.logit(torch.tensor([0.1, 0.7, 0.9]))
-            ) as predictor:
-                evaluate_megavul(root / "data", root / "runs", ("bce",), device="cpu")
-            self.assertEqual(predictor.call_count, 1)
-            self.assertEqual(predictor.call_args.kwargs["batch_size"], 2)
-            result = json.loads((run / "megavul.valid.metrics.json").read_text())
-            self.assertEqual(result["selected_epoch"], 2)
-            self.assertEqual(result["threshold"], 0.73)
-            self.assertEqual(result["balanced"]["confusion_matrix"], [[1, 0], [1, 0]])
-            self.assertEqual(result["natural"]["samples"], 3)
-            saved = read_jsonl(run / "megavul.valid.predictions.jsonl")
-            self.assertEqual([r["prediction"] for r in saved], [0, 0, 1])
-            self.assertTrue(all(r["threshold"] == 0.73 for r in saved))
+            self.assertTrue(
+                all(
+                    r["dataset"] != r["training_dataset"] and r["split"] == "test"
+                    for r in transferred
+                )
+            )
+            with (root / "runs/comparison.csv").open() as handle:
+                self.assertEqual(len(list(csv.DictReader(handle))), 144)
 
     def test_single_function_inference_requires_only_source(self):
         with tempfile.TemporaryDirectory() as tmp:

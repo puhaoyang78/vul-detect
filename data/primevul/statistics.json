@@ -19,47 +19,48 @@
       "negative": 24239
     }
   },
-  "removed": {
-    "normalized_duplicate_rows": 778,
-    "near_duplicate_groups_merged": 10992,
-    "same_label_duplicate_rows_removed": 7378,
-    "conflict_groups": 2937,
-    "conflict_rows": 7329
-  },
-  "natural": {
-    "train": {
-      "samples": 163384,
-      "positive": 1975,
-      "negative": 161409
-    },
-    "valid": {
-      "samples": 22906,
-      "positive": 269,
-      "negative": 22637
-    },
-    "test": {
-      "samples": 23536,
-      "positive": 203,
-      "negative": 23333
-    }
-  },
   "balanced": {
     "train": {
-      "samples": 3950,
-      "positive": 1975,
-      "negative": 1975
+      "samples": 9724,
+      "positive": 4862,
+      "negative": 4862
     },
     "valid": {
-      "samples": 538,
-      "positive": 269,
-      "negative": 269
+      "samples": 1186,
+      "positive": 593,
+      "negative": 593
     },
     "test": {
-      "samples": 406,
-      "positive": 203,
-      "negative": 203
+      "samples": 1098,
+      "positive": 549,
+      "negative": 549
     }
   },
-  "deduplication": "within dataset; exact, lexical normalization, token 5-gram Jaccard >= 0.90; connected components; conflicting labels removed; test > valid > train",
-  "sampling": "random.Random(42), stable source order, sample each class to the minority count"
+  "positives_removed": 0,
+  "sampling": "retain all native positives; random.Random(42) samples negatives; stable source order",
+  "test_exact_overlap": {
+    "by_training_dataset": {
+      "primevul": {
+        "samples": 0,
+        "positive": 0,
+        "negative": 0
+      },
+      "megavul": {
+        "samples": 172,
+        "positive": 161,
+        "negative": 11
+      }
+    },
+    "excluded": {
+      "samples": 172,
+      "positive": 161,
+      "negative": 11
+    },
+    "evaluated": {
+      "samples": 926,
+      "positive": 388,
+      "negative": 538
+    },
+    "policy": "keep all positives in data lists; exclude exact raw-source overlap with either actual training set only from Test evaluation; shared in-domain/transfer cohort"
+  }
 }

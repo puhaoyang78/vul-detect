@@ -78,7 +78,9 @@ def proposals(source, kind=None, seed=42, **kwargs):
 
 class SurfaceVATTests(unittest.TestCase):
     def test_binding_shadowing_utf8_members_macros_and_self_references(self):
-        source = "int f(int 变量){int y=fetch(变量);{int 变量=2;use(变量);}return y+变量+GLOBAL;}"
+        source = (
+            "int f(int 变量){int y=fetch(变量);{int 变量=2;use(变量);}return y+变量+GLOBAL;}"
+        )
         layout = syntax.surface_binding_layout(source, "c")
         self.assertEqual([b["name"] for b in layout["bindings"]], ["变量", "y", "变量"])
         selected = set()
@@ -87,27 +89,36 @@ class SurfaceVATTests(unittest.TestCase):
                 selected.add(candidate["binding_token_index"])
                 changed = candidate["raw_source"]
                 binding = next(
-                    b for b in layout["bindings"] if b["declaration"] == candidate["edits"][0][0]
+                    b
+                    for b in layout["bindings"]
+                    if b["declaration"] == candidate["edits"][0][0]
                 )
                 self.assertEqual(
-                    [(a, b) for a, b, v in candidate["edits"]], list(map(tuple, binding["spans"]))
+                    [(a, b) for a, b, v in candidate["edits"]],
+                    list(map(tuple, binding["spans"])),
                 )
                 self.assertIn("fetch(", changed)
                 self.assertIn("GLOBAL", changed)
         self.assertEqual(len(selected), 3)
         for c in proposals("int f(int x){return obj.x+x;}", "local_name")[0]:
             self.assertIn("obj.x+", c["raw_source"])
-        layout = syntax.surface_binding_layout("int f(int x,int y){CHECK(x);use(y);return y;}", "c")
+        layout = syntax.surface_binding_layout(
+            "int f(int x,int y){CHECK(x);use(y);return y;}", "c"
+        )
         self.assertEqual([b["name"] for b in layout["bindings"]], ["y"])
         self.assertGreater(layout["reasons"]["macro_ambiguous_binding"], 0)
-        layout = syntax.surface_binding_layout("int f(int x){{int (*x)(int);x(2);}return x;}", "c")
+        layout = syntax.surface_binding_layout(
+            "int f(int x){{int (*x)(int);x(2);}return x;}", "c"
+        )
         self.assertEqual(len(layout["bindings"][0]["spans"]), 2)
         for c in proposals("int f(int x){return x ? f(x-1) : 0;}", "function_name")[0]:
             self.assertEqual(len(c["edits"]), 2)
             self.assertFalse(c["strict_semantic"])
             self.assertTrue(c["function_name_input_only"])
             self.assertNotIn("f(", c["raw_source"])
-        self.assertFalse(proposals("int f(int x){log(__func__);return x;}", "function_name")[0])
+        self.assertFalse(
+            proposals("int f(int x){log(__func__);return x;}", "function_name")[0]
+        )
 
     def test_gradient_copy_metric_and_expanded_radius(self):
         ids = torch.tensor([[0, 0, 1, -1], [2, 2, 2, -1]])
@@ -275,14 +286,16 @@ class SurfaceVATTests(unittest.TestCase):
             target = run / "best.pt"
             source = "int f(int x){return x;}"
             rows = [
-                dict(sample_key=str(i), raw_source=source, label=i, language="c", split="valid")
+                dict(sample_key=str(i), raw_source=source, label=i, language="c", split="test")
                 for i in (0, 1)
             ]
             originals = [
-                dict(sample_key=r["sample_key"], label=r["label"], logit=z.item(), prediction=1)
+                dict(
+                    sample_key=r["sample_key"], label=r["label"], logit=z.item(), prediction=1
+                )
                 for r in rows
             ]
-            (run / "valid.predictions.jsonl").write_text(
+            (run / "test.predictions.jsonl").write_text(
                 "".join(json.dumps(r) + "\n" for r in originals)
             )
             entries = [
@@ -316,18 +329,29 @@ class SurfaceVATTests(unittest.TestCase):
                 )
             tokenizer = OffsetTokenizer()
             builder = core.InputBuilder(tokenizer, source_max_length=2048)
-            cp = dict(decision_threshold=0.29, selected_epoch=3, source_max_length=2048)
+            cp = dict(
+                dataset="fixture",
+                decision_threshold=0.29,
+                selected_epoch=3,
+                source_max_length=2048,
+            )
             args = Namespace(device="cpu", batch_size=4, model="fixture")
             with patch.object(
                 core.AutoTokenizer, "from_pretrained", return_value=tokenizer
             ), patch.object(core, "load_model", return_value=Constant()), patch(
-                "vulnmechanism.evaluation._finetuning_evaluate", return_value={}
+                "vulnmechanism.evaluation._evaluate_clean", return_value={}
             ):
                 result = _robustness_evaluation(rows, run, target, cp, root, MATERIALS, args)
-            self.assertEqual(result["fixed"]["comment_insert"]["all"]["perturbed"]["recall"], 1.0)
-            self.assertEqual(result["fixed"]["comment_insert"]["all"]["all_candidates_correct"], 1)
+            self.assertEqual(
+                result["fixed"]["comment_insert"]["all"]["perturbed"]["recall"], 1.0
+            )
+            self.assertEqual(
+                result["fixed"]["comment_insert"]["all"]["all_candidates_correct"], 1
+            )
             with (run / "fixed.predictions.jsonl").open() as handle:
                 cached = [json.loads(l) for l in handle]
             self.assertTrue(
-                all(v["prediction"] == 1 for r in cached for v in r["groups"]["comment_insert"])
+                all(
+                    v["prediction"] == 1 for r in cached for v in r["groups"]["comment_insert"]
+                )
             )

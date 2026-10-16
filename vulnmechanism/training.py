@@ -13,7 +13,7 @@ import transformers
 
 from .artifacts import write_json
 from .augmentation import search_surface_views, surface_seed
-from .data import read_jsonl
+from .data import DATASETS, read_jsonl
 from .metrics import select_threshold
 from .model import (
     AutoTokenizer,
@@ -52,16 +52,28 @@ def function_view_batches(records, views, micro_size):
         yield expanded[start : start + micro_size], coefficients[start : start + micro_size]
 
 
-def prepare_materials(data_dir, output_dir):
-    path = Path(output_dir) / "materials.json"
+def prepare_materials(data_dir, output_dir, dataset):
+    path = Path(output_dir) / dataset / "materials.json"
     if path.exists():
         return json.loads(path.read_text())
-    materials = surface_materials(read_jsonl(Path(data_dir) / "train.jsonl"))
+    materials = surface_materials(read_jsonl(Path(data_dir) / dataset / "train.jsonl"))
     write_json(path, materials)
     return materials
 
 
-def train(data_dir, output_dir, model_path, method, *, device="auto", materials=None, config=None):
+def train(
+    data_dir,
+    output_dir,
+    model_path,
+    dataset,
+    method,
+    *,
+    device="auto",
+    materials=None,
+    config=None,
+):
+    if dataset not in DATASETS:
+        raise ValueError(f"unknown dataset: {dataset}")
     if method not in METHODS:
         raise ValueError(f"unknown method: {method}")
     config = dict(TRAINING if config is None else config)
@@ -72,28 +84,31 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
         or config["learning_rate"] <= 0
     ):
         raise ValueError("invalid training budget")
-    run = Path(output_dir) / method
+    run = Path(output_dir) / dataset / method
     run.mkdir(parents=True, exist_ok=True)
     target = run / "best.pt"
     if target.exists() or target.with_suffix(".training.jsonl").exists():
-        raise FileExistsError(f"{run}: training already started; refusing to reuse fitted weights")
-    train_rows = read_jsonl(Path(data_dir) / "train.jsonl")
-    valid_rows = read_jsonl(Path(data_dir) / "valid.jsonl")
+        raise FileExistsError(
+            f"{run}: training already started; refusing to reuse fitted weights"
+        )
+    train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
+    valid_rows = read_jsonl(Path(data_dir) / dataset / "valid.jsonl")
     for split, rows in (("train", train_rows), ("valid", valid_rows)):
         if not rows or {r["label"] for r in rows} != {0, 1}:
             raise ValueError(f"{split}: both classes required")
-        if any(r["dataset"] != "primevul" or r["split"] != split for r in rows):
-            raise ValueError("training and selection require the prepared PrimeVul splits")
+        if any(r["dataset"] != dataset or r["split"] != split for r in rows):
+            raise ValueError(f"training and selection require {dataset} {split}")
     source_views = method not in ("bce", "vat")
     use_vat = method in ("vat", "random_aug_vat", "hard_aug_vat")
     search = method in ("hard_aug_bce", "hard_aug_vat")
     if source_views and materials is None:
-        materials = prepare_materials(data_dir, output_dir)
+        materials = prepare_materials(data_dir, output_dir, dataset)
     device = resolve_device(device)
     seed = config["seed"]
     seed_everything(seed)
     builder = InputBuilder(
-        AutoTokenizer.from_pretrained(model_path), source_max_length=config["source_max_length"]
+        AutoTokenizer.from_pretrained(model_path),
+        source_max_length=config["source_max_length"],
     )
     model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda")
     seed_everything(seed)
@@ -102,6 +117,7 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
     )
     history = TrainingProgress(target)
     metadata = dict(
+        dataset=dataset,
         method=method,
         model_path=str(model_path),
         training_config=config,
@@ -113,7 +129,7 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
             cuda=torch.version.cuda,
             device=torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
         ),
-        selection="PrimeVul clean Valid: threshold MCC/F1/Accuracy/closest to 0.5; "
+        selection=f"{dataset} clean Valid: threshold MCC/F1/Accuracy/closest to 0.5; "
         "epoch MCC/F1/Accuracy/AUC",
         precision="FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
         input_protocol=dict(
@@ -156,7 +172,8 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
         steps = 0
         num_batches = math.ceil(len(order) / batch_size)
         bar = training_bar(
-            range(0, len(order), batch_size), desc=f'{method} epoch {epoch}/{config["epochs"]}'
+            range(0, len(order), batch_size),
+            desc=f'{dataset}/{method} epoch {epoch}/{config["epochs"]}',
         )
         for batch_index, start in enumerate(bar):
             batch = [train_rows[i] for i in order[start : start + batch_size]]
@@ -207,7 +224,11 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
                                     selected=(
                                         None
                                         if chosen is None
-                                        else {k: v for k, v in chosen.items() if k != "raw_source"}
+                                        else {
+                                            k: v
+                                            for k, v in chosen.items()
+                                            if k != "raw_source"
+                                        }
                                     ),
                                     candidate_queries=entry["candidate_queries"],
                                     original_queries=entry["original_queries"],
@@ -225,14 +246,18 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
                 )
                 loss = (terms * terms.new_tensor(weights)).sum()
                 if not torch.isfinite(loss):
-                    raise ValueError(f"nonfinite BCE: {method} epoch {epoch}, batch {batch_index}")
+                    raise ValueError(
+                        f"nonfinite BCE: {method} epoch {epoch}, batch {batch_index}"
+                    )
                 (loss / group_samples).backward()
                 batch_loss += float(loss.detach())
             if use_vat:
                 vat_rows = []
                 for i, row in enumerate(batch):
                     selected = selections[i]["selected"] if selections else None
-                    rng = random.Random(surface_seed(seed, epoch, row["sample_key"], "vat-view"))
+                    rng = random.Random(
+                        surface_seed(seed, epoch, row["sample_key"], "vat-view")
+                    )
                     vat_rows.append(
                         dict(row, raw_source=selected["raw_source"])
                         if selected is not None and rng.randrange(2)
@@ -280,7 +305,7 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
                         )
                     )
                     print(
-                        f"{method} epoch {epoch} step {steps}/{math.ceil(len(order) / (batch_size * accumulation))}",
+                        f"{dataset}/{method} epoch {epoch} step {steps}/{math.ceil(len(order) / (batch_size * accumulation))}",
                         flush=True,
                     )
         probabilities = predict_logits(
@@ -320,7 +345,9 @@ def train(data_dir, output_dir, model_path, method, *, device="auto", materials=
             selected_epoch = epoch
             checkpoint = dict(
                 metadata,
-                state_dict={k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
+                state_dict={
+                    k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+                },
                 source_max_length=config["source_max_length"],
                 decision_threshold=threshold,
                 selected_epoch=epoch,

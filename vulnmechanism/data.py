@@ -1,43 +1,17 @@
-"""Independent native-label preparation for PrimeVul and MegaVul."""
+"""Native labels, positive-preserving balance and exact train/Test overlap checks."""
 
 from __future__ import annotations
 
-from array import array
-from bisect import bisect_left
-from collections import Counter, defaultdict
+from collections import Counter
 import csv
-import hashlib
 import json
 from pathlib import Path
 import random
-import re
 
 from .artifacts import write_json
 
+DATASETS = ("primevul", "megavul")
 SPLITS = ("train", "valid", "test")
-PRIORITY = {"test": 0, "valid": 1, "train": 2}
-TOKEN = re.compile(
-    r"(?P<space>\s+)|(?P<comment>//(?:\\\r?\n|[^\n])*|/\*[\s\S]*?\*/)"
-    r'|(?:u8|u|U|L)?R"(?P<delimiter>[^\s()\\]{0,16})\([\s\S]*?\)(?P=delimiter)"'
-    r'|(?:u8|u|U|L)?"(?:\\[\s\S]|[^"\\])*"'
-    r"|(?:u8|u|U|L)?'(?:\\[\s\S]|[^'\\])*'"
-    r"|[a-zA-Z_$\u0080-\uffff][\w$]*"
-    r"|(?:\d|\.\d)(?:[eEpP][+-]|[\w.'])*"
-    r"|>>=|<<=|<=>|->\*|\.\.\.|##|::|\.\*|->|\+\+|--|<<|>>|<=|>="
-    r"|==|!=|&&|\|\||\*=|/=|%=|\+=|-=|&=|\^=|\|=|[^\s]"
-)
-
-
-def tokens(source):
-    """Remove comments/spacing while preserving literals and token boundaries."""
-    return tuple(
-        m.group() for m in TOKEN.finditer(source) if m.lastgroup not in {"space", "comment"}
-    )
-
-
-def shingles(code_tokens):
-    width = min(5, len(code_tokens))
-    return {code_tokens[i : i + width] for i in range(max(1, len(code_tokens) - width + 1))}
 
 
 def json_array(path):
@@ -101,7 +75,34 @@ def write_jsonl(path, rows):
             handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
 
+def split_projects(rows, seed=42):
+    """Greedily fill 80/10/10 positive targets; never split a project."""
+    positives = Counter(r["project"] for r in rows if r["label"] == 1)
+    names = sorted({r["project"] for r in rows})
+    random.Random(seed).shuffle(names)
+    names.sort(key=lambda name: -positives[name])
+    total = sum(positives.values())
+    targets = dict(
+        zip(
+            SPLITS,
+            (int(total * 0.8), int(total * 0.1), total - int(total * 0.8) - int(total * 0.1)),
+        )
+    )
+    assigned = Counter()
+    projects = {s: [] for s in SPLITS}
+    for name in names:
+        split = max(SPLITS, key=lambda s: targets[s] - assigned[s])
+        projects[split].append(name)
+        assigned[split] += positives[name]
+    assignment = {name: s for s, names in projects.items() for name in names}
+    for row in rows:
+        row["split"] = assignment[row["project"]]
+    return {s: sorted(names) for s, names in projects.items()}
+
+
 def load_native(raw_root, dataset, seed=42):
+    if dataset not in DATASETS:
+        raise ValueError(f"unknown dataset: {dataset}")
     raw_root = Path(raw_root)
     rows = []
     paths = (
@@ -112,26 +113,12 @@ def load_native(raw_root, dataset, seed=42):
     for path in paths:
         if dataset == "primevul":
             with path.open(encoding="utf-8") as handle:
-                iterator = (json.loads(line) for line in handle)
-                _append_native(rows, iterator, dataset, path, raw_root)
+                _append_native(
+                    rows, (json.loads(line) for line in handle), dataset, path, raw_root
+                )
         else:
             _append_native(rows, json_array(path), dataset, path, raw_root)
-    projects = None
-    if dataset == "megavul":
-        names = sorted({r["project"] for r in rows})
-        random.Random(seed).shuffle(names)
-        n_train, n_valid = int(0.8 * len(names)), int(0.1 * len(names))
-        projects = {
-            s: sorted(v)
-            for s, v in zip(
-                SPLITS,
-                (names[:n_train], names[n_train : n_train + n_valid], names[n_train + n_valid :]),
-            )
-        }
-        assignment = {name: s for s, names in projects.items() for name in names}
-        for row in rows:
-            row["split"] = assignment[row["project"]]
-    return rows, projects
+    return rows, split_projects(rows, seed) if dataset == "megavul" else None
 
 
 def _append_native(rows, iterator, dataset, path, raw_root):
@@ -165,7 +152,8 @@ def _append_native(rows, iterator, dataset, path, raw_root):
                     if suffix == ".c"
                     else (
                         "cpp"
-                        if suffix in {".C", ".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx"}
+                        if suffix
+                        in {".C", ".cc", ".cpp", ".cxx", ".c++", ".hpp", ".hh", ".hxx"}
                         else "c_cpp"
                     )
                 ),
@@ -178,184 +166,100 @@ def _append_native(rows, iterator, dataset, path, raw_root):
             print(f"{dataset} {path.name}: read {number}", flush=True)
 
 
-def deduplicate(rows):
-    """Exact Jaccard join, connected duplicate groups, then conflict removal.
-
-    Compact shingle IDs are internal indexing keys, never artifact checksums.
-    Every proposed near match is verified against the actual token tuples.
-    All normalized groups enter the index, including eventual discarded groups,
-    so transitive conflicting labels cannot survive behind a removed duplicate.
-    """
-    groups, by_normalized, exact = [], {}, {}
-    stats = Counter()
-    for i, row in enumerate(rows):
-        source = row["raw_source"]
-        if source in exact:
-            group = exact[source]
-            stats["exact_duplicate_rows"] += 1
-        else:
-            normalized = json.dumps(tokens(source), ensure_ascii=False)
-            if normalized in by_normalized:
-                group = by_normalized[normalized]
-                stats["normalized_duplicate_rows"] += 1
-            else:
-                group = len(groups)
-                by_normalized[normalized] = group
-                groups.append([])
-            exact[source] = group
-        groups[group].append(i)
-    del by_normalized, exact
-    parents = list(range(len(groups)))
-
-    def root(i):
-        while parents[i] != i:
-            parents[i] = parents[parents[i]]
-            i = parents[i]
-        return i
-
-    signatures = []
-    frequency = Counter()
-    for progress, indices in enumerate(groups, 1):
-        signature = array(
-            "Q",
-            sorted(
-                {
-                    int.from_bytes(
-                        hashlib.blake2b(
-                            json.dumps(gram, ensure_ascii=False).encode(), digest_size=8
-                        ).digest(),
-                        "big",
-                    )
-                    for gram in shingles(tokens(rows[indices[0]]["raw_source"]))
-                }
-            ),
-        )
-        signatures.append(signature)
-        frequency.update(signature)
-        if progress % 10000 == 0:
-            print(f"build shingle index: {progress}/{len(groups)}", flush=True)
-    lengths = [len(s) for s in signatures]
-    postings = defaultdict(list)
-    for progress, i in enumerate(sorted(range(len(groups)), key=lambda j: (lengths[j], j)), 1):
-        signature = signatures[i]
-        # Rare-first global ordering sharply reduces frequent boilerplate hits.
-        prefix = sorted(signature, key=lambda t: (frequency[t], t))[
-            : len(signature) - (9 * len(signature) + 9) // 10 + 1
-        ]
-        minimum = (9 * len(signature) + 9) // 10
-        candidates = set()
-        for token in prefix:
-            posting = postings[token]
-            start = bisect_left(posting, minimum, key=lambda j: lengths[j])
-            candidates.update(posting[start:])
-        current = set(signature)
-        actual = None
-        for j in sorted(candidates):
-            if root(i) == root(j):
-                continue
-            other = signatures[j]
-            common = len(current.intersection(other))
-            if common * 10 < (len(signature) + len(other) - common) * 9:
-                continue
-            if actual is None:
-                actual = shingles(tokens(rows[groups[i][0]]["raw_source"]))
-            previous = shingles(tokens(rows[groups[j][0]]["raw_source"]))
-            overlap = len(actual.intersection(previous))
-            if overlap * 10 >= len(actual.union(previous)) * 9:
-                parents[root(i)] = root(j)
-        for token in prefix:
-            postings[token].append(i)
-        if progress % 10000 == 0:
-            print(f"near-duplicate join: {progress}/{len(groups)}", flush=True)
-    components = defaultdict(list)
-    for i, indices in enumerate(groups):
-        components[root(i)].extend(indices)
-    stats["near_duplicate_groups_merged"] = len(groups) - len(components)
-    kept = []
-    for indices in components.values():
-        if len({rows[i]["label"] for i in indices}) > 1:
-            stats["conflict_groups"] += 1
-            stats["conflict_rows"] += len(indices)
-        else:
-            selected = min(indices, key=lambda i: (PRIORITY[rows[i]["split"]], i))
-            kept.append(selected)
-            stats["same_label_duplicate_rows_removed"] += len(indices) - 1
-    return [rows[i] for i in sorted(kept)], dict(stats)
-
-
 def balanced(rows, seed=42):
+    """Retain every positive; sample only the negatives, independently per Split."""
     selected = set()
     for split in SPLITS:
-        classes = [
-            [i for i, r in enumerate(rows) if r["split"] == split and r["label"] == y]
-            for y in (0, 1)
-        ]
-        count = min(map(len, classes))
-        if not count:
-            raise ValueError(f"{split}: cannot balance an empty class")
-        rng = random.Random(seed)
-        for members in classes:
-            selected.update(rng.sample(members, count))
+        positive = [i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 1]
+        negative = [i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 0]
+        if not positive or len(negative) < len(positive):
+            raise ValueError(f"{split}: need positives and at least as many negatives")
+        selected.update(positive)
+        selected.update(random.Random(seed).sample(negative, len(positive)))
     return [row for i, row in enumerate(rows) if i in selected]
 
 
+def class_counts(rows):
+    positive = sum(r["label"] for r in rows)
+    return dict(samples=len(rows), positive=positive, negative=len(rows) - positive)
+
+
 def counts(rows):
-    return {
-        s: dict(
-            samples=sum(r["split"] == s for r in rows),
-            positive=sum(r["split"] == s and r["label"] == 1 for r in rows),
-            negative=sum(r["split"] == s and r["label"] == 0 for r in rows),
-        )
-        for s in SPLITS
+    return {s: class_counts([r for r in rows if r["split"] == s]) for s in SPLITS}
+
+
+def test_rows(data_dir):
+    """The same independent Test cohort is used for in-domain and transfer tests."""
+    return [r for r in read_jsonl(Path(data_dir) / "test.jsonl") if not r["train_overlap"]]
+
+
+def prepare(raw_root, output, seed=42):
+    output = Path(output)
+    for dataset in DATASETS:
+        if any((output / dataset).glob("*.jsonl")):
+            raise FileExistsError(f"{output / dataset}: prepared source lists already exist")
+    native, selected, assignments = {}, {}, {}
+    for dataset in DATASETS:
+        native[dataset], assignments[dataset] = load_native(raw_root, dataset, seed)
+        selected[dataset] = balanced(native[dataset], seed)
+    training_sources = {
+        dataset: {r["raw_source"] for r in rows if r["split"] == "train"}
+        for dataset, rows in selected.items()
     }
-
-
-def prepare(raw_root, output, dataset, seed=42):
-    root = Path(output) / dataset
-    if any(root.glob("*.jsonl")):
-        raise FileExistsError(
-            f"{root}: source lists already exist; use an output directory without prepared JSONL files"
+    statistics = {}
+    for dataset in DATASETS:
+        root = output / dataset
+        rows = selected[dataset]
+        tests = [r for r in rows if r["split"] == "test"]
+        for row in tests:
+            row["train_overlap"] = [
+                source for source in DATASETS if row["raw_source"] in training_sources[source]
+            ]
+        excluded = [r for r in tests if r["train_overlap"]]
+        evaluated = [r for r in tests if not r["train_overlap"]]
+        for split in SPLITS:
+            write_jsonl(root / f"{split}.jsonl", (r for r in rows if r["split"] == split))
+        with (root / "members.csv").open("w", newline="", encoding="utf-8") as handle:
+            fields = [
+                "sample_key",
+                "split",
+                "label",
+                "project",
+                "source_file",
+                "source_row",
+                "train_overlap",
+            ]
+            writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(
+                    {
+                        **{k: row[k] for k in fields[:-1]},
+                        "train_overlap": ";".join(row.get("train_overlap", [])),
+                    }
+                )
+        stats = dict(
+            dataset=dataset,
+            seed=seed,
+            raw_root=str(raw_root),
+            native=counts(native[dataset]),
+            balanced=counts(rows),
+            positives_removed=0,
+            sampling="retain all native positives; random.Random(42) samples negatives; stable source order",
+            test_exact_overlap=dict(
+                by_training_dataset={
+                    source: class_counts([r for r in tests if source in r["train_overlap"]])
+                    for source in DATASETS
+                },
+                excluded=class_counts(excluded),
+                evaluated=class_counts(evaluated),
+                policy="keep all positives in data lists; exclude exact raw-source overlap with either actual training set only from Test evaluation; shared in-domain/transfer cohort",
+            ),
         )
-    rows, projects = load_native(raw_root, dataset, seed)
-    before = counts(rows)
-    print(f"{dataset} native: {before}", flush=True)
-    clean, removed = deduplicate(rows)
-    subset = balanced(clean, seed)
-    for split in SPLITS:
-        write_jsonl(root / f"{split}.jsonl", (r for r in subset if r["split"] == split))
-        write_jsonl(root / f"{split}.natural.jsonl", (r for r in clean if r["split"] == split))
-    keys = {r["sample_key"] for r in subset}
-    with (root / "members.csv").open("w", newline="", encoding="utf-8") as handle:
-        fields = [
-            "sample_key",
-            "split",
-            "label",
-            "project",
-            "source_file",
-            "source_row",
-            "balanced",
-        ]
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in clean:
-            writer.writerow(
-                {**{k: row[k] for k in fields[:-1]}, "balanced": int(row["sample_key"] in keys)}
-            )
-    stats = dict(
-        dataset=dataset,
-        seed=seed,
-        raw_root=str(raw_root),
-        native=before,
-        removed=removed,
-        natural=counts(clean),
-        balanced=counts(subset),
-        deduplication="within dataset; exact, lexical normalization, token 5-gram Jaccard >= 0.90; "
-        "connected components; conflicting labels removed; test > valid > train",
-        sampling="random.Random(42), stable source order, sample each class to the minority count",
-    )
-    if projects is not None:
-        write_json(root / "projects.json", projects)
-        stats["projects"] = {s: len(v) for s, v in projects.items()}
-    write_json(root / "statistics.json", stats)
-    print(json.dumps(stats, indent=2), flush=True)
-    return stats
+        if assignments[dataset] is not None:
+            write_json(root / "projects.json", assignments[dataset])
+            stats["projects"] = {s: len(names) for s, names in assignments[dataset].items()}
+        write_json(root / "statistics.json", stats)
+        statistics[dataset] = stats
+        print(json.dumps(stats, indent=2), flush=True)
+    return statistics

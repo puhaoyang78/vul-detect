@@ -4,68 +4,68 @@
   "raw_root": "/home/PublicData/PHY-data/vul_detect/data",
   "native": {
     "train": {
-      "samples": 217678,
-      "positive": 11889,
-      "negative": 205789
+      "samples": 277453,
+      "positive": 14380,
+      "negative": 263073
     },
     "valid": {
-      "samples": 106845,
-      "positive": 4669,
-      "negative": 102176
+      "samples": 40881,
+      "positive": 1797,
+      "negative": 39084
     },
     "test": {
-      "samples": 29350,
-      "positive": 1417,
-      "negative": 27933
-    }
-  },
-  "removed": {
-    "normalized_duplicate_rows": 3209,
-    "exact_duplicate_rows": 12749,
-    "near_duplicate_groups_merged": 9749,
-    "same_label_duplicate_rows_removed": 25310,
-    "conflict_groups": 306,
-    "conflict_rows": 703
-  },
-  "natural": {
-    "train": {
-      "samples": 199971,
-      "positive": 10584,
-      "negative": 189387
-    },
-    "valid": {
-      "samples": 100196,
-      "positive": 4316,
-      "negative": 95880
-    },
-    "test": {
-      "samples": 27693,
-      "positive": 1274,
-      "negative": 26419
+      "samples": 35539,
+      "positive": 1798,
+      "negative": 33741
     }
   },
   "balanced": {
     "train": {
-      "samples": 21168,
-      "positive": 10584,
-      "negative": 10584
+      "samples": 28760,
+      "positive": 14380,
+      "negative": 14380
     },
     "valid": {
-      "samples": 8632,
-      "positive": 4316,
-      "negative": 4316
+      "samples": 3594,
+      "positive": 1797,
+      "negative": 1797
     },
     "test": {
-      "samples": 2548,
-      "positive": 1274,
-      "negative": 1274
+      "samples": 3596,
+      "positive": 1798,
+      "negative": 1798
     }
   },
-  "deduplication": "within dataset; exact, lexical normalization, token 5-gram Jaccard >= 0.90; connected components; conflicting labels removed; test > valid > train",
-  "sampling": "random.Random(42), stable source order, sample each class to the minority count",
+  "positives_removed": 0,
+  "sampling": "retain all native positives; random.Random(42) samples negatives; stable source order",
+  "test_exact_overlap": {
+    "by_training_dataset": {
+      "primevul": {
+        "samples": 91,
+        "positive": 87,
+        "negative": 4
+      },
+      "megavul": {
+        "samples": 33,
+        "positive": 28,
+        "negative": 5
+      }
+    },
+    "excluded": {
+      "samples": 124,
+      "positive": 115,
+      "negative": 9
+    },
+    "evaluated": {
+      "samples": 3472,
+      "positive": 1683,
+      "negative": 1789
+    },
+    "policy": "keep all positives in data lists; exclude exact raw-source overlap with either actual training set only from Test evaluation; shared in-domain/transfer cohort"
+  },
   "projects": {
-    "train": 848,
-    "valid": 106,
-    "test": 107
+    "train": 394,
+    "valid": 333,
+    "test": 334
   }
 }

@@ -1,9 +1,11 @@
-"""Prepare native datasets, train six methods, evaluate, report and infer."""
+"""Prepare both datasets, train twelve models, evaluate, report and infer."""
 
 from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+
+from .data import DATASETS
 
 
 def build_parser():
@@ -11,26 +13,26 @@ def build_parser():
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    prepare = sub.add_parser("prepare", help="independently clean and balance raw datasets")
+    prepare = sub.add_parser(
+        "prepare", help="retain positives, balance negatives and check exact leakage"
+    )
     prepare.add_argument("--raw-root", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, default=Path("data"))
-    prepare.add_argument("--dataset", choices=("primevul", "megavul", "all"), default="all")
     for command in ("train", "candidates", "evaluate"):
         p = sub.add_parser(command)
         p.add_argument("--data-dir", type=Path, default=Path("data"))
         p.add_argument("--output-dir", type=Path, default=Path("results"))
+        p.add_argument("--dataset", choices=(*DATASETS, "all"), default="all")
         if command in ("train", "candidates"):
             p.add_argument("--model", default="microsoft/codebert-base")
         if command in ("train", "evaluate"):
             p.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
             p.add_argument("--device", default="auto")
-        if command in ("candidates", "evaluate"):
-            p.add_argument("--split", choices=("valid", "test", "all"), default="all")
         if command == "evaluate":
-            p.add_argument("--scope", choices=("primevul", "megavul", "all"), default="all")
             p.add_argument("--clean-only", action="store_true")
     p = sub.add_parser("report")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
     p = sub.add_parser("infer")
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--source-file", type=Path, required=True)
@@ -44,56 +46,50 @@ def main():
     if args.command == "prepare":
         from .data import prepare
 
-        for dataset in ("primevul", "megavul") if args.dataset == "all" else (args.dataset,):
-            prepare(args.raw_root, args.output_dir, dataset)
+        prepare(args.raw_root, args.output_dir)
         return
     import torch
 
     torch.set_num_threads(4)
+    datasets = (
+        DATASETS
+        if getattr(args, "dataset", None) == "all"
+        else (getattr(args, "dataset", None),)
+    )
     if args.command == "train":
-        from .training import prepare_materials, train
+        from .training import train
 
-        materials = prepare_materials(args.data_dir / "primevul", args.output_dir)
-        for method in args.methods:
-            train(
-                args.data_dir / "primevul",
-                args.output_dir,
-                args.model,
-                method,
-                device=args.device,
-                materials=materials,
-            )
+        for dataset in datasets:
+            for method in args.methods:
+                train(
+                    args.data_dir,
+                    args.output_dir,
+                    args.model,
+                    dataset,
+                    method,
+                    device=args.device,
+                )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
 
-        splits = ("valid", "test") if args.split == "all" else (args.split,)
-        prepare_candidates(args.data_dir / "primevul", args.output_dir, args.model, splits=splits)
+        for dataset in datasets:
+            prepare_candidates(args.data_dir, args.output_dir, args.model, dataset)
     elif args.command == "evaluate":
-        from .evaluation import evaluate_primevul, evaluate_megavul
+        from .evaluation import evaluate
 
-        if args.scope in ("primevul", "all"):
-            splits = ("valid", "test") if args.split == "all" else (args.split,)
-            evaluate_primevul(
-                args.data_dir / "primevul",
+        for dataset in datasets:
+            evaluate(
+                args.data_dir,
                 args.output_dir,
+                dataset,
                 args.methods,
                 device=args.device,
-                splits=splits,
                 robust=not args.clean_only,
-            )
-        if args.scope in ("megavul", "all"):
-            if args.scope == "megavul" and args.split == "test":
-                raise ValueError("MegaVul Test is reserved; only Valid evaluation is supported")
-            evaluate_megavul(
-                args.data_dir / "megavul",
-                args.output_dir,
-                args.methods,
-                device=args.device,
             )
     elif args.command == "report":
         from .evaluation import report
 
-        print(json.dumps(report(args.output_dir), indent=2))
+        print(json.dumps(report(args.output_dir, args.data_dir), indent=2))
     elif args.command == "infer":
         from .metrics import decision_boundary
         from .model import predict_checkpoint

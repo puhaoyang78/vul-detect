@@ -91,86 +91,93 @@ class CodeBERTTests(unittest.TestCase):
                 torch.ones(1, 3, 2), torch.ones(1, 3), torch.tensor([0]), torch.ones(1, 3), 2
             )
 
-    def test_six_fresh_paths_updates_and_strict_save_load(self):
+    def test_twelve_fresh_paths_updates_and_strict_save_load(self):
         from tests.test_surface_vat import MATERIALS
 
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             base = tiny_base(root / "encoder")
-            rows = [
-                dict(
-                    sample_key=str(i),
-                    dataset="primevul",
-                    split="train",
-                    label=i % 2,
-                    language="c",
-                    raw_source=f"int f{i}(int count){{/* ordinary comment */return api(count)+{i};}}",
+            for dataset in ("primevul", "megavul"):
+                rows = [
+                    dict(
+                        sample_key=str(i),
+                        dataset=dataset,
+                        split="train",
+                        label=i % 2,
+                        language="c",
+                        raw_source=f"int f{i}(int count){{/* ordinary comment */return api(count)+{i};}}",
+                    )
+                    for i in range(8)
+                ]
+                rows[0]["raw_source"] = "return external_api(1)+GLOBAL;"
+                write_jsonl(root / "data" / dataset / "train.jsonl", rows)
+                write_jsonl(
+                    root / "data" / dataset / "valid.jsonl",
+                    [dict(rows[i], sample_key=f"v{i}", split="valid") for i in (1, 2)],
                 )
-                for i in range(8)
-            ]
-            rows[0]["raw_source"] = "return external_api(1)+GLOBAL;"
-            write_jsonl(root / "data/train.jsonl", rows)
-            write_jsonl(
-                root / "data/valid.jsonl",
-                [dict(rows[i], sample_key=f"v{i}", split="valid") for i in (1, 2)],
-            )
-            write_jsonl(
-                root / "data/test.jsonl",
-                [dict(rows[0], split="test", raw_source="FORBIDDEN_HELDOUT")],
-            )
-            config = dict(TRAINING, epochs=1, batch_size=2, gradient_accumulation=4)
-            for method in METHODS:
-                with self.subTest(method=method), patch.object(
-                    core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()
-                ), redirect_stdout(io.StringIO()):
-                    summary = train(
-                        root / "data",
-                        root / "runs",
-                        str(root / "encoder"),
-                        method,
-                        device="cpu",
-                        materials=MATERIALS,
-                        config=config,
-                    )
-                    self.assertEqual(summary["optimizer_steps"], 1)
-                    target = root / "runs" / method / "best.pt"
-                    cp = torch.load(target, map_location="cpu", weights_only=False)
-                    self.assertEqual(cp["training_config"], config)
-                    self.assertFalse(
-                        torch.equal(
-                            cp["state_dict"]["encoder.embeddings.word_embeddings.weight"],
-                            base.embeddings.word_embeddings.weight,
-                        )
-                    )
-                    model = core.load_model(cp, torch.device("cpu"))
-                    builder = core.InputBuilder(CodeTokenizer())
-                    expected = core.predict_logits(model, rows[:2], builder, device="cpu")
-                    actual = core.predict_checkpoint(target, rows[:2], device="cpu")
-                    torch.testing.assert_close(expected, actual, rtol=0, atol=0)
-                    broken = dict(cp, state_dict=dict(cp["state_dict"]))
-                    broken["state_dict"].pop("encoder.embeddings.word_embeddings.weight")
-                    with self.assertRaisesRegex(RuntimeError, "Missing key"):
-                        core.load_model(broken, torch.device("cpu"))
-                    epoch = [
-                        json.loads(line)
-                        for line in target.with_suffix(".training.jsonl").read_text().splitlines()
-                        if json.loads(line)["event"] == "epoch"
-                    ][0]
-                    if method.startswith("random_"):
-                        self.assertEqual(epoch["candidate_queries"], 0)
-                    if method.startswith("hard_"):
-                        self.assertGreater(epoch["candidate_queries"], 0)
-                    if method in ("vat", "random_aug_vat", "hard_aug_vat"):
-                        self.assertEqual(epoch["vat_eligible_functions"], 8)
-                    with self.assertRaises(FileExistsError):
-                        train(
+                write_jsonl(
+                    root / "data" / dataset / "test.jsonl",
+                    [dict(rows[0], split="test", raw_source="FORBIDDEN_HELDOUT")],
+                )
+                config = dict(TRAINING, epochs=1, batch_size=2, gradient_accumulation=4)
+                for method in METHODS:
+                    with self.subTest(dataset=dataset, method=method), patch.object(
+                        core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()
+                    ), redirect_stdout(io.StringIO()):
+                        summary = train(
                             root / "data",
                             root / "runs",
                             str(root / "encoder"),
+                            dataset,
                             method,
+                            device="cpu",
+                            materials=MATERIALS,
                             config=config,
                         )
+                        self.assertEqual(summary["optimizer_steps"], 1)
+                        target = root / "runs" / dataset / method / "best.pt"
+                        cp = torch.load(target, map_location="cpu", weights_only=False)
+                        self.assertEqual(cp["training_config"], config)
+                        self.assertEqual(cp["dataset"], dataset)
+                        self.assertTrue(cp["selection"].startswith(dataset))
+                        self.assertFalse(
+                            torch.equal(
+                                cp["state_dict"]["encoder.embeddings.word_embeddings.weight"],
+                                base.embeddings.word_embeddings.weight,
+                            )
+                        )
+                        model = core.load_model(cp, torch.device("cpu"))
+                        builder = core.InputBuilder(CodeTokenizer())
+                        expected = core.predict_logits(model, rows[:2], builder, device="cpu")
+                        actual = core.predict_checkpoint(target, rows[:2], device="cpu")
+                        torch.testing.assert_close(expected, actual, rtol=0, atol=0)
+                        broken = dict(cp, state_dict=dict(cp["state_dict"]))
+                        broken["state_dict"].pop("encoder.embeddings.word_embeddings.weight")
+                        with self.assertRaisesRegex(RuntimeError, "Missing key"):
+                            core.load_model(broken, torch.device("cpu"))
+                        epoch = [
+                            json.loads(line)
+                            for line in target.with_suffix(".training.jsonl")
+                            .read_text()
+                            .splitlines()
+                            if json.loads(line)["event"] == "epoch"
+                        ][0]
+                        if method.startswith("random_"):
+                            self.assertEqual(epoch["candidate_queries"], 0)
+                        if method.startswith("hard_"):
+                            self.assertGreater(epoch["candidate_queries"], 0)
+                        if method in ("vat", "random_aug_vat", "hard_aug_vat"):
+                            self.assertEqual(epoch["vat_eligible_functions"], 8)
+                        with self.assertRaises(FileExistsError):
+                            train(
+                                root / "data",
+                                root / "runs",
+                                str(root / "encoder"),
+                                dataset,
+                                method,
+                                config=config,
+                            )
 
     def test_global_vat_signal_dropout_gradient_and_radius(self):
         from tests.test_surface_vat import tiny_model
@@ -185,7 +192,12 @@ class CodeBERTTests(unittest.TestCase):
             ]
             rng = torch.get_rng_state().clone()
             terms, info, delta = vat_loss(
-                model, rows, builder, device=torch.device("cpu"), noise_seed=42, return_delta=True
+                model,
+                rows,
+                builder,
+                device=torch.device("cpu"),
+                noise_seed=42,
+                return_delta=True,
             )
             self.assertGreater(float(terms.detach().sum()), 0.0)
             self.assertEqual(info["eligible"], 2)
@@ -200,7 +212,12 @@ class CodeBERTTests(unittest.TestCase):
             self.assertTrue(model.training)
             self.assertTrue(torch.equal(rng, torch.get_rng_state()))
             again, _, repeat = vat_loss(
-                model, rows, builder, device=torch.device("cpu"), noise_seed=42, return_delta=True
+                model,
+                rows,
+                builder,
+                device=torch.device("cpu"),
+                noise_seed=42,
+                return_delta=True,
             )
             torch.testing.assert_close(terms, again, rtol=0, atol=0)
             torch.testing.assert_close(delta, repeat, rtol=0, atol=0)
