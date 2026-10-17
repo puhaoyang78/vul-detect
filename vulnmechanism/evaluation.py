@@ -1,4 +1,4 @@
-"""Own-dataset Test robustness and the saved two-dataset comparison report."""
+"""Test robustness, fixed-checkpoint BCE transfer and saved experiment reports."""
 
 from __future__ import annotations
 from argparse import Namespace
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import torch
 from .artifacts import write_json
-from .data import DATASETS, read_jsonl, test_rows, validation_rows, write_jsonl
+from .data import DATASETS, class_counts, read_jsonl, test_rows, validation_rows, write_jsonl
 from .metrics import decision_boundary, metrics
 from . import model as core
 from .training import METHODS, prepare_materials
@@ -511,6 +511,117 @@ def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", r
                 own_test, run, run / "best.pt", checkpoint, root, materials, args
             )
         del checkpoint
+
+
+def evaluate_transfer(data_dir, output_dir, datasets, *, device="auto"):
+    """Compare two fixed BCE models on shared full and exact-overlap-free Test cohorts."""
+    if len(datasets) != 2 or len(set(datasets)) != 2 or any(d not in DATASETS for d in datasets):
+        raise ValueError("two distinct supported datasets required")
+    datasets = tuple(sorted(datasets))
+    root = Path(output_dir) / ("transfer_" + "_".join(datasets))
+    root.mkdir(parents=True, exist_ok=True)
+    tests = {d: test_rows(Path(data_dir) / d) for d in datasets}
+    seen = {}
+    for dataset in datasets:
+        for split in ("train", "valid"):
+            values = (
+                read_jsonl(Path(data_dir) / dataset / "train.jsonl")
+                if split == "train" else validation_rows(Path(data_dir) / dataset)
+            )
+            seen[f"{dataset}:{split}"] = {r["raw_source"] for r in values}
+    independent, cohorts = {}, {}
+    for dataset, rows in tests.items():
+        overlap = {
+            r["sample_key"]: [name for name, sources in seen.items() if r["raw_source"] in sources]
+            for r in rows
+        }
+        independent[dataset] = [r for r in rows if not overlap[r["sample_key"]]]
+        if {r["label"] for r in independent[dataset]} != {0, 1}:
+            raise ValueError(f"{dataset}: independent Test needs both classes")
+        cohorts[dataset] = dict(
+            established=class_counts(rows), independent=class_counts(independent[dataset]),
+            excluded=class_counts([r for r in rows if overlap[r["sample_key"]]]),
+            exact_overlap_by_split={
+                name: class_counts([r for r in rows if name in overlap[r["sample_key"]]])
+                for name in seen
+            },
+        )
+        members = [dict(
+            sample_key=r["sample_key"], label=r["label"], project=r["project"],
+            source_file=r["source_file"], source_row=r["source_row"],
+            independent=not overlap[r["sample_key"]],
+            exact_overlap=";".join(overlap[r["sample_key"]]),
+        ) for r in rows]
+        with (root / f"{dataset}.members.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(members[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(members)
+    core.seed_everything(42)
+    scores, training = {}, {}
+    for source in datasets:
+        run = Path(output_dir) / source / "bce"
+        training[source] = json.loads((run / "training.metrics.json").read_text())
+        checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
+        if checkpoint["dataset"] != source or checkpoint["method"] != "bce":
+            raise ValueError("source BCE checkpoint required")
+        args = Namespace(
+            model=checkpoint["model_path"], device=device,
+            batch_size=checkpoint["training_config"]["batch_size"],
+        )
+        for target in datasets:
+            name = "test" if source == target else f"{target}.test"
+            print(f"Fixed BCE: {source} -> {target}, {len(tests[target])} Test samples", flush=True)
+            result = _evaluate_clean(tests[target], run, name, checkpoint, args)
+            predictions = read_jsonl(run / f"{name}.predictions.jsonl")
+            threshold = checkpoint["decision_threshold"]
+            if result["selected_epoch"] != checkpoint["selected_epoch"] or any(
+                r["threshold"] != threshold for r in predictions
+            ):
+                raise ValueError("cached transfer checkpoint selection differs")
+            recomputed = metrics(
+                [r["label"] for r in predictions], [r["score"] for r in predictions], threshold
+            )
+            if recomputed != result["metrics"]:
+                raise ValueError("cached transfer metrics differ")
+            scores[source, target] = (
+                {r["sample_key"]: r["score"] for r in predictions}, threshold,
+            )
+        del checkpoint
+    results = []
+    metric_names = ("accuracy", "f1", "mcc", "auc", "auprc")
+    for view, members in (("established", tests), ("independent", independent)):
+        values = {}
+        for source in datasets:
+            for target in datasets:
+                by_key, threshold = scores[source, target]
+                rows = members[target]
+                values[source, target] = metrics(
+                    [r["label"] for r in rows], [by_key[r["sample_key"]] for r in rows], threshold
+                )
+        for (source, target), value in values.items():
+            results.append(dict(
+                view=view, training_dataset=source, test_dataset=target, method="bce",
+                selected_epoch=training[source]["selected_epoch"], threshold=value["threshold"],
+                **class_counts(members[target]), **{k: value[k] for k in metric_names},
+                **{k: value[k] for k in ("tp", "tn", "fp", "fn")},
+                **{f"delta_source_{k}": value[k] - values[source, source][k] for k in metric_names},
+                **{f"delta_target_{k}": value[k] - values[target, target][k] for k in metric_names},
+            ))
+    write_json(root / "results.json", dict(
+        cohorts=cohorts, training=training, results=results,
+        protocol=dict(
+            seed=42, method="saved CodeBERT BCE; source-Valid checkpoint and threshold fixed",
+            established="reuse each existing evaluated Test cohort without changes",
+            independent="exclude exact raw-source overlap with either actual Train or model-selection Valid; same target members for both models; no resampling",
+            delta_source="target Test metric minus the same model's own Test metric",
+            delta_target="transfer metric minus target-trained BCE on exactly the same target Test",
+        ),
+    ))
+    with (root / "comparison.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(results[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(results)
+    return dict(datasets=list(datasets), models=2, rows=len(results), output=str(root))
 
 
 def report(output_dir, data_dir):

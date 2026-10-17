@@ -45,6 +45,11 @@ __pycache__/
 !/results/joint_matched/
 /results/joint_matched/**
 !/results/joint_matched/*.members.csv
+!/results/transfer_primevul_secvuleval/
+/results/transfer_primevul_secvuleval/**
+!/results/transfer_primevul_secvuleval/comparison.csv
+!/results/transfer_primevul_secvuleval/results.json
+!/results/transfer_primevul_secvuleval/*.members.csv
 *.pt
 *.pth
 *.ckpt

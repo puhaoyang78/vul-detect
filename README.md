@@ -40,7 +40,7 @@ python -m vulnmechanism.cli motivation report --dataset all
 python -m unittest discover -s tests -v
 ```
 
-输出在 `results/motivation/`：`clean.csv`、`motivation1.csv`、`motivation2.csv`、`shortcut_features.csv`、`logistic.csv`、`length_matched.csv`、`results.json`。各库另存特征表、LR 参数/模型/预测。`results/length_matched/` 保存固定匹配成员。所有评价均为库内实验；汇总只读取现有模型预测及鲁棒性结果，不重新推理已完成的 PrimeVul/MegaVul 实验。本轮不绘图。
+输出在 `results/motivation/`：`clean.csv`、`motivation1.csv`、`motivation2.csv`、`shortcut_features.csv`、`logistic.csv`、`length_matched.csv`、`results.json`。各库另存特征表、LR 参数/模型/预测。`results/length_matched/` 保存固定匹配成员。上述四库 Motivation 评价均为库内实验；汇总只读取现有模型预测及鲁棒性结果，不重新推理已完成的 PrimeVul/MegaVul 实验。额外的 PrimeVul/SecVulEval 跨库基线见下节。本轮不绘图。
 
 ### 实际结果（Seed 42）
 
@@ -143,6 +143,39 @@ python -m vulnmechanism.cli motivation tfidf-report --dataset all
 TF-IDF 匹配后四库的 TF-IDF AUC 均接近 0.5，分数 KS 距离分别为 0.0273、0.0106、0.0173、0.0142，但行数关联并不都完全消失。联合匹配同时得到相同的正负类行数分布，三库 TF-IDF AUC 为 0.4981–0.5017。PrimeVul 联合匹配仅支持 48 条，按预设门槛跳过，未调整区间补样。
 
 PrimeVul 的 TF-IDF 分类性能接近 BCE；MegaVul、BigVul 的词法基线也高于随机排序，SecVulEval 则整体较弱。控制后的 BCE 结果存在数据集差异：BigVul 联合匹配仍为 0.8701，而 MegaVul、SecVulEval 分别为 0.5737、0.5318。这些结果描述的是不同固定评价子集上的判别能力，不能证明模型内部已消除捷径依赖或量化捷径的因果贡献。
+
+## PrimeVul / SecVulEval BCE 双向直接迁移
+
+额外使用两库现有 BCE 做 Clean Test 交叉评价。沿用各自 Valid 选出的第 3 Epoch 和阈值（PrimeVul 0.40，SecVulEval 0.46），采用训练时 micro batch 4；复用域内预测，仅补充两个方向的迁移推理，不训练、微调或重新校准。
+
+保留原有评价队列，并额外构造两模型共用的独立目标队列：只排除原始函数字符串与任一库实际 Train 或选模 Valid 完全相同的 Test 成员，不做近重复、项目或 CVE 筛选，不重新平衡。所有原始清单和既有结果保持不变。PrimeVul Test 的 104 条与 SecVulEval Train 重叠、19 条与其 Valid 重叠；SecVulEval Test 的反向重叠分别为 96、36 条。
+
+| 目标 Test | 原有样本数（正/负） | 精确重叠排除（正/负） | 独立队列（正/负） |
+|---|---:|---:|---:|
+| PrimeVul | 926（388/538） | 123（117/6） | 803（271/532） |
+| SecVulEval | 2202（1101/1101） | 132（115/17） | 2070（986/1084） |
+
+```bash
+python -m vulnmechanism.cli transfer --datasets primevul secvuleval --device cuda:0
+```
+
+结果位于 `results/transfer_primevul_secvuleval/`：两库成员及排除原因、`comparison.csv`、`results.json`。完整结果包含原队列与独立队列的两个模型 × 两个 Test，共 8 行，报告 Accuracy、F1、MCC、AUC、AUPRC 和混淆计数。`delta_source_*` 是目标 Test 相对同模型自身 Test 的差值；`delta_target_*` 是相对目标库自身 BCE 在完全相同 Test 上的差值。前者同时受到两库 Test 难度和构成差异影响，不能单凭其下降认定迁移模型弱于目标库模型。
+
+实际完成两个方向的推理后，独立队列结果如下。原队列结果一并保存在 [comparison.csv](results/transfer_primevul_secvuleval/comparison.csv)，原有域内指标未覆盖。
+
+| 训练库 → Test | Accuracy | F1 | MCC | AUC | AUPRC |
+|---|---:|---:|---:|---:|---:|
+| PrimeVul → PrimeVul | 0.7833 | 0.7129 | 0.5498 | 0.8620 | 0.7337 |
+| PrimeVul → SecVulEval | 0.4715 | 0.5176 | -0.0471 | 0.4672 | 0.4437 |
+| SecVulEval → PrimeVul | 0.3562 | 0.4482 | -0.1034 | 0.3158 | 0.2436 |
+| SecVulEval → SecVulEval | 0.5329 | 0.6236 | 0.1071 | 0.5800 | 0.5399 |
+
+| 迁移方向 | 相对同模型域内 ΔAUC | 相对目标库 BCE ΔAUC | 相对目标库 BCE ΔMCC |
+|---|---:|---:|---:|
+| PrimeVul → SecVulEval | -0.3948 | -0.1128 | -0.1542 |
+| SecVulEval → PrimeVul | -0.2642 | -0.5462 | -0.6532 |
+
+两个方向均出现性能下降，且在同一目标 Test 上都弱于目标库自身 BCE。SecVulEval → PrimeVul 的 AUC 低于 0.5，表示当前源模型的分数在该目标队列上呈反向排序；未根据目标 Test 反转分数、标签或调整阈值。这一基线验证了该数据集组合中的迁移下降，不能仅据此确定其由长度、词法或其他具体特征引起。
 
 ## 已保留的 PrimeVul/MegaVul 数据
 

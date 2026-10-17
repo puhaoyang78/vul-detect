@@ -31,6 +31,11 @@ def build_parser():
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
+    p = sub.add_parser("transfer", help="bidirectional Clean BCE transfer with fixed checkpoints and thresholds")
+    p.add_argument("--datasets", nargs=2, choices=DATASETS, required=True)
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--output-dir", type=Path, default=Path("results"))
+    p.add_argument("--device", default="auto")
     p = sub.add_parser("report", help="summarize the saved PrimeVul/MegaVul six-method experiment")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -93,6 +98,12 @@ def main():
                 device=args.device,
                 robust=not args.clean_only,
             )
+    elif args.command == "transfer":
+        from .evaluation import evaluate_transfer
+
+        print(json.dumps(evaluate_transfer(
+            args.data_dir, args.output_dir, args.datasets, device=args.device
+        ), indent=2))
     elif args.command == "report":
         from .evaluation import report
 
