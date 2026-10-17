@@ -191,6 +191,7 @@ class EvaluationTests(unittest.TestCase):
                 write_json(run / "training.metrics.json", dict(selected_epoch=epoch))
                 write_jsonl(run / "test.predictions.jsonl", [dict(
                     sample_key=r["sample_key"], label=r["label"],
+                    logit=float(torch.logit(torch.tensor(.9 if r["label"] else .1))),
                     score=.9 if r["label"] else .1, threshold=threshold,
                 ) for r in rows])
                 write_json(run / "test.metrics.json", dict(
@@ -225,6 +226,57 @@ class EvaluationTests(unittest.TestCase):
             self.assertTrue(all(r["threshold"] == (.73 if r["training_dataset"] == "primevul" else .61) for r in cross))
             with patch.object(core, "predict_logits", side_effect=AssertionError("cached predictions must be reused")):
                 evaluate_transfer(root / "data", root / "runs", datasets, device="cpu")
+            for dataset in datasets:
+                run = root / "runs" / dataset / "csd"
+                write_json(run / "training.metrics.json", dict(selected_epoch=3))
+                torch.save(dict(
+                    dataset=dataset, method="csd", model_path="fixture", source_max_length=2048,
+                    selected_epoch=3, decision_threshold=.55, training_config=dict(batch_size=2),
+                ), run / "best.pt")
+
+            def predict_csd(model, rows, builder, **kwargs):
+                self.assertEqual(model[1], "csd")  # BCE must reuse its saved predictions.
+                return torch.logit(torch.tensor([.9 if r["label"] else .1 for r in rows]))
+
+            with patch.object(core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()), patch.object(
+                core, "load_model", side_effect=lambda cp, *a, **kw: (cp["dataset"], cp["method"])
+            ), patch.object(core, "predict_logits", side_effect=predict_csd) as predictor:
+                summary = evaluate_transfer(root / "data", root / "runs", datasets,
+                                            methods=("bce", "csd"), device="cpu")
+            self.assertEqual((summary["models"], summary["rows"], predictor.call_count), (4, 16, 4))
+            updated = json.loads((output / "results.json").read_text())
+            self.assertEqual(updated["cohorts"], result["cohorts"])
+            csd_cross = [r for r in updated["results"] if r["method"] == "csd" and
+                         r["training_dataset"] != r["test_dataset"]]
+            self.assertTrue(all(r["auc"] == 1. and r["delta_bce_auc"] == 1. for r in csd_cross))
+
+    def test_clean_cache_predicts_only_restored_members_and_recomputes_metrics(self):
+        from argparse import Namespace
+        from vulnmechanism.artifacts import write_json
+        from vulnmechanism.evaluation import _evaluate_clean
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = [dict(sample_key=str(i), label=i % 2, dataset="primevul", split="test", raw_source=str(i))
+                    for i in range(4)]
+            cached = [dict(sample_key=str(i), label=i % 2, logit=float(i * 2 - 1),
+                           score=float(torch.sigmoid(torch.tensor(i * 2 - 1.))), threshold=.4,
+                           prediction=i) for i in (0, 1)]
+            write_jsonl(root / "test.predictions.jsonl", cached)
+            write_json(root / "test.metrics.json", dict(selected_epoch=3, metrics={"samples": 2}))
+            cp = dict(selected_epoch=3, decision_threshold=.4, source_max_length=2048)
+            args = Namespace(model="fixture", device="cpu", batch_size=4)
+            with patch.object(core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()), patch.object(
+                core, "load_model", return_value=object()
+            ), patch.object(core, "predict_logits", return_value=torch.tensor([2., -2.])) as predictor:
+                result = _evaluate_clean(rows, root, "test", cp, args)
+            self.assertEqual([r["sample_key"] for r in predictor.call_args.args[1]], ["2", "3"])
+            merged = read_jsonl(root / "test.predictions.jsonl")
+            self.assertEqual(merged[:2], cached)
+            self.assertEqual([r["sample_key"] for r in merged], ["0", "1", "2", "3"])
+            self.assertEqual(result["metrics"], metrics([0, 1, 0, 1], [r["score"] for r in merged], .4))
+            with patch.object(core, "predict_logits", side_effect=AssertionError("no repeat inference")):
+                self.assertEqual(_evaluate_clean(rows, root, "test", cp, args), result)
 
     def test_single_function_inference_requires_only_source(self):
         with tempfile.TemporaryDirectory() as tmp:

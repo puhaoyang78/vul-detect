@@ -44,23 +44,35 @@
         "samples": 0,
         "positive": 0,
         "negative": 0
-      },
-      "megavul": {
-        "samples": 172,
-        "positive": 161,
-        "negative": 11
       }
     },
     "excluded": {
-      "samples": 172,
-      "positive": 161,
-      "negative": 11
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
     },
     "evaluated": {
-      "samples": 926,
-      "positive": 388,
-      "negative": 538
+      "samples": 1098,
+      "positive": 549,
+      "negative": 549
     },
-    "policy": "keep all positives in data lists; exclude exact raw-source overlap with either actual training set only from Test evaluation; shared in-domain/transfer cohort"
+    "with_valid": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "policy": "retain all positives in data lists; exclude own Train exact overlap from Valid, and own Train/Valid exact overlap from Test evaluation; no cross-dataset filtering"
+  },
+  "valid_exact_overlap": {
+    "excluded": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 1186,
+      "positive": 593,
+      "negative": 593
+    }
   }
 }

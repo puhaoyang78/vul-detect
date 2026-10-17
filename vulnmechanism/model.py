@@ -197,10 +197,48 @@ def auxiliary_mode(model):
             module.training = flag
 
 
+class CSD(nn.Module):
+    """Algorithm 1 of Piratla et al. (ICML 2020), with two label classes.
+
+    Each class has a common vector and rank domain-specific basis vectors.
+    Biases use the same decomposition; the orthonormality penalty covers weights.
+    """
+
+    def __init__(self, hidden_size, domains, rank=1):
+        super().__init__()
+        if not 1 <= rank < domains:
+            raise ValueError("CSD requires 1 <= rank < number of training projects")
+        self.common = nn.Linear(hidden_size, 2)
+        self.specific_weight = nn.Parameter(torch.empty(rank, 2, hidden_size))
+        self.specific_bias = nn.Parameter(torch.empty(rank, 2))
+        self.coefficients = nn.Embedding(domains, rank)
+        for parameter in (self.common.weight, self.common.bias,
+                          self.specific_weight, self.specific_bias):
+            nn.init.normal_(parameter, std=0.1)
+        nn.init.normal_(self.coefficients.weight, std=1e-4)
+
+    def forward(self, features, project_ids=None):
+        common = self.common(features)
+        common_margin = common[:, 1] - common[:, 0]
+        if project_ids is None:
+            return common_margin
+        coefficients = self.coefficients(project_ids)
+        residual = torch.einsum("br,rch,bh->bc", coefficients, self.specific_weight, features)
+        residual = residual + coefficients @ self.specific_bias
+        specific = common + residual
+        return common_margin, specific[:, 1] - specific[:, 0]
+
+    def orthonormality(self):
+        weights = torch.cat((self.common.weight.unsqueeze(0), self.specific_weight), dim=0)
+        gram = torch.einsum("rch,sch->crs", weights, weights)
+        identity = torch.eye(len(weights), device=weights.device, dtype=weights.dtype)
+        return (gram - identity).square().sum()
+
+
 class CodeBERT(nn.Module):
     """The shared pretrained encoder and fresh linear classification head."""
 
-    def __init__(self, model_path, device, *, gradient_checkpointing=False):
+    def __init__(self, model_path, device, *, gradient_checkpointing=False, csd=None):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(
             model_path, dtype=torch.float32, add_pooling_layer=False
@@ -210,9 +248,11 @@ class CodeBERT(nn.Module):
             self.encoder.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": False}
             )
-        self.task_modules = nn.ModuleDict(
-            {"classifier": nn.Linear(self.encoder.config.hidden_size, 1)}
-        )
+        hidden_size = self.encoder.config.hidden_size
+        self.task_modules = nn.ModuleDict({"classifier": (
+            CSD(hidden_size, len(csd["projects"]), csd["rank"])
+            if csd is not None else nn.Linear(hidden_size, 1)
+        )})
         self.to(device)
 
     def forward(
@@ -225,6 +265,7 @@ class CodeBERT(nn.Module):
         *,
         embedding_delta=None,
         force_fp32=False,
+        project_ids=None,
     ):
         with torch.autocast(
             input_ids.device.type,
@@ -260,6 +301,10 @@ class CodeBERT(nn.Module):
             dtype=torch.float64 if force_fp32 else torch.float32,
         )
         head = self.task_modules["classifier"]
+        if isinstance(head, CSD):
+            return head(pooled.to(head.common.weight.dtype), project_ids)
+        if project_ids is not None:
+            raise ValueError("project IDs are only used by the CSD training head")
         if force_fp32:
             return torch.nn.functional.linear(
                 pooled, head.weight.double(), head.bias.double()
@@ -283,7 +328,7 @@ def predict_logits(model, records, builder, *, device, batch_size=4):
 
 
 def load_model(checkpoint, device, *, model_path=None):
-    model = CodeBERT(model_path or checkpoint["model_path"], device)
+    model = CodeBERT(model_path or checkpoint["model_path"], device, csd=checkpoint.get("csd"))
     model.load_state_dict(checkpoint["state_dict"], strict=True)
     return model.eval()
 

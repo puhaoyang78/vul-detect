@@ -67,6 +67,90 @@ def tiny_base(path):
 
 
 class CodeBERTTests(unittest.TestCase):
+    def test_csd_decomposition_cross_entropy_and_orthonormality(self):
+        head = core.CSD(3, domains=2)
+        with torch.no_grad():
+            head.common.weight.copy_(torch.tensor([[1., 0., 0.], [0., 1., 0.]]))
+            head.common.bias.zero_()
+            head.specific_weight.copy_(torch.tensor([[[0., 1., 0.], [1., 0., 0.]]]))
+            head.specific_bias.zero_()
+            head.coefficients.weight.copy_(torch.tensor([[.2], [-.3]]))
+        features = torch.tensor([[1., 2., 3.], [-1., 1., 2.]], requires_grad=True)
+        domains, labels = torch.tensor([0, 1]), torch.tensor([0, 1])
+        common, specific = head(features, domains)
+        full_common = features @ head.common.weight.T
+        full_specific = torch.stack([
+            features[i] @ (head.common.weight + head.coefficients.weight[d, 0] * head.specific_weight[0]).T
+            for i, d in enumerate(domains)
+        ])
+        torch.testing.assert_close(common, full_common[:, 1] - full_common[:, 0])
+        torch.testing.assert_close(specific, full_specific[:, 1] - full_specific[:, 0])
+        self.assertEqual(float(head.orthonormality().detach()), 0.)
+        bce = torch.nn.functional.binary_cross_entropy_with_logits
+        ce = torch.nn.functional.cross_entropy
+        torch.testing.assert_close(bce(specific, labels.float()), ce(full_specific, labels))
+        with torch.no_grad():
+            head.common.weight[0, 0] = 1.1
+        expected = sum(
+            ((torch.stack((head.common.weight[y], head.specific_weight[0, y])) @
+              torch.stack((head.common.weight[y], head.specific_weight[0, y])).T - torch.eye(2)) ** 2).sum()
+            for y in range(2)
+        )
+        torch.testing.assert_close(head.orthonormality(), expected)
+        common, specific = head(features, domains)
+        loss = bce(common, labels.float()) + bce(specific, labels.float()) + head.orthonormality()
+        loss.backward()
+        for parameter in head.parameters():
+            self.assertIsNotNone(parameter.grad)
+            self.assertGreater(float(parameter.grad.abs().sum()), 0.)
+        self.assertGreater(float(features.grad.abs().sum()), 0.)
+
+    def test_csd_trains_both_sources_and_infers_common_head_only(self):
+        torch.set_num_threads(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = tiny_base(root / "encoder")
+            for dataset in ("primevul", "secvuleval"):
+                rows = [dict(sample_key=str(i), dataset=dataset, split="train", label=i % 2,
+                             project=f"p{i // 2}", raw_source=f"int f{i}(){{return {i};}}") for i in range(4)]
+                write_jsonl(root / "data" / dataset / "train.jsonl", rows)
+                write_jsonl(root / "data" / dataset / "valid.jsonl", [
+                    dict(rows[i], sample_key=f"v{i}", split="valid", project="VALID_ONLY") for i in (0, 1)
+                ])
+                write_jsonl(root / "data" / dataset / "test.jsonl", [dict(raw_source="FORBIDDEN_HELDOUT")])
+                with patch.object(core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()), redirect_stdout(io.StringIO()):
+                    summary = train(root / "data", root / "runs", str(root / "encoder"), dataset,
+                                    "csd", device="cpu", config=dict(TRAINING, batch_size=2))
+                    self.assertEqual(summary["completed_epochs"], 3)
+                    self.assertEqual(summary["optimizer_steps"], 3)
+                    self.assertEqual(summary["csd"]["projects"], ["p0", "p1"])
+                    self.assertIsNone(summary["augmentation"])
+                    self.assertIsNone(summary["vat"])
+                    target = root / "runs" / dataset / "csd/best.pt"
+                    cp = torch.load(target, map_location="cpu", weights_only=False)
+                    self.assertFalse(torch.equal(cp["state_dict"]["encoder.embeddings.word_embeddings.weight"],
+                                                 base.embeddings.word_embeddings.weight))
+                    model = core.load_model(cp, torch.device("cpu"))
+                    builder = core.InputBuilder(CodeTokenizer())
+                    expected = core.predict_logits(model, rows, builder, device="cpu")
+                    actual = core.predict_checkpoint(target, rows, device="cpu")
+                    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+                    head = model.task_modules["classifier"]
+                    with torch.no_grad():
+                        head.specific_weight.fill_(100.)
+                        head.specific_bias.fill_(100.)
+                        head.coefficients.weight.fill_(100.)
+                    torch.testing.assert_close(core.predict_logits(model, rows, builder, device="cpu"),
+                                               expected, rtol=0, atol=0)
+                    model.train()
+                    outputs = model(*builder.codebert_batch(rows, device="cpu"), project_ids=torch.tensor([0, 0, 1, 1]))
+                    (outputs[0].square().mean() + outputs[1].square().mean()).backward()
+                    self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.norm()), 0.)
+                    records = [json.loads(line) for line in target.with_suffix(".training.jsonl").read_text().splitlines()]
+                    epochs = [r for r in records if r["event"] == "epoch"]
+                    self.assertEqual(len(epochs), 3)
+                    self.assertTrue(all(set(r["csd_losses"]) == {"common_loss", "specific_loss", "orthonormality"} for r in epochs))
+
     def test_window_coverage_and_function_normalization(self):
         builder = core.InputBuilder(CodeTokenizer())
         records = [dict(raw_source="a" * 31), dict(raw_source="abcd" * 800)]

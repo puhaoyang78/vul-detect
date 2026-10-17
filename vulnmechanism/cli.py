@@ -27,15 +27,16 @@ def build_parser():
         if command in ("train", "candidates"):
             p.add_argument("--model", default="microsoft/codebert-base")
         if command in ("train", "evaluate"):
-            p.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
+            p.add_argument("--methods", nargs="+", choices=(*METHODS, "csd"), default=list(METHODS))
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
-    p = sub.add_parser("transfer", help="bidirectional Clean BCE transfer with fixed checkpoints and thresholds")
+    p = sub.add_parser("transfer", help="bidirectional Clean transfer with source-selected checkpoints and thresholds")
     p.add_argument("--datasets", nargs=2, choices=DATASETS, required=True)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--device", default="auto")
+    p.add_argument("--methods", nargs="+", choices=("bce", "csd"), default=["bce"])
     p = sub.add_parser("report", help="summarize the saved PrimeVul/MegaVul six-method experiment")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -102,7 +103,7 @@ def main():
         from .evaluation import evaluate_transfer
 
         print(json.dumps(evaluate_transfer(
-            args.data_dir, args.output_dir, args.datasets, device=args.device
+            args.data_dir, args.output_dir, args.datasets, methods=args.methods, device=args.device
         ), indent=2))
     elif args.command == "report":
         from .evaluation import report

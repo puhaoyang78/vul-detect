@@ -1,4 +1,4 @@
-"""One fresh full-CodeBERT training loop for the six comparison methods."""
+"""One fresh full-CodeBERT training loop for BCE, CSD and source-view baselines."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def train(
 ):
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
-    if method not in METHODS:
+    if method not in (*METHODS, "csd"):
         raise ValueError(f"unknown method: {method}")
     config = dict(TRAINING if config is None else config)
     if (
@@ -98,7 +98,7 @@ def train(
             raise ValueError(f"{split}: both classes required")
         if any(r["dataset"] != dataset or r["split"] != split for r in rows):
             raise ValueError(f"training and selection require {dataset} {split}")
-    source_views = method not in ("bce", "vat")
+    source_views = method not in ("bce", "vat", "csd")
     use_vat = method in ("vat", "random_aug_vat", "hard_aug_vat")
     search = method in ("hard_aug_bce", "hard_aug_vat")
     if source_views and materials is None:
@@ -110,7 +110,18 @@ def train(
         AutoTokenizer.from_pretrained(model_path),
         source_max_length=config["source_max_length"],
     )
-    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda")
+    csd = None
+    project_ids = {}
+    if method == "csd":
+        projects = sorted({r["project"] for r in train_rows})
+        if any(not p for p in projects):
+            raise ValueError("CSD training requires nonempty project IDs")
+        project_ids = {project: i for i, project in enumerate(projects)}
+        csd = dict(rank=1, common_loss_weight=1.0, orthonormality_weight=1.0,
+                   projects=projects, inference="common classifier only",
+                   objective="mean(specific CE + common CE) + sum_y ||W_y W_y^T - I||_F^2",
+                   reference="https://proceedings.mlr.press/v119/piratla20a.html")
+    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda", csd=csd)
     seed_everything(seed)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config["learning_rate"], weight_decay=config["weight_decay"]
@@ -141,6 +152,7 @@ def train(
             pooling="mean over unique source positions; prefix/BOS/EOS averaged across windows",
         ),
         vat=VAT_CONFIG if use_vat else None,
+        csd=csd,
         augmentation=(
             dict(
                 search=search,
@@ -169,6 +181,7 @@ def train(
         running, vat_total, transformed, queries, original_queries = 0.0, 0.0, 0, 0, 0
         vat_eligible, vat_zero, vat_norm_min, vat_norm_max = 0, 0, None, None
         search_seconds = 0.0
+        csd_totals = dict(common_loss=0.0, specific_loss=0.0, orthonormality=0.0)
         steps = 0
         num_batches = math.ceil(len(order) / batch_size)
         bar = training_bar(
@@ -239,15 +252,31 @@ def train(
                         )
             batch_loss = 0.0
             for forwarded, weights in function_view_batches(batch, views, batch_size):
-                logits = model(*builder.codebert_batch(forwarded, device=device))
+                domains = (
+                    torch.tensor([project_ids[r["project"]] for r in forwarded], device=device)
+                    if csd is not None else None
+                )
+                outputs = model(*builder.codebert_batch(forwarded, device=device), project_ids=domains)
+                logits = outputs[0] if csd is not None else outputs
                 labels = logits.new_tensor([r["label"] for r in forwarded])
                 terms = torch.nn.functional.binary_cross_entropy_with_logits(
                     logits, labels, reduction="none"
                 )
+                if csd is not None:
+                    specific = torch.nn.functional.binary_cross_entropy_with_logits(
+                        outputs[1], labels, reduction="none"
+                    )
+                    orthonormality = model.task_modules["classifier"].orthonormality()
+                    csd_totals["common_loss"] += float(terms.detach().sum())
+                    csd_totals["specific_loss"] += float(specific.detach().sum())
+                    csd_totals["orthonormality"] += float(orthonormality.detach()) * len(forwarded)
+                    # A two-class CE is exactly BCE on logit[1] - logit[0].
+                    # Broadcasting R gives it weight one per effective optimizer batch.
+                    terms = specific + csd["common_loss_weight"] * terms + csd["orthonormality_weight"] * orthonormality
                 loss = (terms * terms.new_tensor(weights)).sum()
                 if not torch.isfinite(loss):
                     raise ValueError(
-                        f"nonfinite BCE: {method} epoch {epoch}, batch {batch_index}"
+                        f"nonfinite classification loss: {method} epoch {epoch}, batch {batch_index}"
                     )
                 (loss / group_samples).backward()
                 batch_loss += float(loss.detach())
@@ -334,6 +363,7 @@ def train(
                 vat_norm_min=vat_norm_min,
                 vat_norm_max=vat_norm_max,
                 epoch_seconds=time.monotonic() - started,
+                csd_losses={k: v / len(train_rows) for k, v in csd_totals.items()} if csd else None,
             )
         )
         key = tuple(

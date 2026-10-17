@@ -1,4 +1,4 @@
-"""Test robustness, fixed-checkpoint BCE transfer and saved experiment reports."""
+"""Test robustness, fixed-checkpoint transfer and saved experiment reports."""
 
 from __future__ import annotations
 from argparse import Namespace
@@ -16,24 +16,38 @@ from .training import METHODS, prepare_materials
 def _evaluate_clean(rows, run, name, checkpoint, args):
     output = run / f"{name}.metrics.json"
     predictions = run / f"{name}.predictions.jsonl"
-    if output.exists():
-        cached = read_jsonl(predictions)
-        if [(r["sample_key"], r["label"]) for r in cached] != [
-            (r["sample_key"], r["label"]) for r in rows
-        ]:
-            raise ValueError("cached evaluation members differ")
-        return json.loads(output.read_text())
-    device = core.resolve_device(args.device)
-    builder = core.InputBuilder(
-        core.AutoTokenizer.from_pretrained(args.model),
-        source_max_length=checkpoint["source_max_length"],
-    )
-    model = core.load_model(checkpoint, device, model_path=args.model)
-    logits = core.predict_logits(
-        model, rows, builder, device=device, batch_size=args.batch_size
-    )
-    scores = logits.sigmoid().tolist()
     threshold = checkpoint["decision_threshold"]
+    by_key = {}
+    if output.exists():
+        previous = json.loads(output.read_text())
+        if previous["selected_epoch"] != checkpoint["selected_epoch"]:
+            raise ValueError("cached evaluation checkpoint selection differs")
+        cached = read_jsonl(predictions)
+        labels = {r["sample_key"]: r["label"] for r in rows}
+        by_key = {r["sample_key"]: r for r in cached}
+        if len(by_key) != len(cached) or any(
+            r["sample_key"] not in labels or labels[r["sample_key"]] != r["label"]
+            or r["threshold"] != threshold for r in cached
+        ):
+            raise ValueError("cached evaluation members, labels or threshold differ")
+    missing = [r for r in rows if r["sample_key"] not in by_key]
+    if missing:
+        print(f"{run.name}/{name}: reuse {len(by_key)}, predict {len(missing)} members", flush=True)
+        device = core.resolve_device(args.device)
+        builder = core.InputBuilder(
+            core.AutoTokenizer.from_pretrained(args.model),
+            source_max_length=checkpoint["source_max_length"],
+        )
+        model = core.load_model(checkpoint, device, model_path=args.model)
+        logits = core.predict_logits(model, missing, builder, device=device, batch_size=args.batch_size)
+        for row, logit, score in zip(missing, logits, logits.sigmoid().tolist()):
+            by_key[row["sample_key"]] = dict(
+                sample_key=row["sample_key"], label=row["label"], logit=float(logit), score=score,
+                prediction=int(score >= decision_boundary(threshold)), threshold=threshold,
+            )
+    ordered = [by_key[r["sample_key"]] for r in rows]
+    scores = [r["score"] for r in ordered]
+    logits = torch.tensor([r["logit"] for r in ordered], dtype=torch.float32)
     result = dict(
         selected_epoch=checkpoint["selected_epoch"],
         dataset=rows[0]["dataset"],
@@ -45,20 +59,7 @@ def _evaluate_clean(rows, run, name, checkpoint, args):
             )
         ),
     )
-    write_jsonl(
-        predictions,
-        (
-            dict(
-                sample_key=r["sample_key"],
-                label=r["label"],
-                logit=float(z),
-                score=p,
-                prediction=int(p >= decision_boundary(threshold)),
-                threshold=threshold,
-            )
-            for r, z, p in zip(rows, logits, scores)
-        ),
-    )
+    write_jsonl(predictions, ordered)
     write_json(output, result)
     return result
 
@@ -513,10 +514,12 @@ def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", r
         del checkpoint
 
 
-def evaluate_transfer(data_dir, output_dir, datasets, *, device="auto"):
-    """Compare two fixed BCE models on shared full and exact-overlap-free Test cohorts."""
+def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), device="auto"):
+    """Compare fixed source models on identical full and exact-overlap-free Test cohorts."""
     if len(datasets) != 2 or len(set(datasets)) != 2 or any(d not in DATASETS for d in datasets):
         raise ValueError("two distinct supported datasets required")
+    if not methods or len(set(methods)) != len(methods) or any(m not in ("bce", "csd") for m in methods):
+        raise ValueError("distinct BCE/CSD methods required")
     datasets = tuple(sorted(datasets))
     root = Path(output_dir) / ("transfer_" + "_".join(datasets))
     root.mkdir(parents=True, exist_ok=True)
@@ -558,19 +561,19 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, device="auto"):
             writer.writerows(members)
     core.seed_everything(42)
     scores, training = {}, {}
-    for source in datasets:
-        run = Path(output_dir) / source / "bce"
-        training[source] = json.loads((run / "training.metrics.json").read_text())
+    for source, method in ((source, method) for source in datasets for method in methods):
+        run = Path(output_dir) / source / method
+        training.setdefault(source, {})[method] = json.loads((run / "training.metrics.json").read_text())
         checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
-        if checkpoint["dataset"] != source or checkpoint["method"] != "bce":
-            raise ValueError("source BCE checkpoint required")
+        if checkpoint["dataset"] != source or checkpoint["method"] != method:
+            raise ValueError("checkpoint source dataset/method differs")
         args = Namespace(
             model=checkpoint["model_path"], device=device,
             batch_size=checkpoint["training_config"]["batch_size"],
         )
         for target in datasets:
             name = "test" if source == target else f"{target}.test"
-            print(f"Fixed BCE: {source} -> {target}, {len(tests[target])} Test samples", flush=True)
+            print(f"Fixed {method}: {source} -> {target}, {len(tests[target])} Test samples", flush=True)
             result = _evaluate_clean(tests[target], run, name, checkpoint, args)
             predictions = read_jsonl(run / f"{name}.predictions.jsonl")
             threshold = checkpoint["decision_threshold"]
@@ -583,7 +586,7 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, device="auto"):
             )
             if recomputed != result["metrics"]:
                 raise ValueError("cached transfer metrics differ")
-            scores[source, target] = (
+            scores[method, source, target] = (
                 {r["sample_key"]: r["score"] for r in predictions}, threshold,
             )
         del checkpoint
@@ -591,37 +594,40 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, device="auto"):
     metric_names = ("accuracy", "f1", "mcc", "auc", "auprc")
     for view, members in (("established", tests), ("independent", independent)):
         values = {}
-        for source in datasets:
+        for method, source in ((method, source) for method in methods for source in datasets):
             for target in datasets:
-                by_key, threshold = scores[source, target]
+                by_key, threshold = scores[method, source, target]
                 rows = members[target]
-                values[source, target] = metrics(
+                values[method, source, target] = metrics(
                     [r["label"] for r in rows], [by_key[r["sample_key"]] for r in rows], threshold
                 )
-        for (source, target), value in values.items():
+        for (method, source, target), value in values.items():
             results.append(dict(
-                view=view, training_dataset=source, test_dataset=target, method="bce",
-                selected_epoch=training[source]["selected_epoch"], threshold=value["threshold"],
+                view=view, training_dataset=source, test_dataset=target, method=method,
+                selected_epoch=training[source][method]["selected_epoch"], threshold=value["threshold"],
                 **class_counts(members[target]), **{k: value[k] for k in metric_names},
                 **{k: value[k] for k in ("tp", "tn", "fp", "fn")},
-                **{f"delta_source_{k}": value[k] - values[source, source][k] for k in metric_names},
-                **{f"delta_target_{k}": value[k] - values[target, target][k] for k in metric_names},
+                **{f"delta_source_{k}": value[k] - values[method, source, source][k] for k in metric_names},
+                **{f"delta_target_{k}": value[k] - values[method, target, target][k] for k in metric_names},
+                **{f"delta_bce_{k}": value[k] - values["bce", source, target][k]
+                   if "bce" in methods else None for k in metric_names},
             ))
     write_json(root / "results.json", dict(
         cohorts=cohorts, training=training, results=results,
         protocol=dict(
-            seed=42, method="saved CodeBERT BCE; source-Valid checkpoint and threshold fixed",
-            established="reuse each existing evaluated Test cohort without changes",
-            independent="exclude exact raw-source overlap with either actual Train or model-selection Valid; same target members for both models; no resampling",
+            seed=42, methods=list(methods), selection="source-Valid checkpoint and threshold fixed; CSD uses only its common classifier",
+            established="full original balanced Test members, without resampling; exclude own Train/Valid exact overlap only",
+            independent="exclude exact raw-source overlap with either of these two datasets' actual Train or model-selection Valid; same target members for all models; no other datasets, project/CVE or near-duplicate filtering; no resampling",
             delta_source="target Test metric minus the same model's own Test metric",
-            delta_target="transfer metric minus target-trained BCE on exactly the same target Test",
+            delta_target="transfer metric minus the same method trained on the target dataset, on exactly the same target Test",
+            delta_bce="method metric minus BCE with the same source checkpoint dataset and target Test members",
         ),
     ))
     with (root / "comparison.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(results)
-    return dict(datasets=list(datasets), models=2, rows=len(results), output=str(root))
+    return dict(datasets=list(datasets), models=2 * len(methods), rows=len(results), output=str(root))
 
 
 def report(output_dir, data_dir):
