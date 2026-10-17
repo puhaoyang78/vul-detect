@@ -35,7 +35,7 @@ def build_parser():
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p = sub.add_parser("motivation", help="four-dataset ordinary-BCE and Shortcut Features diagnostics")
-    p.add_argument("stage", choices=("features", "report"))
+    p.add_argument("stage", choices=("features", "report", "tfidf", "tfidf-report"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--dataset", choices=(*DATASETS, "all"), default="all")
@@ -98,13 +98,18 @@ def main():
 
         print(json.dumps(report(args.output_dir, args.data_dir), indent=2))
     elif args.command == "motivation":
-        from .motivation import feature_experiment, motivation_report
+        from .motivation import feature_experiment, motivation_report, tfidf_experiment, tfidf_report
 
         if args.stage == "features":
             for dataset in datasets:
                 feature_experiment(args.data_dir, args.output_dir, dataset, args.model)
-        else:
+        elif args.stage == "report":
             print(json.dumps(motivation_report(args.data_dir, args.output_dir, datasets), indent=2))
+        else:
+            if args.stage == "tfidf":
+                for dataset in datasets:
+                    tfidf_experiment(args.data_dir, args.output_dir, dataset)
+            print(json.dumps(tfidf_report(args.output_dir, datasets), indent=2))
     elif args.command == "infer":
         from .metrics import decision_boundary
         from .model import predict_checkpoint

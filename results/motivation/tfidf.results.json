@@ -1,0 +1,956 @@
+{
+  "experiments": {
+    "primevul": {
+      "dataset": "primevul",
+      "seed": 42,
+      "protocol": {
+        "seed": 42,
+        "tokenizer": "syntax.source_token_spans; comments/whitespace omitted; spelling retained",
+        "vectorizer": {
+          "ngram_range": [
+            1,
+            2
+          ],
+          "min_df": 2,
+          "max_features": 100000,
+          "lowercase": false,
+          "token_pattern": null,
+          "sublinear_tf": true,
+          "norm": "l2",
+          "smooth_idf": true
+        },
+        "classifier": {
+          "solver": "liblinear",
+          "C_values": [
+            0.01,
+            0.1,
+            1.0,
+            10.0,
+            100.0
+          ],
+          "max_iter": 2000,
+          "tol": 0.0001
+        },
+        "selection": "Train-only vocabulary, IDF and LR; Valid AUC selects C (smaller C ties); Valid selects threshold",
+        "matching": {
+          "bins": 50,
+          "edges": [
+            0.0,
+            0.02,
+            0.04,
+            0.06,
+            0.08,
+            0.1,
+            0.12,
+            0.14,
+            0.16,
+            0.18,
+            0.2,
+            0.22,
+            0.24,
+            0.26,
+            0.28,
+            0.3,
+            0.32,
+            0.34,
+            0.36,
+            0.38,
+            0.4,
+            0.42,
+            0.44,
+            0.46,
+            0.48,
+            0.5,
+            0.52,
+            0.54,
+            0.56,
+            0.58,
+            0.6,
+            0.62,
+            0.64,
+            0.66,
+            0.68,
+            0.7,
+            0.72,
+            0.74,
+            0.76,
+            0.78,
+            0.8,
+            0.82,
+            0.84,
+            0.86,
+            0.88,
+            0.9,
+            0.92,
+            0.94,
+            0.96,
+            0.98,
+            1.0
+          ],
+          "intervals": "[left, right), except final bin includes 1; index=min(int(score*50),49)",
+          "sampling": "sorted strata, labels 0 then 1; random.Random(42), min(class counts), without replacement; original source order",
+          "joint": "exact integer total lines crossed with score bin",
+          "joint_min_samples": 200,
+          "selection_inputs": "labels, total lines and TF-IDF probabilities only; no BCE predictions"
+        },
+        "interpretation": "Control observed Test shortcut association; does not identify internal model reliance or causal contributions",
+        "environment": {
+          "sklearn": "1.8.0",
+          "numpy": "2.4.0"
+        }
+      },
+      "members": {
+        "train": 9724,
+        "valid": 1186,
+        "test": 926
+      },
+      "vocabulary": 100000,
+      "selected_C": 1.0,
+      "candidates": [
+        {
+          "C": 0.01,
+          "valid_auc": 0.7988221209217146,
+          "iterations": 4
+        },
+        {
+          "C": 0.1,
+          "valid_auc": 0.8209834238118123,
+          "iterations": 4
+        },
+        {
+          "C": 1.0,
+          "valid_auc": 0.8412934488652037,
+          "iterations": 5
+        },
+        {
+          "C": 10.0,
+          "valid_auc": 0.8341755557388191,
+          "iterations": 6
+        },
+        {
+          "C": 100.0,
+          "valid_auc": 0.8176704611700872,
+          "iterations": 7
+        }
+      ],
+      "valid": {
+        "accuracy": 0.7613827993254637,
+        "precision": 0.7849264705882353,
+        "recall": 0.7200674536256324,
+        "f1": 0.751099384344767,
+        "mcc": 0.5245594676940994,
+        "auc": 0.8412934488652037,
+        "auprc": 0.8409114188782888,
+        "tp": 427,
+        "tn": 476,
+        "fp": 117,
+        "fn": 166,
+        "confusion_matrix": [
+          [
+            476,
+            117
+          ],
+          [
+            166,
+            427
+          ]
+        ],
+        "samples": 1186,
+        "threshold": 0.54
+      },
+      "test": {
+        "accuracy": 0.7840172786177105,
+        "precision": 0.719626168224299,
+        "recall": 0.7938144329896907,
+        "f1": 0.7549019607843137,
+        "mcc": 0.5648441302104913,
+        "auc": 0.8650787567546852,
+        "auprc": 0.7959483811744499,
+        "tp": 308,
+        "tn": 418,
+        "fp": 120,
+        "fn": 80,
+        "confusion_matrix": [
+          [
+            418,
+            120
+          ],
+          [
+            80,
+            308
+          ]
+        ],
+        "samples": 926,
+        "threshold": 0.54
+      },
+      "comparisons": [
+        {
+          "dataset": "primevul",
+          "subset": "original",
+          "status": "evaluated",
+          "samples": 926,
+          "positive": 388,
+          "negative": 538,
+          "positive_fraction": 0.4190064794816415,
+          "length_auc": 0.8348215996627448,
+          "tfidf_auc": 0.8650787567546852,
+          "bce_auc": 0.8662859770819759,
+          "tfidf_score_ks": 0.5984746866975817
+        },
+        {
+          "dataset": "primevul",
+          "subset": "length_matched",
+          "status": "evaluated",
+          "samples": 318,
+          "positive": 159,
+          "negative": 159,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5,
+          "tfidf_auc": 0.6433685376369606,
+          "bce_auc": 0.6555911554131562,
+          "tfidf_score_ks": 0.270440251572327
+        },
+        {
+          "dataset": "primevul",
+          "subset": "tfidf_matched",
+          "status": "evaluated",
+          "samples": 366,
+          "positive": 183,
+          "negative": 183,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5425214249455045,
+          "tfidf_auc": 0.4994475798023231,
+          "bce_auc": 0.5874167637134582,
+          "tfidf_score_ks": 0.02732240437158473
+        },
+        {
+          "dataset": "primevul",
+          "subset": "joint_matched",
+          "status": "skipped_insufficient_samples",
+          "samples": 48,
+          "positive": 24,
+          "negative": 24,
+          "positive_fraction": 0.5,
+          "length_auc": null,
+          "tfidf_auc": null,
+          "bce_auc": null,
+          "tfidf_score_ks": null
+        }
+      ]
+    },
+    "megavul": {
+      "dataset": "megavul",
+      "seed": 42,
+      "protocol": {
+        "seed": 42,
+        "tokenizer": "syntax.source_token_spans; comments/whitespace omitted; spelling retained",
+        "vectorizer": {
+          "ngram_range": [
+            1,
+            2
+          ],
+          "min_df": 2,
+          "max_features": 100000,
+          "lowercase": false,
+          "token_pattern": null,
+          "sublinear_tf": true,
+          "norm": "l2",
+          "smooth_idf": true
+        },
+        "classifier": {
+          "solver": "liblinear",
+          "C_values": [
+            0.01,
+            0.1,
+            1.0,
+            10.0,
+            100.0
+          ],
+          "max_iter": 2000,
+          "tol": 0.0001
+        },
+        "selection": "Train-only vocabulary, IDF and LR; Valid AUC selects C (smaller C ties); Valid selects threshold",
+        "matching": {
+          "bins": 50,
+          "edges": [
+            0.0,
+            0.02,
+            0.04,
+            0.06,
+            0.08,
+            0.1,
+            0.12,
+            0.14,
+            0.16,
+            0.18,
+            0.2,
+            0.22,
+            0.24,
+            0.26,
+            0.28,
+            0.3,
+            0.32,
+            0.34,
+            0.36,
+            0.38,
+            0.4,
+            0.42,
+            0.44,
+            0.46,
+            0.48,
+            0.5,
+            0.52,
+            0.54,
+            0.56,
+            0.58,
+            0.6,
+            0.62,
+            0.64,
+            0.66,
+            0.68,
+            0.7,
+            0.72,
+            0.74,
+            0.76,
+            0.78,
+            0.8,
+            0.82,
+            0.84,
+            0.86,
+            0.88,
+            0.9,
+            0.92,
+            0.94,
+            0.96,
+            0.98,
+            1.0
+          ],
+          "intervals": "[left, right), except final bin includes 1; index=min(int(score*50),49)",
+          "sampling": "sorted strata, labels 0 then 1; random.Random(42), min(class counts), without replacement; original source order",
+          "joint": "exact integer total lines crossed with score bin",
+          "joint_min_samples": 200,
+          "selection_inputs": "labels, total lines and TF-IDF probabilities only; no BCE predictions"
+        },
+        "interpretation": "Control observed Test shortcut association; does not identify internal model reliance or causal contributions",
+        "environment": {
+          "sklearn": "1.8.0",
+          "numpy": "2.4.0"
+        }
+      },
+      "members": {
+        "train": 28760,
+        "valid": 3594,
+        "test": 3472
+      },
+      "vocabulary": 100000,
+      "selected_C": 1.0,
+      "candidates": [
+        {
+          "C": 0.01,
+          "valid_auc": 0.7820425992866984,
+          "iterations": 4
+        },
+        {
+          "C": 0.1,
+          "valid_auc": 0.7989445712556853,
+          "iterations": 4
+        },
+        {
+          "C": 1.0,
+          "valid_auc": 0.8057239404448582,
+          "iterations": 5
+        },
+        {
+          "C": 10.0,
+          "valid_auc": 0.7875681010427011,
+          "iterations": 6
+        },
+        {
+          "C": 100.0,
+          "valid_auc": 0.7552558536780989,
+          "iterations": 7
+        }
+      ],
+      "valid": {
+        "accuracy": 0.7359488035614914,
+        "precision": 0.7912087912087912,
+        "recall": 0.6410684474123539,
+        "f1": 0.7082692898862589,
+        "mcc": 0.48063048605006836,
+        "auc": 0.8057239404448582,
+        "auprc": 0.8177067146383743,
+        "tp": 1152,
+        "tn": 1493,
+        "fp": 304,
+        "fn": 645,
+        "confusion_matrix": [
+          [
+            1493,
+            304
+          ],
+          [
+            645,
+            1152
+          ]
+        ],
+        "samples": 3594,
+        "threshold": 0.59
+      },
+      "test": {
+        "accuracy": 0.6952764976958525,
+        "precision": 0.7538586515028433,
+        "recall": 0.5513963161021984,
+        "f1": 0.6369251887439945,
+        "mcc": 0.3991098221517119,
+        "auc": 0.7745451755579004,
+        "auprc": 0.774016291528949,
+        "tp": 928,
+        "tn": 1486,
+        "fp": 303,
+        "fn": 755,
+        "confusion_matrix": [
+          [
+            1486,
+            303
+          ],
+          [
+            755,
+            928
+          ]
+        ],
+        "samples": 3472,
+        "threshold": 0.59
+      },
+      "comparisons": [
+        {
+          "dataset": "megavul",
+          "subset": "original",
+          "status": "evaluated",
+          "samples": 3472,
+          "positive": 1683,
+          "negative": 1789,
+          "positive_fraction": 0.48473502304147464,
+          "length_auc": 0.7740433300884424,
+          "tfidf_auc": 0.7745451755579004,
+          "bce_auc": 0.7990622032643536,
+          "tfidf_score_ks": 0.40125218913894806
+        },
+        {
+          "dataset": "megavul",
+          "subset": "length_matched",
+          "status": "evaluated",
+          "samples": 1988,
+          "positive": 994,
+          "negative": 994,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5,
+          "tfidf_auc": 0.5755529150759688,
+          "bce_auc": 0.6007402564279034,
+          "tfidf_score_ks": 0.13078470824949695
+        },
+        {
+          "dataset": "megavul",
+          "subset": "tfidf_matched",
+          "status": "evaluated",
+          "samples": 2068,
+          "positive": 1034,
+          "negative": 1034,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5692630448690368,
+          "tfidf_auc": 0.5001010142579755,
+          "bce_auc": 0.6022666477109047,
+          "tfidf_score_ks": 0.010638297872340441
+        },
+        {
+          "dataset": "megavul",
+          "subset": "joint_matched",
+          "status": "evaluated",
+          "samples": 930,
+          "positive": 465,
+          "negative": 465,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5,
+          "tfidf_auc": 0.5000161868424096,
+          "bce_auc": 0.5736848190542259,
+          "tfidf_score_ks": 0.017204301075268824
+        }
+      ]
+    },
+    "bigvul": {
+      "dataset": "bigvul",
+      "seed": 42,
+      "protocol": {
+        "seed": 42,
+        "tokenizer": "syntax.source_token_spans; comments/whitespace omitted; spelling retained",
+        "vectorizer": {
+          "ngram_range": [
+            1,
+            2
+          ],
+          "min_df": 2,
+          "max_features": 100000,
+          "lowercase": false,
+          "token_pattern": null,
+          "sublinear_tf": true,
+          "norm": "l2",
+          "smooth_idf": true
+        },
+        "classifier": {
+          "solver": "liblinear",
+          "C_values": [
+            0.01,
+            0.1,
+            1.0,
+            10.0,
+            100.0
+          ],
+          "max_iter": 2000,
+          "tol": 0.0001
+        },
+        "selection": "Train-only vocabulary, IDF and LR; Valid AUC selects C (smaller C ties); Valid selects threshold",
+        "matching": {
+          "bins": 50,
+          "edges": [
+            0.0,
+            0.02,
+            0.04,
+            0.06,
+            0.08,
+            0.1,
+            0.12,
+            0.14,
+            0.16,
+            0.18,
+            0.2,
+            0.22,
+            0.24,
+            0.26,
+            0.28,
+            0.3,
+            0.32,
+            0.34,
+            0.36,
+            0.38,
+            0.4,
+            0.42,
+            0.44,
+            0.46,
+            0.48,
+            0.5,
+            0.52,
+            0.54,
+            0.56,
+            0.58,
+            0.6,
+            0.62,
+            0.64,
+            0.66,
+            0.68,
+            0.7,
+            0.72,
+            0.74,
+            0.76,
+            0.78,
+            0.8,
+            0.82,
+            0.84,
+            0.86,
+            0.88,
+            0.9,
+            0.92,
+            0.94,
+            0.96,
+            0.98,
+            1.0
+          ],
+          "intervals": "[left, right), except final bin includes 1; index=min(int(score*50),49)",
+          "sampling": "sorted strata, labels 0 then 1; random.Random(42), min(class counts), without replacement; original source order",
+          "joint": "exact integer total lines crossed with score bin",
+          "joint_min_samples": 200,
+          "selection_inputs": "labels, total lines and TF-IDF probabilities only; no BCE predictions"
+        },
+        "interpretation": "Control observed Test shortcut association; does not identify internal model reliance or causal contributions",
+        "environment": {
+          "sklearn": "1.8.0",
+          "numpy": "2.4.0"
+        }
+      },
+      "members": {
+        "train": 17440,
+        "valid": 2180,
+        "test": 2180
+      },
+      "vocabulary": 100000,
+      "selected_C": 0.1,
+      "candidates": [
+        {
+          "C": 0.01,
+          "valid_auc": 0.7505950677552394,
+          "iterations": 3
+        },
+        {
+          "C": 0.1,
+          "valid_auc": 0.7534374210925006,
+          "iterations": 4
+        },
+        {
+          "C": 1.0,
+          "valid_auc": 0.743820385489437,
+          "iterations": 5
+        },
+        {
+          "C": 10.0,
+          "valid_auc": 0.725396010436832,
+          "iterations": 6
+        },
+        {
+          "C": 100.0,
+          "valid_auc": 0.7053000589175995,
+          "iterations": 7
+        }
+      ],
+      "valid": {
+        "accuracy": 0.6931192660550459,
+        "precision": 0.6650980392156862,
+        "recall": 0.7779816513761468,
+        "f1": 0.717124735729387,
+        "mcc": 0.3919247715327562,
+        "auc": 0.7534374210925006,
+        "auprc": 0.7386157267393079,
+        "tp": 848,
+        "tn": 663,
+        "fp": 427,
+        "fn": 242,
+        "confusion_matrix": [
+          [
+            663,
+            427
+          ],
+          [
+            242,
+            848
+          ]
+        ],
+        "samples": 2180,
+        "threshold": 0.5
+      },
+      "test": {
+        "accuracy": 0.6380733944954129,
+        "precision": 0.6014834794335806,
+        "recall": 0.818348623853211,
+        "f1": 0.6933540614069181,
+        "mcc": 0.2960598610876262,
+        "auc": 0.7209645652722835,
+        "auprc": 0.7207146100598947,
+        "tp": 892,
+        "tn": 499,
+        "fp": 591,
+        "fn": 198,
+        "confusion_matrix": [
+          [
+            499,
+            591
+          ],
+          [
+            198,
+            892
+          ]
+        ],
+        "samples": 2180,
+        "threshold": 0.5
+      },
+      "comparisons": [
+        {
+          "dataset": "bigvul",
+          "subset": "original",
+          "status": "evaluated",
+          "samples": 2180,
+          "positive": 1090,
+          "negative": 1090,
+          "positive_fraction": 0.5,
+          "length_auc": 0.7270183486238533,
+          "tfidf_auc": 0.7209645652722835,
+          "bce_auc": 0.9213340627893275,
+          "tfidf_score_ks": 0.3201834862385321
+        },
+        {
+          "dataset": "bigvul",
+          "subset": "length_matched",
+          "status": "evaluated",
+          "samples": 1304,
+          "positive": 652,
+          "negative": 652,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5,
+          "tfidf_auc": 0.5350725940005269,
+          "bce_auc": 0.8895023335466146,
+          "tfidf_score_ks": 0.07515337423312879
+        },
+        {
+          "dataset": "bigvul",
+          "subset": "tfidf_matched",
+          "status": "evaluated",
+          "samples": 1502,
+          "positive": 751,
+          "negative": 751,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5487685305522508,
+          "tfidf_auc": 0.4996125893393806,
+          "bce_auc": 0.8939824574779123,
+          "tfidf_score_ks": 0.017310252996005304
+        },
+        {
+          "dataset": "bigvul",
+          "subset": "joint_matched",
+          "status": "evaluated",
+          "samples": 712,
+          "positive": 356,
+          "negative": 356,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5,
+          "tfidf_auc": 0.49805501199343516,
+          "bce_auc": 0.8700684888271684,
+          "tfidf_score_ks": 0.0196629213483146
+        }
+      ]
+    },
+    "secvuleval": {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "protocol": {
+        "seed": 42,
+        "tokenizer": "syntax.source_token_spans; comments/whitespace omitted; spelling retained",
+        "vectorizer": {
+          "ngram_range": [
+            1,
+            2
+          ],
+          "min_df": 2,
+          "max_features": 100000,
+          "lowercase": false,
+          "token_pattern": null,
+          "sublinear_tf": true,
+          "norm": "l2",
+          "smooth_idf": true
+        },
+        "classifier": {
+          "solver": "liblinear",
+          "C_values": [
+            0.01,
+            0.1,
+            1.0,
+            10.0,
+            100.0
+          ],
+          "max_iter": 2000,
+          "tol": 0.0001
+        },
+        "selection": "Train-only vocabulary, IDF and LR; Valid AUC selects C (smaller C ties); Valid selects threshold",
+        "matching": {
+          "bins": 50,
+          "edges": [
+            0.0,
+            0.02,
+            0.04,
+            0.06,
+            0.08,
+            0.1,
+            0.12,
+            0.14,
+            0.16,
+            0.18,
+            0.2,
+            0.22,
+            0.24,
+            0.26,
+            0.28,
+            0.3,
+            0.32,
+            0.34,
+            0.36,
+            0.38,
+            0.4,
+            0.42,
+            0.44,
+            0.46,
+            0.48,
+            0.5,
+            0.52,
+            0.54,
+            0.56,
+            0.58,
+            0.6,
+            0.62,
+            0.64,
+            0.66,
+            0.68,
+            0.7,
+            0.72,
+            0.74,
+            0.76,
+            0.78,
+            0.8,
+            0.82,
+            0.84,
+            0.86,
+            0.88,
+            0.9,
+            0.92,
+            0.94,
+            0.96,
+            0.98,
+            1.0
+          ],
+          "intervals": "[left, right), except final bin includes 1; index=min(int(score*50),49)",
+          "sampling": "sorted strata, labels 0 then 1; random.Random(42), min(class counts), without replacement; original source order",
+          "joint": "exact integer total lines crossed with score bin",
+          "joint_min_samples": 200,
+          "selection_inputs": "labels, total lines and TF-IDF probabilities only; no BCE predictions"
+        },
+        "interpretation": "Control observed Test shortcut association; does not identify internal model reliance or causal contributions",
+        "environment": {
+          "sklearn": "1.8.0",
+          "numpy": "2.4.0"
+        }
+      },
+      "members": {
+        "train": 17596,
+        "valid": 2198,
+        "test": 2202
+      },
+      "vocabulary": 100000,
+      "selected_C": 1.0,
+      "candidates": [
+        {
+          "C": 0.01,
+          "valid_auc": 0.5103469031736189,
+          "iterations": 3
+        },
+        {
+          "C": 0.1,
+          "valid_auc": 0.5295263872111382,
+          "iterations": 4
+        },
+        {
+          "C": 1.0,
+          "valid_auc": 0.5397582052010224,
+          "iterations": 5
+        },
+        {
+          "C": 10.0,
+          "valid_auc": 0.5365556908795406,
+          "iterations": 6
+        },
+        {
+          "C": 100.0,
+          "valid_auc": 0.529311947911949,
+          "iterations": 7
+        }
+      ],
+      "valid": {
+        "accuracy": 0.5059144676979072,
+        "precision": 0.5029830197338229,
+        "recall": 0.997270245677889,
+        "f1": 0.6687004270896888,
+        "mcc": 0.06389074271112086,
+        "auc": 0.5397582052010224,
+        "auprc": 0.5383219330492922,
+        "tp": 1096,
+        "tn": 16,
+        "fp": 1083,
+        "fn": 3,
+        "confusion_matrix": [
+          [
+            16,
+            1083
+          ],
+          [
+            3,
+            1096
+          ]
+        ],
+        "samples": 2198,
+        "threshold": 0.28
+      },
+      "test": {
+        "accuracy": 0.5013623978201635,
+        "precision": 0.5006852444038373,
+        "recall": 0.9954586739327884,
+        "f1": 0.6662613981762917,
+        "mcc": 0.01778388731197258,
+        "auc": 0.561420506995127,
+        "auprc": 0.5543579304785713,
+        "tp": 1096,
+        "tn": 8,
+        "fp": 1093,
+        "fn": 5,
+        "confusion_matrix": [
+          [
+            8,
+            1093
+          ],
+          [
+            5,
+            1096
+          ]
+        ],
+        "samples": 2202,
+        "threshold": 0.28
+      },
+      "comparisons": [
+        {
+          "dataset": "secvuleval",
+          "subset": "original",
+          "status": "evaluated",
+          "samples": 2202,
+          "positive": 1101,
+          "negative": 1101,
+          "positive_fraction": 0.5,
+          "length_auc": 0.4788112697481688,
+          "tfidf_auc": 0.561420506995127,
+          "bce_auc": 0.5762823162165351,
+          "tfidf_score_ks": 0.10626702997275206
+        },
+        {
+          "dataset": "secvuleval",
+          "subset": "length_matched",
+          "status": "evaluated",
+          "samples": 1612,
+          "positive": 806,
+          "negative": 806,
+          "positive_fraction": 0.5,
+          "length_auc": 0.49999999999999994,
+          "tfidf_auc": 0.5536746732016082,
+          "bce_auc": 0.5589052946573158,
+          "tfidf_score_ks": 0.1042183622828784
+        },
+        {
+          "dataset": "secvuleval",
+          "subset": "tfidf_matched",
+          "status": "evaluated",
+          "samples": 1976,
+          "positive": 988,
+          "negative": 988,
+          "positive_fraction": 0.5,
+          "length_auc": 0.48985139487616575,
+          "tfidf_auc": 0.5011678604796013,
+          "bce_auc": 0.5621204453441295,
+          "tfidf_score_ks": 0.014170040485829927
+        },
+        {
+          "dataset": "secvuleval",
+          "subset": "joint_matched",
+          "status": "evaluated",
+          "samples": 798,
+          "positive": 399,
+          "negative": 399,
+          "positive_fraction": 0.5,
+          "length_auc": 0.5,
+          "tfidf_auc": 0.501746220187059,
+          "bce_auc": 0.5318465336273014,
+          "tfidf_score_ks": 0.02756892230576441
+        }
+      ]
+    }
+  }
+}

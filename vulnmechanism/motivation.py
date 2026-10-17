@@ -10,6 +10,9 @@ import random
 
 import joblib
 import numpy as np
+import sklearn
+from scipy.stats import ks_2samp
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import make_pipeline
@@ -18,7 +21,16 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from .artifacts import write_json
 from .data import read_jsonl, test_rows, validation_rows, write_jsonl
 from .metrics import metrics, select_threshold
-from .syntax import parser_for, resolve_language, walk, text
+from .syntax import parser_for, resolve_language, source_token_spans, walk, text
+
+LR_C_VALUES = (.01, .1, 1., 10., 100.)
+TFIDF_CONFIG = dict(
+    ngram_range=(1, 2), min_df=2, max_features=100_000,
+    lowercase=False, token_pattern=None, sublinear_tf=True,
+    norm="l2", smooth_idf=True,
+)
+SCORE_BINS = 50
+JOINT_MIN_SAMPLES = 200
 
 FEATURES = (
     "total_lines", "code_lines", "codebert_tokens", "characters",
@@ -177,7 +189,7 @@ def feature_experiment(data_dir, output_dir, dataset, model_path):
             ))
     write_table(root / f"{dataset}.feature_statistics.csv", statistics)
     candidates, best, best_key = [], None, None
-    for c in (.01, .1, 1., 10., 100.):
+    for c in LR_C_VALUES:
         pipeline = make_pipeline(
             FunctionTransformer(np.log1p), StandardScaler(),
             LogisticRegression(C=c, max_iter=2000, random_state=42),
@@ -222,6 +234,192 @@ def feature_experiment(data_dir, output_dir, dataset, model_path):
         flush=True,
     )
     return result
+
+
+def code_tokens(source):
+    """Reuse C/C++ lexical tokens; preserve spelling, literals and operators."""
+    return [token for token, _, _ in source_token_spans(source)]
+
+
+def match_tfidf(rows, scores, *, joint=False, seed=42):
+    """Balance labels within fixed score bins, optionally crossed with exact lines."""
+    if len(rows) != len(scores) or any(
+        not np.isfinite(s) or not 0 <= s <= 1 for s in scores
+    ):
+        raise ValueError("one finite TF-IDF probability per sample required")
+    groups = defaultdict(lambda: {0: [], 1: []})
+    for row, score in zip(rows, scores):
+        length = len(row["raw_source"].splitlines()) if joint else 0
+        score_bin = min(int(score * SCORE_BINS), SCORE_BINS - 1)
+        groups[length, score_bin][row["label"]].append(row["sample_key"])
+    rng = random.Random(seed)
+    selected = set()
+    for key in sorted(groups):
+        n = min(len(groups[key][0]), len(groups[key][1]))
+        for label in (0, 1):
+            selected.update(rng.sample(groups[key][label], n))
+    return [r for r in rows if r["sample_key"] in selected]
+
+
+def tfidf_experiment(data_dir, output_dir, dataset):
+    """Fit the lexical baseline and compare saved BCE on prespecified Test subsets."""
+    root = Path(output_dir) / "motivation"
+    root.mkdir(parents=True, exist_ok=True)
+    protocol = dict(
+        seed=42, tokenizer="syntax.source_token_spans; comments/whitespace omitted; spelling retained",
+        vectorizer=TFIDF_CONFIG,
+        classifier=dict(solver="liblinear", C_values=LR_C_VALUES, max_iter=2000, tol=1e-4),
+        selection=(
+            "Train-only vocabulary, IDF and LR; Valid AUC selects C (smaller C ties); "
+            "Valid selects threshold"
+        ),
+        matching=dict(
+            bins=SCORE_BINS, edges=[i / SCORE_BINS for i in range(SCORE_BINS + 1)],
+            intervals="[left, right), except final bin includes 1; index=min(int(score*50),49)",
+            sampling=(
+                "sorted strata, labels 0 then 1; random.Random(42), min(class counts), "
+                "without replacement; original source order"
+            ),
+            joint="exact integer total lines crossed with score bin",
+            joint_min_samples=JOINT_MIN_SAMPLES,
+            selection_inputs="labels, total lines and TF-IDF probabilities only; no BCE predictions",
+        ),
+        interpretation=(
+            "Control observed Test shortcut association; does not identify internal "
+            "model reliance or causal contributions"
+        ),
+        environment=dict(sklearn=sklearn.__version__, numpy=np.__version__),
+    )
+    write_json(root / "tfidf.protocol.json", protocol)
+    data = Path(data_dir) / dataset
+    rows = {
+        "train": read_jsonl(data / "train.jsonl"),
+        "valid": validation_rows(data), "test": test_rows(data),
+    }
+    labels = {s: [r["label"] for r in values] for s, values in rows.items()}
+    vectorizer = TfidfVectorizer(tokenizer=code_tokens, **TFIDF_CONFIG)
+    print(f"{dataset}: fit Train-only TF-IDF on {len(rows['train'])} functions", flush=True)
+    train_features = vectorizer.fit_transform(r["raw_source"] for r in rows["train"])
+    valid_features = vectorizer.transform(r["raw_source"] for r in rows["valid"])
+    source_token_spans.cache_clear()
+    candidates, best, best_key = [], None, None
+    for c in LR_C_VALUES:
+        classifier = LogisticRegression(
+            C=c, solver="liblinear", max_iter=2000, tol=1e-4, random_state=42,
+        )
+        classifier.fit(train_features, labels["train"])
+        probabilities = classifier.predict_proba(valid_features)[:, 1].tolist()
+        auc = float(roc_auc_score(labels["valid"], probabilities))
+        candidates.append(dict(C=c, valid_auc=auc, iterations=int(classifier.n_iter_.max())))
+        print(f"{dataset}: TF-IDF C={c:g}, Valid AUC={auc:.6f}", flush=True)
+        if best_key is None or (auc, -c) > best_key:
+            best_key, best = (auc, -c), (c, classifier, probabilities)
+    c, classifier, probabilities = best
+    threshold, valid_metrics = select_threshold(labels["valid"], probabilities)
+    test_features = vectorizer.transform(r["raw_source"] for r in rows["test"])
+    source_token_spans.cache_clear()
+    scores = classifier.predict_proba(test_features)[:, 1].tolist()
+    for split, values in (("valid", probabilities), ("test", scores)):
+        write_jsonl(
+            root / f"{dataset}.tfidf.{split}.predictions.jsonl",
+            (dict(sample_key=r["sample_key"], label=r["label"], score=s, threshold=threshold)
+             for r, s in zip(rows[split], values)),
+        )
+    joblib.dump(make_pipeline(vectorizer, classifier), root / f"{dataset}.tfidf.joblib")
+    test = rows["test"]
+    score_by_key = dict(zip((r["sample_key"] for r in test), scores))
+    subsets = dict(
+        original=test,
+        length_matched=length_members(
+            test, Path(output_dir) / "length_matched" / f"{dataset}.members.csv"
+        ),
+        tfidf_matched=match_tfidf(test, scores),
+        joint_matched=match_tfidf(test, scores, joint=True),
+    )
+    # Save the selected members before reading any CodeBERT predictions.
+    for subset in ("tfidf_matched", "joint_matched"):
+        members = subsets[subset]
+        if not members or (subset == "joint_matched" and len(members) < JOINT_MIN_SAMPLES):
+            continue
+        write_table(Path(output_dir) / subset / f"{dataset}.members.csv", [dict(
+            sample_key=r["sample_key"], label=r["label"], project=r["project"],
+            function_lines=len(r["raw_source"].splitlines()),
+            tfidf_score=score_by_key[r["sample_key"]],
+            score_bin=min(int(score_by_key[r["sample_key"]] * SCORE_BINS), SCORE_BINS - 1),
+            source_file=r["source_file"], source_row=r["source_row"],
+        ) for r in members])
+    run = Path(output_dir) / dataset / "bce"
+    predictions = read_jsonl(run / "test.predictions.jsonl")
+    if [(r["sample_key"], r["label"]) for r in predictions] != [
+        (r["sample_key"], r["label"]) for r in test
+    ]:
+        raise ValueError(f"{dataset}: BCE prediction members differ")
+    original = json.loads((run / "test.metrics.json").read_text())["metrics"]
+    recomputed = metrics(
+        labels["test"], [r["score"] for r in predictions], original["threshold"]
+    )
+    if recomputed != original:
+        raise ValueError(f"{dataset}: saved BCE metrics differ")
+    bce = {r["sample_key"]: r["score"] for r in predictions}
+    comparisons = []
+    for subset, members in subsets.items():
+        y = [r["label"] for r in members]
+        skipped = not members or (
+            subset == "joint_matched" and len(members) < JOINT_MIN_SAMPLES
+        )
+        value = dict(
+            dataset=dataset, subset=subset,
+            status="skipped_insufficient_samples" if skipped else "evaluated",
+            samples=len(members), positive=sum(y), negative=len(y) - sum(y),
+            positive_fraction=sum(y) / len(y) if y else None,
+            length_auc=None, tfidf_auc=None, bce_auc=None, tfidf_score_ks=None,
+        )
+        if not skipped:
+            lexical_scores = [score_by_key[r["sample_key"]] for r in members]
+            value.update(
+                length_auc=float(roc_auc_score(
+                    y, [len(r["raw_source"].splitlines()) for r in members]
+                )),
+                tfidf_auc=float(roc_auc_score(y, lexical_scores)),
+                bce_auc=float(roc_auc_score(y, [bce[r["sample_key"]] for r in members])),
+                tfidf_score_ks=float(ks_2samp(
+                    [s for s, label in zip(lexical_scores, y) if label == 0],
+                    [s for s, label in zip(lexical_scores, y) if label == 1], method="asymp",
+                ).statistic),
+            )
+        comparisons.append(value)
+    result = dict(
+        dataset=dataset, seed=42, protocol=protocol,
+        members={s: len(values) for s, values in rows.items()},
+        vocabulary=len(vectorizer.vocabulary_), selected_C=c, candidates=candidates,
+        valid=valid_metrics, test=metrics(labels["test"], scores, threshold),
+        comparisons=comparisons,
+    )
+    write_json(root / f"{dataset}.tfidf.metrics.json", result)
+    print(f"{dataset}: TF-IDF Test AUC={result['test']['auc']:.6f}, C={c:g}", flush=True)
+    return result
+
+
+def tfidf_report(output_dir, datasets):
+    root = Path(output_dir) / "motivation"
+    experiments = {
+        d: json.loads((root / f"{d}.tfidf.metrics.json").read_text()) for d in datasets
+    }
+    classifiers, comparisons = [], []
+    for dataset, result in experiments.items():
+        original = result["comparisons"][0]
+        classifiers.append(dict(
+            dataset=dataset, selected_C=result["selected_C"], vocabulary=result["vocabulary"],
+            **{k: result["test"][k] for k in (
+                "samples", "threshold", "accuracy", "f1", "mcc", "auc"
+            )},
+            length_auc=original["length_auc"], bce_auc=original["bce_auc"],
+        ))
+        comparisons.extend(result["comparisons"])
+    write_table(root / "tfidf.csv", classifiers)
+    write_table(root / "shortcut_control.csv", comparisons)
+    write_json(root / "tfidf.results.json", dict(experiments=experiments))
+    return dict(datasets=len(experiments), classifiers=len(classifiers), subsets=len(comparisons))
 
 
 def motivation_report(data_dir, output_dir, datasets):

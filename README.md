@@ -19,9 +19,9 @@
 
 四库使用相同全参数 CodeBERT、3 Epoch、Seed 42、有效 batch 8 和下文的统一超参数。新增两库仅训练 `bce`，各自 Clean Valid 选 Epoch 和阈值。Fixed、Held-out、Adaptive 复用既有实现；严格语义保持作为主结果，函数名等输入压力测试单列。Worst-case 的分母包含完整 Test；ASR 分母是该类别中可扰动且 Clean 正确的样本，保存攻击成功数、分母及覆盖率。
 
-Shortcut Features 包括总行数、去除空白和注释后的代码行数、完整 CodeBERT Token 数、字符数、标识符次数/种类/平均长度、字面量/字符串/数值次数、注释数/行数/字节占比、分支数、循环数、最大控制嵌套深度及解析错误数。结构统计为 Tree-sitter 观察到的节点：分支计 `if/switch/case`，循环计 `for/range-for/while/do`。解析错误保留并计数，不将不完整树视为编译器验证的程序结构。逐样本特征 CSV、正负类分位数/中位数和原值单特征 AUC 均保存；低于 0.5 的单特征 AUC 表示反向关联。
+当前 Motivation 2 聚焦函数总行数和 TF-IDF 词法特征，协议及命令见下节。此前 17 项统计特征诊断保留原有结果，不再扩展人工统计特征：总行数、去除空白和注释后的代码行数、完整 CodeBERT Token 数、字符数、标识符次数/种类/平均长度、字面量/字符串/数值次数、注释数/行数/字节占比、分支数、循环数、最大控制嵌套深度及解析错误数。结构统计为 Tree-sitter 观察到的节点：分支计 `if/switch/case`，循环计 `for/range-for/while/do`。解析错误保留并计数，不将不完整树视为编译器验证的程序结构。逐样本特征 CSV、正负类分位数/中位数和原值单特征 AUC 均保存；低于 0.5 的单特征 AUC 表示反向关联。
 
-Logistic Regression 使用所有特征的 `log1p` 和仅在 Train 拟合的标准化。候选 `C={0.01,0.1,1,10,100}`，Valid AUC 选参，平局选较小 C；阈值沿用 Valid MCC/F1/Accuracy 网格。只在 Train 拟合，不合并 Train/Valid 重训。
+此前统计特征的 Logistic Regression 使用 `log1p` 和仅在 Train 拟合的标准化。候选 `C={0.01,0.1,1,10,100}`，Valid AUC 选参，平局选较小 C；阈值沿用 Valid MCC/F1/Accuracy 网格。只在 Train 拟合，不合并 Train/Valid 重训。
 
 长度匹配按各 Test 内的总行数逐值精确匹配，包含空行和注释。按行数升序、标签 0 再 1，每类以 `random.Random(42)` 抽取两类数量较小值，保留源码清单原顺序。先固定成员，再使用原 BCE 预测；既有 PrimeVul/MegaVul 匹配清单会检查并直接复用。匹配后行数基线 AUC 为 0.5。这是诊断子集，不能替代正式 Test；统计关联和匹配后的性能变化不直接证明因果依赖，也不预设所有 Shortcut Features 与漏洞无关。
 
@@ -84,6 +84,65 @@ Motivation 2 的 AUC 对比如下。匹配成员由行数和标签预先确定�
 完整比较见 [motivation2.csv](results/motivation/motivation2.csv)；17 个特征的正负类数量、分位数、中位数及单特征 AUC 见 [shortcut_features.csv](results/motivation/shortcut_features.csv)，LR 的完整 Test 指标见 [logistic.csv](results/motivation/logistic.csv)。
 
 PrimeVul/MegaVul 的长度及浅层特征与标签有较强统计关联，长度匹配后 BCE AUC 明显下降。BigVul 匹配后仍有 0.8895 AUC，说明总行数不能解释其全部区分能力；SecVulEval 的行数接近随机排序，浅层 LR 和 BCE 整体区分能力也较弱。因此，当前证据支持四库都存在扰动失稳，但不支持“四库都有同样强的长度相关性”。匹配改变了评价样本组成，不能据此计算模型依赖长度的因果比例。
+
+### Motivation 2：函数长度与 TF-IDF 词法特征
+
+四库复用当前 Train/Valid/Test 成员。TF-IDF 直接读取完整原函数，复用 `syntax.source_token_spans` 的 C/C++ 词法切分；保留大小写、标识符、字面量、运算符和标点，忽略空白和注释，不加入项目、CVE、标签或其他元数据。使用 unigram + bigram，`min_df=2`、最多 100,000 个特征、sublinear TF、平滑 IDF 和 L2 归一化。词表、文档频率和 IDF 均仅在 Train 拟合。
+
+分类器为 L2 Logistic Regression（`liblinear`，Seed 42，`max_iter=2000`）。Valid AUC 从 `C={0.01,0.1,1,10,100}` 中选择，平局取较小 C；阈值使用相同 Valid MCC/F1/Accuracy 网格。选参后保留 Train 拟合的模型，不合并 Train/Valid 重训。Test 报告 Accuracy、F1、MCC、AUC，并与总行数单特征和已有 CodeBERT BCE AUC 比较。
+
+匹配规则在实验前固定，四库完全相同：
+
+- 既有长度匹配清单只读复用，不改成员或历史指标。
+- TF-IDF 匹配固定为 50 个宽度 0.02 的预测概率区间，左闭右开，最后一区间包含 1。每个区间按标签 0、1 的顺序，用 `random.Random(42)` 无放回抽取两类数量的较小值，输出保留原 Test 顺序。
+- 联合匹配以“精确总行数 × TF-IDF 区间”为分层键，抽样规则相同；不足 200 条（每类 100 条）时跳过联合子集评价，记录候选样本量，不扩大区间或放宽行数条件。
+- 匹配清单在读取 BCE 预测前保存；选择仅使用标签、行数和 TF-IDF 分数。四种子集统一报告样本量、正负数量/比例、长度 AUC、TF-IDF AUC 和保存的 BCE AUC；另存 TF-IDF 两类分数的经验 KS 距离。
+
+区间内两类数量相等只保证分箱后的分布一致，连续分数仍可能保留区分能力。因此报告实际 TF-IDF AUC 和 KS，不将匹配自动视为成功。该诊断控制的是评价子集上可观察的捷径关联，不能证明模型内部不再依赖捷径，也不能将 AUC 变化解释为捷径的因果贡献。
+
+在已有四库数据和 BCE 预测上执行，整个新增实验仅训练 TF-IDF 分类器：
+
+```bash
+python -m vulnmechanism.cli motivation tfidf --dataset all
+# 仅从已保存 TF-IDF 结果重新生成总表，无需拟合或 CodeBERT 推理
+python -m vulnmechanism.cli motivation tfidf-report --dataset all
+```
+
+输出为 `results/motivation/tfidf.protocol.json`、各库 `*.tfidf.metrics.json`、四库统一分类表 `tfidf.csv`、子集比较表 `shortcut_control.csv` 及 `tfidf.results.json`。`results/tfidf_matched/`、`results/joint_matched/` 保存已评价子集的成员、原始记录位置、行数、TF-IDF 分数和区间编号；模型与 Valid/Test 预测保存在本地。
+
+四库 TF-IDF 分类器均已实际完成拟合与评价，结果见 [tfidf.csv](results/motivation/tfidf.csv)。所有词表均达到预设的 100,000 个特征上限；Valid 选出的 C 分别为 1、1、0.1、1，阈值分别为 0.54、0.59、0.50、0.28。
+
+| 数据集 | TF-IDF Accuracy | TF-IDF F1 | TF-IDF MCC | TF-IDF AUC | 总行数 AUC | BCE AUC |
+|---|---:|---:|---:|---:|---:|---:|
+| PrimeVul | 0.7840 | 0.7549 | 0.5648 | 0.8651 | 0.8348 | 0.8663 |
+| MegaVul | 0.6953 | 0.6369 | 0.3991 | 0.7745 | 0.7740 | 0.7991 |
+| BigVul | 0.6381 | 0.6934 | 0.2961 | 0.7210 | 0.7270 | 0.9213 |
+| SecVulEval | 0.5014 | 0.6663 | 0.0178 | 0.5614 | 0.4788 | 0.5763 |
+
+各子集的完整比较见 [shortcut_control.csv](results/motivation/shortcut_control.csv)。所有已评价匹配子集均正负各半；原始 Test 的类别数量沿用上文队列。
+
+| 数据集 | Test 子集 | 样本数（正/负） | 行数 AUC | TF-IDF AUC | BCE AUC |
+|---|---|---:|---:|---:|---:|
+| PrimeVul | 原始 | 926（388/538） | 0.8348 | 0.8651 | 0.8663 |
+| PrimeVul | 长度匹配 | 318（159/159） | 0.5000 | 0.6434 | 0.6556 |
+| PrimeVul | TF-IDF 匹配 | 366（183/183） | 0.5425 | 0.4994 | 0.5874 |
+| PrimeVul | 联合匹配 | 48（24/24） | 跳过 | 跳过 | 跳过 |
+| MegaVul | 原始 | 3472（1683/1789） | 0.7740 | 0.7745 | 0.7991 |
+| MegaVul | 长度匹配 | 1988（994/994） | 0.5000 | 0.5756 | 0.6007 |
+| MegaVul | TF-IDF 匹配 | 2068（1034/1034） | 0.5693 | 0.5001 | 0.6023 |
+| MegaVul | 联合匹配 | 930（465/465） | 0.5000 | 0.5000 | 0.5737 |
+| BigVul | 原始 | 2180（1090/1090） | 0.7270 | 0.7210 | 0.9213 |
+| BigVul | 长度匹配 | 1304（652/652） | 0.5000 | 0.5351 | 0.8895 |
+| BigVul | TF-IDF 匹配 | 1502（751/751） | 0.5488 | 0.4996 | 0.8940 |
+| BigVul | 联合匹配 | 712（356/356） | 0.5000 | 0.4981 | 0.8701 |
+| SecVulEval | 原始 | 2202（1101/1101） | 0.4788 | 0.5614 | 0.5763 |
+| SecVulEval | 长度匹配 | 1612（806/806） | 0.5000 | 0.5537 | 0.5589 |
+| SecVulEval | TF-IDF 匹配 | 1976（988/988） | 0.4899 | 0.5012 | 0.5621 |
+| SecVulEval | 联合匹配 | 798（399/399） | 0.5000 | 0.5017 | 0.5318 |
+
+TF-IDF 匹配后四库的 TF-IDF AUC 均接近 0.5，分数 KS 距离分别为 0.0273、0.0106、0.0173、0.0142，但行数关联并不都完全消失。联合匹配同时得到相同的正负类行数分布，三库 TF-IDF AUC 为 0.4981–0.5017。PrimeVul 联合匹配仅支持 48 条，按预设门槛跳过，未调整区间补样。
+
+PrimeVul 的 TF-IDF 分类性能接近 BCE；MegaVul、BigVul 的词法基线也高于随机排序，SecVulEval 则整体较弱。控制后的 BCE 结果存在数据集差异：BigVul 联合匹配仍为 0.8701，而 MegaVul、SecVulEval 分别为 0.5737、0.5318。这些结果描述的是不同固定评价子集上的判别能力，不能证明模型内部已消除捷径依赖或量化捷径的因果贡献。
 
 ## 已保留的 PrimeVul/MegaVul 数据
 
