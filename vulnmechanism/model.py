@@ -232,7 +232,7 @@ class CSD(nn.Module):
         weights = torch.cat((self.common.weight.unsqueeze(0), self.specific_weight), dim=0)
         gram = torch.einsum("rch,sch->crs", weights, weights)
         identity = torch.eye(len(weights), device=weights.device, dtype=weights.dtype)
-        return (gram - identity).square().sum()
+        return (gram - identity).square().mean()
 
 
 class CodeBERT(nn.Module):

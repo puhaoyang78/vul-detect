@@ -119,7 +119,8 @@ def train(
         project_ids = {project: i for i, project in enumerate(projects)}
         csd = dict(rank=1, common_loss_weight=1.0, orthonormality_weight=1.0,
                    projects=projects, inference="common classifier only",
-                   objective="mean(specific CE + common CE) + sum_y ||W_y W_y^T - I||_F^2",
+                   orthonormality_reduction="mean",
+                   objective="mean(specific CE + common CE) + mean((W_y W_y^T - I)^2)",
                    reference="https://proceedings.mlr.press/v119/piratla20a.html")
     model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda", csd=csd)
     seed_everything(seed)

@@ -31,6 +31,7 @@ class CSDDiagnosticTests(unittest.TestCase):
         stats = diagnostics.head_statistics(head)
         self.assertEqual(stats["orthonormality_sum"], 9.)
         self.assertEqual(stats["orthonormality_mean"], 9. / 8)
+        self.assertEqual(float(head.orthonormality().detach()), 9. / 8)
         projects = ["negative", "positive", "mixed"]
         labels = [0, 0, 1, 1, 0, 1]
         common = [-1., .1, -.1, 1., -1., 1.]
@@ -56,7 +57,7 @@ class CSDDiagnosticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             tiny_base(root / "base")
-            csd = dict(rank=1, projects=["p0", "p1"])
+            csd = dict(rank=1, projects=["p0", "p1"], orthonormality_reduction="mean")
             model = core.CodeBERT(str(root / "base"), "cpu", csd=csd)
             run = root / "results/primevul/csd"
             run.mkdir(parents=True)
@@ -87,8 +88,13 @@ class CSDDiagnosticTests(unittest.TestCase):
             saved = json.loads((root / "results/csd_diagnostics/primevul.json").read_text())
             self.assertEqual(saved["protocol"]["optimizer_updates"], 0)
             self.assertFalse(saved["protocol"]["target_data_read"])
+            self.assertEqual(saved["final_gradient_probe"]["regularizer_gradient_reduction"], "sum")
             self.assertEqual(saved["train"]["denominator"], 4)
             self.assertEqual(saved["project_composition"]["projects"], 2)
             self.assertEqual(saved["final_gradient_probe"]["head_regularizer_grad_norms"]["coefficients.weight"], 0.)
             self.assertEqual(saved["final_gradient_probe"]["head_regularizer_grad_norms"]["common.bias"], 0.)
             self.assertEqual(len(saved["epochs"]), 3)
+            self.assertEqual(saved["epochs"][0]["orthonormality_reduction"], "mean")
+            self.assertEqual(saved["epochs"][0]["orthonormality"], 8.)
+            self.assertEqual(saved["epochs"][0]["orthonormality_sum"], 64.)
+            self.assertEqual(saved["epochs"][0]["mean_at_same_parameters"], 8.)

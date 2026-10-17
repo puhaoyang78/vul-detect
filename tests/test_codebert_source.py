@@ -96,7 +96,10 @@ class CodeBERTTests(unittest.TestCase):
               torch.stack((head.common.weight[y], head.specific_weight[0, y])).T - torch.eye(2)) ** 2).sum()
             for y in range(2)
         )
-        torch.testing.assert_close(head.orthonormality(), expected)
+        torch.testing.assert_close(head.orthonormality(), expected / 8)
+        actual_gradient = torch.autograd.grad(head.orthonormality(), head.common.weight, retain_graph=True)[0]
+        sum_gradient = torch.autograd.grad(expected, head.common.weight, retain_graph=True)[0]
+        torch.testing.assert_close(actual_gradient, sum_gradient / 8)
         common, specific = head(features, domains)
         loss = bce(common, labels.float()) + bce(specific, labels.float()) + head.orthonormality()
         loss.backward()
@@ -124,6 +127,7 @@ class CodeBERTTests(unittest.TestCase):
                     self.assertEqual(summary["completed_epochs"], 3)
                     self.assertEqual(summary["optimizer_steps"], 3)
                     self.assertEqual(summary["csd"]["projects"], ["p0", "p1"])
+                    self.assertEqual(summary["csd"]["orthonormality_reduction"], "mean")
                     self.assertIsNone(summary["augmentation"])
                     self.assertIsNone(summary["vat"])
                     target = root / "runs" / dataset / "csd/best.pt"

@@ -1,6 +1,6 @@
 # Dynamic Hard Augmentation for Vulnerability Detection
 
-当前实验比较普通 CodeBERT BCE 与原始 CSD 在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
+当前实验比较普通 CodeBERT BCE 与 CSD（sum / mean 正则对照）在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
 
 ## 四数据集 Motivation
 
@@ -157,11 +157,11 @@ PrimeVul 已取消因 MegaVul Train 重叠产生的 172 条排除（161 正 / 11
 
 PrimeVul Test 与 SecVulEval Train / Valid 分别精确重叠 163 / 24 条；SecVulEval Test 与 PrimeVul Train / Valid 分别重叠 96 / 36 条。两库自己的 Test 与自己的 Train / Valid 均无精确重叠。排除按源码直接相等判定，保留未完全相同的漏洞与修复函数。
 
-### 原始 CSD
+### 原始 CSD（sum 对照）
 
 实现依据 [Piratla et al., ICML 2020 的 Algorithm 1](https://proceedings.mlr.press/v119/piratla20a.html)，并核对了[作者提供的代码](https://github.com/vihari/CSD)。只替换最终分类头，保留现有 CodeBERT 编码器、2048 逻辑输入、512 窗口及池化。每个标签的项目分类器满足 `w_p = w_c + U a_p`，bias 使用相同分解。训练项目 ID 仅来自源库实际 Train，PrimeVul / SecVulEval 分别为 602 / 303 个领域。
 
-固定 rank=1，采用论文默认 λ=κ=1：
+以下已保存的对照固定 rank=1，采用论文公式的求和正则，λ=κ=1；结果对应提交 [`479818a`](https://github.com/puhaoyang78/vul-detect/tree/479818a8560ad39f7b872474d9ee93e7dbc11d0d)。当前正式训练已将正则改为作者代码的 `mean`，其独立对照命令见下文。
 
 ```text
 L = mean(CE(project classifier, y) + λ CE(common classifier, y))
@@ -174,9 +174,7 @@ CSD 使用二类分类权重，传递 `logit[1] - logit[0]` 给现有二分类�
 两库 CSD 分别从同一预训练 CodeBERT 初始化：Seed 42、3 Epoch、micro batch 4、梯度累积 2、AdamW lr=1e-5、weight decay=0.01、gradient clip=1，与 BCE 一致。不使用源码增强或 VAT。仅自身 Clean Valid 按原有 MCC/F1/Accuracy/AUC 规则选 Epoch 和阈值。BCE 直接复用原有第 3 Epoch checkpoint（PrimeVul 阈值 0.40，SecVulEval 0.46），已有预测保留，仅补推两个 BCE 对恢复的 172 条 PrimeVul 成员的预测。
 
 ```bash
-MODEL=/path/to/codebert-base
-python -m vulnmechanism.cli train --dataset primevul --methods csd --model "$MODEL" --device cuda:0
-python -m vulnmechanism.cli train --dataset secvuleval --methods csd --model "$MODEL" --device cuda:1
+# 复用已保存的 sum checkpoint 与 BCE 预测
 python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods bce csd --device cuda:0
 python -m unittest discover -s tests -v
 ```
@@ -213,7 +211,37 @@ python -m vulnmechanism.cli csd-diagnostics report
 python -m unittest tests.test_csd_diagnostics -v
 ```
 
-完整证据见 [诊断报告](results/csd_diagnostics/report.md)，统一统计见 [summary.csv](results/csd_diagnostics/summary.csv) 和 [epochs.csv](results/csd_diagnostics/epochs.csv)。项目残差相对共享权重的范数中位数仅为 0.0724% / 0.0749%；Specific 相对 Common 的 Train AUC 仅提高 0.0000473 / 0.0001234。残差非零且与项目类别构成相关，但没有形成有实质分类增益的分解。当前 `sum` 在二分类、rank=1 下相对作者 `mean` 实现具有 8 倍有效正则权重，且原作者的共享系数门控也与当前论文公式版不同。报告仅建议下一步单独验证 `sum` → `mean`，本轮没有改动或重训。
+完整证据见 [诊断报告](results/csd_diagnostics/report.md)，统一统计见 [summary.csv](results/csd_diagnostics/summary.csv) 和 [epochs.csv](results/csd_diagnostics/epochs.csv)。项目残差相对共享权重的范数中位数仅为 0.0724% / 0.0749%；Specific 相对 Common 的 Train AUC 仅提高 0.0000473 / 0.0001234。残差非零且与项目类别构成相关，但没有形成有实质分类增益的分解。该 `sum` 对照在二分类、rank=1 下相对作者 `mean` 实现具有 8 倍有效正则权重，且原作者的共享系数门控也与当前论文公式版不同。该次诊断没有改动或重训，原始统计保留；随后仅验证 `sum` → `mean`，见下节。
+
+### CSD mean 正则对照
+
+正式实现的正则为 `mean((W_y W_y^T - I)^2)`，即对全部类别及 Gram 元素取均值。二分类、rank=1 时为原 `sum` 的 1/8；κ 仍为 1。其余数据成员、项目映射、初始化、rank、优化器、学习率、3 Epoch、有效 Batch 8、Seed 42 及自身 Clean Valid 选模规则均不变。直接使用同一个 `csd` 训练实现，通过现有 `--output-dir` 保存独立对照；旧权重和结果保留。
+
+```bash
+MODEL=/path/to/codebert-base
+python -m vulnmechanism.cli train --dataset primevul --methods csd --model "$MODEL" --output-dir results/csd_mean --device cuda:0
+python -m vulnmechanism.cli train --dataset secvuleval --methods csd --model "$MODEL" --output-dir results/csd_mean --device cuda:1
+python -m vulnmechanism.cli evaluate --dataset primevul --methods csd --clean-only --output-dir results/csd_mean --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset secvuleval --methods csd --clean-only --output-dir results/csd_mean --device cuda:1
+python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods csd --output-dir results/csd_mean --device cuda:0
+python -m vulnmechanism.cli csd-diagnostics run --output-dir results/csd_mean --device cuda:0
+python -m vulnmechanism.cli csd-diagnostics report --output-dir results/csd_mean
+```
+
+诊断继续显式报告同参数下的 sum/mean 两种梯度尺度，Epoch 表的 `orthonormality` 与 `orthonormality_reduction` 标识实际优化项，避免将 mean 日志误记成 sum。
+
+两个 mean CSD 均已从预训练模型完成 3 Epoch，共更新 3,648 / 6,600 次；各自 Valid 均选中第 3 Epoch，阈值为 0.44 / 0.50。在与 BCE/sum 完全相同的 911 / 2,070 条独立 Test 队列上：
+
+| 训练 → Test | BCE AUC | CSD sum AUC | CSD mean AUC |
+|---|---:|---:|---:|
+| PrimeVul → PrimeVul | 0.8450 | 0.8297 | 0.8395 |
+| PrimeVul → SecVulEval | 0.4672 | 0.4660 | 0.4679 |
+| SecVulEval → SecVulEval | 0.5800 | 0.5721 | 0.5618 |
+| SecVulEval → PrimeVul | 0.3376 | 0.4105 | 0.4531 |
+
+mean 相对 sum 的双向跨域 AUC 增加 0.001933 / 0.042590，但仍均低于 0.5；SecVulEval 域内 AUC 下降 0.010345。项目残差范数比例中位数反而从 0.0724% / 0.0749% 降至 0.0658% / 0.0654%，项目头 Train AUC 增益仅为 0.0000340 / 0.0002321。归约改变降低了正则压力，但没有解决项目残差过弱的问题。
+
+完整五项指标、混淆计数、配置及源 Train 诊断见 [mean 对照报告](results/csd_mean/report.md) 和 [24 行统一结果](results/csd_mean/comparison.csv)。SecVulEval Valid 额外逐位一致性检查发现约 10⁻⁶ 级 AUC 差异；固定 checkpoint 重推确认存在微小 Logit 波动，分类结果一致，未替换预测或重新选模，数值原样保存在报告及 `validation_repeatability.json`。
 
 ## 历史 PrimeVul/MegaVul 六方法实验
 

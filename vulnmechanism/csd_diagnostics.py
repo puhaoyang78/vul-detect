@@ -192,11 +192,12 @@ def gradient_probe(model, rows, builder, projects, device, batch_size):
     ce = {k: p.grad.detach().cpu().clone() if p.grad is not None else torch.zeros_like(p, device="cpu")
           for k, p in head.named_parameters()}
     model.zero_grad(set_to_none=True)
-    regularizer = head.orthonormality()
+    factor = head.common.out_features * (len(head.specific_weight) + 1) ** 2
+    # Keep both gradient scales explicit regardless of the fitted experiment.
+    regularizer = head.orthonormality() * factor
     regularizer.backward()
     reg = {k: p.grad.detach().cpu().clone() if p.grad is not None else torch.zeros_like(p, device="cpu")
            for k, p in head.named_parameters()}
-    factor = head.common.out_features * (len(head.specific_weight) + 1) ** 2
     norm = lambda parts: math.sqrt(sum(float(g.double().square().sum()) for g in parts))
     ce_head_norm, reg_norm = norm(ce.values()), norm(reg.values())
     ce_norm = math.sqrt(encoder_norm2 + ce_head_norm ** 2)
@@ -205,6 +206,7 @@ def gradient_probe(model, rows, builder, projects, device, batch_size):
     model.zero_grad(set_to_none=True)
     return dict(
         samples=len(rows), sample_keys=[r["sample_key"] for r in rows], mode="dropout off; no optimizer or parameter updates",
+        regularizer_gradient_reduction="sum",
         classification_encoder_grad_norm=math.sqrt(encoder_norm2), classification_head_grad_norm=ce_head_norm,
         classification_total_grad_norm=ce_norm, regularizer_sum_grad_norm=reg_norm,
         regularizer_mean_grad_norm=reg_norm / factor,
@@ -283,16 +285,20 @@ def diagnose(data_dir, output_dir, dataset, *, device="auto"):
         rows, predictions, model.task_modules["classifier"], projects, threshold)
     epochs = []
     factor = final["sum_to_mean_factor"]
+    reduction = checkpoint["csd"].get("orthonormality_reduction", "sum")
     for event in read_jsonl(run / "best.training.jsonl"):
         if event["event"] == "epoch":
             losses = event["csd_losses"]
             ce = losses["common_loss"] + losses["specific_loss"]
             reg = losses["orthonormality"]
+            reg_sum = reg * factor if reduction == "mean" else reg
+            reg_mean = reg_sum / factor
             epochs.append(dict(dataset=dataset, epoch=event["epoch"], common_ce=losses["common_loss"],
-                               specific_ce=losses["specific_loss"], orthonormality_sum=reg,
+                               specific_ce=losses["specific_loss"], orthonormality_reduction=reduction,
+                               orthonormality=reg, orthonormality_sum=reg_sum,
                                regularizer_over_combined_ce=reg / ce, regularizer_loss_fraction=reg / (reg + ce),
-                               mean_at_same_parameters=reg / factor,
-                               mean_regularizer_loss_fraction=(reg / factor) / (reg / factor + ce)))
+                               mean_at_same_parameters=reg_mean,
+                               mean_regularizer_loss_fraction=reg_mean / (reg_mean + ce)))
     result = dict(
         dataset=dataset, selected_epoch=checkpoint["selected_epoch"], threshold=threshold,
         protocol=dict(seed=SEED, cohort="all source Train members, Seed-42 shuffled inference; CSV retains source order",
