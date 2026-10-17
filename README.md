@@ -1,8 +1,93 @@
 # Dynamic Hard Augmentation for Vulnerability Detection
 
-使用相同的全参数 CodeBERT，对比动态困难源码增强及五组基线。两个数据集分别训练，研究自身 Test 上的鲁棒性，以及固定源模型、源阈值的双向跨库泛化。
+当前在 PrimeVul、MegaVul、BigVul、SecVulEval 上验证两个 Motivation：普通 CodeBERT BCE 对源码扰动的预测失稳，以及 Shortcut Features 与标签的统计关联。PrimeVul、MegaVul 复用已有权重和评价结果。仓库保留原有六方法实验及其结果。
 
-## 数据
+## 四数据集 Motivation
+
+新增上游为 [BigVul](https://github.com/ZeoVan/MSR_20_Code_vulnerability_CSV_Dataset) 和 [SecVulEval](https://huggingface.co/datasets/arag0rn/SecVulEval)。实际读取 `bigvul/MSR_data_cleaned.csv` 的 `func_before` / `vul` / `project`，以及 `SecVulEval/data/train-00000-of-00001.parquet` 的 `func_body` / `is_vulnerable` / `project_url`。SecVulEval 原始项目名存在同一仓库 URL 多名的情况，分组使用原生仓库 URL 去首尾空白、尾部斜杠并 casefold，避免 `tpm2-tools` / `tpm2.0-tools` 等跨 Split。漏洞和修复函数均按原生标签进入样本池，不做近重复聚类或标签冲突组删除。
+
+新增两库沿用 MegaVul 的 Seed 42 项目分组算法，尽量满足正例 80/10/10；每个 Split 保留所有正例，随机取等量负例。项目名去空白并 casefold，不跨 Split。仅在库内检查原始源码精确相等：Valid 选模排除 Train 重叠，Test 评价排除 Train/Valid 重叠；完整平衡清单仍保留原始正例，排除数量见 `statistics.json`。不执行跨数据集筛选或迁移评价。已有 PrimeVul、MegaVul 清单、历史精确重叠排除、checkpoint 和结果不重建。
+
+| 数据集 | Train | Valid | Test 平衡清单 | 实际 Test 评价 | 原始正例总数 |
+|---|---:|---:|---:|---:|---:|
+| PrimeVul | 9,724 | 1,186 | 1,098 | 926 | 6,004 |
+| MegaVul | 28,760 | 3,594 | 3,596 | 3,472 | 17,975 |
+| BigVul | 17,440 | 2,180 | 2,180 | 2,180 | 10,900 |
+| SecVulEval | 17,596 | 2,198 | 2,202 | 2,202 | 10,998 |
+
+新增两库均保留全部原始正例，实际检查未发现 Train/Valid/Test 之间的原始源码精确重叠。项目分配、平衡后成员和上游记录位置保存在各库 `projects.json`、`members.csv` 和 `statistics.json`。
+
+四库使用相同全参数 CodeBERT、3 Epoch、Seed 42、有效 batch 8 和下文的统一超参数。新增两库仅训练 `bce`，各自 Clean Valid 选 Epoch 和阈值。Fixed、Held-out、Adaptive 复用既有实现；严格语义保持作为主结果，函数名等输入压力测试单列。Worst-case 的分母包含完整 Test；ASR 分母是该类别中可扰动且 Clean 正确的样本，保存攻击成功数、分母及覆盖率。
+
+Shortcut Features 包括总行数、去除空白和注释后的代码行数、完整 CodeBERT Token 数、字符数、标识符次数/种类/平均长度、字面量/字符串/数值次数、注释数/行数/字节占比、分支数、循环数、最大控制嵌套深度及解析错误数。结构统计为 Tree-sitter 观察到的节点：分支计 `if/switch/case`，循环计 `for/range-for/while/do`。解析错误保留并计数，不将不完整树视为编译器验证的程序结构。逐样本特征 CSV、正负类分位数/中位数和原值单特征 AUC 均保存；低于 0.5 的单特征 AUC 表示反向关联。
+
+Logistic Regression 使用所有特征的 `log1p` 和仅在 Train 拟合的标准化。候选 `C={0.01,0.1,1,10,100}`，Valid AUC 选参，平局选较小 C；阈值沿用 Valid MCC/F1/Accuracy 网格。只在 Train 拟合，不合并 Train/Valid 重训。
+
+长度匹配按各 Test 内的总行数逐值精确匹配，包含空行和注释。按行数升序、标签 0 再 1，每类以 `random.Random(42)` 抽取两类数量较小值，保留源码清单原顺序。先固定成员，再使用原 BCE 预测；既有 PrimeVul/MegaVul 匹配清单会检查并直接复用。匹配后行数基线 AUC 为 0.5。这是诊断子集，不能替代正式 Test；统计关联和匹配后的性能变化不直接证明因果依赖，也不预设所有 Shortcut Features 与漏洞无关。
+
+在已有 PrimeVul/MegaVul 数据和结果的工作目录执行：
+
+```bash
+RAW=/path/to/raw
+MODEL=/path/to/codebert-base
+python -m vulnmechanism.cli prepare --raw-root "$RAW" --datasets bigvul secvuleval
+python -m vulnmechanism.cli motivation features --dataset all --model "$MODEL"
+python -m vulnmechanism.cli train --dataset bigvul --methods bce --model "$MODEL" --device cuda:0
+python -m vulnmechanism.cli train --dataset secvuleval --methods bce --model "$MODEL" --device cuda:1
+python -m vulnmechanism.cli evaluate --dataset bigvul --methods bce --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset secvuleval --methods bce --device cuda:1
+python -m vulnmechanism.cli motivation report --dataset all
+python -m unittest discover -s tests -v
+```
+
+输出在 `results/motivation/`：`clean.csv`、`motivation1.csv`、`motivation2.csv`、`shortcut_features.csv`、`logistic.csv`、`length_matched.csv`、`results.json`。各库另存特征表、LR 参数/模型/预测。`results/length_matched/` 保存固定匹配成员。所有评价均为库内实验；汇总只读取现有模型预测及鲁棒性结果，不重新推理已完成的 PrimeVul/MegaVul 实验。本轮不绘图。
+
+### 实际结果（Seed 42）
+
+BigVul、SecVulEval 的 BCE 均从同一预训练 CodeBERT 实际完成 3 Epoch，分别完成 6,540、6,600 次优化器更新，两者均由各自 Valid 选中第 3 Epoch，阈值分别为 0.10、0.46。PrimeVul、MegaVul 直接复用原有 BCE。四库 Clean Test 结果见 [clean.csv](results/motivation/clean.csv)：
+
+| 数据集 | Accuracy | F1 | MCC | AUC | AUPRC |
+|---|---:|---:|---:|---:|---:|
+| PrimeVul | 0.7948 | 0.7716 | 0.5913 | 0.8663 | 0.7936 |
+| MegaVul | 0.7128 | 0.6730 | 0.4292 | 0.7991 | 0.7970 |
+| BigVul | 0.8844 | 0.8821 | 0.7694 | 0.9213 | 0.9410 |
+| SecVulEval | 0.5454 | 0.6413 | 0.1075 | 0.5763 | 0.5585 |
+
+Motivation 1 的主结果仅统计严格语义保持扰动。Worst-case 包含原函数，沿用上表完整 Test 分母；ASR 括号内为成功攻击数 / 可扰动且 Clean 正确数。
+
+| 数据集 | 设置 | Worst-case Accuracy | Worst-case MCC | ASR（分子/分母） |
+|---|---|---:|---:|---:|
+| PrimeVul | Fixed | 0.7343 | 0.4813 | 13.43%（56/417） |
+| PrimeVul | Held-out | 0.7149 | 0.4493 | 17.54%（74/422） |
+| PrimeVul | Adaptive | 0.6868 | 0.3974 | 23.47%（100/426） |
+| MegaVul | Fixed | 0.6751 | 0.3515 | 6.28%（131/2085） |
+| MegaVul | Held-out | 0.6803 | 0.3624 | 5.46%（113/2068） |
+| MegaVul | Adaptive | 0.6426 | 0.2844 | 11.70%（244/2085） |
+| BigVul | Fixed | 0.8248 | 0.6513 | 12.07%（130/1077） |
+| BigVul | Held-out | 0.8147 | 0.6320 | 14.23%（152/1068） |
+| BigVul | Adaptive | 0.7913 | 0.5878 | 18.94%（203/1072） |
+| SecVulEval | Fixed | 0.5163 | 0.0393 | 10.60%（64/604） |
+| SecVulEval | Held-out | 0.5223 | 0.0537 | 8.61%（51/592） |
+| SecVulEval | Adaptive | 0.4991 | -0.0022 | 16.67%（102/612） |
+
+函数名等输入压力测试单列于 [motivation1.csv](results/motivation/motivation1.csv) 的 `input_only_stress` 行；该表同时保存三种设置的 Clean/Worst-case Accuracy、MCC、ASR 分子/分母及可扰动覆盖率。四库均观察到严格扰动引发原本正确的预测出错；覆盖率和 Clean 性能不同，不将 ASR 直接解释为四库难度排序。
+
+Motivation 2 的 AUC 对比如下。匹配成员由行数和标签预先确定，匹配后正负类各占一半，四库行数基线 AUC 均为 **0.5000**。
+
+| 数据集 | 原始行数 AUC | 原始 BCE AUC | 浅层特征 LR AUC | 长度匹配样本数（正/负） | 匹配 BCE AUC |
+|---|---:|---:|---:|---:|---:|
+| PrimeVul | 0.8348 | 0.8663 | 0.8386 | 318（159/159） | 0.6556 |
+| MegaVul | 0.7740 | 0.7991 | 0.7808 | 1988（994/994） | 0.6007 |
+| BigVul | 0.7270 | 0.9213 | 0.7367 | 1304（652/652） | 0.8895 |
+| SecVulEval | 0.4788 | 0.5763 | 0.5395 | 1612（806/806） | 0.5589 |
+
+完整比较见 [motivation2.csv](results/motivation/motivation2.csv)；17 个特征的正负类数量、分位数、中位数及单特征 AUC 见 [shortcut_features.csv](results/motivation/shortcut_features.csv)，LR 的完整 Test 指标见 [logistic.csv](results/motivation/logistic.csv)。
+
+PrimeVul/MegaVul 的长度及浅层特征与标签有较强统计关联，长度匹配后 BCE AUC 明显下降。BigVul 匹配后仍有 0.8895 AUC，说明总行数不能解释其全部区分能力；SecVulEval 的行数接近随机排序，浅层 LR 和 BCE 整体区分能力也较弱。因此，当前证据支持四库都存在扰动失稳，但不支持“四库都有同样强的长度相关性”。匹配改变了评价样本组成，不能据此计算模型依赖长度的因果比例。
+
+## 已保留的 PrimeVul/MegaVul 数据
+
+以下记录已有两库六方法实验的数据及结果，清单和精确重叠标记均保持原样。其历史准备实现见提交 [`a5a44f8`](https://github.com/puhaoyang78/vul-detect/tree/a5a44f834590801269247bb3b2bd46eee91a2458)；当前 `prepare` 对选定库仅执行库内检查，不会重新生成历史跨库排除标记。
 
 上游为 [PrimeVul v0.1](https://github.com/DLVulDet/PrimeVul)、[MegaVul](https://github.com/Icyrockton/MegaVul)；预训练模型为 [microsoft/codebert-base](https://huggingface.co/microsoft/codebert-base)。请保留各上游的许可与引用要求。
 
@@ -22,7 +107,7 @@ RAW/
 - 不进行精确/词法/近重复聚类，不删除标签冲突组，不按语法解析结果筛选，不合并漏洞与修复样本。
 - 只检查原始函数字符串完全相等的训练—Test 重叠。训练集合指实际平衡训练成员，不包含未抽中的负例。Test 清单保留全部正例，`train_overlap` 记录与哪一库训练集重叠；评价时排除与任一训练集精确重叠的 Test 成员。同一库的域内和跨域评价使用完全相同的剩余 Test 队列，不再次抽样。
 
-Seed 42 重建后的平衡清单如下，正负各占一半：
+已保存的 Seed 42 平衡清单如下，正负各占一半：
 
 | 数据集 | Train | Valid | Test | 保留原始正例总数 |
 |---|---:|---:|---:|---:|
@@ -61,28 +146,26 @@ VAT 覆盖有效源码 token，排除前缀、特殊 token 和 padding。`epsilo
 
 模型仅使用自身数据集的 Clean Valid 选择 Epoch 和阈值。阈值网格为 0.05–0.95、步长 0.01，按 MCC/F1/Accuracy/接近 0.5 决胜；Epoch 按 MCC/F1/Accuracy/AUC 决胜，完全相同保留较早轮次。两库训练代码没有专用分支。
 
-## 复现
+## 训练与评价入口
 
-Python 3.11，依赖版本见 `requirements.txt`。在仓库根目录执行：
+Python 3.11，依赖版本见 `requirements.txt`。四库 Motivation 的完整命令见上文。对已有源码清单运行统一入口：
 
 ```bash
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 
-RAW=/path/to/raw
 MODEL=microsoft/codebert-base  # 也可使用本地 CodeBERT 目录
-python -m vulnmechanism.cli prepare --raw-root "$RAW"
-python -m vulnmechanism.cli train --dataset all --model "$MODEL" --device cuda:0
-python -m vulnmechanism.cli candidates --dataset all --model "$MODEL"
-python -m vulnmechanism.cli evaluate --dataset all --device cuda:0
-python -m vulnmechanism.cli report
+python -m vulnmechanism.cli train --dataset primevul --model "$MODEL" --device cuda:0
+python -m vulnmechanism.cli train --dataset megavul --model "$MODEL" --device cuda:1
+python -m vulnmechanism.cli evaluate --dataset primevul --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset megavul --device cuda:1
 ```
 
-`train`、`candidates`、`evaluate` 均用 `--dataset primevul` 或 `--dataset megavul` 指定数据集，默认 `all`。训练和评价可用 `--methods bce vat` 指定方法。已开始的训练拒绝重复启动；新克隆中的成员表和统计可以重建，已有源码 JSONL 清单时拒绝覆盖。原始数据目录与派生数据目录分开保存。
+`train`、`candidates`、`evaluate` 均支持四库的 `--dataset` 参数，默认 `all`；方法默认六组，可用 `--methods bce` 仅运行普通基线。本轮实际只新增 BigVul、SecVulEval 的 BCE，其余方法和历史两库实验均不重复训练。已开始的训练拒绝重复启动；已有源码 JSONL 清单时，`prepare` 拒绝覆盖。原始数据目录与派生数据目录分开保存。
 
 ## 评价与输出
 
-每个模型评价自身 Clean Valid、自身 Test 的 Clean/Fixed/Held-out/Adaptive，以及另一库 Test 的直接迁移。评价沿用 checkpoint 的训练 micro batch，避免更换 BF16 批大小导致阈值边缘决策变化。Test 不参与训练、选模或阈值选择；跨库只使用源权重、源阈值，不读取目标 Valid。
+当前 `evaluate` 仅评价自身 Clean Valid、自身 Test 的 Clean/Fixed/Held-out/Adaptive。评价沿用 checkpoint 的训练 micro batch，避免更换 BF16 批大小导致阈值边缘决策变化。Test 不参与训练、选模或阈值选择。下方双向迁移表和 `comparison.*` 是已保存结果，本轮保留并不重跑。
 
 CUDA 并行池化仍可能产生极小浮点波动：本次 MegaVul `hard_aug_vat` 和 `random_aug_bce` 重载后的 Valid AUPRC 与训练记录分别相差约 `9.05e-8` 和 `4.23e-8`，阈值、分类指标和 Epoch 选择一致。
 

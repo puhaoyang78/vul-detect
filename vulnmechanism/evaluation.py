@@ -1,4 +1,4 @@
-"""Shared Test robustness and bidirectional transfer with source-Valid thresholds."""
+"""Own-dataset Test robustness and the saved two-dataset comparison report."""
 
 from __future__ import annotations
 from argparse import Namespace
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import torch
 from .artifacts import write_json
-from .data import DATASETS, read_jsonl, test_rows, write_jsonl
+from .data import DATASETS, read_jsonl, test_rows, validation_rows, write_jsonl
 from .metrics import decision_boundary, metrics
 from . import model as core
 from .training import METHODS, prepare_materials
@@ -485,10 +485,8 @@ def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", r
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
     root = Path(output_dir) / dataset
-    target_dataset = next(d for d in DATASETS if d != dataset)
-    valid = read_jsonl(Path(data_dir) / dataset / "valid.jsonl")
+    valid = validation_rows(Path(data_dir) / dataset)
     own_test = test_rows(Path(data_dir) / dataset)
-    target_test = test_rows(Path(data_dir) / target_dataset)
     materials = prepare_materials(data_dir, output_dir, dataset) if robust else None
     for method in methods:
         run = root / method
@@ -504,7 +502,6 @@ def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", r
         )
         _evaluate_clean(valid, run, "valid", checkpoint, args)
         _evaluate_clean(own_test, run, "test", checkpoint, args)
-        _evaluate_clean(target_test, run, f"{target_dataset}.test", checkpoint, args)
         if robust:
             if not all(
                 (root / f"{name}.candidates.jsonl").exists() for name in ("fixed", "heldout")
@@ -520,8 +517,8 @@ def report(output_dir, data_dir):
     root = Path(output_dir)
     rows, training_runs = [], {}
     metric_names = ("accuracy", "precision", "recall", "f1", "mcc", "auc", "auprc")
-    for dataset in DATASETS:
-        target_dataset = next(d for d in DATASETS if d != dataset)
+    for dataset in ("primevul", "megavul"):
+        target_dataset = next(d for d in ("primevul", "megavul") if d != dataset)
         training_runs[dataset] = {}
         for method in METHODS:
             run = root / dataset / method
@@ -580,7 +577,7 @@ def report(output_dir, data_dir):
                 )
             )
     data = {
-        d: json.loads((Path(data_dir) / d / "statistics.json").read_text()) for d in DATASETS
+        d: json.loads((Path(data_dir) / d / "statistics.json").read_text()) for d in ("primevul", "megavul")
     }
     write_json(root / "comparison.json", dict(data=data, training=training_runs, results=rows))
     fields = [
@@ -610,8 +607,8 @@ def report(output_dir, data_dir):
         writer.writeheader()
         writer.writerows(rows)
     return dict(
-        datasets=len(DATASETS),
-        models=len(DATASETS) * len(METHODS),
+        datasets=2,
+        models=2 * len(METHODS),
         rows=len(rows),
         comparison=str(root / "comparison.csv"),
     )

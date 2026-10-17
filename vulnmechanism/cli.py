@@ -1,4 +1,4 @@
-"""Prepare both datasets, train twelve models, evaluate, report and infer."""
+"""Shared data preparation, training, evaluation and Motivation experiments."""
 
 from __future__ import annotations
 import argparse
@@ -18,6 +18,7 @@ def build_parser():
     )
     prepare.add_argument("--raw-root", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, default=Path("data"))
+    prepare.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
     for command in ("train", "candidates", "evaluate"):
         p = sub.add_parser(command)
         p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -30,9 +31,15 @@ def build_parser():
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
-    p = sub.add_parser("report")
+    p = sub.add_parser("report", help="summarize the saved PrimeVul/MegaVul six-method experiment")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p = sub.add_parser("motivation", help="four-dataset ordinary-BCE and Shortcut Features diagnostics")
+    p.add_argument("stage", choices=("features", "report"))
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--output-dir", type=Path, default=Path("results"))
+    p.add_argument("--dataset", choices=(*DATASETS, "all"), default="all")
+    p.add_argument("--model", default="microsoft/codebert-base")
     p = sub.add_parser("infer")
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--source-file", type=Path, required=True)
@@ -46,7 +53,7 @@ def main():
     if args.command == "prepare":
         from .data import prepare
 
-        prepare(args.raw_root, args.output_dir)
+        prepare(args.raw_root, args.output_dir, datasets=args.datasets)
         return
     import torch
 
@@ -90,6 +97,14 @@ def main():
         from .evaluation import report
 
         print(json.dumps(report(args.output_dir, args.data_dir), indent=2))
+    elif args.command == "motivation":
+        from .motivation import feature_experiment, motivation_report
+
+        if args.stage == "features":
+            for dataset in datasets:
+                feature_experiment(args.data_dir, args.output_dir, dataset, args.model)
+        else:
+            print(json.dumps(motivation_report(args.data_dir, args.output_dir, datasets), indent=2))
     elif args.command == "infer":
         from .metrics import decision_boundary
         from .model import predict_checkpoint

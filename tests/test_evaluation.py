@@ -28,8 +28,10 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(threshold, 0.5)
         self.assertEqual(selected["mcc"], 1.0)
 
-    def test_both_directions_use_only_source_valid_and_independent_target_test(self):
-        for dataset, target in (("primevul", "megavul"), ("megavul", "primevul")):
+    def test_four_dataset_evaluation_reads_only_own_valid_and_test(self):
+        from vulnmechanism.data import DATASETS
+        for dataset in DATASETS:
+            target = "unused_dataset"
             with self.subTest(dataset=dataset), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 for d in (dataset, target):
@@ -93,17 +95,18 @@ class EvaluationTests(unittest.TestCase):
                         device="cpu",
                         robust=False,
                     )
-                self.assertEqual(predictor.call_count, 3)
-                result = json.loads((run / f"{target}.test.metrics.json").read_text())
-                self.assertEqual(result["dataset"], target)
+                self.assertEqual(predictor.call_count, 2)
+                self.assertFalse((run / f"{target}.test.metrics.json").exists())
+                result = json.loads((run / "test.metrics.json").read_text())
+                self.assertEqual(result["dataset"], dataset)
                 self.assertEqual(result["split"], "test")
                 self.assertEqual(result["selected_epoch"], 2)
                 self.assertEqual(result["metrics"]["threshold"], 0.73)
                 self.assertEqual(result["metrics"]["samples"], 3)
                 self.assertEqual(result["metrics"]["confusion_matrix"], [[2, 0], [1, 0]])
-                saved = read_jsonl(run / f"{target}.test.predictions.jsonl")
+                saved = read_jsonl(run / "test.predictions.jsonl")
                 self.assertEqual(
-                    [r["sample_key"] for r in saved], [f"{target}:{i}" for i in range(3)]
+                    [r["sample_key"] for r in saved], [f"{dataset}:{i}" for i in range(3)]
                 )
                 self.assertTrue(all(r["threshold"] == 0.73 for r in saved))
 

@@ -1,0 +1,83 @@
+{
+  "dataset": "secvuleval",
+  "seed": 42,
+  "raw_root": "/home/PublicData/PHY-data/vul_detect/data",
+  "native": {
+    "train": {
+      "samples": 20170,
+      "positive": 8798,
+      "negative": 11372
+    },
+    "valid": {
+      "samples": 2659,
+      "positive": 1099,
+      "negative": 1560
+    },
+    "test": {
+      "samples": 2611,
+      "positive": 1101,
+      "negative": 1510
+    }
+  },
+  "balanced": {
+    "train": {
+      "samples": 17596,
+      "positive": 8798,
+      "negative": 8798
+    },
+    "valid": {
+      "samples": 2198,
+      "positive": 1099,
+      "negative": 1099
+    },
+    "test": {
+      "samples": 2202,
+      "positive": 1101,
+      "negative": 1101
+    }
+  },
+  "positives_removed": 0,
+  "sampling": "retain all native positives; random.Random(42) samples negatives; stable source order",
+  "test_exact_overlap": {
+    "by_training_dataset": {
+      "secvuleval": {
+        "samples": 0,
+        "positive": 0,
+        "negative": 0
+      }
+    },
+    "excluded": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 2202,
+      "positive": 1101,
+      "negative": 1101
+    },
+    "with_valid": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "policy": "retain all positives in data lists; exclude own Train exact overlap from Valid, and own Train/Valid exact overlap from Test evaluation; no cross-dataset filtering"
+  },
+  "valid_exact_overlap": {
+    "excluded": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 2198,
+      "positive": 1099,
+      "negative": 1099
+    }
+  },
+  "projects": {
+    "train": 321,
+    "valid": 207,
+    "test": 208
+  }
+}

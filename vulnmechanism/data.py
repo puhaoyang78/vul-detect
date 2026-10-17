@@ -10,7 +10,7 @@ import random
 
 from .artifacts import write_json
 
-DATASETS = ("primevul", "megavul")
+DATASETS = ("primevul", "megavul", "bigvul", "secvuleval")
 SPLITS = ("train", "valid", "test")
 
 
@@ -105,39 +105,68 @@ def load_native(raw_root, dataset, seed=42):
         raise ValueError(f"unknown dataset: {dataset}")
     raw_root = Path(raw_root)
     rows = []
-    paths = (
-        [raw_root / "PrimeVul_v0.1" / f"primevul_{s}.jsonl" for s in SPLITS]
-        if dataset == "primevul"
-        else [raw_root / "megavul" / "megavul.json"]
-    )
+    paths = {
+        "primevul": [raw_root / "PrimeVul_v0.1" / f"primevul_{s}.jsonl" for s in SPLITS],
+        "megavul": [raw_root / "megavul" / "megavul.json"],
+        "bigvul": [raw_root / "bigvul" / "MSR_data_cleaned.csv"],
+        "secvuleval": [raw_root / "SecVulEval" / "data" / "train-00000-of-00001.parquet"],
+    }[dataset]
     for path in paths:
         if dataset == "primevul":
             with path.open(encoding="utf-8") as handle:
                 _append_native(
                     rows, (json.loads(line) for line in handle), dataset, path, raw_root
                 )
-        else:
+        elif dataset == "megavul":
             _append_native(rows, json_array(path), dataset, path, raw_root)
-    return rows, split_projects(rows, seed) if dataset == "megavul" else None
+        elif dataset == "bigvul":
+            csv.field_size_limit(2**31 - 1)
+            with path.open(encoding="utf-8", newline="") as handle:
+                _append_native(rows, csv.DictReader(handle), dataset, path, raw_root)
+        else:
+            import pyarrow.parquet as pq
+
+            records = (
+                row for batch in pq.ParquetFile(path).iter_batches()
+                for row in batch.to_pylist()
+            )
+            _append_native(rows, records, dataset, path, raw_root)
+    if len({r["sample_key"] for r in rows}) != len(rows):
+        raise ValueError(f"{dataset}: duplicate native sample IDs")
+    return rows, split_projects(rows, seed) if dataset != "primevul" else None
 
 
 def _append_native(rows, iterator, dataset, path, raw_root):
     for number, raw in enumerate(iterator, 1):
-        label = raw["target"] if dataset == "primevul" else raw["is_vul"]
-        if (dataset == "primevul" and (type(label) is not int or label not in (0, 1))) or (
-            dataset == "megavul" and type(label) is not bool
-        ):
+        if dataset == "primevul":
+            label, source, filename, project, key = (
+                raw["target"], raw["func"], raw.get("file_name"), raw.get("project"), raw["idx"]
+            )
+        elif dataset == "megavul":
+            label = raw["is_vul"]
+            source, filename, project, key = (
+                raw["func_before"] if label else raw["func"], raw.get("file_path"), raw["repo_name"], number
+            )
+        elif dataset == "bigvul":
+            label, source, filename, project, key = (
+                int(raw["vul"]), raw["func_before"], raw.get("file_name"), raw["project"], raw[""]
+            )
+        else:
+            label, source, filename, project, key = (
+                raw["is_vulnerable"], raw["func_body"], raw["filepath"],
+                raw["project_url"].strip().rstrip("/"), raw["idx"],
+            )
+        expected_type = bool if dataset in ("megavul", "secvuleval") else int
+        if type(label) is not expected_type or label not in (0, 1):
             raise ValueError(f"{path}:{number}: invalid native label")
-        source = raw["func"] if dataset == "primevul" or not label else raw["func_before"]
         if not isinstance(source, str) or not source.strip():
             raise ValueError(f"{path}:{number}: missing native function")
-        filename = raw.get("file_name" if dataset == "primevul" else "file_path") or ""
+        filename = filename or ""
         if filename == "None":
             filename = ""
         suffix = Path(filename).suffix
-        key = raw["idx"] if dataset == "primevul" else number
-        project = raw.get("project" if dataset == "primevul" else "repo_name") or ""
-        if dataset == "megavul" and not project.strip():
+        project = project or ""
+        if dataset != "primevul" and not project.strip():
             raise ValueError(f"{path}:{number}: missing project")
         rows.append(
             dict(
@@ -189,17 +218,27 @@ def counts(rows):
 
 
 def test_rows(data_dir):
-    """The same independent Test cohort is used for in-domain and transfer tests."""
-    return [r for r in read_jsonl(Path(data_dir) / "test.jsonl") if not r["train_overlap"]]
+    """Read the established Test cohort, excluding its recorded exact overlaps."""
+    return [
+        r for r in read_jsonl(Path(data_dir) / "test.jsonl")
+        if not r["train_overlap"] and not r.get("valid_overlap", False)
+    ]
 
 
-def prepare(raw_root, output, seed=42):
+def validation_rows(data_dir):
+    return [
+        r for r in read_jsonl(Path(data_dir) / "valid.jsonl")
+        if not r.get("train_overlap", [])
+    ]
+
+
+def prepare(raw_root, output, seed=42, datasets=DATASETS):
     output = Path(output)
-    for dataset in DATASETS:
+    for dataset in datasets:
         if any((output / dataset).glob("*.jsonl")):
             raise FileExistsError(f"{output / dataset}: prepared source lists already exist")
     native, selected, assignments = {}, {}, {}
-    for dataset in DATASETS:
+    for dataset in datasets:
         native[dataset], assignments[dataset] = load_native(raw_root, dataset, seed)
         selected[dataset] = balanced(native[dataset], seed)
     training_sources = {
@@ -207,16 +246,18 @@ def prepare(raw_root, output, seed=42):
         for dataset, rows in selected.items()
     }
     statistics = {}
-    for dataset in DATASETS:
+    for dataset in datasets:
         root = output / dataset
         rows = selected[dataset]
         tests = [r for r in rows if r["split"] == "test"]
-        for row in tests:
-            row["train_overlap"] = [
-                source for source in DATASETS if row["raw_source"] in training_sources[source]
-            ]
-        excluded = [r for r in tests if r["train_overlap"]]
-        evaluated = [r for r in tests if not r["train_overlap"]]
+        valid = [r for r in rows if r["split"] == "valid"]
+        validation_sources = {r["raw_source"] for r in valid}
+        for row in valid + tests:
+            row["train_overlap"] = [dataset] if row["raw_source"] in training_sources[dataset] else []
+            if row["split"] == "test":
+                row["valid_overlap"] = row["raw_source"] in validation_sources
+        excluded = [r for r in tests if r["train_overlap"] or r["valid_overlap"]]
+        evaluated = [r for r in tests if not r["train_overlap"] and not r["valid_overlap"]]
         for split in SPLITS:
             write_jsonl(root / f"{split}.jsonl", (r for r in rows if r["split"] == split))
         with (root / "members.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -228,14 +269,16 @@ def prepare(raw_root, output, seed=42):
                 "source_file",
                 "source_row",
                 "train_overlap",
+                "valid_overlap",
             ]
             writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
             writer.writeheader()
             for row in rows:
                 writer.writerow(
                     {
-                        **{k: row[k] for k in fields[:-1]},
+                        **{k: row[k] for k in fields if k not in ("train_overlap", "valid_overlap")},
                         "train_overlap": ";".join(row.get("train_overlap", [])),
+                        "valid_overlap": row.get("valid_overlap", False),
                     }
                 )
         stats = dict(
@@ -248,12 +291,16 @@ def prepare(raw_root, output, seed=42):
             sampling="retain all native positives; random.Random(42) samples negatives; stable source order",
             test_exact_overlap=dict(
                 by_training_dataset={
-                    source: class_counts([r for r in tests if source in r["train_overlap"]])
-                    for source in DATASETS
+                    dataset: class_counts([r for r in tests if r["train_overlap"]]),
                 },
                 excluded=class_counts(excluded),
                 evaluated=class_counts(evaluated),
-                policy="keep all positives in data lists; exclude exact raw-source overlap with either actual training set only from Test evaluation; shared in-domain/transfer cohort",
+                with_valid=class_counts([r for r in tests if r["valid_overlap"]]),
+                policy="retain all positives in data lists; exclude own Train exact overlap from Valid, and own Train/Valid exact overlap from Test evaluation; no cross-dataset filtering",
+            ),
+            valid_exact_overlap=dict(
+                excluded=class_counts([r for r in valid if r["train_overlap"]]),
+                evaluated=class_counts([r for r in valid if not r["train_overlap"]]),
             ),
         )
         if assignments[dataset] is not None:

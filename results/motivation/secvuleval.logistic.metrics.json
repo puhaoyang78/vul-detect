@@ -1,0 +1,128 @@
+{
+  "dataset": "secvuleval",
+  "features": [
+    "total_lines",
+    "code_lines",
+    "codebert_tokens",
+    "characters",
+    "identifiers",
+    "unique_identifiers",
+    "mean_identifier_length",
+    "literals",
+    "string_literals",
+    "numeric_literals",
+    "comments",
+    "comment_lines",
+    "comment_fraction",
+    "branches",
+    "loops",
+    "max_control_depth",
+    "parse_errors"
+  ],
+  "seed": 42,
+  "selected_C": 0.1,
+  "preprocessing": "log1p, then Train-fitted StandardScaler; all counts nonnegative",
+  "selection": "Train-only fit; Valid AUC selects C, smaller C breaks ties; Valid MCC/F1/Accuracy selects threshold",
+  "candidates": [
+    {
+      "C": 0.01,
+      "valid_auc": 0.5060746762090774,
+      "iterations": 20
+    },
+    {
+      "C": 0.1,
+      "valid_auc": 0.5063487279775394,
+      "iterations": 34
+    },
+    {
+      "C": 1.0,
+      "valid_auc": 0.505996020867676,
+      "iterations": 50
+    },
+    {
+      "C": 10.0,
+      "valid_auc": 0.5059438599570624,
+      "iterations": 49
+    },
+    {
+      "C": 100.0,
+      "valid_auc": 0.5057095498347823,
+      "iterations": 50
+    }
+  ],
+  "valid": {
+    "accuracy": 0.510919017288444,
+    "precision": 0.5625,
+    "recall": 0.09827115559599636,
+    "f1": 0.16731216111541442,
+    "mcc": 0.03867186909914152,
+    "auc": 0.5063487279775394,
+    "auprc": 0.5080012022164745,
+    "tp": 108,
+    "tn": 1015,
+    "fp": 84,
+    "fn": 991,
+    "confusion_matrix": [
+      [
+        1015,
+        84
+      ],
+      [
+        991,
+        108
+      ]
+    ],
+    "samples": 2198,
+    "threshold": 0.53
+  },
+  "test": {
+    "accuracy": 0.5208900999091735,
+    "precision": 0.6026785714285714,
+    "recall": 0.1226158038147139,
+    "f1": 0.20377358490566036,
+    "mcc": 0.06910678337403389,
+    "auc": 0.5395351101013777,
+    "auprc": 0.5454512195183053,
+    "tp": 135,
+    "tn": 1012,
+    "fp": 89,
+    "fn": 966,
+    "confusion_matrix": [
+      [
+        1012,
+        89
+      ],
+      [
+        966,
+        135
+      ]
+    ],
+    "samples": 2202,
+    "threshold": 0.53
+  },
+  "members": {
+    "train": 17596,
+    "valid": 2198,
+    "test": 2202
+  },
+  "feature_definition": "Tree-sitter C/C++ observed counts; errors retained and counted, not treated as compiler-verified structure. Code lines exclude blank/comment-only lines. Token counts use full untruncated CodeBERT tokenizer.",
+  "standardized_log1p_coefficients": {
+    "total_lines": 0.06817556919012038,
+    "code_lines": -0.041995357799794936,
+    "codebert_tokens": -0.09032241290753458,
+    "characters": -0.23062083165793515,
+    "identifiers": 0.1507067715899794,
+    "unique_identifiers": 0.0803951974464863,
+    "mean_identifier_length": -0.0005060991200988938,
+    "literals": 0.012544451445295316,
+    "string_literals": -0.04738288872369573,
+    "numeric_literals": -0.007561048333600187,
+    "comments": -0.08792442693689048,
+    "comment_lines": 0.08881049135995507,
+    "comment_fraction": -0.048612718438872694,
+    "branches": 0.027911909179372345,
+    "loops": 0.013772145029589148,
+    "max_control_depth": -0.0010601775512956396,
+    "parse_errors": -0.032942375847962765
+  }
+}

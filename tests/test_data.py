@@ -15,6 +15,7 @@ from vulnmechanism.data import (
     prepare,
     split_projects,
     test_rows,
+    validation_rows,
 )
 
 
@@ -129,12 +130,13 @@ class DataTests(unittest.TestCase):
             output = root / "data"
             (output / "primevul").mkdir(parents=True)
             (output / "primevul/members.csv").write_text("published metadata\n")
-            stats = prepare(raw, output)
+            datasets = ("primevul", "megavul")
+            stats = prepare(raw, output, datasets=datasets)
             from vulnmechanism.data import read_jsonl
 
             prepared = {
                 d: [r for s in SPLITS for r in read_jsonl(output / d / f"{s}.jsonl")]
-                for d in DATASETS
+                for d in datasets
             }
             self.assertEqual(
                 {r["sample_key"] for r in prepared["primevul"] if r["label"]},
@@ -142,23 +144,23 @@ class DataTests(unittest.TestCase):
             )
             training = {
                 d: {r["raw_source"] for r in prepared[d] if r["split"] == "train"}
-                for d in DATASETS
+                for d in datasets
             }
-            for d in DATASETS:
+            for d in datasets:
                 self.assertEqual(stats[d]["positives_removed"], 0)
                 self.assertEqual(stats[d]["native"], stats[d]["balanced"])
                 for r in prepared[d]:
                     if r["split"] == "test":
                         self.assertEqual(
                             r["train_overlap"],
-                            [s for s in DATASETS if r["raw_source"] in training[s]],
+                            [d] if r["raw_source"] in training[d] else [],
                         )
                 evaluated = test_rows(output / d)
                 self.assertTrue(
                     all(
                         r["raw_source"] not in sources
                         for r in evaluated
-                        for sources in training.values()
+                        for sources in (training[d],)
                     )
                 )
                 self.assertEqual(
@@ -170,7 +172,44 @@ class DataTests(unittest.TestCase):
             self.assertTrue(prime_test[0]["train_overlap"])
             self.assertFalse(prime_test[1]["train_overlap"])
             with self.assertRaises(FileExistsError):
-                prepare(raw, output)
+                prepare(raw, output, datasets=datasets)
+
+    def test_bigvul_and_secvuleval_use_native_labels_and_functions(self):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bigvul").mkdir()
+            records = [dict({"": str(i)}, vul=str(i % 2), project=f"p{i // 2}",
+                func_before=f"before {i}", func_after=f"after {i}", file_name="f.c") for i in range(40)]
+            with (root / "bigvul/MSR_data_cleaned.csv").open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(records[0]))
+                writer.writeheader()
+                writer.writerows(records)
+            rows, _ = load_native(root, "bigvul")
+            self.assertEqual([r["raw_source"] for r in rows], [f"before {i}" for i in range(40)])
+            self.assertEqual([r["label"] for r in rows], [i % 2 for i in range(40)])
+            (root / "SecVulEval/data").mkdir(parents=True)
+            records = [dict(idx=i, is_vulnerable=bool(i % 2), project=f"p{i // 2}", project_url=f"https://example.org/p{i // 2}",
+                func_body=f"function {i}", filepath="f.cpp") for i in range(40)]
+            records[0]["project"] = "another-name-for-p0"
+            pq.write_table(pa.Table.from_pylist(records), root / "SecVulEval/data/train-00000-of-00001.parquet")
+            rows, _ = load_native(root, "secvuleval")
+            self.assertEqual([r["raw_source"] for r in rows], [f"function {i}" for i in range(40)])
+            self.assertEqual([r["label"] for r in rows], [i % 2 for i in range(40)])
+            self.assertTrue(all(r["project"].startswith("https://example.org/") for r in rows))
+            self.assertEqual(rows[0]["project"], rows[1]["project"])
+            self.assertEqual(rows[0]["split"], rows[1]["split"])
+
+    def test_split_readers_exclude_internal_exact_leakage_only(self):
+        from vulnmechanism.data import write_jsonl
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            write_jsonl(path / "valid.jsonl", [dict(sample_key="a", train_overlap=["own"]), dict(sample_key="b", train_overlap=[])])
+            write_jsonl(path / "test.jsonl", [dict(sample_key="a", train_overlap=[]), dict(sample_key="b", train_overlap=[], valid_overlap=True), dict(sample_key="c", train_overlap=["own"])])
+            self.assertEqual([r["sample_key"] for r in validation_rows(path)], ["b"])
+            self.assertEqual([r["sample_key"] for r in test_rows(path)], ["a"])
 
     def test_streaming_array_handles_chunk_boundaries_and_rejects_truncation(self):
         with tempfile.TemporaryDirectory() as tmp:

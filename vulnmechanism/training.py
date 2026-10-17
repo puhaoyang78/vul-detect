@@ -13,7 +13,7 @@ import transformers
 
 from .artifacts import write_json
 from .augmentation import search_surface_views, surface_seed
-from .data import DATASETS, read_jsonl
+from .data import DATASETS, read_jsonl, validation_rows
 from .metrics import select_threshold
 from .model import (
     AutoTokenizer,
@@ -92,7 +92,7 @@ def train(
             f"{run}: training already started; refusing to reuse fitted weights"
         )
     train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
-    valid_rows = read_jsonl(Path(data_dir) / dataset / "valid.jsonl")
+    valid_rows = validation_rows(Path(data_dir) / dataset)
     for split, rows in (("train", train_rows), ("valid", valid_rows)):
         if not rows or {r["label"] for r in rows} != {0, 1}:
             raise ValueError(f"{split}: both classes required")
