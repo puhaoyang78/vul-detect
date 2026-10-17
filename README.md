@@ -202,6 +202,19 @@ python -m unittest discover -s tests -v
 
 CSD 相对 BCE 的跨域 AUC 变化为 PrimeVul → SecVulEval **−0.0012（−0.12 个百分点）**、SecVulEval → PrimeVul **+0.0729（+7.29 个百分点）**。对应源域 Clean AUC 分别下降 **0.0153 / 0.0079**。因此，本次固定协议下未观察到双向一致改善；SecVulEval → PrimeVul 虽有 AUC 改善，绝对 AUC 仍为 0.4105。MCC、F1 的变化与 AUC 不完全一致，完整指标均按各自源库 Valid 阈值报告。
 
+### CSD 源域诊断
+
+固定现有 CSD checkpoint，使用两库全部源域 Train，以 Seed 42 决定推理顺序；同一次编码比较共享头与项目头。仅做参数、损失日志及无更新梯度探针统计，不读取 Valid/Test 文件，不创建优化器。诊断不修改原方法、权重或已有迁移结果。
+
+```bash
+python -m vulnmechanism.cli csd-diagnostics run --dataset primevul --device cuda:0
+python -m vulnmechanism.cli csd-diagnostics run --dataset secvuleval --device cuda:1
+python -m vulnmechanism.cli csd-diagnostics report
+python -m unittest tests.test_csd_diagnostics -v
+```
+
+完整证据见 [诊断报告](results/csd_diagnostics/report.md)，统一统计见 [summary.csv](results/csd_diagnostics/summary.csv) 和 [epochs.csv](results/csd_diagnostics/epochs.csv)。项目残差相对共享权重的范数中位数仅为 0.0724% / 0.0749%；Specific 相对 Common 的 Train AUC 仅提高 0.0000473 / 0.0001234。残差非零且与项目类别构成相关，但没有形成有实质分类增益的分解。当前 `sum` 在二分类、rank=1 下相对作者 `mean` 实现具有 8 倍有效正则权重，且原作者的共享系数门控也与当前论文公式版不同。报告仅建议下一步单独验证 `sum` → `mean`，本轮没有改动或重训。
+
 ## 历史 PrimeVul/MegaVul 六方法实验
 
 以下记录已有两库六方法实验当时的数据及结果，历史准备实现见提交 [`a5a44f8`](https://github.com/puhaoyang78/vul-detect/tree/a5a44f834590801269247bb3b2bd46eee91a2458)。该实验曾因 MegaVul Train 重叠排除 PrimeVul 的 172 条 Test；本轮已取消这一排除。历史六方法及 Motivation 结果仍明确对应当时的 926 条 PrimeVul 队列，不作为当前 BCE/CSD 实验结果。当前 `prepare` 仅执行库内检查。

@@ -50,6 +50,11 @@ __pycache__/
 !/results/transfer_primevul_secvuleval/comparison.csv
 !/results/transfer_primevul_secvuleval/results.json
 !/results/transfer_primevul_secvuleval/*.members.csv
+!/results/csd_diagnostics/
+/results/csd_diagnostics/**
+!/results/csd_diagnostics/*.json
+!/results/csd_diagnostics/*.csv
+!/results/csd_diagnostics/report.md
 *.pt
 *.pth
 *.ckpt
