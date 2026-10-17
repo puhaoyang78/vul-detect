@@ -67,6 +67,42 @@ def tiny_base(path):
 
 
 class CodeBERTTests(unittest.TestCase):
+    def test_csd_shared_gate_changes_only_specific_common_term(self):
+        torch.manual_seed(42)
+        baseline = core.CSD(3, domains=2)
+        torch.manual_seed(42)
+        head = core.CSD(3, domains=2, shared_gate_init=.1)
+        for name, value in baseline.state_dict().items():
+            torch.testing.assert_close(head.state_dict()[name], value, rtol=0, atol=0)
+        self.assertAlmostEqual(float(head.shared_gate.detach()), .1, places=7)
+        with torch.no_grad():
+            head.common.weight.copy_(torch.tensor([[1., 0., 0.], [0., 1., 0.]]))
+            head.common.bias.copy_(torch.tensor([.3, -.2]))
+            head.specific_weight.copy_(torch.tensor([[[0., 1., 0.], [1., 0., 0.]]]))
+            head.specific_bias.copy_(torch.tensor([[.1, -.05]]))
+            head.coefficients.weight.copy_(torch.tensor([[.2], [-.3]]))
+        features = torch.tensor([[1., 2., 3.], [-1., 1., 2.]], requires_grad=True)
+        domains = torch.tensor([0, 1])
+        common, specific = head(features, domains)
+        full_common = head.common(features)
+        residual = torch.stack([
+            head.coefficients.weight[d, 0] * (features[i] @ head.specific_weight[0].T + head.specific_bias[0])
+            for i, d in enumerate(domains)
+        ])
+        expected = head.shared_gate.tanh() * full_common + residual
+        torch.testing.assert_close(common, full_common[:, 1] - full_common[:, 0])
+        torch.testing.assert_close(specific, expected[:, 1] - expected[:, 0])
+        self.assertIsNone(torch.autograd.grad(head.orthonormality(), head.shared_gate, allow_unused=True)[0])
+        torch.nn.functional.binary_cross_entropy_with_logits(specific, torch.tensor([0., 1.])).backward()
+        self.assertGreater(float(head.shared_gate.grad.abs()), 0.)
+        self.assertGreater(float(head.coefficients.weight.grad.norm()), 0.)
+        before = head(features).detach()
+        regularizer = head.orthonormality().detach()
+        with torch.no_grad():
+            head.shared_gate.fill_(-2.)
+        torch.testing.assert_close(head(features), before, rtol=0, atol=0)
+        torch.testing.assert_close(head.orthonormality(), regularizer, rtol=0, atol=0)
+
     def test_csd_decomposition_cross_entropy_and_orthonormality(self):
         head = core.CSD(3, domains=2)
         with torch.no_grad():
@@ -128,6 +164,7 @@ class CodeBERTTests(unittest.TestCase):
                     self.assertEqual(summary["optimizer_steps"], 3)
                     self.assertEqual(summary["csd"]["projects"], ["p0", "p1"])
                     self.assertEqual(summary["csd"]["orthonormality_reduction"], "mean")
+                    self.assertEqual(summary["csd"]["shared_gate_init"], .1)
                     self.assertIsNone(summary["augmentation"])
                     self.assertIsNone(summary["vat"])
                     target = root / "runs" / dataset / "csd/best.pt"
@@ -144,6 +181,7 @@ class CodeBERTTests(unittest.TestCase):
                         head.specific_weight.fill_(100.)
                         head.specific_bias.fill_(100.)
                         head.coefficients.weight.fill_(100.)
+                        head.shared_gate.fill_(-100.)
                     torch.testing.assert_close(core.predict_logits(model, rows, builder, device="cpu"),
                                                expected, rtol=0, atol=0)
                     model.train()
@@ -154,6 +192,8 @@ class CodeBERTTests(unittest.TestCase):
                     epochs = [r for r in records if r["event"] == "epoch"]
                     self.assertEqual(len(epochs), 3)
                     self.assertTrue(all(set(r["csd_losses"]) == {"common_loss", "specific_loss", "orthonormality"} for r in epochs))
+                    self.assertTrue(all(set(r["csd_gate"]) == {"parameter", "scale"} for r in epochs))
+                    self.assertNotEqual(epochs[-1]["csd_gate"]["parameter"], float(torch.tensor(.1)))
 
     def test_window_coverage_and_function_normalization(self):
         builder = core.InputBuilder(CodeTokenizer())

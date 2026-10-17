@@ -204,7 +204,7 @@ class CSD(nn.Module):
     Biases use the same decomposition; the orthonormality penalty covers weights.
     """
 
-    def __init__(self, hidden_size, domains, rank=1):
+    def __init__(self, hidden_size, domains, rank=1, *, shared_gate_init=None):
         super().__init__()
         if not 1 <= rank < domains:
             raise ValueError("CSD requires 1 <= rank < number of training projects")
@@ -216,6 +216,14 @@ class CSD(nn.Module):
                           self.specific_weight, self.specific_bias):
             nn.init.normal_(parameter, std=0.1)
         nn.init.normal_(self.coefficients.weight, std=1e-4)
+        self.shared_gate = (
+            nn.Parameter(torch.tensor(float(shared_gate_init)))
+            if shared_gate_init is not None else None
+        )
+
+    @property
+    def common_scale(self):
+        return self.shared_gate.tanh() if self.shared_gate is not None else 1.0
 
     def forward(self, features, project_ids=None):
         common = self.common(features)
@@ -225,7 +233,7 @@ class CSD(nn.Module):
         coefficients = self.coefficients(project_ids)
         residual = torch.einsum("br,rch,bh->bc", coefficients, self.specific_weight, features)
         residual = residual + coefficients @ self.specific_bias
-        specific = common + residual
+        specific = self.common_scale * common + residual
         return common_margin, specific[:, 1] - specific[:, 0]
 
     def orthonormality(self):
@@ -250,7 +258,8 @@ class CodeBERT(nn.Module):
             )
         hidden_size = self.encoder.config.hidden_size
         self.task_modules = nn.ModuleDict({"classifier": (
-            CSD(hidden_size, len(csd["projects"]), csd["rank"])
+            CSD(hidden_size, len(csd["projects"]), csd["rank"],
+                shared_gate_init=csd.get("shared_gate_init"))
             if csd is not None else nn.Linear(hidden_size, 1)
         )})
         self.to(device)

@@ -1,6 +1,6 @@
 # Dynamic Hard Augmentation for Vulnerability Detection
 
-当前实验比较普通 CodeBERT BCE 与 CSD（sum / mean 正则对照）在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
+当前实验比较普通 CodeBERT BCE 与 CSD（sum / mean / 共享门控对照）在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
 
 ## 四数据集 Motivation
 
@@ -215,17 +215,13 @@ python -m unittest tests.test_csd_diagnostics -v
 
 ### CSD mean 正则对照
 
-正式实现的正则为 `mean((W_y W_y^T - I)^2)`，即对全部类别及 Gram 元素取均值。二分类、rank=1 时为原 `sum` 的 1/8；κ 仍为 1。其余数据成员、项目映射、初始化、rank、优化器、学习率、3 Epoch、有效 Batch 8、Seed 42 及自身 Clean Valid 选模规则均不变。直接使用同一个 `csd` 训练实现，通过现有 `--output-dir` 保存独立对照；旧权重和结果保留。
+正则为 `mean((W_y W_y^T - I)^2)`，即对全部类别及 Gram 元素取均值。二分类、rank=1 时为原 `sum` 的 1/8；κ 仍为 1。该次无门控对照的代码见提交 [`3cc62ff`](https://github.com/puhaoyang78/vul-detect/tree/3cc62ffba8adf3baff29109fbcf51f53544dd1aa)。当前正式训练在此基础上只增加下节的共享门控；已有 mean 权重和结果保留，仍通过同一模型与评价实现读取。
 
 ```bash
-MODEL=/path/to/codebert-base
-python -m vulnmechanism.cli train --dataset primevul --methods csd --model "$MODEL" --output-dir results/csd_mean --device cuda:0
-python -m vulnmechanism.cli train --dataset secvuleval --methods csd --model "$MODEL" --output-dir results/csd_mean --device cuda:1
+# 复用已有无门控 mean checkpoint；重新训练该对照请使用上述提交
 python -m vulnmechanism.cli evaluate --dataset primevul --methods csd --clean-only --output-dir results/csd_mean --device cuda:0
 python -m vulnmechanism.cli evaluate --dataset secvuleval --methods csd --clean-only --output-dir results/csd_mean --device cuda:1
 python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods csd --output-dir results/csd_mean --device cuda:0
-python -m vulnmechanism.cli csd-diagnostics run --output-dir results/csd_mean --device cuda:0
-python -m vulnmechanism.cli csd-diagnostics report --output-dir results/csd_mean
 ```
 
 诊断继续显式报告同参数下的 sum/mean 两种梯度尺度，Epoch 表的 `orthonormality` 与 `orthonormality_reduction` 标识实际优化项，避免将 mean 日志误记成 sum。
@@ -242,6 +238,36 @@ python -m vulnmechanism.cli csd-diagnostics report --output-dir results/csd_mean
 mean 相对 sum 的双向跨域 AUC 增加 0.001933 / 0.042590，但仍均低于 0.5；SecVulEval 域内 AUC 下降 0.010345。项目残差范数比例中位数反而从 0.0724% / 0.0749% 降至 0.0658% / 0.0654%，项目头 Train AUC 增益仅为 0.0000340 / 0.0002321。归约改变降低了正则压力，但没有解决项目残差过弱的问题。
 
 完整五项指标、混淆计数、配置及源 Train 诊断见 [mean 对照报告](results/csd_mean/report.md) 和 [24 行统一结果](results/csd_mean/comparison.csv)。SecVulEval Valid 额外逐位一致性检查发现约 10⁻⁶ 级 AUC 差异；固定 checkpoint 重推确认存在微小 Logit 波动，分类结果一致，未替换预测或重新选模，数值原样保存在报告及 `validation_repeatability.json`。
+
+### CSD 共享门控验证
+
+只在项目特定分类器中加入一个全局可学习标量 `g`，初始化为 0.1：`z_specific = tanh(g) * z_common + project_residual`。共享项的 weight 和 bias 一起缩放；Common 自身不缩放，Valid/Test 和推理仍仅使用 Common。参考[作者实现](https://github.com/vihari/CSD/blob/master/pacs/models/resnet_csd.py#L65-L76)，本次仅引入共享门控，保留原有未变换的项目系数、mean 正则、rank=1、初始化及全部训练参数；没有同时对项目系数施加 tanh，也未改变正则或优化器。
+
+```bash
+MODEL=/path/to/codebert-base
+python -m vulnmechanism.cli train --dataset primevul --methods csd --model "$MODEL" --output-dir results/csd_gate --device cuda:0
+python -m vulnmechanism.cli train --dataset secvuleval --methods csd --model "$MODEL" --output-dir results/csd_gate --device cuda:1
+python -m vulnmechanism.cli evaluate --dataset primevul --methods csd --clean-only --output-dir results/csd_gate --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset secvuleval --methods csd --clean-only --output-dir results/csd_gate --device cuda:1
+python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods csd --output-dir results/csd_gate --device cuda:0
+python -m vulnmechanism.cli csd-diagnostics run --output-dir results/csd_gate --device cuda:0
+python -m vulnmechanism.cli csd-diagnostics report --output-dir results/csd_gate
+```
+
+Train 诊断使用同一次编码的 Common / Specific，并另存 `gated_common_logit = tanh(g) * common_logit`。比较 Common 与 gated Common 测量纯缩放，比较 gated Common 与 Specific 测量项目残差增益；同时报告原始 Logit AUC，避免将 Sigmoid 舍入或缩放造成的 BCE 变化视作项目分解增强。记录门控初始/选中值、每 Epoch 轨迹、实际残差 Logit，以及相对原始/门控共享权重的残差范数。
+
+两个门控模型已完成 3 Epoch，共更新 3,648 / 6,600 次，各自 Valid 均选中第 3 Epoch，阈值为 0.38 / 0.54。最终 g 为 0.135745 / 0.132325，tanh(g) 为 0.134917 / 0.131558。所有旧权重和结果保留；下表沿用同样的 911 / 2,070 条独立 Test：
+
+| 训练 → Test | BCE AUC | CSD sum AUC | CSD mean AUC | CSD gate AUC |
+|---|---:|---:|---:|---:|
+| PrimeVul → PrimeVul | 0.844958 | 0.829703 | 0.839538 | 0.843853 |
+| PrimeVul → SecVulEval | 0.467211 | 0.465997 | 0.467931 | 0.471923 |
+| SecVulEval → SecVulEval | 0.580023 | 0.572149 | 0.561804 | 0.569664 |
+| SecVulEval → PrimeVul | 0.337628 | 0.410529 | 0.453120 | 0.504050 |
+
+相对 mean，跨域 AUC 提高 0.003992 / 0.050931，但绝对值仍接近或低于随机水平，跨域 MCC 为 −0.032189 / −0.056966。残差/原始共享权重范数中位数为 0.079704% / 0.072808%；扣除纯缩放后的残差 Train BCE 收益为 0.002553 / 0.000884，原始 Logit AUC 却下降 0.000283 / 0.008095。门控与残差确实发挥了作用，但没有形成有效增强的项目特定排名能力，不能将跨域 AUC 提高归因于有效项目分解。本轮不再添加 CSD 变体。
+
+完整五项指标、门控轨迹、缩放对照、项目分析及检查见 [门控报告](results/csd_gate/report.md) 和 [32 行统一结果](results/csd_gate/comparison.csv)。SecVulEval Valid 重推 AUC 与训练记录相差约 −4.97×10⁻⁶，分类指标及选模不变，数值差异原样记录。
 
 ## 历史 PrimeVul/MegaVul 六方法实验
 

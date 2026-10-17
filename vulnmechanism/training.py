@@ -120,6 +120,8 @@ def train(
         csd = dict(rank=1, common_loss_weight=1.0, orthonormality_weight=1.0,
                    projects=projects, inference="common classifier only",
                    orthonormality_reduction="mean",
+                   shared_gate_init=0.1,
+                   specific_classifier="tanh(g) * common logits + unchanged project residual",
                    objective="mean(specific CE + common CE) + mean((W_y W_y^T - I)^2)",
                    reference="https://proceedings.mlr.press/v119/piratla20a.html")
     model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda", csd=csd)
@@ -365,6 +367,10 @@ def train(
                 vat_norm_max=vat_norm_max,
                 epoch_seconds=time.monotonic() - started,
                 csd_losses={k: v / len(train_rows) for k, v in csd_totals.items()} if csd else None,
+                csd_gate=dict(
+                    parameter=float(model.task_modules["classifier"].shared_gate.detach()),
+                    scale=float(model.task_modules["classifier"].shared_gate.detach().tanh()),
+                ) if csd else None,
             )
         )
         key = tuple(

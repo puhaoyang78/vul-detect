@@ -15,6 +15,22 @@ from vulnmechanism.training import TRAINING
 
 
 class CSDDiagnosticTests(unittest.TestCase):
+    def test_gate_control_separates_scaling_from_project_ranking_gain(self):
+        labels = [0, 1, 0, 1]
+        common = [-2., -1., 1., 2.]
+        gated = [-.2, -.1, .1, .2]
+        specific = [-.2, .1, -.1, .2]
+        predictions = [dict(sample_key=str(i), label=y, common_logit=a,
+                            gated_common_logit=b, specific_logit=c)
+                       for i, (y, a, b, c) in enumerate(zip(labels, common, gated, specific))]
+        value = diagnostics.gate_decomposition(predictions, .5)
+        self.assertEqual(value["gate_only"]["auc_logits_gain"], 0.)
+        self.assertEqual(value["project_residual"]["auc_logits_gain"], .25)
+        self.assertGreater(value["project_residual"]["bce_reduction"], 0.)
+        self.assertEqual(value["project_residual_at_half"]["wrong_to_correct"], 2)
+        self.assertEqual(value["project_residual_at_half"]["correct_to_wrong"], 0)
+        self.assertAlmostEqual(value["absolute_project_residual_logit"]["mean"], .1)
+
     def test_reduction_factor_paired_metrics_and_single_class_projects(self):
         head = core.CSD(3, domains=3)
         with torch.no_grad():
@@ -36,7 +52,8 @@ class CSDDiagnosticTests(unittest.TestCase):
         labels = [0, 0, 1, 1, 0, 1]
         common = [-1., .1, -.1, 1., -1., 1.]
         specific = [-1., -.1, .1, 1., -1., 1.]
-        predictions = [dict(sample_key=str(i), label=y, common_logit=a, specific_logit=b)
+        predictions = [dict(sample_key=str(i), label=y, common_logit=a, specific_logit=b,
+                            gated_common_logit=a)
                        for i, (y, a, b) in enumerate(zip(labels, common, specific))]
         value = diagnostics.paired_metrics(predictions, .5)
         self.assertEqual((value["flips"], value["wrong_to_correct"], value["correct_to_wrong"]), (2, 2, 0))
@@ -57,7 +74,7 @@ class CSDDiagnosticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             tiny_base(root / "base")
-            csd = dict(rank=1, projects=["p0", "p1"], orthonormality_reduction="mean")
+            csd = dict(rank=1, projects=["p0", "p1"], orthonormality_reduction="mean", shared_gate_init=.1)
             model = core.CodeBERT(str(root / "base"), "cpu", csd=csd)
             run = root / "results/primevul/csd"
             run.mkdir(parents=True)
@@ -74,6 +91,7 @@ class CSDDiagnosticTests(unittest.TestCase):
             (root / "data/primevul/test.jsonl").write_text("FORBIDDEN TARGET TEST")
             (root / "data/primevul/valid.jsonl").write_text("FORBIDDEN VALID")
             write_jsonl(run / "best.training.jsonl", [dict(event="epoch", epoch=e,
+                csd_gate=dict(parameter=.1, scale=float(torch.tensor(.1).tanh())),
                 csd_losses=dict(common_loss=.7, specific_loss=.69, orthonormality=8.)) for e in (1, 2, 3)])
 
             def source_only(path):
@@ -93,8 +111,13 @@ class CSDDiagnosticTests(unittest.TestCase):
             self.assertEqual(saved["project_composition"]["projects"], 2)
             self.assertEqual(saved["final_gradient_probe"]["head_regularizer_grad_norms"]["coefficients.weight"], 0.)
             self.assertEqual(saved["final_gradient_probe"]["head_regularizer_grad_norms"]["common.bias"], 0.)
+            self.assertEqual(saved["final_gradient_probe"]["head_regularizer_grad_norms"]["shared_gate"], 0.)
+            self.assertGreater(saved["final_gradient_probe"]["head_classification_grad_norms"]["shared_gate"], 0.)
+            self.assertAlmostEqual(saved["initial_head"]["shared_gate"]["parameter"], .1, places=7)
+            self.assertEqual(saved["train_gate_decomposition"]["gate_only"]["auc_logits_gain"], 0.)
             self.assertEqual(len(saved["epochs"]), 3)
             self.assertEqual(saved["epochs"][0]["orthonormality_reduction"], "mean")
             self.assertEqual(saved["epochs"][0]["orthonormality"], 8.)
             self.assertEqual(saved["epochs"][0]["orthonormality_sum"], 64.)
             self.assertEqual(saved["epochs"][0]["mean_at_same_parameters"], 8.)
+            self.assertEqual(saved["epochs"][0]["shared_gate_parameter"], .1)

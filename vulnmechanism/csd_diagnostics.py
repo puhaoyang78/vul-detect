@@ -35,6 +35,7 @@ def distribution(values):
                 l2=float(np.linalg.norm(x)))
 
 
+@torch.no_grad()
 def head_statistics(head):
     w = head.common.weight.detach().cpu().double()
     u = head.specific_weight.detach().cpu().double()
@@ -50,13 +51,18 @@ def head_statistics(head):
     relative = residual.flatten(1).norm(dim=1) / w.norm()
     decision_relative = (residual[:, 1] - residual[:, 0]).norm(dim=1) / (w[1] - w[0]).norm()
     cosine = torch.einsum("ch,rch->cr", w, u) / (w.norm(dim=1)[:, None] * u.norm(dim=2).T)
+    scale = float(head.common_scale)
     return dict(
+        shared_gate=dict(parameter=float(head.shared_gate) if head.shared_gate is not None else None,
+                         scale=scale, learnable=head.shared_gate is not None),
         parameters={name: distribution(p.detach().cpu().numpy()) for name, p in head.named_parameters()},
         common_row_norms=w.norm(dim=1).tolist(), basis_row_norms=u.norm(dim=2).tolist(),
         common_weight_norm=float(w.norm()), common_decision_weight_norm=float((w[1] - w[0]).norm()),
         basis_weight_norm=float(u.norm()), coefficients_abs=distribution(a.abs().numpy()),
         residual_weight_norm=distribution(residual.flatten(1).norm(dim=1).numpy()),
         relative_residual_weight_norm=distribution(relative.numpy()),
+        relative_residual_to_gated_common_weight_norm=(
+            distribution((relative / abs(scale)).numpy()) if scale else None),
         relative_decision_residual_weight_norm=distribution(decision_relative.numpy()),
         residual_bias_norm=distribution(residual_bias.norm(dim=1).numpy()),
         fraction_projects_residual_below_0p1_percent=float((relative < .001).double().mean()),
@@ -98,6 +104,22 @@ def paired_metrics(predictions, threshold):
     )
 
 
+def gate_decomposition(predictions, threshold):
+    """Separate global logit scaling from the project's additive contribution."""
+    gate_only = [dict(r, specific_logit=r["gated_common_logit"]) for r in predictions]
+    residual = [dict(r, common_logit=r["gated_common_logit"]) for r in predictions]
+    return dict(
+        gate_only=paired_metrics(gate_only, threshold),
+        project_residual=paired_metrics(residual, threshold),
+        project_residual_at_half=paired_metrics(residual, .5),
+        project_residual_logit=distribution([
+            r["specific_logit"] - r["gated_common_logit"] for r in predictions]),
+        absolute_project_residual_logit=distribution([
+            abs(r["specific_logit"] - r["gated_common_logit"]) for r in predictions]),
+    )
+
+
+@torch.no_grad()
 def project_statistics(rows, predictions, head, projects, threshold):
     by_project = defaultdict(list)
     for row, prediction in zip(rows, predictions):
@@ -109,10 +131,14 @@ def project_statistics(rows, predictions, head, projects, threshold):
     a = head.coefficients.weight.detach().cpu().double()
     residual = torch.einsum("dr,rch->dch", a, u)
     bias = a @ head.specific_bias.detach().cpu().double()
+    scale = float(head.common_scale)
     records = []
     for i, project in enumerate(projects):
         members = by_project[project]
         value = paired_metrics(members, threshold)
+        residual_value = paired_metrics([
+            dict(r, common_logit=r["gated_common_logit"]) for r in members], threshold)
+        residual_logits = [r["specific_logit"] - r["gated_common_logit"] for r in members]
         positive = sum(r["label"] for r in members)
         records.append(dict(
             project=project, domain_id=i, samples=len(members), positive=positive,
@@ -120,12 +146,20 @@ def project_statistics(rows, predictions, head, projects, threshold):
             single_class=positive in (0, len(members)), coefficient=float(a[i, 0]),
             coefficient_norm=float(a[i].norm()), residual_weight_norm=float(residual[i].norm()),
             relative_residual_weight_norm=float(residual[i].norm() / w.norm()),
+            relative_residual_to_gated_common_weight_norm=(
+                float(residual[i].norm() / (abs(scale) * w.norm())) if scale else None),
             residual_decision_weight_norm=float((residual[i, 1] - residual[i, 0]).norm()),
             relative_decision_residual_weight_norm=float((residual[i, 1] - residual[i, 0]).norm() / (w[1] - w[0]).norm()),
             residual_bias_norm=float(bias[i].norm()), residual_decision_bias=float(bias[i, 1] - bias[i, 0]),
             common_bce=value["common"]["bce"], specific_bce=value["specific"]["bce"],
             bce_reduction=value["bce_reduction"], common_auc=value["common"]["auc"],
             specific_auc=value["specific"]["auc"], auc_gain=value["auc_gain"],
+            gated_common_bce=residual_value["common"]["bce"], gated_common_auc=residual_value["common"]["auc"],
+            project_residual_bce_reduction=residual_value["bce_reduction"],
+            project_residual_auc_gain=residual_value["auc_gain"],
+            project_residual_auc_logits_gain=residual_value["auc_logits_gain"],
+            mean_project_residual_logit=float(np.mean(residual_logits)),
+            mean_abs_project_residual_logit=float(np.mean(np.abs(residual_logits))),
             mean_delta_logit=value["logit_delta"]["mean"],
             mean_abs_delta_logit=value["absolute_logit_delta"]["mean"],
             flips=value["flips"], flip_rate=value["flip_rate"],
@@ -156,6 +190,8 @@ def project_statistics(rows, predictions, head, projects, threshold):
         ("samples", "coefficient_norm"), ("samples", "mean_abs_delta_logit"),
         ("samples", "bce_reduction"), ("positive_fraction", "coefficient"),
         ("positive_fraction", "mean_delta_logit"), ("class_imbalance", "coefficient_norm"),
+        ("samples", "mean_abs_project_residual_logit"),
+        ("positive_fraction", "mean_project_residual_logit"),
     ):
         x = [abs(r["positive_fraction"] - .5) if left == "class_imbalance" else r[left] for r in records]
         y = [r[right] for r in records]
@@ -169,6 +205,8 @@ def project_statistics(rows, predictions, head, projects, threshold):
                                median_abs_coefficient=float(np.median([r["coefficient_norm"] for r in members])),
                                median_relative_residual=float(np.median([r["relative_residual_weight_norm"] for r in members])),
                                flips=sum(r["flips"] for r in members),
+                               sample_mean_abs_project_residual_logit=sum(
+                                   r["samples"] * r["mean_abs_project_residual_logit"] for r in members) / sum(r["samples"] for r in members),
                                sample_mean_abs_logit_delta=sum(r["samples"] * r["mean_abs_delta_logit"] for r in members) / sum(r["samples"] for r in members)))
     return records, summary, correlations, groups
 
@@ -226,6 +264,7 @@ def predict_train(model, rows, builder, projects, device, batch_size):
     random.Random(SEED).shuffle(order)
     domain_ids = {p: i for i, p in enumerate(projects)}
     model.eval()
+    scale = float(model.task_modules["classifier"].common_scale)
     predictions = [None] * len(rows)
     for start in training_bar(range(0, len(rows), batch_size), desc="CSD source Train"):
         indexes = order[start:start + batch_size]
@@ -237,7 +276,8 @@ def predict_train(model, rows, builder, projects, device, batch_size):
         for i, a, b in zip(indexes, common.cpu().tolist(), specific.cpu().tolist()):
             predictions[i] = dict(sample_key=rows[i]["sample_key"], project=rows[i]["project"],
                                   label=rows[i]["label"], common_logit=a, specific_logit=b,
-                                  delta_logit=b-a)
+                                  delta_logit=b-a, gated_common_logit=scale*a,
+                                  project_residual_logit=b-scale*a, gate_delta_logit=(scale-1)*a)
         if start == 0 or (start // batch_size + 1) % 250 == 0:
             print(f"Source Train diagnostics: {min(start + batch_size, len(rows))}/{len(rows)}", flush=True)
     return predictions
@@ -298,13 +338,16 @@ def diagnose(data_dir, output_dir, dataset, *, device="auto"):
                                orthonormality=reg, orthonormality_sum=reg_sum,
                                regularizer_over_combined_ce=reg / ce, regularizer_loss_fraction=reg / (reg + ce),
                                mean_at_same_parameters=reg_mean,
-                               mean_regularizer_loss_fraction=reg_mean / (reg_mean + ce)))
+                               mean_regularizer_loss_fraction=reg_mean / (reg_mean + ce),
+                               shared_gate_parameter=(event["csd_gate"]["parameter"] if event.get("csd_gate") else None),
+                               shared_gate_scale=(event["csd_gate"]["scale"] if event.get("csd_gate") else None)))
     result = dict(
         dataset=dataset, selected_epoch=checkpoint["selected_epoch"], threshold=threshold,
         protocol=dict(seed=SEED, cohort="all source Train members, Seed-42 shuffled inference; CSV retains source order",
                       train_samples=len(rows), gradient_probe_samples=len(probe),
                       inference_batch_size=batch_size, labels="native saved Train labels",
                       target_data_read=False, optimizer_updates=0, inference="same encoder forward supplies both heads",
+                      gate_control="gated Common = tanh(g) * Common; compare Specific against this matched-scale baseline to isolate project residual; raw-logit AUC additionally controls sigmoid rounding",
                       model_path=checkpoint["model_path"], training_config=checkpoint["training_config"],
                       csd={k: v for k, v in checkpoint["csd"].items() if k != "projects"},
                       checkpoint_environment=checkpoint["environment"], torch=torch.__version__,
@@ -312,6 +355,7 @@ def diagnose(data_dir, output_dir, dataset, *, device="auto"):
                       gradient_probe="eval/dropout-off gradients at reconstructed initialization and saved checkpoint; not historical training-step gradients"),
         initial_head=initial, final_head=final, initial_gradient_probe=initial_gradients,
         final_gradient_probe=gradients, train=paired_metrics(predictions, threshold),
+        train_gate_decomposition=gate_decomposition(predictions, threshold),
         train_at_threshold_half=paired_metrics(predictions, .5), epochs=epochs,
         project_composition=composition, project_spearman_correlations=correlations, project_size_groups=groups,
         references=dict(paper="https://proceedings.mlr.press/v119/piratla20a.html",
@@ -332,7 +376,7 @@ def report(output_dir):
     for dataset in DATASETS:
         r = json.loads((root / f"{dataset}.json").read_text())
         train, head, projects = r["train"], r["final_head"], r["project_composition"]
-        summaries.append(dict(
+        summary = dict(
             dataset=dataset, train_samples=projects["samples"], projects=projects["projects"],
             median_project_size=projects["size"]["median"], single_class_projects=projects["single_class_projects"],
             single_class_samples=projects["single_class_samples"],
@@ -344,7 +388,21 @@ def report(output_dir):
             common_bce=train["common"]["bce"], specific_bce=train["specific"]["bce"],
             common_auc=train["common"]["auc"], specific_auc=train["specific"]["auc"],
             auc_gain=train["auc_gain"], bce_reduction=train["bce_reduction"],
-        ))
+        )
+        if "train_gate_decomposition" in r:
+            residual = r["train_gate_decomposition"]["project_residual"]
+            relative = head["relative_residual_to_gated_common_weight_norm"]
+            summary.update(
+                shared_gate_parameter=head["shared_gate"]["parameter"], shared_gate_scale=head["shared_gate"]["scale"],
+                median_residual_to_gated_common=relative["median"] if relative is not None else None,
+                project_residual_bce_reduction=residual["bce_reduction"],
+                project_residual_auc_gain=residual["auc_gain"],
+                project_residual_auc_logits_gain=residual["auc_logits_gain"],
+                mean_abs_project_residual_logit=r["train_gate_decomposition"]["absolute_project_residual_logit"]["mean"],
+                gate_only_bce_reduction=r["train_gate_decomposition"]["gate_only"]["bce_reduction"],
+                gate_only_auc_logits_gain=r["train_gate_decomposition"]["gate_only"]["auc_logits_gain"],
+            )
+        summaries.append(summary)
         epochs.extend(r["epochs"])
     _write_csv(root / "summary.csv", summaries)
     _write_csv(root / "epochs.csv", epochs)
