@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 import csv
+from difflib import SequenceMatcher
 import json
+import math
 from pathlib import Path
 import random
 
 import joblib
 import numpy as np
 import sklearn
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2samp, spearmanr
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
@@ -560,3 +562,405 @@ def motivation_report(data_dir, output_dir, datasets):
         datasets=len(datasets), clean_rows=len(clean), robustness_rows=len(robustness),
         length_rows=len(length_results), output=str(root),
     )
+
+
+def _input_conflicts(rows, encoded):
+    """Count indistinguishable opposite-label inputs without removing any rows."""
+    groups = defaultdict(list)
+    for row in rows:
+        groups[encoded[row["sample_key"]]].append(row)
+    mixed = [g for g in groups.values() if {r["label"] for r in g} == {0, 1}]
+    unavoidable_errors = sum(min(Counter(r["label"] for r in g).values()) for g in mixed)
+    return dict(
+        groups=len(mixed), samples=sum(map(len, mixed)),
+        positive=sum(r["label"] for g in mixed for r in g),
+        minimum_errors=unavoidable_errors,
+        maximum_accuracy=1 - unavoidable_errors / len(rows),
+    )
+
+
+def transfer_train_probe(data_dir, output_dir, model_path, device="auto"):
+    """Infer a fixed 512-per-class source-Train sample using the saved BCE only."""
+    import torch
+    from .model import InputBuilder, AutoTokenizer, load_model, predict_logits, resolve_device, seed_everything
+
+    seed_everything(42)
+    device = resolve_device(device)
+    builder = InputBuilder(AutoTokenizer.from_pretrained(model_path))
+    output_dir = Path(output_dir)
+    root = output_dir / "transfer_primevul_secvuleval"
+    summary, predictions = [], []
+    for dataset in ("primevul", "secvuleval"):
+        rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
+        rng, keys = random.Random(42), set()
+        for label in (0, 1):
+            keys.update(r["sample_key"] for r in rng.sample([r for r in rows if r["label"] == label], 512))
+        rows = [r for r in rows if r["sample_key"] in keys]
+        checkpoint_path = output_dir / dataset / "bce/best.pt"
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        if checkpoint["dataset"] != dataset or checkpoint["method"] != "bce":
+            raise ValueError("Train diagnostic checkpoint differs")
+        model = load_model(checkpoint, device, model_path=model_path)
+        logits = predict_logits(model, rows, builder, device=device, batch_size=4)
+        scores = logits.sigmoid().tolist()
+        threshold = checkpoint["decision_threshold"]
+        summary.append(dict(
+            dataset=dataset, checkpoint=str(checkpoint_path), selected_epoch=checkpoint["selected_epoch"],
+            **metrics([r["label"] for r in rows], scores, threshold),
+            bce=float(torch.nn.functional.binary_cross_entropy_with_logits(logits, torch.tensor([r["label"] for r in rows], dtype=logits.dtype))),
+        ))
+        predictions.extend(dict(
+            dataset=dataset, sample_key=r["sample_key"], label=r["label"], project=r["project"],
+            source_file=r["source_file"], source_row=r["source_row"],
+            logit=float(logit), score=score, threshold=threshold,
+        ) for r, logit, score in zip(rows, logits.tolist(), scores))
+        del model, checkpoint
+        print(f"{dataset}: Train probe AUC={summary[-1]['auc']:.6f}, BCE={summary[-1]['bce']:.6f}", flush=True)
+    write_jsonl(root / "diagnosis.train.predictions.jsonl", predictions)
+    write_json(root / "diagnosis.train.metrics.json", dict(
+        protocol="Source Train only; seed 42; sample 512 negatives then 512 positives without replacement; retain source order; frozen existing BCE, source Valid epoch/threshold unchanged. This is an in-sample learning diagnostic, not generalization performance.",
+        results=summary,
+    ))
+    return summary
+
+
+def _project_auc_interval(rows, scores, repetitions=1000):
+    """Project-cluster bootstrap, keeping paired functions in the same draw."""
+    projects = sorted({r["project_url"] or r["project"] for r in rows})
+    index = {p: i for i, p in enumerate(projects)}
+    owners = np.array([index[r["project_url"] or r["project"]] for r in rows])
+    labels = np.array([r["label"] for r in rows])
+    rng, values = np.random.default_rng(42), []
+    for _ in range(repetitions):
+        weights = np.bincount(rng.integers(len(projects), size=len(projects)), minlength=len(projects))[owners]
+        if not all(weights[labels == y].sum() for y in (0, 1)):
+            continue
+        values.append(roc_auc_score(labels, scores, sample_weight=weights))
+    if not values:
+        raise ValueError("project bootstrap has no two-class replicates")
+    return dict(
+        low=float(np.percentile(values, 2.5)), high=float(np.percentile(values, 97.5)),
+        repetitions=repetitions, usable_repetitions=len(values), projects=len(projects),
+    )
+
+
+def _transfer_native_metadata(raw_root, selected):
+    """Audit native labels/code and recover only metadata needed for diagnosis."""
+    import pyarrow.parquet as pq
+
+    def project_url(value):
+        return (value or "").strip().rstrip("/").removesuffix(".git").casefold()
+
+    datasets = ("primevul", "secvuleval")
+    pairs = {d: [] for d in datasets}
+    sec = pq.read_table(raw_root / "SecVulEval/data/train-00000-of-00001.parquet").to_pylist()
+    sec_by_id = {r["idx"]: r for r in sec}
+    sec_by_source = defaultdict(list)
+    references = set()
+    for r in sec:
+        sec_by_source[r["func_body"]].append(r)
+        fixed = r["fixed_func_idx"]
+        if r["is_vulnerable"] and fixed is not None and math.isfinite(fixed):
+            other = sec_by_id[int(fixed)]
+            if other["is_vulnerable"] or project_url(r["project_url"]) != project_url(other["project_url"]):
+                raise ValueError("invalid SecVulEval native repair link")
+            references.add(other["idx"])
+            pairs["secvuleval"].append((f"secvuleval:{r['idx']}", f"secvuleval:{other['idx']}"))
+    for r in sec:
+        key = f"secvuleval:{r['idx']}"
+        if key in selected["secvuleval"]:
+            row = selected["secvuleval"][key]
+            if row["label"] != int(r["is_vulnerable"]) or row["raw_source"] != r["func_body"]:
+                raise ValueError(f"{key}: prepared code/label differs from native data")
+            row.update(
+                project_url=project_url(r["project_url"]),
+                known_fixed_negative=r["idx"] in references,
+            )
+
+    prime_fixed, overlaps = set(), defaultdict(list)
+    for split in ("train", "valid", "test"):
+        paired = read_jsonl(raw_root / f"PrimeVul_v0.1/primevul_{split}_paired.jsonl")
+        if len(paired) % 2:
+            raise ValueError("odd number of PrimeVul paired records")
+        for a, b in zip(paired[::2], paired[1::2]):
+            if (a["target"], b["target"]) != (1, 0):
+                raise ValueError("PrimeVul paired order is not vulnerable/fixed")
+            pairs["primevul"].append((f"primevul:{a['idx']}", f"primevul:{b['idx']}"))
+            prime_fixed.add(b["idx"])
+        path = raw_root / f"PrimeVul_v0.1/primevul_{split}.jsonl"
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                r = json.loads(line)
+                key = f"primevul:{r['idx']}"
+                if r["func"] in sec_by_source:
+                    overlaps[r["func"]].append((key, int(r["target"])))
+                if key in selected["primevul"]:
+                    row = selected["primevul"][key]
+                    if row["label"] != r["target"] or row["raw_source"] != r["func"]:
+                        raise ValueError(f"{key}: prepared code/label differs from native data")
+                    row.update(
+                        project_url=project_url(r.get("project_url")),
+                        known_fixed_negative=r["idx"] in prime_fixed,
+                    )
+    for rows in selected.values():
+        if any("project_url" not in r for r in rows.values()):
+            raise ValueError("native metadata did not cover all prepared members")
+
+    conflicts, matrix, selected_matrix = [], Counter(), Counter()
+    for source, prime in overlaps.items():
+        sec_rows = sec_by_source[source]
+        prime_labels = tuple(sorted({y for _, y in prime}))
+        sec_labels = tuple(sorted({int(r["is_vulnerable"]) for r in sec_rows}))
+        matrix[str(prime_labels) + ":" + str(sec_labels)] += 1
+        pp = [(k, y) for k, y in prime if k in selected["primevul"]]
+        ss = [(f"secvuleval:{r['idx']}", int(r["is_vulnerable"])) for r in sec_rows
+              if f"secvuleval:{r['idx']}" in selected["secvuleval"]]
+        if pp and ss:
+            selected_matrix[str(tuple(sorted({y for _, y in pp}))) + ":" +
+                            str(tuple(sorted({y for _, y in ss})))] += 1
+        if prime_labels != sec_labels:
+            conflicts.append(dict(
+                primevul_keys=";".join(k for k, _ in prime), primevul_labels=str(prime_labels),
+                secvuleval_keys=";".join(f"secvuleval:{r['idx']}" for r in sec_rows),
+                secvuleval_labels=str(sec_labels), in_both_selected=bool(pp and ss),
+            ))
+    return pairs, dict(
+        native_overlapping_sources=len(overlaps), native_label_sets=dict(matrix),
+        selected_overlapping_sources=sum(selected_matrix.values()), selected_label_sets=dict(selected_matrix),
+        native_disagreeing_sources=len(conflicts),
+        interpretation="Different native labels for identical code are annotation/context disagreements, not automatically verified label errors.",
+    ), conflicts
+
+
+def transfer_diagnostics(data_dir, output_dir, model_path):
+    """Diagnose the established PrimeVul/SecVulEval transfer; never train or reselect."""
+    from transformers import AutoTokenizer
+    from .data import class_counts
+    from .model import InputBuilder
+
+    datasets = ("primevul", "secvuleval")
+    data_dir, output_dir = Path(data_dir), Path(output_dir)
+    root = output_dir / "transfer_primevul_secvuleval"
+    formal = json.loads((root / "results.json").read_text())
+    rows = {d: dict(
+        train=read_jsonl(data_dir / d / "train.jsonl"), valid=validation_rows(data_dir / d),
+        test=test_rows(data_dir / d),
+    ) for d in datasets}
+    selected = {d: {r["sample_key"]: r for values in rows[d].values() for r in values} for d in datasets}
+    raw_roots = {json.loads((data_dir / d / "statistics.json").read_text())["raw_root"] for d in datasets}
+    if len(raw_roots) != 1:
+        raise ValueError("native data roots differ")
+    print("Transfer diagnosis: verify native code, labels and repair links", flush=True)
+    pairs, labels, conflicts = _transfer_native_metadata(Path(raw_roots.pop()), selected)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    builder = InputBuilder(tokenizer)
+    budget = builder.source_max_length - len(builder.source_prefix) - 2
+    encoded, features = {}, {}
+    for d in datasets:
+        with (output_dir / "motivation" / f"{d}.features.csv").open() as handle:
+            cached = {r["sample_key"]: r for r in csv.DictReader(handle)}
+        values = list(selected[d].values())
+        for start in range(0, len(values), 64):
+            batch = values[start:start + 64]
+            tokens = tokenizer(
+                [r["raw_source"] for r in batch], add_special_tokens=False,
+                truncation=True, max_length=budget, verbose=False,
+            )["input_ids"]
+            for r, ids in zip(batch, tokens):
+                key = r["sample_key"]
+                encoded[key] = np.asarray(ids, dtype=np.uint32).tobytes()
+                n_lines = len(r["raw_source"].splitlines())
+                if key in cached:
+                    old = cached[key]
+                    if int(old["label"]) != r["label"] or int(old["total_lines"]) != n_lines:
+                        raise ValueError(f"{key}: cached feature label/length differs")
+                    n_tokens = int(old["codebert_tokens"])
+                else:
+                    n_tokens = len(tokenizer(r["raw_source"], add_special_tokens=False, verbose=False)["input_ids"])
+                features[key] = dict(total_lines=n_lines, codebert_tokens=n_tokens)
+        print(f"{d}: tokenized {len(values)} prepared members; budget {budget}", flush=True)
+
+    training_sources = [
+        {r["raw_source"] for r in rows[d][s]} for d in datasets for s in ("train", "valid")
+    ]
+    cohorts, matched = {}, {}
+    for d in datasets:
+        with (root / f"{d}.members.csv").open() as handle:
+            members = list(csv.DictReader(handle))
+        if [(r["sample_key"], int(r["label"])) for r in members] != [(r["sample_key"], r["label"]) for r in rows[d]["test"]]:
+            raise ValueError("formal membership order/labels differ")
+        keys = {r["sample_key"] for r in members if r["independent"] == "True"}
+        expected = {r["sample_key"] for r in rows[d]["test"] if not any(r["raw_source"] in s for s in training_sources)}
+        if keys != expected:
+            raise ValueError("formal exact-overlap exclusions differ")
+        cohorts[d] = [r for r in rows[d]["test"] if r["sample_key"] in keys]
+        matched[d] = match_lengths(cohorts[d], seed=42)
+    labels["independent_test_disagreements"] = {}
+    for d in datasets:
+        disagreeing_keys = {
+            key for conflict in conflicts for key in conflict[f"{d}_keys"].split(";")
+        }
+        labels["independent_test_disagreements"][d] = class_counts(
+            [r for r in cohorts[d] if r["sample_key"] in disagreeing_keys]
+        )
+
+    data_statistics = []
+    for d in datasets:
+        for split, values in {**rows[d], "independent_test": cohorts[d], "length_matched_test": matched[d]}.items():
+            y = [r["label"] for r in values]
+            keys = {r["sample_key"] for r in values}
+            negative = [r for r in values if r["label"] == 0]
+            entry = dict(
+                dataset=d, split=split, **class_counts(values),
+                projects=len({r["project"] for r in values}),
+                known_fixed_negative=sum(r["known_fixed_negative"] for r in negative),
+                complete_repair_pairs=sum(a in keys and b in keys for a, b in pairs[d]),
+                length_auc=float(roc_auc_score(y, [features[r["sample_key"]]["total_lines"] for r in values])),
+                token_auc=float(roc_auc_score(y, [features[r["sample_key"]]["codebert_tokens"] for r in values])),
+                input_conflicts=_input_conflicts(values, encoded),
+            )
+            for label in (0, 1):
+                group = [r for r in values if r["label"] == label]
+                entry[f"class_{label}"] = dict(
+                    median_lines=float(np.median([features[r["sample_key"]]["total_lines"] for r in group])),
+                    median_tokens=float(np.median([features[r["sample_key"]]["codebert_tokens"] for r in group])),
+                    truncated=sum(features[r["sample_key"]]["codebert_tokens"] > budget for r in group),
+                )
+            data_statistics.append(entry)
+
+    predictions, lexical, lexical_metrics = {}, {}, []
+    for source in datasets:
+        lexical_model = joblib.load(output_dir / "motivation" / f"{source}.tfidf.joblib")
+        lexical_selection = json.loads((output_dir / "motivation" / f"{source}.tfidf.metrics.json").read_text())
+        if any(lexical_selection["members"][s] != len(rows[source][s]) for s in ("train", "valid")):
+            raise ValueError("saved lexical classifier Train/Valid sizes differ")
+        for target in datasets:
+            lexical[source, target] = dict(zip(
+                (r["sample_key"] for r in rows[target]["test"]),
+                lexical_model.predict_proba([r["raw_source"] for r in rows[target]["test"]])[:, 1].tolist(),
+            ))
+            source_token_spans.cache_clear()
+            values = cohorts[target]
+            lexical_metrics.append(dict(
+                source=source, target=target, selected_C=lexical_selection["selected_C"],
+                **metrics([r["label"] for r in values],
+                          [lexical[source, target][r["sample_key"]] for r in values],
+                          lexical_selection["valid"]["threshold"]),
+            ))
+        for method in ("bce", "lp_ft", "swa"):
+            run = output_dir / source / method
+            config = json.loads((run / "config.json").read_text())
+            if config["input_protocol"]["source_budget"] != budget:
+                raise ValueError("model input protocol differs")
+            for target in datasets:
+                name = "test" if source == target else f"{target}.test"
+                saved = read_jsonl(run / f"{name}.predictions.jsonl")
+                if [(r["sample_key"], r["label"]) for r in saved] != [(r["sample_key"], r["label"]) for r in rows[target]["test"]]:
+                    raise ValueError("saved BCE/LP-FT/SWA prediction members differ")
+                if len({r["threshold"] for r in saved}) != 1:
+                    raise ValueError("saved predictions contain different thresholds")
+                predictions[source, method, target] = {r["sample_key"]: r for r in saved}
+
+    performance, pair_members = [], []
+    for target in datasets:
+        keys = {r["sample_key"] for r in cohorts[target]}
+        for positive, negative in pairs[target]:
+            if positive not in keys or negative not in keys:
+                continue
+            a, b = selected[target][positive], selected[target][negative]
+            pair_members.append(dict(
+                dataset=target, positive_key=positive, negative_key=negative,
+                positive_lines=features[positive]["total_lines"], negative_lines=features[negative]["total_lines"],
+                same_visible_input=encoded[positive] == encoded[negative],
+                same_full_source=a["raw_source"] == b["raw_source"],
+                line_similarity=SequenceMatcher(None, a["raw_source"].splitlines(), b["raw_source"].splitlines(), autojunk=False).ratio(),
+                **{f"{source}_{method}_logit_difference":
+                   predictions[source, method, target][positive]["logit"] - predictions[source, method, target][negative]["logit"]
+                   for source in datasets for method in ("bce", "lp_ft", "swa")},
+            ))
+        for source in datasets:
+            seen = {r["project_url"] for r in rows[source]["train"] if r["project_url"]}
+            subsets = dict(
+                independent=cohorts[target], length_matched=matched[target],
+                not_truncated=[r for r in cohorts[target] if features[r["sample_key"]]["codebert_tokens"] <= budget],
+                project_seen=[r for r in cohorts[target] if r["project_url"] in seen],
+                project_unseen=[r for r in cohorts[target] if r["project_url"] and r["project_url"] not in seen],
+            )
+            for method in ("bce", "lp_ft", "swa"):
+                pred = predictions[source, method, target]
+                threshold = next(iter(pred.values()))["threshold"]
+                for subset, values in subsets.items():
+                    if not values:
+                        continue
+                    scores = [pred[r["sample_key"]]["score"] for r in values]
+                    result = dict(
+                        source=source, method=method, target=target, subset=subset,
+                        positive=sum(r["label"] for r in values),
+                        negative=sum(r["label"] == 0 for r in values),
+                        **metrics([r["label"] for r in values], scores, threshold),
+                        rho_lines=float(spearmanr(scores, [features[r["sample_key"]]["total_lines"] for r in values]).statistic),
+                        rho_source_tfidf=float(spearmanr(scores, [lexical[source, target][r["sample_key"]] for r in values]).statistic),
+                        negative_score_median=float(np.median([pred[r["sample_key"]]["score"] for r in values if r["label"] == 0])),
+                        positive_score_median=float(np.median([pred[r["sample_key"]]["score"] for r in values if r["label"] == 1])),
+                    )
+                    if subset == "independent":
+                        reference = next(r for r in formal["results"] if r["view"] == "independent" and r["training_dataset"] == source and r["test_dataset"] == target and r["method"] == method)
+                        if any(result[k] != reference[k] for k in ("auc", "accuracy", "f1", "mcc", "auprc", "tp", "tn", "fp", "fn")):
+                            raise ValueError("diagnosis does not reproduce formal metrics")
+                    if method == "bce" and subset in ("independent", "length_matched"):
+                        result["project_bootstrap_auc_95ci"] = _project_auc_interval(values, scores)
+                    performance.append(result)
+        print(f"{target}: audited fixed Test {len(cohorts[target])}, line matched {len(matched[target])}", flush=True)
+
+    pair_statistics = []
+    for target in datasets:
+        values = [r for r in pair_members if r["dataset"] == target]
+        for source in datasets:
+            for method in ("bce", "lp_ft", "swa"):
+                delta = [r[f"{source}_{method}_logit_difference"] for r in values]
+                distinct = [r[f"{source}_{method}_logit_difference"] for r in values if not r["same_visible_input"]]
+                pair_statistics.append(dict(
+                    source=source, method=method, target=target, pairs=len(values),
+                    wins=sum(v > 0 for v in delta), ties=sum(v == 0 for v in delta),
+                    pair_ranking_accuracy=(sum(v > 0 for v in delta) + .5 * sum(v == 0 for v in delta)) / len(delta),
+                    median_logit_difference=float(np.median(delta)),
+                    median_line_similarity=float(np.median([r["line_similarity"] for r in values])),
+                    identical_visible_inputs=sum(r["same_visible_input"] for r in values),
+                    distinct_input_pairs=len(distinct),
+                    distinct_input_wins=sum(v > 0 for v in distinct),
+                    distinct_input_ties=sum(v == 0 for v in distinct),
+                    distinct_input_ranking_accuracy=(sum(v > 0 for v in distinct) + .5 * sum(v == 0 for v in distinct)) / len(distinct) if distinct else None,
+                ))
+    members = []
+    for d in datasets:
+        keys = {r["sample_key"] for r in cohorts[d]}
+        match_keys = {r["sample_key"] for r in matched[d]}
+        for r in rows[d]["test"]:
+            members.append(dict(
+                dataset=d, sample_key=r["sample_key"], label=r["label"],
+                independent=r["sample_key"] in keys, length_matched=r["sample_key"] in match_keys,
+                project_url=r["project_url"], known_fixed_negative=r["known_fixed_negative"],
+                **features[r["sample_key"]],
+            ))
+    summary = dict(
+        protocol=dict(
+            seed=42, datasets=list(datasets), source_budget=budget,
+            inputs="Existing native/prepared data, saved CodeBERT predictions, cached length features and source-fitted TF-IDF models only.",
+            training="No training, checkpoint selection, threshold adjustment, CodeBERT inference or changes to data/evaluation members.",
+            matching="Existing match_lengths: exact total lines, seed 42, labels 0/1, no replacement. New diagnostic subsets of the fixed independent cohorts; historical Motivation subsets unchanged.",
+            project_identity="native project_url, strip trailing slash/.git, casefold; no inferred aliases; unknown URLs excluded only from project seen/unseen breakdowns",
+            uncertainty="1000 project-cluster bootstrap draws, percentile 95% intervals, seed 42; conditional on the fixed checkpoint/cohort",
+            interpretation="Matching changes the evaluated population; associations and score correlations do not identify internal causal reliance. Native label disagreements do not establish which label is correct.",
+        ),
+        native_labels=labels, data=data_statistics, lexical=lexical_metrics,
+        performance=performance, pairs=pair_statistics,
+    )
+    for name, values in (("members", members), ("performance", performance), ("pairs", pair_members), ("label_disagreements", conflicts)):
+        if values:
+            fields = list(dict.fromkeys(k for r in values for k in r))
+            write_table(root / f"diagnosis.{name}.csv", [
+                {k: json.dumps(r.get(k)) if isinstance(r.get(k), (dict, list)) else r.get(k) for k in fields}
+                for r in values
+            ])
+    write_json(root / "diagnosis.json", summary)
+    return dict(output=str(root / "diagnosis.json"), rows=len(performance), repair_pairs=len(pair_members))

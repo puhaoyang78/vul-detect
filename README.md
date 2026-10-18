@@ -190,6 +190,17 @@ LP-FT 相对 BCE 的双向跨域 AUC 增益为 +0.000828 / +0.153942，SWA 为 +
 
 完整五项指标与结论见 [实验报告](results/transfer_primevul_secvuleval/report.md)、[24 行统一比较](results/transfer_primevul_secvuleval/comparison.csv) 和 [18 行训练记录](results/transfer_primevul_secvuleval/training.csv)。两份 Test 清单与原协议逐字节相同，BCE 8 行结果原样保留。SecVulEval Valid 存在约 10⁻⁶ 级排名数值差异，分类指标和选模不变，报告中已记录。
 
+### 双向迁移诊断
+
+诊断复用已有 BCE、LP-FT、SWA Test 预测及两库源域拟合的 TF-IDF 模型。核对原始源码/标签、上游修复配对、固定评价成员、长度关联、项目覆盖、原始标签分歧和 2025 Token 截断后的相同输入。新增逐行数匹配仅作用于当前 911 / 2,070 条独立队列，保留历史匹配清单。另以 Seed 42 从各自 Train 按类别 0、1 各抽取 512 条，用现有 BCE 推理，区分源模型的学习程度和域外失效；不训练、不重新选模或校准。
+
+```bash
+python -m vulnmechanism.cli motivation transfer-diagnosis --model /path/to/codebert-base
+python -m vulnmechanism.cli motivation transfer-train-probe --model /path/to/codebert-base --device cuda:0
+```
+
+需保留现有原始数据、prepared 数据、两库六个模型的预测及 `results/motivation/{primevul,secvuleval}.tfidf.joblib`。后者的 Train/Valid 与当前协议一致，历史 Test 成员不参与拟合。统计命令只写 `results/transfer_primevul_secvuleval/diagnosis*`；Train 推理单独保存抽样成员、预测和指标。详见 [迁移诊断](results/transfer_primevul_secvuleval/diagnosis.md) 及 [统计结果](results/transfer_primevul_secvuleval/diagnosis.json)。长度匹配改变评价人群，其性能变化不等于长度的因果贡献；上游标签分歧也不自动证明哪一方标错。
+
 ## 历史 PrimeVul/MegaVul 六方法实验
 
 以下记录已有两库六方法实验当时的数据及结果，历史准备实现见提交 [`a5a44f8`](https://github.com/puhaoyang78/vul-detect/tree/a5a44f834590801269247bb3b2bd46eee91a2458)。该实验曾因 MegaVul Train 重叠排除 PrimeVul 的 172 条 Test；本轮已取消这一排除。历史六方法及 Motivation 结果仍明确对应当时的 926 条 PrimeVul 队列，不作为当前 BCE、LP-FT、SWA 实验结果。当前 `prepare` 仅执行库内检查。

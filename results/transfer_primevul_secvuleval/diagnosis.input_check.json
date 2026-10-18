@@ -1,0 +1,50 @@
+{
+  "protocol": "Existing BCE only; eval/no_grad; 2025 source-token budget. Compare identical visible functions in the same batch and different batch shapes. FP32 is a diagnostic replay, not a replacement for any saved Test prediction. The existing force_fp32 path uses FP32 encoder and FP64 pooling/classifier arithmetic.",
+  "positive_key": "secvuleval:10125",
+  "negative_key": "secvuleval:10126",
+  "verified_tensor_equal_pairs": 45,
+  "results": [
+    {
+      "source": "primevul",
+      "cached_difference": 0.008383512496948242,
+      "same_batch_bf16": [
+        1.9544610977172852,
+        1.9544610977172852
+      ],
+      "separate_bf16": [
+        1.9516011476516724,
+        1.9516011476516724
+      ],
+      "different_shape_bf16": [
+        1.9516011476516724,
+        1.9572045803070068
+      ],
+      "same_batch_fp32": [
+        1.9517990213694183,
+        1.9517990213694183
+      ],
+      "training": false
+    },
+    {
+      "source": "secvuleval",
+      "cached_difference": 0.00016433000564575195,
+      "same_batch_bf16": [
+        0.2705855965614319,
+        0.2705855965614319
+      ],
+      "separate_bf16": [
+        0.270320862531662,
+        0.270320862531662
+      ],
+      "different_shape_bf16": [
+        0.270320862531662,
+        0.270586758852005
+      ],
+      "same_batch_fp32": [
+        0.2706117648304153,
+        0.2706117648304153
+      ],
+      "training": false
+    }
+  ]
+}

@@ -52,6 +52,12 @@ __pycache__/
 !/results/transfer_primevul_secvuleval/*.members.csv
 !/results/transfer_primevul_secvuleval/report.md
 !/results/transfer_primevul_secvuleval/training.csv
+!/results/transfer_primevul_secvuleval/diagnosis.json
+!/results/transfer_primevul_secvuleval/diagnosis.md
+!/results/transfer_primevul_secvuleval/diagnosis.*.csv
+!/results/transfer_primevul_secvuleval/diagnosis.train.metrics.json
+!/results/transfer_primevul_secvuleval/diagnosis.train.predictions.jsonl
+!/results/transfer_primevul_secvuleval/diagnosis.input_check.json
 *.pt
 *.pth
 *.ckpt

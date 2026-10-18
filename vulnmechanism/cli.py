@@ -41,11 +41,12 @@ def build_parser():
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p = sub.add_parser("motivation", help="four-dataset ordinary-BCE and Shortcut Features diagnostics")
-    p.add_argument("stage", choices=("features", "report", "tfidf", "tfidf-report"))
+    p.add_argument("stage", choices=("features", "report", "tfidf", "tfidf-report", "transfer-diagnosis", "transfer-train-probe"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--dataset", choices=(*DATASETS, "all"), default="all")
     p.add_argument("--model", default="microsoft/codebert-base")
+    p.add_argument("--device", default="auto")
     p = sub.add_parser("infer")
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--source-file", type=Path, required=True)
@@ -110,9 +111,13 @@ def main():
 
         print(json.dumps(report(args.output_dir, args.data_dir), indent=2))
     elif args.command == "motivation":
-        from .motivation import feature_experiment, motivation_report, tfidf_experiment, tfidf_report
+        from .motivation import feature_experiment, motivation_report, tfidf_experiment, tfidf_report, transfer_diagnostics, transfer_train_probe
 
-        if args.stage == "features":
+        if args.stage == "transfer-train-probe":
+            print(json.dumps(transfer_train_probe(args.data_dir, args.output_dir, args.model, args.device), indent=2))
+        elif args.stage == "transfer-diagnosis":
+            print(json.dumps(transfer_diagnostics(args.data_dir, args.output_dir, args.model), indent=2))
+        elif args.stage == "features":
             for dataset in datasets:
                 feature_experiment(args.data_dir, args.output_dir, dataset, args.model)
         elif args.stage == "report":
