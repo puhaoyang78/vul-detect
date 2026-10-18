@@ -1,6 +1,6 @@
 # Dynamic Hard Augmentation for Vulnerability Detection
 
-当前实验比较普通 CodeBERT BCE 与 CSD（sum / mean / 共享门控对照）在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
+当前实验比较普通 CodeBERT BCE、LP-FT 与 SWA 在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
 
 ## 四数据集 Motivation
 
@@ -44,7 +44,7 @@ python -m unittest discover -s tests -v
 
 ### 实际结果（Seed 42）
 
-BigVul、SecVulEval 的 BCE 均从同一预训练 CodeBERT 实际完成 3 Epoch，分别完成 6,540、6,600 次优化器更新，两者均由各自 Valid 选中第 3 Epoch，阈值分别为 0.10、0.46。PrimeVul、MegaVul 直接复用原有 BCE。四库历史 Clean Test 结果见 [clean.csv](results/motivation/clean.csv)：其中 PrimeVul 使用原 926 条成员，后续扰动、长度及 TF-IDF 诊断也保留该固定队列；下文当前 BCE/CSD 结果使用修正后的队列，两者分开解释。
+BigVul、SecVulEval 的 BCE 均从同一预训练 CodeBERT 实际完成 3 Epoch，分别完成 6,540、6,600 次优化器更新，两者均由各自 Valid 选中第 3 Epoch，阈值分别为 0.10、0.46。PrimeVul、MegaVul 直接复用原有 BCE。四库历史 Clean Test 结果见 [clean.csv](results/motivation/clean.csv)：其中 PrimeVul 使用原 926 条成员，后续扰动、长度及 TF-IDF 诊断也保留该固定队列；下文当前 BCE、LP-FT、SWA 结果使用修正后的队列，两者分开解释。
 
 | 数据集 | Accuracy | F1 | MCC | AUC | AUPRC |
 |---|---:|---:|---:|---:|---:|
@@ -144,11 +144,11 @@ TF-IDF 匹配后四库的 TF-IDF AUC 均接近 0.5，分数 KS 距离分别为 0
 
 PrimeVul 的 TF-IDF 分类性能接近 BCE；MegaVul、BigVul 的词法基线也高于随机排序，SecVulEval 则整体较弱。控制后的 BCE 结果存在数据集差异：BigVul 联合匹配仍为 0.8701，而 MegaVul、SecVulEval 分别为 0.5737、0.5318。这些结果描述的是不同固定评价子集上的判别能力，不能证明模型内部已消除捷径依赖或量化捷径的因果贡献。
 
-## PrimeVul / SecVulEval：BCE 与原始 CSD
+## 单源跨数据集泛化：PrimeVul / SecVulEval
 
 PrimeVul 已取消因 MegaVul Train 重叠产生的 172 条排除（161 正 / 11 负），恢复原有 1,098 条平衡 Test（549 / 549）。只修改重叠标记，样本 ID、顺序、标签和上游位置均未重采样。MegaVul 不参与本实验的任何排除。
 
-双向迁移的正式结果使用同一目标队列：从完整 Test 中，只排除原始函数字符串与 PrimeVul 或 SecVulEval 实际 Train / 选模 Valid 完全相同的成员。无需项目、CVE、近重复或额外平衡筛选。每个目标队列供两个来源的 BCE、CSD 共四个模型使用。
+双向迁移的正式结果使用同一目标队列：从完整 Test 中，只排除原始函数字符串与 PrimeVul 或 SecVulEval 实际 Train / 选模 Valid 完全相同的成员。无需项目、CVE、近重复或额外平衡筛选。每个目标队列供两个来源的 BCE、LP-FT、SWA 共六个模型使用。
 
 | 目标 Test | 完整平衡成员（正/负） | 精确重叠排除（正/负） | 正式共用队列（正/负） | 原双向评价队列 |
 |---|---:|---:|---:|---:|
@@ -157,121 +157,42 @@ PrimeVul 已取消因 MegaVul Train 重叠产生的 172 条排除（161 正 / 11
 
 PrimeVul Test 与 SecVulEval Train / Valid 分别精确重叠 163 / 24 条；SecVulEval Test 与 PrimeVul Train / Valid 分别重叠 96 / 36 条。两库自己的 Test 与自己的 Train / Valid 均无精确重叠。排除按源码直接相等判定，保留未完全相同的漏洞与修复函数。
 
-### 原始 CSD（sum 对照）
+### LP-FT 与 SWA
 
-实现依据 [Piratla et al., ICML 2020 的 Algorithm 1](https://proceedings.mlr.press/v119/piratla20a.html)，并核对了[作者提供的代码](https://github.com/vihari/CSD)。只替换最终分类头，保留现有 CodeBERT 编码器、2048 逻辑输入、512 窗口及池化。每个标签的项目分类器满足 `w_p = w_c + U a_p`，bias 使用相同分解。训练项目 ID 仅来自源库实际 Train，PrimeVul / SecVulEval 分别为 602 / 303 个领域。
+两项实验分别复用原 CodeBERT 编码器、单层线性分类头、BCE、2048 逻辑输入、512 Token 窗口及函数池化。Seed 42、micro batch 4、梯度累积 2、weight decay=0.01、gradient clip=1、FP32 参数和 BF16 CUDA 编码器保持不变，不使用源码增强或 VAT。两库分别从同一预训练 CodeBERT 初始化，不使用其他库进行训练、调参或校准。已有 BCE checkpoint 直接复用，PrimeVul / SecVulEval 原阈值为 0.40 / 0.46，不重训 BCE。
 
-以下已保存的对照固定 rank=1，采用论文公式的求和正则，λ=κ=1；结果对应提交 [`479818a`](https://github.com/puhaoyang78/vul-detect/tree/479818a8560ad39f7b872474d9ee93e7dbc11d0d)。当前正式训练已将正则改为作者代码的 `mean`，其独立对照命令见下文。
+- **LP-FT**：采用 [Kumar et al., ICLR 2022](https://openreview.net/forum?id=UYneFzXSJWh) 的先线性探测再全参数微调流程。总预算为 3 Epoch：第 1 轮冻结编码器、关闭其 dropout，仅用 AdamW lr=1e-3 训练分类头；第 2–3 轮保留该分类头，解冻编码器并重建 AdamW，全部参数恢复原 lr=1e-5。只从第 2–3 轮的自身 Clean Valid 结果选模型。总样本遍历和优化器步数与 BCE 相同，但编码器只更新后两轮。
+- **SWA**：按照 [Izmailov et al., UAI 2018](https://arxiv.org/abs/1803.05407) 的轨迹等权平均思想，使用 PyTorch `AveragedModel`，在现有 AdamW BCE 的 3 Epoch、恒定 lr=1e-5 轨迹上，平均第 2、3 轮各自中点和终点的 4 份权重。中点为每轮优化器步数的一半向上取整；编码器与分类头一同在线平均，记录成员步骤，只保存选中的平均模型。第 2 轮末有 2 份、第 3 轮末有 4 份，仅以这些平均模型的自身 Clean Valid 结果选模。CodeBERT 使用 LayerNorm，无 BatchNorm 统计需要重估。这里检验原 BCE 优化器下的权重平均，不额外改变学习率或训练预算。
 
-```text
-L = mean(CE(project classifier, y) + λ CE(common classifier, y))
-    + κ sum_y ||W_y W_y^T - I||_F^2
-W_y = stack(w_c[y], U[0,y])
-```
-
-CSD 使用二类分类权重，传递 `logit[1] - logit[0]` 给现有二分类评价和 BCE 损失代码；其 BCE 与二类交叉熵数学等价。正交归一约束仅作用于权重，bias 不进入该项。分类权重及 bias 以 N(0, 0.1²) 初始化，项目系数以 N(0, 10⁻⁸) 初始化。编码器、共享头、低秩基与项目系数共同优化。Valid、Test 和 `infer` 始终只调用共享分类器，不读取评价项目 ID。
-
-两库 CSD 分别从同一预训练 CodeBERT 初始化：Seed 42、3 Epoch、micro batch 4、梯度累积 2、AdamW lr=1e-5、weight decay=0.01、gradient clip=1，与 BCE 一致。不使用源码增强或 VAT。仅自身 Clean Valid 按原有 MCC/F1/Accuracy/AUC 规则选 Epoch 和阈值。BCE 直接复用原有第 3 Epoch checkpoint（PrimeVul 阈值 0.40，SecVulEval 0.46），已有预测保留，仅补推两个 BCE 对恢复的 172 条 PrimeVul 成员的预测。
-
-```bash
-# 复用已保存的 sum checkpoint 与 BCE 预测
-python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods bce csd --device cuda:0
-python -m unittest discover -s tests -v
-```
-
-沿用 `results/transfer_primevul_secvuleval/`，保存 `comparison.csv`、`results.json` 和两库成员及精确排除原因。`independent` 为正式共用队列；`established` 记录完整 Test 排除跨库重叠前的参考指标。两种队列 × 两个方法 × 两个训练库 × 两个目标库共 16 行。指标包括 Accuracy、F1、MCC、AUC、AUPRC 和混淆计数；源库 Valid 阈值在目标上保持不变。
-
-`delta_source_*` 是目标 Test 相对同模型自身 Test 的差值；`delta_target_*` 是相对同方法目标库模型在相同 Test 上的差值；`delta_bce_*` 是同来源、同目标队列上该方法相对 BCE 的变化。源库与目标库 Test 的构成不同，跨库差值同时受其难度影响。
-
-两个 CSD 均已从预训练 CodeBERT 实际完成 3 Epoch，分别更新 3,648 / 6,600 次；各自 Valid 均选中第 3 Epoch，阈值为 PrimeVul 0.26、SecVulEval 0.50。新权重保存在 `results/<dataset>/csd/best.pt`，BCE 权重保持原样。
-
-正式共用队列的完整结果如下；完整 Test 参考结果一并保存在 [comparison.csv](results/transfer_primevul_secvuleval/comparison.csv) 与 [results.json](results/transfer_primevul_secvuleval/results.json)。
-
-| 训练库 → Test | 方法 | Accuracy | F1 | MCC | AUC | AUPRC |
-|---|---|---:|---:|---:|---:|---:|
-| PrimeVul → PrimeVul | BCE | 0.7706 | 0.7282 | 0.5316 | 0.8450 | 0.7602 |
-| PrimeVul → PrimeVul | CSD | 0.7420 | 0.7212 | 0.5013 | 0.8297 | 0.7341 |
-| PrimeVul → SecVulEval | BCE | 0.4715 | 0.5176 | -0.0471 | 0.4672 | 0.4437 |
-| PrimeVul → SecVulEval | CSD | 0.4643 | 0.5453 | -0.0573 | 0.4660 | 0.4451 |
-| SecVulEval → SecVulEval | BCE | 0.5329 | 0.6236 | 0.1071 | 0.5800 | 0.5399 |
-| SecVulEval → SecVulEval | CSD | 0.5536 | 0.5466 | 0.1082 | 0.5721 | 0.5440 |
-| SecVulEval → PrimeVul | BCE | 0.4072 | 0.5204 | -0.0813 | 0.3376 | 0.3096 |
-| SecVulEval → PrimeVul | CSD | 0.4468 | 0.4194 | -0.0904 | 0.4105 | 0.3386 |
-
-CSD 相对 BCE 的跨域 AUC 变化为 PrimeVul → SecVulEval **−0.0012（−0.12 个百分点）**、SecVulEval → PrimeVul **+0.0729（+7.29 个百分点）**。对应源域 Clean AUC 分别下降 **0.0153 / 0.0079**。因此，本次固定协议下未观察到双向一致改善；SecVulEval → PrimeVul 虽有 AUC 改善，绝对 AUC 仍为 0.4105。MCC、F1 的变化与 AUC 不完全一致，完整指标均按各自源库 Valid 阈值报告。
-
-### CSD 源域诊断
-
-固定现有 CSD checkpoint，使用两库全部源域 Train，以 Seed 42 决定推理顺序；同一次编码比较共享头与项目头。仅做参数、损失日志及无更新梯度探针统计，不读取 Valid/Test 文件，不创建优化器。诊断不修改原方法、权重或已有迁移结果。
-
-```bash
-python -m vulnmechanism.cli csd-diagnostics run --dataset primevul --device cuda:0
-python -m vulnmechanism.cli csd-diagnostics run --dataset secvuleval --device cuda:1
-python -m vulnmechanism.cli csd-diagnostics report
-python -m unittest tests.test_csd_diagnostics -v
-```
-
-完整证据见 [诊断报告](results/csd_diagnostics/report.md)，统一统计见 [summary.csv](results/csd_diagnostics/summary.csv) 和 [epochs.csv](results/csd_diagnostics/epochs.csv)。项目残差相对共享权重的范数中位数仅为 0.0724% / 0.0749%；Specific 相对 Common 的 Train AUC 仅提高 0.0000473 / 0.0001234。残差非零且与项目类别构成相关，但没有形成有实质分类增益的分解。该 `sum` 对照在二分类、rank=1 下相对作者 `mean` 实现具有 8 倍有效正则权重，且原作者的共享系数门控也与当前论文公式版不同。该次诊断没有改动或重训，原始统计保留；随后仅验证 `sum` → `mean`，见下节。
-
-### CSD mean 正则对照
-
-正则为 `mean((W_y W_y^T - I)^2)`，即对全部类别及 Gram 元素取均值。二分类、rank=1 时为原 `sum` 的 1/8；κ 仍为 1。该次无门控对照的代码见提交 [`3cc62ff`](https://github.com/puhaoyang78/vul-detect/tree/3cc62ffba8adf3baff29109fbcf51f53544dd1aa)。当前正式训练在此基础上只增加下节的共享门控；已有 mean 权重和结果保留，仍通过同一模型与评价实现读取。
-
-```bash
-# 复用已有无门控 mean checkpoint；重新训练该对照请使用上述提交
-python -m vulnmechanism.cli evaluate --dataset primevul --methods csd --clean-only --output-dir results/csd_mean --device cuda:0
-python -m vulnmechanism.cli evaluate --dataset secvuleval --methods csd --clean-only --output-dir results/csd_mean --device cuda:1
-python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods csd --output-dir results/csd_mean --device cuda:0
-```
-
-诊断继续显式报告同参数下的 sum/mean 两种梯度尺度，Epoch 表的 `orthonormality` 与 `orthonormality_reduction` 标识实际优化项，避免将 mean 日志误记成 sum。
-
-两个 mean CSD 均已从预训练模型完成 3 Epoch，共更新 3,648 / 6,600 次；各自 Valid 均选中第 3 Epoch，阈值为 0.44 / 0.50。在与 BCE/sum 完全相同的 911 / 2,070 条独立 Test 队列上：
-
-| 训练 → Test | BCE AUC | CSD sum AUC | CSD mean AUC |
-|---|---:|---:|---:|
-| PrimeVul → PrimeVul | 0.8450 | 0.8297 | 0.8395 |
-| PrimeVul → SecVulEval | 0.4672 | 0.4660 | 0.4679 |
-| SecVulEval → SecVulEval | 0.5800 | 0.5721 | 0.5618 |
-| SecVulEval → PrimeVul | 0.3376 | 0.4105 | 0.4531 |
-
-mean 相对 sum 的双向跨域 AUC 增加 0.001933 / 0.042590，但仍均低于 0.5；SecVulEval 域内 AUC 下降 0.010345。项目残差范数比例中位数反而从 0.0724% / 0.0749% 降至 0.0658% / 0.0654%，项目头 Train AUC 增益仅为 0.0000340 / 0.0002321。归约改变降低了正则压力，但没有解决项目残差过弱的问题。
-
-完整五项指标、混淆计数、配置及源 Train 诊断见 [mean 对照报告](results/csd_mean/report.md) 和 [24 行统一结果](results/csd_mean/comparison.csv)。SecVulEval Valid 额外逐位一致性检查发现约 10⁻⁶ 级 AUC 差异；固定 checkpoint 重推确认存在微小 Logit 波动，分类结果一致，未替换预测或重新选模，数值原样保存在报告及 `validation_repeatability.json`。
-
-### CSD 共享门控验证
-
-只在项目特定分类器中加入一个全局可学习标量 `g`，初始化为 0.1：`z_specific = tanh(g) * z_common + project_residual`。共享项的 weight 和 bias 一起缩放；Common 自身不缩放，Valid/Test 和推理仍仅使用 Common。参考[作者实现](https://github.com/vihari/CSD/blob/master/pacs/models/resnet_csd.py#L65-L76)，本次仅引入共享门控，保留原有未变换的项目系数、mean 正则、rank=1、初始化及全部训练参数；没有同时对项目系数施加 tanh，也未改变正则或优化器。
+两项实验仅通过源域 Clean Valid 按 MCC/F1/Accuracy/AUC 选择候选，阈值沿用 Valid MCC/F1/Accuracy/距 0.5 的规则。所有设置在训练前固定；Test 只用于最终评价。
 
 ```bash
 MODEL=/path/to/codebert-base
-python -m vulnmechanism.cli train --dataset primevul --methods csd --model "$MODEL" --output-dir results/csd_gate --device cuda:0
-python -m vulnmechanism.cli train --dataset secvuleval --methods csd --model "$MODEL" --output-dir results/csd_gate --device cuda:1
-python -m vulnmechanism.cli evaluate --dataset primevul --methods csd --clean-only --output-dir results/csd_gate --device cuda:0
-python -m vulnmechanism.cli evaluate --dataset secvuleval --methods csd --clean-only --output-dir results/csd_gate --device cuda:1
-python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods csd --output-dir results/csd_gate --device cuda:0
-python -m vulnmechanism.cli csd-diagnostics run --output-dir results/csd_gate --device cuda:0
-python -m vulnmechanism.cli csd-diagnostics report --output-dir results/csd_gate
+python -m vulnmechanism.cli train --dataset primevul --methods lp_ft swa --model "$MODEL" --device cuda:0
+python -m vulnmechanism.cli train --dataset secvuleval --methods lp_ft swa --model "$MODEL" --device cuda:1
+python -m vulnmechanism.cli evaluate --dataset primevul --methods lp_ft swa --clean-only --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset secvuleval --methods lp_ft swa --clean-only --device cuda:1
+python -m vulnmechanism.cli transfer --datasets primevul secvuleval --methods bce lp_ft swa --device cuda:0
 ```
 
-Train 诊断使用同一次编码的 Common / Specific，并另存 `gated_common_logit = tanh(g) * common_logit`。比较 Common 与 gated Common 测量纯缩放，比较 gated Common 与 Specific 测量项目残差增益；同时报告原始 Logit AUC，避免将 Sigmoid 舍入或缩放造成的 BCE 变化视作项目分解增强。记录门控初始/选中值、每 Epoch 轨迹、实际残差 Logit，以及相对原始/门控共享权重的残差范数。
+训练、Clean、迁移和推理使用同一套正式实现。权重及预测保存在 `results/<dataset>/<method>/`，每次训练记录阶段、学习率、编码器是否更新、Valid 候选资格，以及 SWA 平均成员的优化器步骤。双向评价更新现有 `results/transfer_primevul_secvuleval/`，统一报告 Accuracy、F1、MCC、AUC、AUPRC、混淆计数、相对自身 Test/目标库同方法/同源 BCE 的差值；完整 Test 参考和正式独立队列分开保存，BCE 数值保持原样。
 
-两个门控模型已完成 3 Epoch，共更新 3,648 / 6,600 次，各自 Valid 均选中第 3 Epoch，阈值为 0.38 / 0.54。最终 g 为 0.135745 / 0.132325，tanh(g) 为 0.134917 / 0.131558。所有旧权重和结果保留；下表沿用同样的 911 / 2,070 条独立 Test：
+四个新模型均已实际完成 3 Epoch，PrimeVul / SecVulEval 每个方法分别更新 3,648 / 6,600 次，均由自身 Valid 选中第 3 轮。LP-FT 阈值为 0.28 / 0.39，SWA 为 0.56 / 0.36；两个 SWA 最终均包含预定的 4 份权重。相同 911 / 2,070 条独立 Test 上的 AUC 为：
 
-| 训练 → Test | BCE AUC | CSD sum AUC | CSD mean AUC | CSD gate AUC |
-|---|---:|---:|---:|---:|
-| PrimeVul → PrimeVul | 0.844958 | 0.829703 | 0.839538 | 0.843853 |
-| PrimeVul → SecVulEval | 0.467211 | 0.465997 | 0.467931 | 0.471923 |
-| SecVulEval → SecVulEval | 0.580023 | 0.572149 | 0.561804 | 0.569664 |
-| SecVulEval → PrimeVul | 0.337628 | 0.410529 | 0.453120 | 0.504050 |
+| 训练 → Test | BCE | LP-FT | SWA |
+|---|---:|---:|---:|
+| PrimeVul → PrimeVul | 0.844958 | 0.828618 | 0.841153 |
+| PrimeVul → SecVulEval | 0.467211 | 0.468039 | 0.468076 |
+| SecVulEval → SecVulEval | 0.580023 | 0.533884 | 0.577194 |
+| SecVulEval → PrimeVul | 0.337628 | 0.491570 | 0.363494 |
 
-相对 mean，跨域 AUC 提高 0.003992 / 0.050931，但绝对值仍接近或低于随机水平，跨域 MCC 为 −0.032189 / −0.056966。残差/原始共享权重范数中位数为 0.079704% / 0.072808%；扣除纯缩放后的残差 Train BCE 收益为 0.002553 / 0.000884，原始 Logit AUC 却下降 0.000283 / 0.008095。门控与残差确实发挥了作用，但没有形成有效增强的项目特定排名能力，不能将跨域 AUC 提高归因于有效项目分解。本轮不再添加 CSD 变体。
+LP-FT 相对 BCE 的双向跨域 AUC 增益为 +0.000828 / +0.153942，SWA 为 +0.000865 / +0.025865。反向的数值改善较明显，但所有新方法跨域 AUC 仍低于 0.5、MCC 均为负；两库域内 AUC 也均下降。SWA 的 PrimeVul 域内 Accuracy/F1/MCC 略有提高，指标变化并非全部同向。本次固定预算下，两种方法均未获得有效的跨域漏洞判别能力，不继续叠加其他方法。
 
-完整五项指标、门控轨迹、缩放对照、项目分析及检查见 [门控报告](results/csd_gate/report.md) 和 [32 行统一结果](results/csd_gate/comparison.csv)。SecVulEval Valid 重推 AUC 与训练记录相差约 −4.97×10⁻⁶，分类指标及选模不变，数值差异原样记录。
+完整五项指标与结论见 [实验报告](results/transfer_primevul_secvuleval/report.md)、[24 行统一比较](results/transfer_primevul_secvuleval/comparison.csv) 和 [18 行训练记录](results/transfer_primevul_secvuleval/training.csv)。两份 Test 清单与原协议逐字节相同，BCE 8 行结果原样保留。SecVulEval Valid 存在约 10⁻⁶ 级排名数值差异，分类指标和选模不变，报告中已记录。
 
 ## 历史 PrimeVul/MegaVul 六方法实验
 
-以下记录已有两库六方法实验当时的数据及结果，历史准备实现见提交 [`a5a44f8`](https://github.com/puhaoyang78/vul-detect/tree/a5a44f834590801269247bb3b2bd46eee91a2458)。该实验曾因 MegaVul Train 重叠排除 PrimeVul 的 172 条 Test；本轮已取消这一排除。历史六方法及 Motivation 结果仍明确对应当时的 926 条 PrimeVul 队列，不作为当前 BCE/CSD 实验结果。当前 `prepare` 仅执行库内检查。
+以下记录已有两库六方法实验当时的数据及结果，历史准备实现见提交 [`a5a44f8`](https://github.com/puhaoyang78/vul-detect/tree/a5a44f834590801269247bb3b2bd46eee91a2458)。该实验曾因 MegaVul Train 重叠排除 PrimeVul 的 172 条 Test；本轮已取消这一排除。历史六方法及 Motivation 结果仍明确对应当时的 926 条 PrimeVul 队列，不作为当前 BCE、LP-FT、SWA 实验结果。当前 `prepare` 仅执行库内检查。
 
 上游为 [PrimeVul v0.1](https://github.com/DLVulDet/PrimeVul)、[MegaVul](https://github.com/Icyrockton/MegaVul)；预训练模型为 [microsoft/codebert-base](https://huggingface.co/microsoft/codebert-base)。请保留各上游的许可与引用要求。
 
@@ -488,4 +409,4 @@ Acc 为包含原函数的 Worst-case Accuracy；ASR 为成功率（成功数/可
 
 `data.py` 负责原生读取、项目划分、保留正例的平衡及精确重叠标记；`model.py`、`syntax.py`、`augmentation.py`、`vat.py` 分别实现模型、绑定安全变换、动态搜索和普通 VAT；`training.py`、`evaluation.py`、`cli.py` 提供两个数据集共享的训练、评价和命令入口。
 
-测试使用本地小型 RoBERTa，无需下载模型；覆盖全部正例保留、项目正例比例、精确泄漏排除、六方法及 CSD 训练路径、仅自身 Valid 选模、CSD 分解与正交损失、共享头推理、增量预测缓存、双向 Test 固定队列与阈值、窗口池化、VAT 梯度/范数、严格权重加载、攻击分母和结果汇总。
+测试使用本地小型 RoBERTa，无需下载模型；覆盖全部正例保留、项目正例比例、精确泄漏排除、六方法及 LP-FT/SWA 训练路径、仅自身 Valid 选模、编码器冻结/解冻、等权参数平均与严格推理、增量预测缓存、双向 Test 固定队列与阈值、窗口池化、VAT 梯度/范数、严格权重加载、攻击分母和结果汇总。

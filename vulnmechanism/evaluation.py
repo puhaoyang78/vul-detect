@@ -10,7 +10,7 @@ from .artifacts import write_json
 from .data import DATASETS, class_counts, read_jsonl, test_rows, validation_rows, write_jsonl
 from .metrics import decision_boundary, metrics
 from . import model as core
-from .training import METHODS, prepare_materials
+from .training import METHODS, GENERALIZATION_METHODS, prepare_materials
 
 
 def _evaluate_clean(rows, run, name, checkpoint, args):
@@ -18,6 +18,7 @@ def _evaluate_clean(rows, run, name, checkpoint, args):
     predictions = run / f"{name}.predictions.jsonl"
     threshold = checkpoint["decision_threshold"]
     by_key = {}
+    previous, cached = None, []
     if output.exists():
         previous = json.loads(output.read_text())
         if previous["selected_epoch"] != checkpoint["selected_epoch"]:
@@ -59,6 +60,8 @@ def _evaluate_clean(rows, run, name, checkpoint, args):
             )
         ),
     )
+    if result == previous and ordered == cached:
+        return result
     write_jsonl(predictions, ordered)
     write_json(output, result)
     return result
@@ -518,8 +521,8 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
     """Compare fixed source models on identical full and exact-overlap-free Test cohorts."""
     if len(datasets) != 2 or len(set(datasets)) != 2 or any(d not in DATASETS for d in datasets):
         raise ValueError("two distinct supported datasets required")
-    if not methods or len(set(methods)) != len(methods) or any(m not in ("bce", "csd") for m in methods):
-        raise ValueError("distinct BCE/CSD methods required")
+    if not methods or len(set(methods)) != len(methods) or any(m not in GENERALIZATION_METHODS for m in methods):
+        raise ValueError("distinct supported generalization methods required")
     datasets = tuple(sorted(datasets))
     root = Path(output_dir) / ("transfer_" + "_".join(datasets))
     root.mkdir(parents=True, exist_ok=True)
@@ -615,7 +618,7 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
     write_json(root / "results.json", dict(
         cohorts=cohorts, training=training, results=results,
         protocol=dict(
-            seed=42, methods=list(methods), selection="source-Valid checkpoint and threshold fixed; CSD uses only its common classifier",
+            seed=42, methods=list(methods), selection="source-Valid checkpoint and threshold fixed",
             established="full original balanced Test members, without resampling; exclude own Train/Valid exact overlap only",
             independent="exclude exact raw-source overlap with either of these two datasets' actual Train or model-selection Valid; same target members for all models; no other datasets, project/CVE or near-duplicate filtering; no resampling",
             delta_source="target Test metric minus the same model's own Test metric",

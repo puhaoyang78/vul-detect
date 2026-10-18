@@ -9,7 +9,7 @@ from .data import DATASETS
 
 
 def build_parser():
-    from .training import METHODS
+    from .training import METHODS, GENERALIZATION_METHODS
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -27,7 +27,7 @@ def build_parser():
         if command in ("train", "candidates"):
             p.add_argument("--model", default="microsoft/codebert-base")
         if command in ("train", "evaluate"):
-            p.add_argument("--methods", nargs="+", choices=(*METHODS, "csd"), default=list(METHODS))
+            p.add_argument("--methods", nargs="+", choices=(*METHODS, "lp_ft", "swa"), default=list(METHODS))
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
@@ -36,13 +36,7 @@ def build_parser():
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--device", default="auto")
-    p.add_argument("--methods", nargs="+", choices=("bce", "csd"), default=["bce"])
-    p = sub.add_parser("csd-diagnostics", help="read-only CSD head, loss and source-Train diagnostics")
-    p.add_argument("stage", choices=("run", "report"))
-    p.add_argument("--dataset", choices=("primevul", "secvuleval", "all"), default="all")
-    p.add_argument("--data-dir", type=Path, default=Path("data"))
-    p.add_argument("--output-dir", type=Path, default=Path("results"))
-    p.add_argument("--device", default="auto")
+    p.add_argument("--methods", nargs="+", choices=GENERALIZATION_METHODS, default=["bce"])
     p = sub.add_parser("report", help="summarize the saved PrimeVul/MegaVul six-method experiment")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -115,14 +109,6 @@ def main():
         from .evaluation import report
 
         print(json.dumps(report(args.output_dir, args.data_dir), indent=2))
-    elif args.command == "csd-diagnostics":
-        from .csd_diagnostics import DATASETS as CSD_DATASETS, diagnose, report
-
-        if args.stage == "run":
-            for dataset in CSD_DATASETS if args.dataset == "all" else (args.dataset,):
-                print(json.dumps(diagnose(args.data_dir, args.output_dir, dataset, device=args.device)))
-        else:
-            print(json.dumps(report(args.output_dir), indent=2))
     elif args.command == "motivation":
         from .motivation import feature_experiment, motivation_report, tfidf_experiment, tfidf_report
 

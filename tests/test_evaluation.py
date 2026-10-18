@@ -227,28 +227,30 @@ class EvaluationTests(unittest.TestCase):
             with patch.object(core, "predict_logits", side_effect=AssertionError("cached predictions must be reused")):
                 evaluate_transfer(root / "data", root / "runs", datasets, device="cpu")
             for dataset in datasets:
-                run = root / "runs" / dataset / "csd"
-                write_json(run / "training.metrics.json", dict(selected_epoch=3))
-                torch.save(dict(
-                    dataset=dataset, method="csd", model_path="fixture", source_max_length=2048,
-                    selected_epoch=3, decision_threshold=.55, training_config=dict(batch_size=2),
-                ), run / "best.pt")
+                for method in ("lp_ft", "swa"):
+                    run = root / "runs" / dataset / method
+                    write_json(run / "training.metrics.json", dict(selected_epoch=3))
+                    torch.save(dict(
+                        dataset=dataset, method=method, model_path="fixture", source_max_length=2048,
+                        selected_epoch=3, decision_threshold=.55, training_config=dict(batch_size=2),
+                    ), run / "best.pt")
 
-            def predict_csd(model, rows, builder, **kwargs):
-                self.assertEqual(model[1], "csd")  # BCE must reuse its saved predictions.
+            def predict_new_method(model, rows, builder, **kwargs):
+                self.assertIn(model[1], ("lp_ft", "swa"))  # BCE must reuse its saved predictions.
                 return torch.logit(torch.tensor([.9 if r["label"] else .1 for r in rows]))
 
             with patch.object(core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()), patch.object(
                 core, "load_model", side_effect=lambda cp, *a, **kw: (cp["dataset"], cp["method"])
-            ), patch.object(core, "predict_logits", side_effect=predict_csd) as predictor:
+            ), patch.object(core, "predict_logits", side_effect=predict_new_method) as predictor:
                 summary = evaluate_transfer(root / "data", root / "runs", datasets,
-                                            methods=("bce", "csd"), device="cpu")
-            self.assertEqual((summary["models"], summary["rows"], predictor.call_count), (4, 16, 4))
+                                            methods=("bce", "lp_ft", "swa"), device="cpu")
+            self.assertEqual((summary["models"], summary["rows"], predictor.call_count), (6, 24, 8))
             updated = json.loads((output / "results.json").read_text())
             self.assertEqual(updated["cohorts"], result["cohorts"])
-            csd_cross = [r for r in updated["results"] if r["method"] == "csd" and
+            new_cross = [r for r in updated["results"] if r["method"] in ("lp_ft", "swa") and
                          r["training_dataset"] != r["test_dataset"]]
-            self.assertTrue(all(r["auc"] == 1. and r["delta_bce_auc"] == 1. for r in csd_cross))
+            self.assertTrue(all(r["auc"] == 1. and r["delta_bce_auc"] == 1. for r in new_cross))
+            self.assertEqual([r for r in updated["results"] if r["method"] == "bce"], result["results"])
 
     def test_clean_cache_predicts_only_restored_members_and_recomputes_metrics(self):
         from argparse import Namespace
@@ -275,7 +277,9 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(merged[:2], cached)
             self.assertEqual([r["sample_key"] for r in merged], ["0", "1", "2", "3"])
             self.assertEqual(result["metrics"], metrics([0, 1, 0, 1], [r["score"] for r in merged], .4))
-            with patch.object(core, "predict_logits", side_effect=AssertionError("no repeat inference")):
+            with patch.object(core, "predict_logits", side_effect=AssertionError("no repeat inference")), \
+                    patch("vulnmechanism.evaluation.write_json", side_effect=AssertionError("no rewriting complete results")), \
+                    patch("vulnmechanism.evaluation.write_jsonl", side_effect=AssertionError("no rewriting complete predictions")):
                 self.assertEqual(_evaluate_clean(rows, root, "test", cp, args), result)
 
     def test_single_function_inference_requires_only_source(self):
