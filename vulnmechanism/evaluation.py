@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import torch
 from .artifacts import write_json
-from .data import DATASETS, class_counts, read_jsonl, test_rows, validation_rows, write_jsonl
+from .data import DATASETS, balanced_subset, class_counts, read_jsonl, test_rows, validation_rows, write_jsonl
 from .metrics import decision_boundary, metrics
 from . import model as core
 from .training import METHODS, GENERALIZATION_METHODS, prepare_materials
@@ -475,22 +475,25 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
     return report
 
 
-def prepare_candidates(data_dir, output_dir, model_path, dataset):
+def prepare_candidates(data_dir, output_dir, model_path, dataset, *, test_limit=None):
     root = Path(output_dir) / dataset
     materials = prepare_materials(data_dir, output_dir, dataset)
     tokenizer = core.AutoTokenizer.from_pretrained(model_path)
     builder = core.InputBuilder(tokenizer)
     budget = builder.source_max_length - len(builder.source_prefix) - 2
-    rows = test_rows(Path(data_dir) / dataset)
+    rows = balanced_subset(test_rows(Path(data_dir) / dataset), test_limit)
     _robustness_fixed_candidates(rows, materials, root, tokenizer, budget)
 
 
-def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", robust=True):
+def evaluate(
+    data_dir, output_dir, dataset, methods=METHODS, *, device="auto", robust=True,
+    valid_limit=None, test_limit=None,
+):
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
     root = Path(output_dir) / dataset
-    valid = validation_rows(Path(data_dir) / dataset)
-    own_test = test_rows(Path(data_dir) / dataset)
+    valid = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit)
+    own_test = balanced_subset(test_rows(Path(data_dir) / dataset), test_limit)
     materials = prepare_materials(data_dir, output_dir, dataset) if robust else None
     for method in methods:
         run = root / method
@@ -499,6 +502,8 @@ def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", r
         checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
         if checkpoint["dataset"] != dataset:
             raise ValueError("checkpoint training dataset differs")
+        if checkpoint.get("diagnostic_limits", {}).get("valid") != valid_limit:
+            raise ValueError("evaluation Valid limit differs from training selection")
         args = Namespace(
             model=checkpoint["model_path"],
             device=device,
@@ -510,7 +515,9 @@ def evaluate(data_dir, output_dir, dataset, methods=METHODS, *, device="auto", r
             if not all(
                 (root / f"{name}.candidates.jsonl").exists() for name in ("fixed", "heldout")
             ):
-                prepare_candidates(data_dir, output_dir, checkpoint["model_path"], dataset)
+                prepare_candidates(
+                    data_dir, output_dir, checkpoint["model_path"], dataset, test_limit=test_limit
+                )
             _robustness_evaluation(
                 own_test, run, run / "best.pt", checkpoint, root, materials, args
             )

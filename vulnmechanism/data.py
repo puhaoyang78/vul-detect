@@ -213,6 +213,22 @@ def class_counts(rows):
     return dict(samples=len(rows), positive=positive, negative=len(rows) - positive)
 
 
+def balanced_subset(rows, limit=None, seed=42):
+    """Optional diagnostic subset; preserve the formal cohort when limit is None."""
+    if limit is None:
+        return rows
+    if limit <= 0 or limit % 2:
+        raise ValueError("diagnostic sample limit must be a positive even number")
+    rng = random.Random(seed)
+    selected = set()
+    for label in (0, 1):
+        candidates = [i for i, row in enumerate(rows) if row["label"] == label]
+        if len(candidates) < limit // 2:
+            raise ValueError("not enough members for the requested balanced diagnostic subset")
+        selected.update(rng.sample(candidates, limit // 2))
+    return [row for i, row in enumerate(rows) if i in selected]
+
+
 def counts(rows):
     return {s: class_counts([r for r in rows if r["split"] == s]) for s in SPLITS}
 

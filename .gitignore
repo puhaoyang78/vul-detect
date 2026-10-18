@@ -58,6 +58,12 @@ __pycache__/
 !/results/transfer_primevul_secvuleval/diagnosis.train.metrics.json
 !/results/transfer_primevul_secvuleval/diagnosis.train.predictions.jsonl
 !/results/transfer_primevul_secvuleval/diagnosis.input_check.json
+!/results/search_vat_ablation/
+/results/search_vat_ablation/**
+!/results/search_vat_ablation/*.csv
+!/results/search_vat_ablation/*.json
+!/results/search_vat_ablation/*.md
+!/results/search_vat_ablation/probe.search.jsonl
 *.pt
 *.pth
 *.ckpt

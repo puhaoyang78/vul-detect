@@ -5,6 +5,7 @@ import torch
 from .model import auxiliary_mode
 
 VAT_CONFIG = dict(epsilon=1.0, xi=0.001, power_iterations=1)
+VAT_DIRECTIONS = ("finite_difference", "logit")
 
 
 def expand_vat_groups(values, group_ids):
@@ -39,7 +40,12 @@ def bernoulli_vat_kl(reference, perturbed):
     )
 
 
-def vat_loss(model, records, builder, *, device, noise_seed, return_delta=False):
+def vat_loss(
+    model, records, builder, *, device, noise_seed,
+    direction_method="finite_difference", return_delta=False,
+):
+    if direction_method not in VAT_DIRECTIONS:
+        raise ValueError("unknown VAT direction method")
     batch, group_ids, group_owners, eligible = builder.vat_batch(records, device=device)
     ids, mask, owners, pooling, n = batch
     hidden = model.encoder.config.hidden_size
@@ -54,6 +60,9 @@ def vat_loss(model, records, builder, *, device, noise_seed, return_delta=False)
             function_forwards=0,
             encoder_sequences=0,
             encoder_token_slots=0,
+            encoder_active_tokens=0,
+            direction_method=direction_method,
+            zero_initial_projection=0 if direction_method == "logit" else None,
         )
         return (
             (result, info, torch.zeros((*ids.shape, hidden), device=device))
@@ -66,13 +75,31 @@ def vat_loss(model, records, builder, *, device, noise_seed, return_delta=False)
     )
     direction, _ = normalize_vat_groups(direction, group_ids, group_owners, owners, n, 1.0)
     direction = direction.detach().requires_grad_(True)
+    zero_projection = None
     with auxiliary_mode(model):
-        with torch.no_grad():
-            reference = model(*batch, force_fp32=True)
-        probe = expand_vat_groups(direction, group_ids) * VAT_CONFIG["xi"]
-        near = model(*batch, embedding_delta=probe, force_fp32=True)
-        divergence = bernoulli_vat_kl(reference, near)
-        gradient = torch.autograd.grad(divergence.sum(), direction, only_inputs=True)[0].detach()
+        if direction_method == "finite_difference":
+            with torch.no_grad():
+                reference = model(*batch, force_fp32=True)
+            probe = expand_vat_groups(direction, group_ids) * VAT_CONFIG["xi"]
+            near = model(*batch, embedding_delta=probe, force_fp32=True)
+            divergence = bernoulli_vat_kl(reference, near)
+            gradient = torch.autograd.grad(divergence.sum(), direction, only_inputs=True)[0].detach()
+            forwards = 3
+        else:
+            center = torch.zeros_like(direction, requires_grad=True)
+            center_logits = model(
+                *batch, embedding_delta=expand_vat_groups(center, group_ids), force_fp32=True
+            )
+            reference = center_logits.detach()
+            gradient = torch.autograd.grad(center_logits.sum(), center, only_inputs=True)[0].detach()
+            # H d = p(1-p) g (g^T d). Choose its sign in the ORIGINAL
+            # tied coordinates, before projecting through (A^T A)^-1.
+            projection = gradient.new_zeros(n, dtype=torch.float64).index_add(
+                0, group_owners, (gradient.double() * direction.detach().double()).sum(1)
+            )
+            zero_projection = sum(e and float(projection[i]) == 0 for i, e in enumerate(eligible))
+            gradient = gradient * projection.sign()[group_owners, None].to(gradient.dtype)
+            forwards = 2
         if not torch.isfinite(gradient).all():
             raise ValueError("nonfinite VAT direction gradient")
         # The tied embedding subspace has metric A^T A = occurrence counts.
@@ -102,8 +129,17 @@ def vat_loss(model, records, builder, *, device, noise_seed, return_delta=False)
         kl=float(losses.detach().sum()),
         norm_min=float(active.min()) if len(active) else None,
         norm_max=float(active.max()) if len(active) else None,
-        function_forwards=3 * n,
-        encoder_sequences=3 * len(ids),
-        encoder_token_slots=3 * ids.numel(),
+        function_forwards=forwards * n,
+        encoder_sequences=forwards * len(ids),
+        encoder_token_slots=forwards * ids.numel(),
+        encoder_active_tokens=forwards * int(mask.sum()),
+        direction_method=direction_method,
+        zero_initial_projection=zero_projection,
     )
+    if return_delta:
+        info["reference_logits"] = reference.detach().cpu().tolist()
+        if direction_method == "finite_difference":
+            info["probe_logit_change"] = (near.detach() - reference).cpu().tolist()
+        else:
+            info["raw_initial_projection"] = projection.detach().cpu().tolist()
     return (losses, info, delta.detach()) if return_delta else (losses, info)

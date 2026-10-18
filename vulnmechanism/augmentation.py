@@ -6,48 +6,51 @@ import json
 import numpy as np
 
 
-def visible_candidates(source, tokenizer, source_budget, *, proposals, reference_source=None):
-    """Reject a view if it displaces any part of the original visible prefix."""
-    from .syntax import apply_source_edits, source_token_spans
+def _source_visibility(value, tokenizer, source_budget, cache):
+    from .syntax import source_token_spans
 
+    if value in cache:
+        return cache[value]
     if not getattr(tokenizer, "is_fast", False):
         raise ValueError("dynamic visibility requires fast original source offsets")
+    encoded = tokenizer(
+        value, add_special_tokens=False, return_offsets_mapping=True,
+        truncation=False, verbose=False,
+    )
+    offsets = encoded["offset_mapping"][:source_budget]
+    if len(encoded["input_ids"]) != len(encoded["offset_mapping"]):
+        raise ValueError("source IDs/offset length mismatch")
+    if any(not 0 <= a <= b <= len(value) for a, b in offsets):
+        raise ValueError("source offsets outside Python character coordinates")
+    # Merge UTF-8/BPE duplicate character spans before checking visibility.
+    end = max((b for a, b in offsets if b > a), default=0)
+    tokens = source_token_spans(value)
+    states = [
+        (0 if a >= end else 2 if b <= end else 1, min(max(end - a, 0), b - a))
+        for _, a, b in tokens
+    ]
+    result = (encoded["input_ids"][:source_budget], states, tokens,
+              len(encoded["input_ids"]) > source_budget, end)
+    cache[value] = result
+    return result
+
+
+def visible_candidates(
+    source, tokenizer, source_budget, *, proposals, reference_source=None, visibility_cache=None
+):
+    """Reject a view if it displaces any part of the original visible prefix."""
+    from .syntax import apply_source_edits
+
+    cache = {} if visibility_cache is None else visibility_cache
     reference = source if reference_source is None else reference_source
-
-    def visibility(value):
-        encoded = tokenizer(
-            value,
-            add_special_tokens=False,
-            return_offsets_mapping=True,
-            truncation=False,
-            verbose=False,
-        )
-        offsets = encoded["offset_mapping"][:source_budget]
-        if len(encoded["input_ids"]) != len(encoded["offset_mapping"]):
-            raise ValueError("source IDs/offset length mismatch")
-        if any(not 0 <= a <= b <= len(value) for a, b in offsets):
-            raise ValueError("source offsets outside Python character coordinates")
-        # Source offsets are monotone; merge UTF-8/BPE duplicate character spans.
-        end = max((b for a, b in offsets if b > a), default=0)
-        tokens = source_token_spans(value)
-        states = [
-            (0 if a >= end else 2 if b <= end else 1, min(max(end - a, 0), b - a))
-            for _, a, b in tokens
-        ]
-        return (
-            encoded["input_ids"][:source_budget],
-            states,
-            tokens,
-            len(encoded["input_ids"]) > source_budget,
-            end,
-        )
-
-    original_ids, before, original_tokens, truncated, boundary = visibility(reference)
+    original_ids, before, original_tokens, truncated, boundary = _source_visibility(
+        reference, tokenizer, source_budget, cache
+    )
     result = []
     reasons = Counter()
     for candidate in proposals:
         transformed = apply_source_edits(source, candidate["edits"])
-        ids, after, tokens, _, end = visibility(transformed)
+        ids, after, tokens, _, end = _source_visibility(transformed, tokenizer, source_budget, cache)
         if len(tokens) != len(original_tokens):
             raise ValueError("dynamic surface edit changed lexical token cardinality")
         lost = any(
@@ -118,6 +121,7 @@ def search_surface_views(
     kinds=None,
     required_combination=None,
     original_logits=None,
+    selection="hardest",
 ):
     """Width-two depth-three search; batch score queries, bounded proposals.
 
@@ -130,15 +134,18 @@ def search_surface_views(
 
     if query_limit not in (12, 48) or bank not in ("train", "heldout"):
         raise ValueError("unsupported surface search budget")
+    if selection not in ("hardest", "boundary"):
+        raise ValueError("unknown hard selection strategy")
+    if selection == "boundary" and (
+        purpose != "train" or score is None or random_selection or required_combination
+    ):
+        raise ValueError("boundary selection is only supported for scored training search")
     states = []
     for row in records:
         rng = random.Random(surface_seed(seed, epoch, row["sample_key"], purpose))
         source = row["raw_source"]
-        ids = tuple(
-            tokenizer(source, add_special_tokens=False, truncation=True, max_length=source_budget)[
-                "input_ids"
-            ]
-        )
+        cache = {}
+        ids = tuple(_source_visibility(source, tokenizer, source_budget, cache)[0])
         states.append(
             dict(
                 row=row,
@@ -150,6 +157,10 @@ def search_surface_views(
                 reasons=Counter(),
                 original_logit=None,
                 original_queries=0,
+                candidate_queries=0,
+                visibility_cache=cache,
+                stop_depth=None,
+                selection_reason=None,
             )
         )
     per_depth = query_limit // 3
@@ -188,6 +199,7 @@ def search_surface_views(
                     source_budget,
                     proposals=proposed,
                     reference_source=row["raw_source"],
+                    visibility_cache=state["visibility_cache"],
                 )
                 state["reasons"].update(reasons)
                 for unit in legal:
@@ -206,14 +218,7 @@ def search_surface_views(
                         state["reasons"]["heldout_operator_combination"] += 1
                         continue
                     changed = unit["raw_source"]
-                    ids = tuple(
-                        tokenizer(
-                            changed,
-                            add_special_tokens=False,
-                            truncation=True,
-                            max_length=source_budget,
-                        )["input_ids"]
-                    )
+                    ids = tuple(state["visibility_cache"][changed][0])
                     if changed in state["seen_sources"] or ids in state["seen_inputs"]:
                         state["reasons"]["duplicate_source_or_input"] += 1
                         continue
@@ -242,17 +247,39 @@ def search_surface_views(
             missing = list(dict.fromkeys(missing))
             if original_logits is not None:
                 for i in missing:
-                    states[i]["original_logit"] = float(
-                        original_logits[states[i]["row"]["sample_key"]]
-                    )
+                    z = float(original_logits[states[i]["row"]["sample_key"]])
+                    if not np.isfinite(z):
+                        raise ValueError("nonfinite original score")
+                    states[i]["original_logit"] = z
             elif missing:
-                values = score([states[i]["row"] for i in missing])
+                values = score([
+                    dict(states[i]["row"], _source_token_ids=states[i]["visibility_cache"][
+                        states[i]["row"]["raw_source"]][0]) for i in missing
+                ])
+                if len(values) != len(missing):
+                    raise ValueError("original score cardinality mismatch")
                 for i, z in zip(missing, values):
+                    if not np.isfinite(z):
+                        raise ValueError("nonfinite original score")
                     states[i]["original_logit"] = float(z)
                     states[i]["original_queries"] = 1
-            values = score([dict(states[i]["row"], raw_source=c["raw_source"]) for i, c in pending])
-            if len(values) != len(pending):
+            scored = [
+                (at, i, c) for at, (i, c) in enumerate(pending)
+                if selection != "boundary"
+                or int(states[i]["original_logit"] >= 0) == states[i]["row"]["label"]
+            ]
+            logits = score([
+                dict(states[i]["row"], raw_source=c["raw_source"],
+                     _source_token_ids=states[i]["visibility_cache"][c["raw_source"]][0])
+                for _, i, c in scored
+            ]) if scored else []
+            if len(logits) != len(scored):
                 raise ValueError("candidate score cardinality mismatch")
+            values = [None] * len(pending)
+            for (at, _, _), z in zip(scored, logits):
+                if z is None:
+                    raise ValueError("scored candidate has no logit")
+                values[at] = z
         else:
             values = [None] * len(pending)
         next_beams = defaultdict(list)
@@ -265,10 +292,20 @@ def search_surface_views(
                     logit=float(z),
                     loss=float(np.logaddexp(0, float(z)) - state["row"]["label"] * float(z)),
                 )
+                state["candidate_queries"] += 1
             state["visited"].append(candidate)
             next_beams[i].append(candidate)
         for i, state in enumerate(states):
             children = next_beams[i]
+            if selection == "boundary" and children:
+                if int(state["original_logit"] >= 0) != state["row"]["label"]:
+                    state["selection_reason"] = "original_wrong_random"
+                elif any(int(c["logit"] >= 0) != state["row"]["label"] for c in children):
+                    state["selection_reason"] = "first_boundary_min_bce"
+                if state["selection_reason"] is not None:
+                    state["beams"] = []
+                    state["stop_depth"] = depth + 1
+                    continue
             if random_selection or score is None:
                 state["rng"].shuffle(children)
                 state["beams"] = children[:2]
@@ -279,15 +316,16 @@ def search_surface_views(
         visited = state["visited"]
         if required_combination:
             visited = [c for c in visited if len(c["units"]) == len(required_combination)]
-        selected = (
-            (
-                state["rng"].choice(visited)
-                if random_selection or score is None
-                else max(visited, key=lambda c: c["loss"])
-            )
-            if visited
-            else None
-        )
+        reason = state["selection_reason"]
+        if not visited:
+            selected = None
+        elif random_selection or score is None or reason == "original_wrong_random":
+            selected = state["rng"].choice(visited)
+        elif reason == "first_boundary_min_bce":
+            crossed = [c for c in visited if int(c["logit"] >= 0) != state["row"]["label"]]
+            selected = min(crossed, key=lambda c: c["loss"])
+        else:
+            selected = max(visited, key=lambda c: c["loss"])
         base = state["original_logit"]
         y = state["row"]["label"] if base is not None else None
         result.append(
@@ -295,14 +333,18 @@ def search_surface_views(
                 sample_key=state["row"]["sample_key"],
                 selected=selected,
                 visited=state["visited"],
-                candidate_queries=(
-                    len(state["visited"]) if score is not None and not random_selection else 0
-                ),
+                candidate_queries=state["candidate_queries"],
                 original_queries=state["original_queries"],
                 original_logit=base,
+                selection_reason=("no_legal_candidate" if selected is None else reason or (
+                    "random" if random_selection or score is None else
+                    "no_boundary_max_bce" if selection == "boundary" else "hardest_max_bce"
+                )),
+                stop_depth=state["stop_depth"],
+                visibility_encodings=len(state["visibility_cache"]),
                 loss_delta=(
                     selected["loss"] - float(np.logaddexp(0, base) - y * base)
-                    if selected is not None and base is not None
+                    if selected is not None and "loss" in selected and base is not None
                     else None
                 ),
                 reasons=dict(state["reasons"]),

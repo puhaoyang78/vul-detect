@@ -1,0 +1,234 @@
+{
+  "checkpoint": "results/primevul/bce/best.pt",
+  "dataset": "primevul",
+  "seed": 42,
+  "selected_epoch": 3,
+  "samples": {
+    "samples": 32,
+    "positive": 16,
+    "negative": 16
+  },
+  "sample_keys": [
+    "primevul:117",
+    "primevul:514",
+    "primevul:3593",
+    "primevul:3658",
+    "primevul:4366",
+    "primevul:6980",
+    "primevul:9824",
+    "primevul:9856",
+    "primevul:27069",
+    "primevul:30981",
+    "primevul:31510",
+    "primevul:56253",
+    "primevul:58758",
+    "primevul:63079",
+    "primevul:66424",
+    "primevul:78096",
+    "primevul:159788",
+    "primevul:162563",
+    "primevul:171044",
+    "primevul:178028",
+    "primevul:196944",
+    "primevul:204560",
+    "primevul:204765",
+    "primevul:206827",
+    "primevul:210541",
+    "primevul:213666",
+    "primevul:215311",
+    "primevul:216972",
+    "primevul:223745",
+    "primevul:359963",
+    "primevul:475877",
+    "primevul:520254"
+  ],
+  "repeats": 3,
+  "device": "cuda:0",
+  "hardware": "NVIDIA GeForce RTX 4090",
+  "torch": "2.9.1+cu128",
+  "cuda": "12.8",
+  "protocol": "balanced source Train; fixed per-function RNG; no optimizer updates; timing includes final KL backward",
+  "search": {
+    "hardest": {
+      "candidate_queries": 234,
+      "original_queries": 21,
+      "generated": 234,
+      "visibility_encodings": 287,
+      "selection_reasons": {
+        "hardest_max_bce": 21,
+        "no_legal_candidate": 11
+      },
+      "runs": [
+        {
+          "seconds": 4.448189131915569,
+          "calls": 71,
+          "function_forwards": 255,
+          "encoder_sequences": 469,
+          "encoder_token_slots": 203971,
+          "encoder_active_tokens": 187197
+        },
+        {
+          "seconds": 3.4376096830237657,
+          "calls": 71,
+          "function_forwards": 255,
+          "encoder_sequences": 469,
+          "encoder_token_slots": 203971,
+          "encoder_active_tokens": 187197
+        },
+        {
+          "seconds": 3.44390380801633,
+          "calls": 71,
+          "function_forwards": 255,
+          "encoder_sequences": 469,
+          "encoder_token_slots": 203971,
+          "encoder_active_tokens": 187197
+        }
+      ],
+      "median_seconds": 3.44390380801633
+    },
+    "boundary": {
+      "candidate_queries": 178,
+      "original_queries": 21,
+      "generated": 190,
+      "visibility_encodings": 239,
+      "selection_reasons": {
+        "no_boundary_max_bce": 15,
+        "no_legal_candidate": 11,
+        "original_wrong_random": 3,
+        "first_boundary_min_bce": 3
+      },
+      "runs": [
+        {
+          "seconds": 2.978688885923475,
+          "calls": 56,
+          "function_forwards": 199,
+          "encoder_sequences": 406,
+          "encoder_token_slots": 180818,
+          "encoder_active_tokens": 167110
+        },
+        {
+          "seconds": 2.965088781900704,
+          "calls": 56,
+          "function_forwards": 199,
+          "encoder_sequences": 406,
+          "encoder_token_slots": 180818,
+          "encoder_active_tokens": 167110
+        },
+        {
+          "seconds": 2.9727575399447232,
+          "calls": 56,
+          "function_forwards": 199,
+          "encoder_sequences": 406,
+          "encoder_token_slots": 180818,
+          "encoder_active_tokens": 167110
+        }
+      ],
+      "median_seconds": 2.9727575399447232
+    },
+    "same_first_layer_functions": 32,
+    "same_selected_source": 28
+  },
+  "vat": {
+    "signed_cosine": {
+      "count": 32,
+      "minimum": -0.9999999999753141,
+      "median": 0.9999999997574542,
+      "mean": 0.8124999991800801,
+      "negative": 3,
+      "below_0_9": 3
+    },
+    "finite_difference": {
+      "runs": [
+        {
+          "seconds": 2.887649152893573,
+          "function_forwards": 96,
+          "encoder_sequences": 213,
+          "encoder_token_slots": 106320,
+          "encoder_active_tokens": 90060,
+          "eligible": 32,
+          "zero_direction": 0,
+          "all_parameter_gradients_finite": true,
+          "every_batch_has_nonzero_parameter_gradient": true
+        },
+        {
+          "seconds": 2.608478011097759,
+          "function_forwards": 96,
+          "encoder_sequences": 213,
+          "encoder_token_slots": 106320,
+          "encoder_active_tokens": 90060,
+          "eligible": 32,
+          "zero_direction": 0,
+          "all_parameter_gradients_finite": true,
+          "every_batch_has_nonzero_parameter_gradient": true
+        },
+        {
+          "seconds": 2.597789016086608,
+          "function_forwards": 96,
+          "encoder_sequences": 213,
+          "encoder_token_slots": 106320,
+          "encoder_active_tokens": 90060,
+          "eligible": 32,
+          "zero_direction": 0,
+          "all_parameter_gradients_finite": true,
+          "every_batch_has_nonzero_parameter_gradient": true
+        }
+      ],
+      "median_seconds": 2.608478011097759,
+      "mean_kl": 0.33208891745002234,
+      "median_kl": 0.07926294952630997,
+      "min_kl": 8.550968232157174e-06,
+      "max_kl": 3.1711366176605225
+    },
+    "logit": {
+      "runs": [
+        {
+          "seconds": 2.5719150949735194,
+          "function_forwards": 64,
+          "encoder_sequences": 142,
+          "encoder_token_slots": 70880,
+          "encoder_active_tokens": 60040,
+          "eligible": 32,
+          "zero_direction": 0,
+          "zero_initial_projection": 0,
+          "all_parameter_gradients_finite": true,
+          "every_batch_has_nonzero_parameter_gradient": true
+        },
+        {
+          "seconds": 2.3217694910708815,
+          "function_forwards": 64,
+          "encoder_sequences": 142,
+          "encoder_token_slots": 70880,
+          "encoder_active_tokens": 60040,
+          "eligible": 32,
+          "zero_direction": 0,
+          "zero_initial_projection": 0,
+          "all_parameter_gradients_finite": true,
+          "every_batch_has_nonzero_parameter_gradient": true
+        },
+        {
+          "seconds": 2.3333041581790894,
+          "function_forwards": 64,
+          "encoder_sequences": 142,
+          "encoder_token_slots": 70880,
+          "encoder_active_tokens": 60040,
+          "eligible": 32,
+          "zero_direction": 0,
+          "zero_initial_projection": 0,
+          "all_parameter_gradients_finite": true,
+          "every_batch_has_nonzero_parameter_gradient": true
+        }
+      ],
+      "median_seconds": 2.3333041581790894,
+      "mean_kl": 0.3319854871892005,
+      "median_kl": 0.0792631022632122,
+      "min_kl": 8.550635357096326e-06,
+      "max_kl": 3.17112135887146
+    },
+    "logit_smaller_final_kl": 19
+  },
+  "input_cache_check": {
+    "unique_sources": 266,
+    "tokens_equal": true,
+    "batch_tensors_equal": true
+  }
+}

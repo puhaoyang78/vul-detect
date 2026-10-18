@@ -31,6 +31,14 @@ def build_parser():
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
+        if command == "train":
+            p.add_argument("--hard-selection", choices=("hardest", "boundary"), default="hardest")
+            p.add_argument("--vat-direction", choices=("finite_difference", "logit"), default="finite_difference")
+            p.add_argument("--train-limit", type=int, help="balanced diagnostic subset; default: full Train")
+        if command in ("train", "evaluate"):
+            p.add_argument("--valid-limit", type=int, help="balanced diagnostic subset; default: full Valid")
+        if command in ("candidates", "evaluate"):
+            p.add_argument("--test-limit", type=int, help="balanced diagnostic subset; default: full Test")
     p = sub.add_parser("transfer", help="bidirectional Clean transfer with source-selected checkpoints and thresholds")
     p.add_argument("--datasets", nargs=2, choices=DATASETS, required=True)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -52,6 +60,18 @@ def build_parser():
     p.add_argument("--source-file", type=Path, required=True)
     p.add_argument("--model", help="pretrained CodeBERT location if the checkpoint has moved")
     p.add_argument("--device", default="auto")
+    p = sub.add_parser("ablation", help="real-checkpoint search/VAT diagnostics and four-combination report")
+    p.add_argument("stage", choices=("probe", "report"))
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/search_vat_ablation"))
+    p.add_argument("--checkpoint", type=Path)
+    p.add_argument("--dataset", choices=DATASETS, default="primevul")
+    p.add_argument("--sample-limit", type=int, default=32)
+    p.add_argument("--repeats", type=int, default=3)
+    p.add_argument("--device", default="auto")
+    p.add_argument("--train-limit", type=int, default=1024)
+    p.add_argument("--valid-limit", type=int, default=256)
+    p.add_argument("--test-limit", type=int, default=256)
     return parser
 
 
@@ -82,12 +102,18 @@ def main():
                     dataset,
                     method,
                     device=args.device,
+                    hard_selection=args.hard_selection,
+                    vat_direction=args.vat_direction,
+                    train_limit=args.train_limit,
+                    valid_limit=args.valid_limit,
                 )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
 
         for dataset in datasets:
-            prepare_candidates(args.data_dir, args.output_dir, args.model, dataset)
+            prepare_candidates(
+                args.data_dir, args.output_dir, args.model, dataset, test_limit=args.test_limit
+            )
     elif args.command == "evaluate":
         from .evaluation import evaluate
 
@@ -99,6 +125,8 @@ def main():
                 args.methods,
                 device=args.device,
                 robust=not args.clean_only,
+                valid_limit=args.valid_limit,
+                test_limit=args.test_limit,
             )
     elif args.command == "transfer":
         from .evaluation import evaluate_transfer
@@ -127,6 +155,17 @@ def main():
                 for dataset in datasets:
                     tfidf_experiment(args.data_dir, args.output_dir, dataset)
             print(json.dumps(tfidf_report(args.output_dir, datasets), indent=2))
+    elif args.command == "ablation":
+        from .ablation import comparison, probe
+
+        if args.stage == "probe":
+            if args.checkpoint is None:
+                raise ValueError("ablation probe requires --checkpoint")
+            probe(args.data_dir, args.output_dir, args.checkpoint, sample_limit=args.sample_limit,
+                  repeats=args.repeats, device=args.device)
+        else:
+            comparison(args.data_dir, args.output_dir, args.dataset, train_limit=args.train_limit,
+                       valid_limit=args.valid_limit, test_limit=args.test_limit)
     elif args.command == "infer":
         from .metrics import decision_boundary
         from .model import predict_checkpoint

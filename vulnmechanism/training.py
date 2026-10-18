@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import json
 import math
 from pathlib import Path
@@ -14,7 +15,7 @@ import transformers
 
 from .artifacts import write_json
 from .augmentation import search_surface_views, surface_seed
-from .data import DATASETS, read_jsonl, validation_rows
+from .data import DATASETS, balanced_subset, read_jsonl, validation_rows
 from .metrics import select_threshold
 from .model import (
     AutoTokenizer,
@@ -27,7 +28,7 @@ from .model import (
 )
 from .progress import TrainingProgress, training_bar
 from .syntax import surface_materials
-from .vat import VAT_CONFIG, vat_loss
+from .vat import VAT_CONFIG, VAT_DIRECTIONS, vat_loss
 
 METHODS = ("bce", "vat", "random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
 GENERALIZATION_METHODS = ("bce", "lp_ft", "swa")
@@ -73,11 +74,21 @@ def train(
     device="auto",
     materials=None,
     config=None,
+    hard_selection="hardest",
+    vat_direction="finite_difference",
+    train_limit=None,
+    valid_limit=None,
 ):
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
     if method not in (*METHODS, "lp_ft", "swa"):
         raise ValueError(f"unknown method: {method}")
+    if hard_selection not in ("hardest", "boundary") or vat_direction not in VAT_DIRECTIONS:
+        raise ValueError("unknown hard selection or VAT direction")
+    if hard_selection != "hardest" and method not in ("hard_aug_bce", "hard_aug_vat"):
+        raise ValueError("boundary selection requires a hard augmentation method")
+    if vat_direction != "finite_difference" and method not in ("vat", "random_aug_vat", "hard_aug_vat"):
+        raise ValueError("logit direction requires a VAT method")
     config = dict(TRAINING if config is None else config)
     if (
         config["batch_size"] <= 0
@@ -95,8 +106,10 @@ def train(
         raise FileExistsError(
             f"{run}: training already started; refusing to reuse fitted weights"
         )
-    train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
-    valid_rows = validation_rows(Path(data_dir) / dataset)
+    train_rows = balanced_subset(
+        read_jsonl(Path(data_dir) / dataset / "train.jsonl"), train_limit, config["seed"]
+    )
+    valid_rows = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit, config["seed"])
     steps_per_epoch = math.ceil(len(train_rows) / (config["batch_size"] * config["gradient_accumulation"]))
     if method == "swa" and steps_per_epoch < 2:
         raise ValueError("SWA requires two distinct weight samples per averaging epoch")
@@ -109,7 +122,11 @@ def train(
     use_vat = method in ("vat", "random_aug_vat", "hard_aug_vat")
     search = method in ("hard_aug_bce", "hard_aug_vat")
     if source_views and materials is None:
-        materials = prepare_materials(data_dir, output_dir, dataset)
+        if train_limit is None:
+            materials = prepare_materials(data_dir, output_dir, dataset)
+        else:
+            materials = surface_materials(train_rows, seed=config["seed"])
+            write_json(Path(output_dir) / dataset / "materials.json", materials)
     device = resolve_device(device)
     seed = config["seed"]
     seed_everything(seed)
@@ -129,6 +146,7 @@ def train(
         training_config=config,
         train_samples=len(train_rows),
         valid_samples=len(valid_rows),
+        diagnostic_limits=dict(train=train_limit, valid=valid_limit),
         environment=dict(
             torch=torch.__version__,
             transformers=transformers.__version__,
@@ -146,7 +164,7 @@ def train(
             stride=(512 - len(builder.source_prefix) - 2) // 2,
             pooling="mean over unique source positions; prefix/BOS/EOS averaged across windows",
         ),
-        vat=VAT_CONFIG if use_vat else None,
+        vat=dict(VAT_CONFIG, direction=vat_direction) if use_vat else None,
         lp_ft=(dict(linear_probe_epochs=1, linear_probe_learning_rate=1e-3,
                     fine_tune_epochs=config["epochs"] - 1, encoder_dropout_during_probe=False,
                     reset_optimizer_at_fine_tune=True,
@@ -161,6 +179,7 @@ def train(
         augmentation=(
             dict(
                 search=search,
+                selection=hard_selection if search else "random",
                 beam_width=2,
                 depth=3,
                 candidate_limit=12,
@@ -196,6 +215,10 @@ def train(
         running, vat_total, transformed, queries, original_queries = 0.0, 0.0, 0, 0, 0
         vat_eligible, vat_zero, vat_norm_min, vat_norm_max = 0, 0, None, None
         search_seconds = 0.0
+        selection_reasons = Counter()
+        search_costs = Counter()
+        bce_costs = Counter()
+        vat_costs = Counter()
         steps = 0
         num_batches = math.ceil(len(order) / batch_size)
         bar = training_bar(
@@ -219,6 +242,11 @@ def train(
                                 rows[at : at + batch_size], device=device
                             )
                             values.extend(model(*inputs).detach().cpu().tolist())
+                            search_costs.update(
+                                function_forwards=inputs[-1], encoder_sequences=len(inputs[0]),
+                                encoder_token_slots=inputs[0].numel(),
+                                encoder_active_tokens=int(inputs[1].sum()),
+                            )
                         return values
 
                 selections = search_surface_views(
@@ -231,6 +259,7 @@ def train(
                     epoch=epoch,
                     query_limit=12,
                     random_selection=not search,
+                    selection=hard_selection,
                 )
                 search_seconds += time.monotonic() - search_started
                 views = {
@@ -240,6 +269,7 @@ def train(
                 transformed += sum(s["selected"] is not None for s in selections)
                 queries += sum(s["candidate_queries"] for s in selections)
                 original_queries += sum(s["original_queries"] for s in selections)
+                selection_reasons.update(s["selection_reason"] for s in selections)
                 with (run / "training.candidates.jsonl").open("a", encoding="utf-8") as handle:
                     for entry in selections:
                         chosen = entry["selected"]
@@ -259,6 +289,11 @@ def train(
                                     ),
                                     candidate_queries=entry["candidate_queries"],
                                     original_queries=entry["original_queries"],
+                                    selection_reason=entry["selection_reason"],
+                                    stop_depth=entry["stop_depth"],
+                                    original_logit=entry["original_logit"],
+                                    loss_delta=entry["loss_delta"],
+                                    visibility_encodings=entry["visibility_encodings"],
                                     reasons=entry["reasons"],
                                 )
                             )
@@ -266,7 +301,13 @@ def train(
                         )
             batch_loss = 0.0
             for forwarded, weights in function_view_batches(batch, views, batch_size):
-                logits = model(*builder.codebert_batch(forwarded, device=device))
+                inputs = builder.codebert_batch(forwarded, device=device)
+                logits = model(*inputs)
+                bce_costs.update(
+                    function_forwards=inputs[-1], encoder_sequences=len(inputs[0]),
+                    encoder_token_slots=inputs[0].numel(),
+                    encoder_active_tokens=int(inputs[1].sum()),
+                )
                 labels = logits.new_tensor([r["label"] for r in forwarded])
                 terms = torch.nn.functional.binary_cross_entropy_with_logits(
                     logits, labels, reduction="none"
@@ -297,12 +338,17 @@ def train(
                         builder,
                         device=device,
                         noise_seed=seed + (epoch - 1) * len(order) + start,
+                        direction_method=vat_direction,
                     )
                     if terms.requires_grad:
                         (terms.sum() / group_samples).backward()
                 vat_total += float(terms.detach().sum())
                 vat_eligible += info["eligible"]
                 vat_zero += info["zero_direction"]
+                vat_costs.update({k: info[k] for k in (
+                    "function_forwards", "encoder_sequences", "encoder_token_slots",
+                    "encoder_active_tokens", "zero_initial_projection",
+                ) if info[k] is not None})
                 if info["norm_min"] is not None:
                     vat_norm_min = (
                         min(vat_norm_min, info["norm_min"])
@@ -316,7 +362,7 @@ def train(
                     )
             running += batch_loss
             if (batch_index + 1) % accumulation == 0 or batch_index + 1 == num_batches:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config["gradient_clip"])
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config["gradient_clip"], error_if_nonfinite=True)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 steps += 1
@@ -363,6 +409,10 @@ def train(
                 candidate_queries=queries,
                 original_search_queries=original_queries,
                 search_seconds=search_seconds,
+                selection_reasons=dict(selection_reasons),
+                search_costs=dict(search_costs),
+                bce_costs=dict(bce_costs),
+                vat_costs=dict(vat_costs),
                 vat_loss=vat_total / len(train_rows),
                 vat_eligible_functions=vat_eligible,
                 vat_zero_direction_functions=vat_zero,

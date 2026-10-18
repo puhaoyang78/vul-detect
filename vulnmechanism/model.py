@@ -65,7 +65,12 @@ class InputBuilder:
         stride = capacity // 2
         sequences, weights, owners, positions = ([], [], [], [])
         for owner, record in enumerate(records):
-            tokens = self._encode(str(record["raw_source"]), budget)
+            # Dynamic search already validated these IDs together with offsets.
+            tokens = record.get("_source_token_ids")
+            if tokens is None:
+                tokens = self._encode(str(record["raw_source"]), budget)
+            elif len(tokens) > budget:
+                raise ValueError("cached source tokens exceed the logical budget")
             starts = [0]
             while starts[-1] + capacity < len(tokens):
                 starts.append(starts[-1] + stride)

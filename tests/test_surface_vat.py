@@ -7,6 +7,7 @@ import unittest
 from argparse import Namespace
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
@@ -77,6 +78,178 @@ def proposals(source, kind=None, seed=42, **kwargs):
 
 
 class SurfaceVATTests(unittest.TestCase):
+    def test_boundary_finishes_layer_skips_wrong_original_and_keeps_hardest_default(self):
+        source = "int f(int x){/* ordinary section */int y=api(x);return x+y;}"
+        rows = [dict(sample_key=k, raw_source=source, language="c", label=1)
+                for k in ("cross", "wrong", "safe")]
+        calls = Counter()
+        full_layers = []
+
+        def score(batch):
+            result = []
+            for row in batch:
+                key = row["sample_key"]
+                original = row["raw_source"] == source
+                calls[(key, original)] += 1
+                if original:
+                    result.append(-1.0 if key == "wrong" else 2.0)
+                else:
+                    self.assertNotEqual(key, "wrong")
+                    if key == "cross":
+                        # All four candidates must be scored, even after a crossing.
+                        value = [0.4, -2.0, -0.1, 0.3][calls[(key, False)] - 1]
+                        full_layers.append(value)
+                        result.append(value)
+                    else:
+                        result.append(0.5)
+            return result
+
+        tokenizer = OffsetTokenizer()
+        found = data.search_surface_views(rows, score, tokenizer, 2025, MATERIALS,
+                                          selection="boundary")
+        cross, wrong, safe = found
+        self.assertEqual(cross["stop_depth"], 1)
+        self.assertEqual(cross["selection_reason"], "first_boundary_min_bce")
+        self.assertEqual(cross["selected"]["logit"], -0.1)
+        self.assertEqual(cross["candidate_queries"], len(full_layers))
+        self.assertEqual(len(full_layers), 4)
+        self.assertEqual(wrong["selection_reason"], "original_wrong_random")
+        self.assertEqual(wrong["candidate_queries"], 0)
+        self.assertEqual(calls[("wrong", False)], 0)
+        self.assertIsNone(wrong["loss_delta"])
+        self.assertTrue(all("logit" not in c and "loss" not in c for c in wrong["visited"]))
+        self.assertEqual(safe["selection_reason"], "no_boundary_max_bce")
+        self.assertTrue(any(len(c["units"]) > 1 for c in safe["visited"]))
+        solo = data.search_surface_views([rows[1]], score, tokenizer, 2025, MATERIALS,
+                                         selection="boundary")[0]
+        self.assertEqual(wrong, solo)  # RNG is independent of batch neighbours.
+        full = data.search_surface_views(
+            [rows[0]], lambda batch: [2.0 if r["raw_source"] == source else -2.0 for r in batch],
+            tokenizer, 2025, MATERIALS,
+        )[0]
+        self.assertGreater(full["candidate_queries"], cross["candidate_queries"])
+        self.assertEqual(full["selected"]["loss"], max(c["loss"] for c in full["visited"]))
+        with self.assertRaisesRegex(ValueError, "training"):
+            data.search_surface_views(rows, score, tokenizer, 2025, MATERIALS,
+                                      selection="boundary", purpose="adaptive")
+        with self.assertRaisesRegex(ValueError, "no logit"):
+            data.search_surface_views(
+                [rows[0]], lambda batch: [2.0 if r["raw_source"] == source else None for r in batch],
+                tokenizer, 2025, MATERIALS,
+            )
+
+    def test_search_reuses_offsets_and_passes_the_same_source_ids_to_scoring(self):
+        class CountingTokenizer(OffsetTokenizer):
+            def __init__(self):
+                self.sources = Counter()
+
+            def __call__(self, text, **kwargs):
+                if kwargs.get("return_offsets_mapping"):
+                    self.sources[text] += 1
+                return super().__call__(text, **kwargs)
+
+        tokenizer = CountingTokenizer()
+        row = dict(sample_key="cache", language="c", label=1,
+                   raw_source="int f(int x){/* ordinary section */return api(x);}")
+
+        def score(batch):
+            for r in batch:
+                self.assertEqual(r["_source_token_ids"],
+                                 OffsetTokenizer()(r["raw_source"])["input_ids"][:2025])
+            return [1.0] * len(batch)
+
+        result = data.search_surface_views([row], score, tokenizer, 2025, MATERIALS)[0]
+        self.assertEqual(result["visibility_encodings"], len(tokenizer.sources))
+        self.assertTrue(all(count == 1 for count in tokenizer.sources.values()))
+
+    def test_logit_vat_uses_raw_sign_before_copy_correction_and_keeps_final_gradients(self):
+        ids = torch.tensor([[0, 0, 1, -1]])
+        owners, windows = torch.tensor([0, 0]), torch.tensor([0])
+        initial = torch.randn((2, 1), generator=torch.Generator().manual_seed(42))
+        initial, _ = vat.normalize_vat_groups(initial, ids, owners, windows, 1, 1.0)
+        raw = torch.tensor([[3.0 / initial[0, 0]], [-2.0 / initial[1, 0]]])
+        counts = torch.tensor([[2.0], [1.0]])
+        self.assertGreater(float((raw * initial).sum()), 0)
+        self.assertLess(float((raw / counts * initial).sum()), 0)
+
+        class Builder:
+            def vat_batch(self, records, *, device):
+                batch = (torch.ones_like(ids), torch.ones_like(ids), windows,
+                         torch.ones_like(ids), 1)
+                return batch, ids, owners, [True]
+
+        class LinearLogit(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = SimpleNamespace(config=SimpleNamespace(hidden_size=1))
+                self.scale = torch.nn.Parameter(torch.tensor(1.0))
+
+            def forward(self, *batch, embedding_delta=None, force_fp32=False):
+                delta = torch.zeros((1, 4, 1)) if embedding_delta is None else embedding_delta
+                weights = torch.tensor([raw[0, 0] / 2, raw[0, 0] / 2, raw[1, 0], 0.0])
+                return (0.7 + (delta.double()[:, :, 0] * weights.double()).sum(1)) * self.scale
+
+        model = LinearLogit()
+        fd, old, a = vat.vat_loss(model, [{}], Builder(), device="cpu", noise_seed=42, return_delta=True)
+        direct, new, b = vat.vat_loss(
+            model, [{}], Builder(), device="cpu", noise_seed=42,
+            direction_method="logit", return_delta=True,
+        )
+        expected, _ = vat.normalize_vat_groups(raw / counts, ids, owners, windows, 1, 1.0)
+        torch.testing.assert_close(b, vat.expand_vat_groups(expected, ids), rtol=1e-6, atol=1e-7)
+        self.assertGreater(float(torch.nn.functional.cosine_similarity(a.flatten(), b.flatten(), dim=0)), 0.9999)
+        self.assertEqual((old["function_forwards"], new["function_forwards"]), (3, 2))
+        self.assertFalse(b.requires_grad)
+        self.assertIsNone(model.scale.grad)
+        direct.sum().backward()
+        self.assertTrue(torch.isfinite(model.scale.grad))
+        self.assertGreater(float(model.scale.grad.abs()), 0)
+        torch.testing.assert_close(fd, direct, rtol=1e-5, atol=1e-6)
+        with torch.no_grad():
+            model.scale.zero_()
+        zero, info, delta = vat.vat_loss(
+            model, [{}], Builder(), device="cpu", noise_seed=42,
+            direction_method="logit", return_delta=True,
+        )
+        self.assertEqual(info["zero_direction"], 1)
+        self.assertEqual(info["zero_initial_projection"], 1)
+        self.assertTrue(torch.all(delta == 0))
+        self.assertEqual(float(zero.detach().sum()), 0)
+
+    def test_four_training_switches_use_the_same_budget_and_save_their_config(self):
+        from vulnmechanism.training import TRAINING, train
+        from vulnmechanism.data import write_jsonl
+
+        torch.set_num_threads(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            encoder, _ = tiny_model(root)
+            rows = [dict(sample_key=str(i), dataset="primevul", split="train", label=i % 2,
+                         language="c", raw_source=f"int f{i}(int x){{/* ordinary section */return api(x)+{i};}}")
+                    for i in range(8)]
+            write_jsonl(root / "data/primevul/train.jsonl", rows)
+            write_jsonl(root / "data/primevul/valid.jsonl",
+                        [dict(r, split="valid", sample_key="v" + r["sample_key"]) for r in rows])
+            config = dict(TRAINING, epochs=1, batch_size=2, gradient_accumulation=2)
+            for selection in ("hardest", "boundary"):
+                for direction in vat.VAT_DIRECTIONS:
+                    run = root / f"{selection}_{direction}"
+                    with patch.object(core.AutoTokenizer, "from_pretrained", return_value=OffsetTokenizer()):
+                        summary = train(root / "data", run, str(encoder), "primevul", "hard_aug_vat",
+                                        config=config, materials=MATERIALS, hard_selection=selection,
+                                        vat_direction=direction, train_limit=4, valid_limit=2)
+                    self.assertEqual(summary["optimizer_steps"], 1)
+                    self.assertEqual((summary["train_samples"], summary["valid_samples"]), (4, 2))
+                    self.assertEqual(summary["vat"]["direction"], direction)
+                    self.assertEqual(summary["augmentation"]["selection"], selection)
+                    logs = [json.loads(line) for line in
+                            (run / "primevul/hard_aug_vat/best.training.jsonl").read_text().splitlines()]
+                    epoch = next(r for r in logs if r["event"] == "epoch")
+                    self.assertEqual(epoch["search_costs"]["function_forwards"],
+                                     epoch["candidate_queries"] + epoch["original_search_queries"])
+                    self.assertEqual(epoch["vat_costs"]["function_forwards"],
+                                     4 * (3 if direction == "finite_difference" else 2))
+
     def test_binding_shadowing_utf8_members_macros_and_self_references(self):
         source = (
             "int f(int 变量){int y=fetch(变量);{int 变量=2;use(变量);}return y+变量+GLOBAL;}"

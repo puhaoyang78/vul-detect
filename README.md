@@ -260,6 +260,47 @@ MegaVul 正例 Train/Valid/Test 为 **14,380/1,797/1,798**，项目数为 394/33
 
 VAT 覆盖有效源码 token，排除前缀、特殊 token 和 padding。`epsilon=1`、`xi=0.001`、一次方向估计、系数 1；重叠窗口中相同源码位置共享扰动，按实际展开后的每函数 L2 范数归一化。辅助前向关闭 dropout 并保留梯度。
 
+### Hardest / Boundary 与 VAT 方向开关
+
+训练默认保留 `--hard-selection hardest --vat-direction finite_difference`。`boundary` 仅用于困难增强训练：以原函数 logit ≥ 0 为正类；原函数已错时，从首层合法候选中按函数独立 RNG 随机选一条，不查询任何变体分数。原函数正确时，完成首次出现误分类候选的整层评分后停止该函数，选择已评分误分类候选中 BCE 最小者；没有越界则选最大 BCE。原函数始终进入 BCE；有一条增强时，两者权重各为 1/2，没有增强时原函数权重为 1。日志保存选样原因、停止层、实际查询数；未评分变体不保存虚构的 logit 或 loss。
+
+绑定检查、Train 素材及规则留出、截断可见性和源码/编码去重保持原协议。每次搜索缓存源码分词、offset 和可见性，模型评分复用同一组源码 token ID。函数名重命名仍标记为输入压力测试。评估不接入 `boundary`，Adaptive 始终执行原有完整 beam 搜索，每函数最多评分 48 个候选。
+
+`logit` 直接对共享扰动坐标求 logit 梯度 `g`。二分类 self-KL 在中心的 Hessian 为 `p(1-p)ggᵀ`，故先用未经重叠次数校正的 `gᵀd` 决定符号，再除以各坐标在窗口中的出现次数，按实际展开后的每函数 L2 范数归一到 `epsilon=1`。随机初始方向和中心选择不变。reference 和最终方向均 detach，最终 KL 保留参数梯度。它使用两次函数前向，原有限差分使用三次；两者均需方向反向及最终 KL 反向，不能把前向数量变化当成整体训练加速比例。零梯度或零投影返回零方向并计数，不增加替代方向。
+
+固定平衡小样本诊断及四组合训练复用正式入口；`--*-limit` 缺省时仍使用原完整数据。这些子集仅用于本次消融，不替代已有正式 Test。
+
+```bash
+MODEL=/path/to/codebert-base
+OUT=results/search_vat_ablation
+python -m vulnmechanism.cli ablation probe --checkpoint results/primevul/bce/best.pt \
+  --output-dir "$OUT" --sample-limit 32 --repeats 3 --device cuda:0
+for selection in hardest boundary; do
+  for direction in finite_difference logit; do
+    RUN="$OUT/${selection}_${direction}"
+    python -m vulnmechanism.cli train --dataset primevul --methods hard_aug_vat \
+      --model "$MODEL" --output-dir "$RUN" --hard-selection "$selection" \
+      --vat-direction "$direction" --train-limit 1024 --valid-limit 256 --device cuda:0
+    python -m vulnmechanism.cli evaluate --dataset primevul --methods hard_aug_vat \
+      --output-dir "$RUN" --valid-limit 256 --test-limit 256 --device cuda:0
+  done
+done
+python -m vulnmechanism.cli ablation report --output-dir "$OUT"
+```
+
+四组合各自从同一预训练 CodeBERT 和 Seed 42 初始化，3 Epoch、有效 batch 8，各 384 个优化器步。从现有 9,724 / 1,186 / 1,098 条库内 Train/Valid/Test 抽取 1,024 / 256 / 256 条，三组内正负各半，成员仅按标签和 Seed 42 抽取并保留源顺序；各组素材仅来自实际选用的 1,024 条 Train。Valid 选择 Epoch 和阈值，Test 不参与选模。不同组合保存独立权重及预测；报告检查成员、素材、固定/留出候选和训练预算一致，保存 `members.csv`、`comparison.csv`、`results.json`、真实 checkpoint 的 `probe.json`、`probe.vat.csv` 和完整选样轨迹 `probe.search.jsonl`。单独测量的计算开销与四组合学习效果分别解释。
+
+实际完成四组训练与 Clean / Fixed / Held-out / Adaptive 评价，完整指标和反例见 [实验报告](results/search_vat_ablation/report.md)。以下为 256 条 Test 的 Clean 与严格 Adaptive 结果；ASR 括号内为攻击成功数/可扰动且 Clean 正确数。
+
+| 策略 | VAT 方向 | Clean AUC | Adaptive Worst Acc | Worst MCC | ASR |
+|---|---|---:|---:|---:|---:|
+| hardest | finite_difference | 0.7997 | 0.7266 | 0.4540 | 5.93%（7/118） |
+| hardest | logit | 0.7983 | 0.7188 | 0.4388 | 7.63%（9/118） |
+| boundary | finite_difference | 0.7999 | 0.7148 | 0.4327 | 9.17%（11/120） |
+| boundary | logit | 0.7983 | 0.7305 | 0.4633 | 5.08%（6/118） |
+
+相同 checkpoint 的 32 条平衡 Train 探针中，Boundary 将变体查询从 234 降至 178，搜索耗时中位数从 3.444 秒降至 2.973 秒；Logit VAT 将前向窗口从 213 降至 142，含最终 KL 反向的耗时从 2.608 秒降至 2.333 秒。32 条中有 3 条方向与有限差分近乎反向，完整记录 signed cosine、微小 logit 增量和最终 KL；两种方向的参数梯度均有限。四组合没有显示一致的单独学习收益，双开相对原组仅少一次严格 Adaptive 攻击成功。原 `hardest + finite_difference` 继续作为默认，结果仅支持这次固定小样本消融的结论。
+
 模型仅使用自身数据集的 Clean Valid 选择 Epoch 和阈值。阈值网格为 0.05–0.95、步长 0.01，按 MCC/F1/Accuracy/接近 0.5 决胜；Epoch 按 MCC/F1/Accuracy/AUC 决胜，完全相同保留较早轮次。两库训练代码没有专用分支。
 
 ## 训练与评价入口
