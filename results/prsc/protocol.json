@@ -1,0 +1,70 @@
+{
+  "dataset": "primevul",
+  "seed": 42,
+  "train": 1024,
+  "valid": 256,
+  "test": 256,
+  "training": {
+    "seed": 42,
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01,
+    "source_max_length": 2048,
+    "gradient_clip": 1.0
+  },
+  "pilot": [
+    {
+      "name": "hard_aug_bce",
+      "mask": "none",
+      "fraction": 0.05,
+      "weight": 0.2
+    },
+    {
+      "name": "random_5",
+      "mask": "random",
+      "fraction": 0.05,
+      "weight": 0.2
+    },
+    {
+      "name": "random_10",
+      "mask": "random",
+      "fraction": 0.1,
+      "weight": 0.2
+    },
+    {
+      "name": "rsc_5",
+      "mask": "rsc",
+      "fraction": 0.05,
+      "weight": 0.2
+    },
+    {
+      "name": "rsc_10",
+      "mask": "rsc",
+      "fraction": 0.1,
+      "weight": 0.2
+    },
+    {
+      "name": "prsc_5",
+      "mask": "prsc",
+      "fraction": 0.05,
+      "weight": 0.2
+    },
+    {
+      "name": "prsc_10",
+      "mask": "prsc",
+      "fraction": 0.1,
+      "weight": 0.2
+    }
+  ],
+  "search": "unchanged Hardest: width 2, depth 3, 12 scored candidates in Train; 48 in Adaptive Test",
+  "selection": "own Clean Valid only; original threshold/epoch rules; Test once after all training",
+  "masks": "ceil(fraction * hidden size); detached; same mask for both views; no rescaling; unchanged bias",
+  "eligibility": "strict semantic selected view and actual truncated encoder-input change",
+  "reference": "reuse detached dropout-free representations from current Hardest scoring; main and masked BCE reuse training-dropout representations",
+  "rsc": "paper section 3.1 signed true-class Top-Gradient mask, in the same additive pair-BCE protocol; no spatial/batch curriculum",
+  "rsc_reference": "https://arxiv.org/abs/2007.02454",
+  "rsc_author_code": "https://github.com/DeLightCMU/RSC/blob/master/Domain_Generalization/models/resnet.py",
+  "scope": "Clean function classification; matched small pilot only; no cross-domain or full training"
+}

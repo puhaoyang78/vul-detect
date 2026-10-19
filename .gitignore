@@ -64,6 +64,12 @@ __pycache__/
 !/results/search_vat_ablation/*.json
 !/results/search_vat_ablation/*.md
 !/results/search_vat_ablation/probe.search.jsonl
+!/results/prsc/
+/results/prsc/**
+!/results/prsc/*.csv
+!/results/prsc/*.json
+!/results/prsc/*.md
+!/results/prsc/diagnostic.pairs.jsonl
 *.pt
 *.pth
 *.ckpt

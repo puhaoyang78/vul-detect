@@ -229,6 +229,7 @@ class CodeBERT(nn.Module):
         *,
         embedding_delta=None,
         force_fp32=False,
+        return_representation=False,
     ):
         with torch.autocast(
             input_ids.device.type,
@@ -265,10 +266,12 @@ class CodeBERT(nn.Module):
         )
         head = self.task_modules["classifier"]
         if force_fp32:
-            return torch.nn.functional.linear(
+            logits = torch.nn.functional.linear(
                 pooled, head.weight.double(), head.bias.double()
             ).squeeze(-1)
-        return head(pooled).squeeze(-1)
+        else:
+            logits = head(pooled).squeeze(-1)
+        return (logits, pooled) if return_representation else logits
 
 
 @torch.no_grad()

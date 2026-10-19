@@ -32,8 +32,12 @@ def build_parser():
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
         if command == "train":
+            from .prsc import MASK_METHODS
             p.add_argument("--hard-selection", choices=("hardest", "boundary"), default="hardest")
             p.add_argument("--vat-direction", choices=("finite_difference", "logit"), default="finite_difference")
+            p.add_argument("--representation-mask", choices=MASK_METHODS, default="none")
+            p.add_argument("--mask-fraction", type=float, default=0.05)
+            p.add_argument("--mask-weight", type=float, default=0.2)
             p.add_argument("--train-limit", type=int, help="balanced diagnostic subset; default: full Train")
         if command in ("train", "evaluate"):
             p.add_argument("--valid-limit", type=int, help="balanced diagnostic subset; default: full Valid")
@@ -72,6 +76,13 @@ def build_parser():
     p.add_argument("--train-limit", type=int, default=1024)
     p.add_argument("--valid-limit", type=int, default=256)
     p.add_argument("--test-limit", type=int, default=256)
+    p = sub.add_parser("prsc", help="source-Train representation diagnostic and matched Clean pilot report")
+    p.add_argument("stage", choices=("probe", "report"))
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/prsc"))
+    p.add_argument("--checkpoint", type=Path)
+    p.add_argument("--sample-limit", type=int, choices=(128, 256), default=256)
+    p.add_argument("--device", default="auto")
     return parser
 
 
@@ -106,6 +117,9 @@ def main():
                     vat_direction=args.vat_direction,
                     train_limit=args.train_limit,
                     valid_limit=args.valid_limit,
+                    representation_mask=args.representation_mask,
+                    mask_fraction=args.mask_fraction,
+                    mask_weight=args.mask_weight,
                 )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
@@ -166,6 +180,16 @@ def main():
         else:
             comparison(args.data_dir, args.output_dir, args.dataset, train_limit=args.train_limit,
                        valid_limit=args.valid_limit, test_limit=args.test_limit)
+    elif args.command == "prsc":
+        from . import prsc
+
+        if args.stage == "probe":
+            if args.checkpoint is None:
+                raise ValueError("prsc probe requires --checkpoint")
+            prsc.probe(args.data_dir, args.output_dir, args.checkpoint,
+                       sample_limit=args.sample_limit, device=args.device)
+        else:
+            prsc.comparison(args.data_dir, args.output_dir)
     elif args.command == "infer":
         from .metrics import decision_boundary
         from .model import predict_checkpoint

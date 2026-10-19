@@ -28,6 +28,7 @@ from .model import (
 )
 from .progress import TrainingProgress, training_bar
 from .syntax import surface_materials
+from .prsc import MASK_METHODS, RSC_REFERENCE, training_masks, masked_bce
 from .vat import VAT_CONFIG, VAT_DIRECTIONS, vat_loss
 
 METHODS = ("bce", "vat", "random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
@@ -78,6 +79,9 @@ def train(
     vat_direction="finite_difference",
     train_limit=None,
     valid_limit=None,
+    representation_mask="none",
+    mask_fraction=0.05,
+    mask_weight=0.2,
 ):
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
@@ -89,6 +93,14 @@ def train(
         raise ValueError("boundary selection requires a hard augmentation method")
     if vat_direction != "finite_difference" and method not in ("vat", "random_aug_vat", "hard_aug_vat"):
         raise ValueError("logit direction requires a VAT method")
+    if representation_mask not in MASK_METHODS:
+        raise ValueError("unknown representation mask")
+    if representation_mask != "none" and (
+        method != "hard_aug_bce" or hard_selection != "hardest"
+        or not math.isfinite(mask_fraction) or not 0 < mask_fraction < 1
+        or not math.isfinite(mask_weight) or mask_weight <= 0
+    ):
+        raise ValueError("representation masks require Hardest Aug BCE and a positive mask budget")
     config = dict(TRAINING if config is None else config)
     if (
         config["batch_size"] <= 0
@@ -165,6 +177,18 @@ def train(
             pooling="mean over unique source positions; prefix/BOS/EOS averaged across windows",
         ),
         vat=dict(VAT_CONFIG, direction=vat_direction) if use_vat else None,
+        representation_mask=(dict(
+            method=representation_mask, fraction=mask_fraction, weight=mask_weight,
+            count=math.ceil(model.task_modules["classifier"].in_features * mask_fraction),
+            eligibility="selected strict semantic view with changed truncated encoder input",
+            reference_dropout=False, mask_detached=True,
+            reference_source="current Hardest scoring; no additional encoder queries" if representation_mask == "prsc" else "linear-head closed form / independent RNG",
+            loss="original two-view BCE + weight * masked two-view BCE; each pair averaged",
+            masked_representations="reuse differentiable main-forward representations with training dropout",
+            rsc_reference=RSC_REFERENCE if representation_mask == "rsc" else None,
+            rsc_protocol="original signed Top-Gradient mask; shared additive two-view objective; no CNN batch/spatial curriculum"
+            if representation_mask == "rsc" else None,
+        ) if representation_mask != "none" else None),
         lp_ft=(dict(linear_probe_epochs=1, linear_probe_learning_rate=1e-3,
                     fine_tune_epochs=config["epochs"] - 1, encoder_dropout_during_probe=False,
                     reset_optimizer_at_fine_tune=True,
@@ -219,6 +243,8 @@ def train(
         search_costs = Counter()
         bce_costs = Counter()
         vat_costs = Counter()
+        mask_total, mask_seconds = 0.0, 0.0
+        mask_reasons, mask_costs = Counter(), Counter()
         steps = 0
         num_batches = math.ceil(len(order) / batch_size)
         bar = training_bar(
@@ -230,7 +256,7 @@ def train(
             group_start = batch_index // accumulation * accumulation
             group_end = min(group_start + accumulation, num_batches)
             group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
-            selections, views = [], {}
+            selections, views, masks, references = [], {}, {}, {}
             if source_views:
                 search_started = time.monotonic()
 
@@ -241,7 +267,15 @@ def train(
                             inputs = builder.codebert_batch(
                                 rows[at : at + batch_size], device=device
                             )
-                            values.extend(model(*inputs).detach().cpu().tolist())
+                            if representation_mask == "prsc":
+                                logits, h = model(*inputs, return_representation=True)
+                                references.update({
+                                    (row["sample_key"], row["raw_source"]): value.detach()
+                                    for row, value in zip(rows[at:at + batch_size], h)
+                                })
+                            else:
+                                logits = model(*inputs)
+                            values.extend(logits.detach().cpu().tolist())
                             search_costs.update(
                                 function_forwards=inputs[-1], encoder_sequences=len(inputs[0]),
                                 encoder_token_slots=inputs[0].numel(),
@@ -270,6 +304,16 @@ def train(
                 queries += sum(s["candidate_queries"] for s in selections)
                 original_queries += sum(s["original_queries"] for s in selections)
                 selection_reasons.update(s["selection_reason"] for s in selections)
+                if representation_mask != "none":
+                    mask_started = time.monotonic()
+                    masks, reasons, costs = training_masks(
+                        model, batch, selections, builder, device=device,
+                        method=representation_mask, fraction=mask_fraction, seed=seed, epoch=epoch,
+                        references=references,
+                    )
+                    mask_seconds += time.monotonic() - mask_started
+                    mask_reasons.update(reasons)
+                    mask_costs.update(costs)
                 with (run / "training.candidates.jsonl").open("a", encoding="utf-8") as handle:
                     for entry in selections:
                         chosen = entry["selected"]
@@ -295,6 +339,8 @@ def train(
                                     loss_delta=entry["loss_delta"],
                                     visibility_encodings=entry["visibility_encodings"],
                                     reasons=entry["reasons"],
+                                    **(dict(mask_eligible=entry["sample_key"] in masks)
+                                       if representation_mask != "none" else {}),
                                 )
                             )
                             + "\n"
@@ -302,7 +348,11 @@ def train(
             batch_loss = 0.0
             for forwarded, weights in function_view_batches(batch, views, batch_size):
                 inputs = builder.codebert_batch(forwarded, device=device)
-                logits = model(*inputs)
+                active = [i for i, row in enumerate(forwarded) if row["sample_key"] in masks]
+                if active:
+                    logits, representations = model(*inputs, return_representation=True)
+                else:
+                    logits = model(*inputs)
                 bce_costs.update(
                     function_forwards=inputs[-1], encoder_sequences=len(inputs[0]),
                     encoder_token_slots=inputs[0].numel(),
@@ -313,11 +363,21 @@ def train(
                     logits, labels, reduction="none"
                 )
                 loss = (terms * terms.new_tensor(weights)).sum()
-                if not torch.isfinite(loss):
+                total_loss = loss
+                if active:
+                    extra = masked_bce(
+                        model.task_modules["classifier"], representations[active], labels[active],
+                        torch.stack([masks[forwarded[i]["sample_key"]] for i in active]),
+                        terms.new_tensor([weights[i] for i in active]),
+                    )
+                    total_loss = loss + mask_weight * extra
+                    mask_total += float(extra.detach())
+                    mask_costs.update(masked_head_views=len(active))
+                if not torch.isfinite(total_loss):
                     raise ValueError(
                         f"nonfinite classification loss: {method} epoch {epoch}, batch {batch_index}"
                     )
-                (loss / group_samples).backward()
+                (total_loss / group_samples).backward()
                 batch_loss += float(loss.detach())
             if use_vat:
                 vat_rows = []
@@ -401,7 +461,7 @@ def train(
                 method=method,
                 epoch=epoch,
                 train_loss=running / len(train_rows),
-                total_loss=(running + vat_total) / len(train_rows),
+                total_loss=(running + vat_total + mask_weight * mask_total) / len(train_rows),
                 optimizer_steps=steps,
                 validation_threshold=threshold,
                 validation=validation,
@@ -418,6 +478,9 @@ def train(
                 vat_zero_direction_functions=vat_zero,
                 vat_norm_min=vat_norm_min,
                 vat_norm_max=vat_norm_max,
+                **(dict(masked_bce=mask_total / len(train_rows), mask_seconds=mask_seconds,
+                        mask_reasons=dict(mask_reasons), mask_costs=dict(mask_costs))
+                   if representation_mask != "none" else {}),
                 epoch_seconds=time.monotonic() - started,
                 stage="linear_probe" if linear_probe else "fine_tune",
                 learning_rate=optimizer.param_groups[0]["lr"],

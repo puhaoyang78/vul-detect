@@ -1,6 +1,6 @@
 # Dynamic Hard Augmentation for Vulnerability Detection
 
-当前实验比较普通 CodeBERT BCE、LP-FT 与 SWA 在 PrimeVul / SecVulEval 上的域内及双向迁移性能。保留已有四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，当前 PrimeVul Test 协议及结果见下文双向迁移实验。
+当前补充 PRSC 的 PrimeVul Clean 分类小样本验证，入口与协议见文末。保留普通 CodeBERT BCE、LP-FT、SWA、四库 Motivation 和六方法实验结果；这些历史诊断使用其原有评价成员，PrimeVul Test 协议及既有结果见下文。
 
 ## 四数据集 Motivation
 
@@ -462,3 +462,115 @@ Acc 为包含原函数的 Worst-case Accuracy；ASR 为成功率（成功数/可
 `data.py` 负责原生读取、项目划分、保留正例的平衡及精确重叠标记；`model.py`、`syntax.py`、`augmentation.py`、`vat.py` 分别实现模型、绑定安全变换、动态搜索和普通 VAT；`training.py`、`evaluation.py`、`cli.py` 提供两个数据集共享的训练、评价和命令入口。
 
 测试使用本地小型 RoBERTa，无需下载模型；覆盖全部正例保留、项目正例比例、精确泄漏排除、六方法及 LP-FT/SWA 训练路径、仅自身 Valid 选模、编码器冻结/解冻、等权参数平均与严格推理、增量预测缓存、双向 Test 固定队列与阈值、窗口池化、VAT 梯度/范数、严格权重加载、攻击分母和结果汇总。
+
+## PRSC：Clean 分类的小样本验证
+
+PRSC 只增加训练时的表示掩码 BCE，不改变 CodeBERT mean pooling + linear、Hardest 搜索、候选、选样、数据或推理。默认 `--representation-mask none`，原六方法入口继续有效。本实验不执行跨域评价。
+
+使用关闭 Dropout 的原函数和困难变体表示 `h, h*`，按 `|w_j (h*_j - h_j)|` 屏蔽贡献最大的 `ceil(k × 768)` 个维度：5% 为 39 维，10% 为 77 维。同一个掩码用于两个视图，不缩放其余维度、不屏蔽 bias。参考表示与掩码停止梯度；原始和屏蔽 BCE 复用带训练 Dropout 的表示，正常反传至编码器及分类头。每个原函数的原始双视图 BCE 权重仍为 1，额外加入 `0.2 × masked 双视图 BCE`。仅对选中严格语义保持且实际截断后输入发生变化的变体加入正则；其余样本保持原 BCE。推理不使用掩码。
+
+PRSC 直接复用本批次 Hardest 评分产生的无 Dropout 表示，不增加编码器查询，也不跨优化器步骤缓存。随机和线性 RSC 掩码同样无需额外编码。
+
+随机 Mask、RSC Mask、PRSC 各预设 5%/10%、λ=0.2，再加 Hard Aug BCE，共 7 组。[RSC 原论文](https://arxiv.org/abs/2007.02454) §3.1 及[作者代码](https://github.com/DeLightCMU/RSC/blob/master/Domain_Generalization/models/resnet.py) 的 Top-Gradient 使用正确类别 logit 的有符号梯度。与 BCE 等价的双 logit `[-z/2,z/2]` 给出 `(2y−1)w/2`，因此线性头下同类样本的 RSC 掩码相同。这里保留原掩码规则，并统一附加双视图 BCE 以比较掩码依据；不称为完整复现 CNN 的空间或 batch curriculum。随机 Mask 使用每函数独立 RNG，不改变主训练 Dropout 随机流。
+
+先用既有 Hard Aug BCE checkpoint，在固定 1024 Train 内以 Seed 42 选择 256 条平衡函数诊断。困难变体仍由原 Hardest 选择；独立第二变体从原函数用独立 RNG 生成，无模型评分地选择，且输入不同于困难变体，素材仅来自这 1024 条 Train。统计贡献集中性、第二变体解释能力、分类损伤及反例，相同变体的差异减小不作为学习有效的证据。历史 VAT 的嵌入 self-KL、JS 的双视图 logit 一致性、R-Drop 的两次 Dropout 对称 KL 已核对 Git 实现，本实验不恢复或复制它们。
+
+7 组均从相同预训练 CodeBERT、Seed 42 初始化，复用 PrimeVul 的 `balanced_subset`：Train 1024 / Valid 256 / Test 256，每个 Split 正负各半，与 search/VAT pilot 相同。所有组使用这 1024 条 Train 的素材，实际训练 3 Epoch、有效 batch 8、384 个优化器更新。仅各自 Clean Valid 选 Epoch 和阈值，全部训练后最终评价 Test。Fixed / Held-out 候选相同；Adaptive 仍完整执行 width=2、depth=3、48 候选预算。严格语义与输入压力结果分开保存。
+
+```bash
+python -m vulnmechanism.cli prsc probe --checkpoint results/primevul/hard_aug_bce/best.pt --sample-limit 256 --device cuda:0
+python -m vulnmechanism.cli train --dataset primevul --methods hard_aug_bce \
+  --model /path/to/codebert-base --device cuda:0 --output-dir results/prsc/prsc_5 \
+  --train-limit 1024 --valid-limit 256 \
+  --representation-mask prsc --mask-fraction 0.05 --mask-weight 0.2
+python -m vulnmechanism.cli evaluate --dataset primevul --methods hard_aug_bce \
+  --output-dir results/prsc/prsc_5 --device cuda:0 --valid-limit 256 --test-limit 256
+python -m vulnmechanism.cli prsc report
+python -m unittest tests.test_prsc tests.test_codebert_source tests.test_surface_vat -v
+```
+
+各组训练和评价沿用上述命令，分别替换输出目录和掩码参数：
+
+| 输出目录（`results/prsc/` 下） | `--representation-mask` | `--mask-fraction` |
+|---|---|---:|
+| `hard_aug_bce` | `none` | 0.05（关闭） |
+| `random_5` | `random` | 0.05 |
+| `random_10` | `random` | 0.10 |
+| `rsc_5` | `rsc` | 0.05 |
+| `rsc_10` | `rsc` | 0.10 |
+| `prsc_5` | `prsc` | 0.05 |
+| `prsc_10` | `prsc` | 0.10 |
+
+`results/prsc/` 保存预设配置、Train 诊断、固定成员、Clean / 鲁棒性 / 成本 / 逐组差值表、配对 Test 预测和完整指标。checkpoint、训练日志和原始预测保存在各自目录，不覆盖历史结果。AUC 差值附 Seed 42、2000 次按类别配对 bootstrap 的探索性区间；它只反映 Test 函数抽样，不是训练种子稳定性验证。
+
+### Train checkpoint 诊断
+
+256 条平衡 Train 中，106 条没有合法困难变体，51 条选中输入压力变体，99 条满足掩码条件；其中 96 条有独立第二变体（38 正、58 负）。线性 logit 分解最大绝对误差为 `7.75e-7`。真实 CodeBERT forward/backward 的编码器和头梯度均有限且非零，保存重载后的无掩码推理 logit 完全相同；未更新原 checkpoint。
+
+以下均为同一 96 条源 Train 配对子集上的诊断，原函数有 79 条分类正确。贡献占比为选中维度捕获的绝对 logit 贡献总量比例：
+
+| 掩码 | k | 困难变体贡献占比 | 独立第二变体贡献占比 | 原函数正确→错误 | 第二变体绝对 logit 差增大的条数 |
+|---|---:|---:|---:|---:|---:|
+| 随机 | 5% | 4.99% | 4.99% | 0/79 | 13/96 |
+| 随机 | 10% | 10.00% | 10.09% | 0/79 | 9/96 |
+| RSC | 5% | 9.56% | 9.55% | 2/79 | 11/96 |
+| RSC | 10% | 17.15% | 17.37% | 7/79 | 7/96 |
+| PRSC | 5% | 21.33% | 12.36% | 1/79 | 20/96 |
+| PRSC | 10% | 34.85% | 21.19% | 1/79 | 16/96 |
+
+PRSC 在独立第二变体上捕获的贡献高于随机掩码，但弱于构造掩码时的困难变体。它并不保证每个变体的 logit 差缩小，也会损伤正确分类。该诊断不是训练收益或 Clean Test 改善的证据；逐样本维度和反例保存在 `diagnostic.features.csv`，可重放的两组变换保存在 `diagnostic.pairs.jsonl`。
+
+具体反例：`primevul:10663` 的原函数 logit 为 −0.7412，采用 checkpoint 已选阈值 0.31 时分类正确，5% PRSC 屏蔽后为 −0.9090，变为假阴性；`primevul:199789` 的独立第二变体 logit 差从 0.0144 增至 0.1085（10% 掩码）。不能把捕获较多绝对贡献等同于稳定分类。
+
+### 小样本实际结果
+
+7 组均已实际完成 3 Epoch、384 次优化器更新，并在相同的 256 条 Test（128 正、128 负）完成最终评价。下表 Epoch 和阈值仅由各自 Clean Valid 选择；首次优化前七组的搜索 logit 最大差为 0，选中变体相同。
+
+| 方法 | Epoch | 阈值 | Accuracy | F1 | MCC | AUC | AUPRC |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Hard Aug BCE | 1 | 0.64 | 0.7383 | 0.7491 | 0.4783 | 0.7875 | 0.7440 |
+| Random Mask 5% | 2 | 0.61 | 0.7656 | 0.7727 | 0.5323 | 0.8016 | 0.7514 |
+| Random Mask 10% | 1 | 0.62 | 0.7383 | 0.7491 | 0.4783 | 0.7982 | 0.7621 |
+| RSC Mask 5% | 1 | 0.63 | 0.7461 | 0.7584 | 0.4947 | 0.7985 | 0.7589 |
+| RSC Mask 10% | 3 | 0.57 | 0.7656 | 0.7656 | 0.5313 | 0.8016 | 0.7261 |
+| PRSC 5% | 2 | 0.56 | 0.7617 | 0.7715 | 0.5254 | 0.7996 | 0.7378 |
+| PRSC 10% | 2 | 0.64 | 0.7461 | 0.7566 | 0.4940 | 0.7921 | 0.7408 |
+
+PRSC 的主要配对差值如下。区间为固定模型下按类别配对抽样的 AUC 差值 95% bootstrap 区间，不能替代多训练种子的稳定性检验。
+
+| 方法 − 对照 | ΔAUC | 95% 区间 | ΔMCC | ΔF1 |
+|---|---:|---|---:|---:|
+| PRSC 5% − BCE | +0.0121 | [−0.0037, +0.0278] | +0.0470 | +0.0225 |
+| PRSC 5% − Random 5% | −0.0020 | [−0.0100, +0.0061] | −0.0069 | −0.0012 |
+| PRSC 5% − RSC 5% | +0.0012 | [−0.0148, +0.0167] | +0.0306 | +0.0132 |
+| PRSC 10% − BCE | +0.0046 | [−0.0074, +0.0166] | +0.0157 | +0.0075 |
+| PRSC 10% − Random 10% | −0.0061 | [−0.0176, +0.0055] | +0.0157 | +0.0075 |
+| PRSC 10% − RSC 10% | −0.0095 | [−0.0256, +0.0057] | −0.0372 | −0.0091 |
+
+严格语义保持 Adaptive 的最坏情况包含原函数，分母为完整 256 条 Test。ASR 括号内为成功数 / 可扰动且 Clean 正确数；各组严格扰动覆盖均为 161/256。
+
+| 方法 | Worst-case Accuracy | MCC | AUC | ASR（分子/分母） |
+|---|---:|---:|---:|---:|
+| Hard Aug BCE | 0.6914 | 0.3842 | 0.7492 | 10.53%（12/114） |
+| Random Mask 5% | 0.7383 | 0.4790 | 0.7701 | 5.98%（7/117） |
+| Random Mask 10% | 0.7109 | 0.4237 | 0.7665 | 6.14%（7/114） |
+| RSC Mask 5% | 0.7070 | 0.4169 | 0.7703 | 8.62%（10/116） |
+| RSC Mask 10% | 0.7500 | 0.5000 | 0.7753 | 3.48%（4/115） |
+| PRSC 5% | 0.7305 | 0.4633 | 0.7690 | 6.90%（8/116） |
+| PRSC 10% | 0.7148 | 0.4313 | 0.7635 | 6.84%（8/117） |
+
+完整 [Clean 表](results/prsc/clean.csv)、[Fixed / Held-out / Adaptive 表](results/prsc/robustness.csv)、[Clean 差值](results/prsc/differences.csv)和[鲁棒性差值](results/prsc/robustness.differences.csv)同时保留所有预设结果。函数名等输入压力测试使用独立的 `input_only_stress` 行，不混入严格主结果；各组混淆矩阵、逐 Epoch 指标及配置见 [results.json](results/prsc/results.json)。
+
+| 方法 | 3 Epoch 循环秒数 | 正则样本次数 / 3072 | 显式前向窗口数 | Encoder Token slots |
+|---|---:|---:|---:|---:|
+| Hard Aug BCE | 702.4 | 0 | 58,340 | 26,134,864 |
+| Random Mask 5% | 708.2 | 1,366 | 58,345 | 26,124,233 |
+| Random Mask 10% | 707.2 | 1,356 | 58,270 | 26,096,427 |
+| RSC Mask 5% | 707.6 | 1,352 | 58,366 | 26,124,889 |
+| RSC Mask 10% | 702.2 | 1,331 | 58,325 | 26,102,215 |
+| PRSC 5% | 707.2 | 1,357（44.17%） | 58,325 | 26,117,261 |
+| PRSC 10% | 709.1 | 1,364（44.40%） | 58,443 | 26,164,767 |
+
+PRSC 两组均覆盖 580/1024 个不同 Train 函数，分别复用了 2714 / 2728 份搜索表示，未增加编码器查询。循环时间包含搜索、BCE 和 Valid，不含初始模型加载和权重写盘；窗口/Token slots 统计显式前向，不包含梯度检查点内部重算。本轮在双卡并发环境运行，诊断曾短时共用 GPU，用时仅记录本次实际成本，不作为独立速度基准。[costs.csv](results/prsc/costs.csv)保留各组查询、窗口、Token 量、类别覆盖和耗时。
+
+**本轮结论：没有得到稳定、可归因于 Pair-guided 选维的 Clean 收益。** 两个 PRSC 的 AUC 点估计均低于对应随机 Mask；相对 BCE 的 AUC 增量区间均跨 0，AUPRC 也低于 BCE。严格扰动鲁棒性较 BCE 改善，但简单掩码对照也有相当或更好的结果。独立第二变体上的贡献解释能力没有自动转化为优于简单对照的分类学习效果。保留本轮负结果，不开展全量训练，不改变默认方法，不继续叠加其他机制。
