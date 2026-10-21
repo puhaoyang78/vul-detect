@@ -125,27 +125,46 @@ def relation_tokens(record, tokenizer, budget, mode):
         type_edges={RELATIONS[k]: sum(e[2] == k for e in edges) for k in range(len(RELATIONS))},
         graph_status=graph["status"],
     )
+    # For a matched control, shuffle only AFTER projecting into overlapping
+    # 512-token windows: a function-level shuffle can create cross-window
+    # pairs and incorrectly reduce the available relation count.
     if mode == "shuffled":
-        rewired = list(edges)
-        by_kind = defaultdict(list)
-        for i, (_, _, kind) in enumerate(edges):
-            by_kind[kind].append(i)
-        changed = 0
-        for positions in by_kind.values():
-            if len(positions) < 2:
-                continue
-            before = [edges[i][1] for i in positions]
-            after = list(before)
-            rng.shuffle(after)
-            if after == before and len(set(after)) > 1:
-                after = after[1:] + after[:1]
-            for index, key in zip(positions, after):
-                query, old, kind = edges[index]
-                rewired[index] = query, key, kind
-                changed += int(old != key)
-        edges = rewired
-        info["changed_endpoints"] = changed
+        info["window_shuffle_pending"] = True
     return edges, info
+
+
+def shuffle_window_edges(packed, spans, records):
+    """Rewire destinations within each (window, relation type) group.
+
+    Preserves the exact query-token, destination-token, and type marginals in
+    each encoded window, so no new cross-window pair can be introduced.
+    """
+    permuted = list(packed)
+    groups = defaultdict(list)
+    for index, (window, query, key, typ) in enumerate(packed):
+        groups[(window, typ)].append(index)
+    changed = defaultdict(int)
+    for (window, typ), locations in sorted(groups.items()):
+        if len(locations) < 2:
+            continue
+        owner, start, _end = spans[window]
+        src = records[owner]["raw_source"]
+        seed = int.from_bytes(
+            hashlib.sha256((src + "\0" + str(start) + "\0" + str(typ)).encode()).digest()[:8],
+            "big",
+        ) ^ 42
+        rng = random.Random(seed)
+        before = [packed[index][2] for index in locations]
+        after = list(before)
+        rng.shuffle(after)
+        if after == before and len(set(after)) > 1:
+            after = after[1:] + after[:1]
+        for index, key in zip(locations, after):
+            wid, query, old_key, kind = packed[index]
+            permuted[index] = (wid, query, key, kind)
+            changed[owner] += int(key != old_key)
+    return permuted, changed
+
 
 
 class _RelationLayer(nn.Module):
