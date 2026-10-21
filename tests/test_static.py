@@ -9,7 +9,7 @@ import torch
 
 from tests.test_codebert_source import CodeTokenizer, tiny_base
 from vulnmechanism import model as core
-from vulnmechanism.relations import StaticRelationAttention, relation_tokens
+from vulnmechanism.relations import StaticRelationEncoder, relation_tokens
 from vulnmechanism.static_analysis import align_graph, attach_patterns, run_process, RELATIONS
 from vulnmechanism.static_data import remove_duplicates, isolate_families, near_overlaps
 from vulnmechanism.static_patterns import extract_patterns
@@ -94,7 +94,7 @@ class StaticTests(unittest.TestCase):
                      edges=[[0, 1, 0], [1, 0, 1], [0, 0, 6]],
                      counts={"AST": 1, "CFG": 1, "memory": 1})
         upgraded = attach_patterns(graph, source)
-        self.assertEqual(upgraded["schema_version"], 3)
+        self.assertEqual(upgraded["schema_version"], 4)
         self.assertNotIn("memory", upgraded["counts"])
         self.assertGreater(upgraded["counts"].get("buffer_size_mismatch", 0), 0)
         self.assertEqual(upgraded, attach_patterns(upgraded, source))
@@ -121,40 +121,97 @@ class StaticTests(unittest.TestCase):
         unsigned = "void f(unsigned int i){char b[8];int x=b[i];}"
         self.assertNotIn("negative_index_read", {x["kind"] for x in extract_patterns(unsigned)})
 
-    def test_shuffle_preserves_marginals_and_ignores_labels(self):
-        row = dict(raw_source="abcdefghij", program_relations=dict(status="ok",
-                   nodes=[dict(span=[i, i + 1]) for i in range(10)],
-                   edges=[[i, i + 1, i % 3] for i in range(9)]))
-        real, _ = relation_tokens(row, CodeTokenizer(), 2025, "real")
-        shuffled, info = relation_tokens(row, CodeTokenizer(), 2025, "shuffled")
-        self.assertEqual(Counter((a, k) for a, _, k in real), Counter((a, k) for a, _, k in shuffled))
-        self.assertEqual(Counter((b, k) for _, b, k in real), Counter((b, k) for _, b, k in shuffled))
-        self.assertEqual(Counter(k for _, _, k in real), Counter(k for _, _, k in shuffled))
-        self.assertGreater(info["changed_endpoints"], 0)
-        self.assertEqual(shuffled, relation_tokens(dict(row, label=1), CodeTokenizer(), 2025, "shuffled")[0])
+    def test_shuffle_preserves_window_marginals_and_ignores_labels(self):
+        row = dict(sample_key="pair", raw_source="abcdefghij",
+                   program_relations=dict(status="ok",
+                       nodes=[dict(span=[i, i + 1]) for i in range(10)],
+                       edges=[[i, i + 1, 3] for i in range(9)]))
+        real_pairs, _ = relation_tokens(row, CodeTokenizer(), 2025, "real")
+        shuffled_pairs, _ = relation_tokens(row, CodeTokenizer(), 2025, "shuffled")
+        self.assertEqual(real_pairs, shuffled_pairs)
+        real = core.InputBuilder(CodeTokenizer(), relation_mode="real")
+        shuffled = core.InputBuilder(CodeTokenizer(), relation_mode="shuffled")
+        a = real.codebert_batch([row], device="cpu")[-1].tolist()
+        b = shuffled.codebert_batch([row], device="cpu")[-1].tolist()
+        self.assertEqual(Counter((w, q, typ) for w, q, k, typ in a),
+                         Counter((w, q, typ) for w, q, k, typ in b))
+        self.assertEqual(Counter((w, k, typ) for w, q, k, typ in a),
+                         Counter((w, k, typ) for w, q, k, typ in b))
+        self.assertGreater(shuffled.relation_cache["pair"][1]["changed_endpoints"], 0)
+        self.assertEqual(b, shuffled.codebert_batch([dict(row, label=1)], device="cpu")[-1].tolist())
         self.assertTrue(relation_tokens(dict(raw_source="abc"), CodeTokenizer(), 2025, "sequence")[0])
 
-    def test_relation_attention_uses_pairing_and_window_weights(self):
+
+    def test_relation_attention_is_per_query_and_changes_encoder_state(self):
         torch.manual_seed(42)
-        module = StaticRelationAttention(8)
+        module = StaticRelationEncoder(8, [0, 1])
         hidden = torch.randn(1, 4, 8, requires_grad=True)
-        owners = torch.tensor([0])
-        positions = torch.tensor([[0, 1, 2, 3]])
-        base = torch.randn(1, 8)
-        edges = torch.tensor([[0, 0, 1, 0], [0, 2, 3, 0], [0, 0, 2, 1]])
-        real = module(hidden, positions, owners, torch.ones(1, 4), edges, base)
+        # Two distinct definitions compete for the same use's attention.
+        edges = torch.tensor([[0, 0, 1, 3], [0, 0, 3, 3], [0, 2, 3, 2]])
+        actual = module(hidden, edges, 0)
         rewired = edges.clone()
         rewired[0, 2], rewired[1, 2] = edges[1, 2], edges[0, 2]
-        other = module(hidden, positions, owners, torch.ones(1, 4), rewired, base)
-        self.assertGreater(float((real - other).abs().max()), 1e-6)
-        repeated = module(hidden.expand(2, -1, -1), positions.expand(2, -1),
-                          torch.tensor([0, 0]), torch.full((2, 4), .5), edges, base)
-        torch.testing.assert_close(real, repeated, atol=2e-6, rtol=2e-6)
-        real.square().sum().backward()
-        self.assertGreater(float(module.query.weight.grad.abs().sum()), 0)
+        # Swapping keys within one query group alone preserves an attention sum.
+        # Change the pairing across two query sites, preserving key marginals.
+        rewired[1, 2], rewired[2, 2] = edges[2, 2], edges[1, 2]
+        changed = module(hidden, rewired, 0)
+        self.assertGreater(float((actual - changed).abs().max()), 1e-6)
+        self.assertGreater(float((actual - hidden).abs().max()), 1e-6)
+        torch.testing.assert_close(module(hidden, edges[:0], 0), hidden)
+        actual.square().sum().backward()
+        self.assertIsNotNone(module.adapters["0"].query.weight.grad)
+        self.assertGreater(float(module.adapters["0"].query.weight.grad.abs().sum()), 0)
         self.assertGreater(float(hidden.grad.abs().sum()), 0)
-        torch.testing.assert_close(module(hidden.detach(), positions, owners,
-                                           torch.ones(1, 4), edges[:0], base), base)
+        self.assertEqual(tuple(module.layer_indices), (0, 1))
+
+    def test_joern_failure_still_keeps_conservative_syntax_candidates(self):
+        src = "void f(){char dst[8];char src[4];memcpy(dst,src,9);}"
+        result = attach_patterns(dict(status="no_definition", nodes=[], edges=[], counts={}), src)
+        self.assertEqual(result["status"], "no_definition")
+        self.assertEqual(result["analysis_source"], "syntax_only")
+        self.assertGreater(result["pattern_counts"]["buffer_size_mismatch"], 0)
+        row = dict(raw_source=src, program_relations=result)
+        pair, info = relation_tokens(row, CodeTokenizer(), 2025, "real")
+        self.assertTrue(pair)
+        self.assertEqual(info["graph_status"], "no_definition")
+
+    def test_windows_include_only_co_visible_relation_endpoints(self):
+        from vulnmechanism.model import InputBuilder
+        src = "int f() { return 0; }"
+        row = dict(sample_key="w", raw_source=src,
+                   program_relations=dict(status="ok", nodes=[
+                       dict(span=[4, 5]), dict(span=[10, 16])],
+                       edges=[[0, 1, 3], [1, 0, 2]]))
+        builder = InputBuilder(CodeTokenizer(), relation_mode="real")
+        batch = builder.codebert_batch([row], device="cpu")
+        self.assertEqual(batch[-1].shape[1], 4)
+        self.assertGreater(int(batch[-1].shape[0]), 0)
+        self.assertGreaterEqual(int(batch[-1][:, 1:3].min()), 1)
+        self.assertGreaterEqual(builder.relation_cache["w"][1]["pairs_in_shared_windows"], 1)
+
+    def test_checkpointed_codebert_relations_receive_gradients(self):
+        torch.set_num_threads(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "base"; tiny_base(path)
+            row = dict(
+                sample_key="ck", raw_source="int f(int x){int n=x+1;return n;}",
+                program_relations=dict(status="ok", nodes=[
+                    dict(span=[4, 5]), dict(span=[16, 17]),
+                    dict(span=[21, 22]), dict(span=[30, 31])],
+                    edges=[[0, 1, 3], [0, 2, 3], [1, 3, 2], [2, 3, 3]]),
+            )
+            model = core.CodeBERT(path, "cpu", gradient_checkpointing=True,
+                                  relation_mode="real").train()
+            builder = core.InputBuilder(CodeTokenizer(), relation_mode="real")
+            inputs = builder.codebert_batch([row], device="cpu")
+            self.assertTrue(inputs[-1].numel() > 0)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                model(*inputs), torch.ones(1))
+            loss.backward()
+            adapters = model.task_modules["relations"].adapters
+            self.assertTrue(any(p.grad is not None and p.grad.abs().sum() > 0
+                                for p in adapters.parameters()))
+            self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()), 0)
 
     def test_real_model_forward_backward_and_strict_reload(self):
         torch.set_num_threads(2)
@@ -177,6 +234,8 @@ class StaticTests(unittest.TestCase):
                 inputs = builder.codebert_batch([row], device="cpu")
                 observed = model(*inputs)
                 self.assertTrue(torch.isfinite(observed).all())
+                self.assertTrue(model.task_modules["relations"].layer_indices)
+                self.assertGreater(inputs[-1].shape[0], 0)
                 # Unlike the removed zero-residual model, relations affect initial predictions.
                 self.assertGreater(float((observed - reference).abs().max()), 1e-8)
                 initial.append({k: v.clone() for k, v in model.task_modules["relations"].state_dict().items()})
@@ -189,7 +248,7 @@ class StaticTests(unittest.TestCase):
                         logits, torch.ones_like(logits)).backward()
                     self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()))
                     optimizer.step()
-                self.assertGreater(float(model.task_modules["relations"].query.weight.grad.abs().sum()), 0)
+                self.assertGreater(sum(float(p.grad.abs().sum()) for p in model.task_modules["relations"].parameters() if p.grad is not None), 0)
                 self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()), 0)
                 saved = Path(tmp) / "checkpoint.pt"
                 checkpoint = dict(model_path=str(path), state_dict=model.state_dict(),

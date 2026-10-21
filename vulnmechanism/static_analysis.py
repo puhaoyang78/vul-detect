@@ -19,7 +19,7 @@ EDGE_TYPES = ("AST", "CFG", "CDG", "REACHING_DEF", "REF", "POST_DOMINATE")
 from .static_patterns import PATTERN_TYPES, extract_patterns
 
 RELATIONS = EDGE_TYPES + PATTERN_TYPES
-PATTERN_SCHEMA = 3
+PATTERN_SCHEMA = 4
 
 def source_key(source):
     return hashlib.sha256(source.encode()).hexdigest()
@@ -92,9 +92,10 @@ def attach_patterns(graph, source, *, language="c"):
     if graph.get("schema_version") == PATTERN_SCHEMA:
         return graph
     result = dict(graph)
-    if graph["status"] != "ok":
-        result.update(schema_version=PATTERN_SCHEMA, patterns=[], pattern_counts={})
-        return result
+    # A standalone function may fail Joern parsing because of missing project
+    # headers/macros while still having syntactically identifiable operations.
+    # Keep the original parser status and confidence distinction; do not invent
+    # dataflow edges when the CPG is unavailable.
     nodes = [{k: v for k, v in n.items() if k != "candidates"} for n in graph["nodes"]]
     edges = [list(e) for e in graph["edges"] if e[2] < len(EDGE_TYPES)]
     counts = Counter({name: sum(e[2] == i for e in edges) for i, name in enumerate(EDGE_TYPES)})
@@ -148,7 +149,8 @@ def attach_patterns(graph, source, *, language="c"):
     result.update(nodes=nodes, edges=edges, counts=dict(counts),
                   patterns=patterns, pattern_counts=dict(Counter(p["kind"] for p in patterns)),
                   schema_version=PATTERN_SCHEMA,
-                  candidates="typed syntax and CPG-context patterns, not vulnerability labels")
+                  candidates="typed syntax and CPG-context patterns, not vulnerability labels",
+                  analysis_source="joern_plus_syntax" if graph["status"] == "ok" else "syntax_only")
     return result
 
 
