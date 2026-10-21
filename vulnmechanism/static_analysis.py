@@ -19,7 +19,7 @@ EDGE_TYPES = ("AST", "CFG", "CDG", "REACHING_DEF", "REF", "POST_DOMINATE")
 from .static_patterns import PATTERN_TYPES, extract_patterns
 
 RELATIONS = EDGE_TYPES + PATTERN_TYPES
-PATTERN_SCHEMA = 2
+PATTERN_SCHEMA = 3
 
 def source_key(source):
     return hashlib.sha256(source.encode()).hexdigest()
@@ -107,6 +107,16 @@ def attach_patterns(graph, source, *, language="c"):
             nodes.append(dict(span=list(span), kind="PATTERN_POSITION", alignment="syntax_span"))
         return indexed[key]
 
+    # Associate call/access sites with nearby CPG definitions and conditions.
+    # Only genuine Joern REACHING_DEF/CDG/REF edges extend the syntax pairs.
+    base_count = len(nodes)
+    nearby = defaultdict(set)
+    program_kinds = {EDGE_TYPES.index(x) for x in ("REACHING_DEF", "CDG", "REF")}
+    for left, right, kind in edges:
+        if kind in program_kinds:
+            nearby[left].add(right)
+            nearby[right].add(left)
+
     patterns = extract_patterns(source, language=language)
     for p in patterns:
         kind = RELATIONS.index(p["kind"])
@@ -116,6 +126,25 @@ def attach_patterns(graph, source, *, language="c"):
             b = anchor(span)
             edges.append([a, b, kind])
             counts[p["kind"]] += 1
+
+        # Context is selected through actual program dependencies, not token
+        # proximity or a fixed-source/sink vocabulary. The query remains the
+        # matched operation, but its candidate keys include dependent definitions
+        # and conditions from the intraprocedural CPG when available.
+        start, end = p["anchor"]
+        matching = [
+            i for i in range(base_count)
+            if nodes[i]["span"][0] < end and start < nodes[i]["span"][1]
+            and nodes[i]["span"][1] - nodes[i]["span"][0] < 1024
+        ]
+        matching.sort(key=lambda i: (nodes[i]["span"][1] - nodes[i]["span"][0], i))
+        destinations = set()
+        for j in matching[:12]:
+            destinations.update(nearby[j])
+        for j in sorted(destinations)[:8]:
+            if j != a:
+                edges.append([a, j, kind])
+                counts[p["kind"]] += 1
     result.update(nodes=nodes, edges=edges, counts=dict(counts),
                   patterns=patterns, pattern_counts=dict(Counter(p["kind"] for p in patterns)),
                   schema_version=PATTERN_SCHEMA,
