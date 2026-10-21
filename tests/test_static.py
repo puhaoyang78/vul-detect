@@ -17,6 +17,32 @@ from vulnmechanism.static_patterns import extract_patterns
 
 
 class StaticTests(unittest.TestCase):
+    def test_transfer_overlap_can_audit_full_primevul_reveal_instead_of_pilot(self):
+        from vulnmechanism.data import write_jsonl
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for dataset in ("primevul", "reveal"):
+                for split in ("train", "valid", "test"):
+                    source = f"int {dataset}_{split}(){{return 0;}}"
+                    if (dataset, split) == ("primevul", "train"):
+                        source = "int f(){int x=1;return x;}"
+                    if (dataset, split) == ("reveal", "test"):
+                        source = "int f () { int x = 1; /* same tokens */ return x; }"
+                    row = dict(sample_key=f"{dataset}:{split}", raw_source=source, label=0,
+                               project="collection", dataset=dataset, split=split)
+                    write_jsonl(root / dataset / f"{split}.jsonl", [row])
+                    if split != "test":
+                        write_jsonl(root / "pilot" / dataset / f"{split}.jsonl",
+                                    [dict(row, raw_source="pilot must not be read")])
+            result = transfer_overlap(root, root / "output", ("primevul", "reveal"),
+                                      train_data_dir=root)
+            self.assertEqual(len(result["near_pairs"]), 1)
+            self.assertEqual((result["near_pairs"][0]["source_key"], result["near_pairs"][0]["target_key"]),
+                             ("primevul:train", "reveal:test"))
+            self.assertEqual(set(result["training_members"]),
+                             {f"{d}:{s}" for d in ("primevul", "reveal") for s in ("train", "valid")})
+            self.assertFalse(result["shared_commit_pairs"])
+
     def test_transfer_overlap_uses_tokens_and_does_not_guess_reveal_commits(self):
         from vulnmechanism.data import write_jsonl
         with tempfile.TemporaryDirectory() as tmp:

@@ -10,13 +10,27 @@ import torch
 
 from tests.test_codebert_source import CodeTokenizer
 from vulnmechanism import model as core
-from vulnmechanism.cli import main
+from vulnmechanism.cli import build_parser, main
 from vulnmechanism.data import read_jsonl, write_jsonl
 from vulnmechanism.evaluation import evaluate, evaluate_transfer, report
 from vulnmechanism.metrics import metrics, select_threshold
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_reveal_reuses_train_evaluate_and_transfer_cli_without_changing_defaults(self):
+        from vulnmechanism.data import DATASETS
+
+        parser = build_parser()
+        train = parser.parse_args(["train", "--dataset", "reveal", "--methods", "bce"])
+        self.assertEqual((train.dataset, train.methods, train.train_limit, train.valid_limit),
+                         ("reveal", ["bce"], None, None))
+        evaluate_args = parser.parse_args(["evaluate", "--dataset", "reveal", "--clean-only"])
+        self.assertEqual((evaluate_args.dataset, evaluate_args.clean_only), ("reveal", True))
+        transfer = parser.parse_args(["transfer", "--datasets", "primevul", "reveal"])
+        self.assertEqual((transfer.datasets, transfer.methods), (["primevul", "reveal"], ["bce"]))
+        self.assertEqual(parser.parse_args(["train"]).dataset, "all")
+        self.assertNotIn("reveal", DATASETS)
+
     def test_metrics_threshold_and_single_class(self):
         result = metrics([0, 0, 1, 1], [0.1, 0.6, 0.4, 0.9])
         self.assertEqual(result["confusion_matrix"], [[1, 1], [1, 1]])
@@ -28,9 +42,9 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(threshold, 0.5)
         self.assertEqual(selected["mcc"], 1.0)
 
-    def test_four_dataset_evaluation_reads_only_own_valid_and_test(self):
+    def test_clean_evaluation_reads_only_own_valid_and_test(self):
         from vulnmechanism.data import DATASETS
-        for dataset in DATASETS:
+        for dataset in (*DATASETS, "reveal"):
             target = "unused_dataset"
             with self.subTest(dataset=dataset), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)

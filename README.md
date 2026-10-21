@@ -746,3 +746,71 @@ ReVeal 缺少可靠提交/CVE，不能证明不存在隐藏关联。
 逐样本预测、成员清单、实际训练配置和独立性检查保存在
 [跨域报告](results/static_current/source/transfer_bigvul_devign_reveal/report.md)及同目录。
 这是单Seed小样本 checkpoint 的结果，不代表全量训练或静态引导方法的跨域结论。
+
+### ReVeal ↔ PrimeVul：完整平衡 BCE
+
+本轮 ReVeal 使用现有清理后平衡划分的全部成员：Train 3022（1511/1511）、
+Valid 376（188/188）、Test 380（190/190）。`data/reveal` 是指向
+`data/static_guided/reveal` 的相对符号链接，不复制或重新采样数据。
+原有冲突标签清理、collection+upstream-hash 分组及 Seed42 划分保持不变；
+这里的“完整”指全部已准备的平衡成员，不是全部原始自然比例函数。
+先前 1024/256 小样本模型和静态关系实验均保留在原目录。
+
+新 ReVeal BCE 从原预训练 CodeBERT 初始化，使用统一的 mean pooling + linear、
+3 Epoch、有效 Batch8、AdamW lr=1e-5、weight decay=0.01、2048逻辑输入和
+512-token 滑动窗口。每轮378次、合计1134次优化器更新，仅用自身全部376条
+Clean Valid 选择 Epoch 和阈值。PrimeVul 直接复用现有完整 Train9724 / Valid1186
+训练的 BCE（Epoch3、阈值0.40），不重新训练。实际已完成1134次更新；
+新 ReVeal 由自身 Valid 选中 Epoch3、阈值0.24，Valid AUC=0.7673、MCC=0.4416。
+
+```bash
+python -m vulnmechanism.cli train --dataset reveal --methods bce \
+  --model /home/PublicData/PHY-data/resource/codebert-base --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset reveal --methods bce --clean-only --device cuda:0
+python -m vulnmechanism.cli transfer --datasets primevul reveal --methods bce --device cuda:0
+```
+
+两侧实际 Train/Valid 与目标 Test 的原始源码精确重叠为0；主结果共用
+PrimeVul1098（549/549）、ReVeal380（190/190）条 Test，不涉及其他数据集，
+不重新平衡或选择目标阈值。另预先固定 Token 5-gram Jaccard≥0.90，检查
+两侧 Train/Valid 对 Test 的近重复；只作补充敏感性评价，不改变正式数据。
+排除相关成员后的队列为 PrimeVul1028（482/546）、ReVeal349（162/187）。
+共155对近重复中，跨库38对，涉及 PrimeVul Test 2条、ReVeal Test 31条；
+另117对来自 PrimeVul 自身 Train/Valid 与 Test。15对标签不一致中，跨库3对、
+PrimeVul库内12对；这表示标注分歧，不判断哪方正确。补充队列排除两侧所有
+近重复关联，保留排除后的实际正负比例，所有模型仍使用相同成员。
+ReVeal 没有可靠提交/CVE，不能根据零提交匹配断言没有共享漏洞记录。
+
+重建近重复检查及报告使用同一实现：
+
+```python
+from pathlib import Path
+from vulnmechanism.static_data import transfer_overlap
+from vulnmechanism.static_experiment import transfer_report
+
+root = Path("results/transfer_primevul_reveal")
+transfer_overlap(Path("data"), root, ("primevul", "reveal"), train_data_dir=Path("data"))
+transfer_report(root, Path("results"))
+```
+
+完整五项指标、源阈值、混淆计数、域内外差值和两个固定成员清单保存在
+[统一结果](results/transfer_primevul_reveal/comparison.csv)与
+[实验报告](results/transfer_primevul_reveal/report.md)。逐样本预测位于各源库的
+`results/<source>/bce/`，新 ReVeal 权重在 `results/reveal/bce/best.pt`，不覆盖历史权重。
+
+主结果 AUC（行为训练库，列为相同目标 Test）：
+
+| 训练库 | PrimeVul（1098） | ReVeal（380） |
+|---|---:|---:|
+| PrimeVul | **0.8462** | 0.8253 |
+| ReVeal | 0.7697 | **0.7700** |
+
+近重复排除后，PrimeVul模型的两列AUC为0.8352/0.8245，ReVeal模型为
+0.7622/0.7899。对同一目标库域内 BCE，ReVeal→PrimeVul的AUC差为
+−0.0765（排除近重复后−0.0730），PrimeVul→ReVeal则为+0.0553
+（排除后+0.0346）。本轮表现不对称，不能概括为双向跨域性能均下降。
+两个模型训练规模不同，单Seed比较也不能将差值归因于某一种学习机制。
+
+新 ReVeal 完整平衡训练的域内 Test AUC=0.7700，低于历史1024/256小样本
+checkpoint的0.8147；两者用同一380条Test，但训练预算及Valid成员不同。
+如实保留此次结果，没有据Test重新选择配置、延长训练或替换为旧模型。

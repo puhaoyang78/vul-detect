@@ -62,9 +62,10 @@ def transfer_report(output_dir, runs_dir):
     root = Path(output_dir)
     result = json.loads((root / "results.json").read_text())
     overlap = json.loads((root / "overlap.json").read_text())
+    datasets = tuple(result["cohorts"])
     excluded = {p["target_key"] for p in overlap["near_pairs"]}
     members = {}
-    for target in DATASETS:
+    for target in datasets:
         with (root / f"{target}.members.csv").open() as handle:
             members[target] = [r for r in csv.DictReader(handle)
                                if r["independent"] == "True" and r["sample_key"] not in excluded]
@@ -74,8 +75,8 @@ def transfer_report(output_dir, runs_dir):
     missing = {d: len(rows) for d, rows in members.items()
                if {int(r["label"]) for r in rows} != {0, 1}}
     if not missing:
-        for source in DATASETS:
-            for target in DATASETS:
+        for source in datasets:
+            for target in datasets:
                 name = "test" if source == target else f"{target}.test"
                 records = read_jsonl(Path(runs_dir) / source / "bce" / f"{name}.predictions.jsonl")
                 scores = {r["sample_key"]: r for r in records}
@@ -105,18 +106,18 @@ def transfer_report(output_dir, runs_dir):
     with (root / "comparison.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, list(rows[0]), lineterminator="\n")
         writer.writeheader(); writer.writerows(rows)
-    lines = ["# BigVul / Devign / ReVeal：Source-only BCE 跨域评价", "",
-             "复用每库 1024 Train / 256 Valid 小样本 checkpoint，Seed42；只使用源 Valid 已选权重和阈值。没有重训、目标校准、源码增强或静态关系输入。", "",
-             "主结果 independent 排除目标 Test 与三库实际 Train/Valid 的原始源码精确重叠；同一目标队列供三个模型共用，不重新平衡。established 保存原始 Test 参考。near_free 是预先定义的近重复排除敏感性检查。", "",
+    lines = ["# " + " / ".join(datasets) + "：Source-only BCE 跨域评价", "",
+             "使用已完成训练的源库 CodeBERT BCE checkpoint，Seed42；实际训练规模见下表。评价只使用源 Valid 已选权重和阈值，没有目标校准、源码增强或静态关系输入。", "",
+             "主结果 independent 排除目标 Test 与参与实验的两侧实际 Train/Valid 的原始源码精确重叠；同一目标队列供所有模型共用，不重新平衡。established 保存原始 Test 参考。near_free 是预先定义的近重复排除敏感性检查。", "",
              "| 目标库 | 原始 Test | 精确排除后：正/负 | 再排除近重复：正/负 |", "|---|---:|---:|---:|"]
-    for target in DATASETS:
+    for target in datasets:
         cohort = result["cohorts"][target]
         valid = cohort["independent"]
         near = members[target]
         positive = sum(int(r["label"]) for r in near)
         lines.append(f"| {target} | {cohort['established']['samples']} | {valid['positive']}/{valid['negative']} | {positive}/{len(near)-positive} |")
     lines += ["", "| 源模型 | 实际 Train / Valid | 选定 Epoch | 固定阈值 |", "|---|---:|---:|---:|"]
-    for source in DATASETS:
+    for source in datasets:
         chosen = next(r for r in rows if r["training_dataset"] == source)
         train = result["training_members"][f"{source}:train"]["samples"]
         valid = result["training_members"][f"{source}:valid"]["samples"]
@@ -133,8 +134,8 @@ def transfer_report(output_dir, runs_dir):
               f"Jaccard≥0.90 共 {len(overlap['near_pairs'])} 对；可用项目+提交元数据共 {len(overlap['shared_commit_pairs'])} 对。具体 sample_key、标签分歧及源码是否精确一致见 overlap.json。ReVeal 没有可靠提交/CVE，不能据此证明不存在共享漏洞记录。", "",
               f"近重复对中有 {conflicts} 对标签不一致；这只表示上游标注分歧，不判定哪方正确，也不把共享提交自动当成同一漏洞位置。", "",
               "Δ自身Test跨越了不同评价人群；Δ目标库BCE在同一目标 Test 上比较。跨域 AUC 高于源库自身 AUC，并不等于迁移没有损失。MCC/F1 还受固定阈值及域间分数尺度变化影响。", "",
-              "这些是单 Seed、小样本训练 checkpoint 的 Test 结果，不代表全量训练或静态引导方法的泛化结论。", "",
-              "复现：`python -m vulnmechanism.cli static transfer --output-dir results/static_current --device cuda:0`。命令复用已保存预测，不重新训练。", ""]
+              "这些是单 Seed 的普通 BCE Test 结果，训练规模见上表，不代表静态引导方法的泛化结论。", "",
+              "评价和报告复用 evaluate_transfer、transfer_overlap、transfer_report；已有预测直接复用，不重新训练或选择阈值。", ""]
     cross = [r for r in rows if r["view"] == "independent" and r["training_dataset"] != r["test_dataset"]]
     worse = sum(r["delta_target_auc"] < 0 for r in cross)
     lines += [f"本轮 {worse}/{len(cross)} 个跨域方向的 AUC 点估计低于同目标库训练的 BCE。单 Seed 点估计不作为统计显著性或普遍性证明。", ""]

@@ -23,7 +23,7 @@ def build_parser():
         p = sub.add_parser(command)
         p.add_argument("--data-dir", type=Path, default=Path("data"))
         p.add_argument("--output-dir", type=Path, default=Path("results"))
-        p.add_argument("--dataset", choices=(*DATASETS, "all"), default="all")
+        p.add_argument("--dataset", choices=(*DATASETS, "reveal", "all"), default="all")
         if command in ("train", "candidates"):
             p.add_argument("--model", default="microsoft/codebert-base")
         if command in ("train", "evaluate"):
@@ -44,7 +44,7 @@ def build_parser():
         if command in ("candidates", "evaluate"):
             p.add_argument("--test-limit", type=int, help="balanced diagnostic subset; default: full Test")
     p = sub.add_parser("transfer", help="bidirectional Clean transfer with source-selected checkpoints and thresholds")
-    p.add_argument("--datasets", nargs=2, choices=DATASETS, required=True)
+    p.add_argument("--datasets", nargs=2, choices=(*DATASETS, "reveal"), required=True)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--device", default="auto")

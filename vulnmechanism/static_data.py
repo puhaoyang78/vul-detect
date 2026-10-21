@@ -200,15 +200,24 @@ def check_isolation(rows, dataset):
                 unique_sample_keys=len(rows), balanced_splits=True)
 
 
-def transfer_overlap(data_dir, output_dir, datasets=DATASETS):
-    """Audit actual pilot Train/Valid versus fixed Test; never change the splits."""
-    from .data import read_jsonl
+def transfer_overlap(data_dir, output_dir, datasets=DATASETS, *, train_data_dir=None):
+    """Audit the supplied actual Train/Valid versus fixed Test without changing splits."""
+    from .data import read_jsonl, validation_rows
     root = Path(data_dir)
-    references, tests, members = [], [], {}
+    training_root = root / "pilot" if train_data_dir is None else Path(train_data_dir)
+    references, tests, members, training_members = [], [], {}, {}
     for dataset in datasets:
         for split in ("train", "valid", "test"):
-            path = root / dataset / "test.jsonl" if split == "test" else root / "pilot" / dataset / f"{split}.jsonl"
-            for row in read_jsonl(path):
+            if split == "valid":
+                rows = validation_rows(training_root / dataset)
+            else:
+                path = (root if split == "test" else training_root) / dataset / f"{split}.jsonl"
+                rows = read_jsonl(path)
+                if split == "test":
+                    rows = [r for r in rows if not r.get("train_overlap") and not r.get("valid_overlap")]
+            if split != "test":
+                training_members[f"{dataset}:{split}"] = class_counts(rows)
+            for row in rows:
                 item = {k: v for k, v in row.items() if k != "program_relations"}
                 members[item["sample_key"]] = item
                 # near_overlaps compares different splits. Both seen splits
@@ -241,13 +250,14 @@ def transfer_overlap(data_dir, output_dir, datasets=DATASETS):
     near_keys = {p["target_key"] for p in matches}
     commit_keys = {p["target_key"] for p in commit_matches}
     result = dict(
-        protocol=dict(references="actual 1024 Train / 256 Valid per participating source model",
+        protocol=dict(references="actual source Train / model-selection Valid; counts in training_members",
                       candidates="unchanged full Test; no Train/Valid fitting or threshold selection",
                       near_rule="comment-free spelling-preserving token 5-gram set Jaccard >= 0.90; complete prefix filter from near_overlaps",
                       timing="matching and metadata joins, excluding input reads",
                       use="diagnostic near-free sensitivity cohort shared by all source models; no resampling",
                       shared_records="project+commit only where available; ReVeal upstream hash is not treated as a commit/CVE; hidden shared vulnerability records remain unknown"),
         seconds=time.monotonic() - started,
+        training_members=training_members,
         near_pairs=matches, shared_commit_pairs=commit_matches,
         targets={dataset: dict(
             original=class_counts([r for r in tests if r["dataset"] == dataset]),

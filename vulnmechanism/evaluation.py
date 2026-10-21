@@ -489,7 +489,7 @@ def evaluate(
     data_dir, output_dir, dataset, methods=METHODS, *, device="auto", robust=True,
     valid_limit=None, test_limit=None,
 ):
-    if dataset not in DATASETS:
+    if dataset not in (*DATASETS, "reveal"):
         raise ValueError(f"unknown dataset: {dataset}")
     root = Path(output_dir) / dataset
     valid = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit)
