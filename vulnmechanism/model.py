@@ -28,10 +28,12 @@ def resolve_device(device: str) -> torch.device:
 
 class InputBuilder:
 
-    def __init__(self, tokenizer, *, source_max_length: int = 2048) -> None:
+    def __init__(self, tokenizer, *, source_max_length: int = 2048, relation_mode="none") -> None:
         if source_max_length <= 0:
             raise ValueError("source_max_length must be positive")
         self.tokenizer = tokenizer
+        self.relation_mode = relation_mode
+        self.relation_cache = {}
         self.source_max_length = source_max_length
         self.pad_token_id = tokenizer.pad_token_id
         self.eos_token_id = tokenizer.eos_token_id
@@ -101,10 +103,20 @@ class InputBuilder:
             pool_weights,
             len(records),
         )
-        if return_source_positions:
+        if return_source_positions or self.relation_mode != "none":
             source_positions = torch.full_like(ids, -1)
             for i, values in enumerate(positions):
                 source_positions[i, : len(values)] = torch.tensor(values, device=device)
+            if self.relation_mode != "none":
+                from .relations import relation_tokens
+                packed = []
+                for owner, record in enumerate(records):
+                    key = record["sample_key"]
+                    if key not in self.relation_cache:
+                        self.relation_cache[key] = relation_tokens(record, self.tokenizer, budget, self.relation_mode)
+                    packed.extend((owner, a, b, kind) for a, b, kind in self.relation_cache[key][0])
+                edges = torch.tensor(packed, device=device, dtype=torch.long).reshape(-1, 4)
+                return (*result, source_positions, edges)
             return (*result, source_positions)
         return result
 
@@ -205,7 +217,7 @@ def auxiliary_mode(model):
 class CodeBERT(nn.Module):
     """The shared pretrained encoder and fresh linear classification head."""
 
-    def __init__(self, model_path, device, *, gradient_checkpointing=False):
+    def __init__(self, model_path, device, *, gradient_checkpointing=False, relation_mode="none"):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(
             model_path, dtype=torch.float32, add_pooling_layer=False
@@ -217,6 +229,9 @@ class CodeBERT(nn.Module):
             )
         hidden_size = self.encoder.config.hidden_size
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
+        if relation_mode != "none":
+            from .relations import RelationPool
+            self.task_modules["relations"] = RelationPool(hidden_size)
         self.to(device)
 
     def forward(
@@ -226,6 +241,8 @@ class CodeBERT(nn.Module):
         window_owners,
         pooling_weights,
         function_count,
+        source_positions=None,
+        relation_edges=None,
         *,
         embedding_delta=None,
         force_fp32=False,
@@ -264,6 +281,12 @@ class CodeBERT(nn.Module):
             function_count,
             dtype=torch.float64 if force_fp32 else torch.float32,
         )
+        if "relations" in self.task_modules:
+            if source_positions is None or relation_edges is None:
+                raise ValueError("relation readout requires explicit source positions and edges")
+            pooled = pooled + self.task_modules["relations"](
+                hidden, source_positions, window_owners, pooling_weights, relation_edges, function_count
+            )
         head = self.task_modules["classifier"]
         if force_fp32:
             logits = torch.nn.functional.linear(
@@ -290,7 +313,8 @@ def predict_logits(model, records, builder, *, device, batch_size=4):
 
 
 def load_model(checkpoint, device, *, model_path=None):
-    model = CodeBERT(model_path or checkpoint["model_path"], device)
+    model = CodeBERT(model_path or checkpoint["model_path"], device,
+                     relation_mode=(checkpoint.get("static_relations") or {}).get("mode", "none"))
     model.load_state_dict(checkpoint["state_dict"], strict=True)
     return model.eval()
 
@@ -300,7 +324,8 @@ def predict_checkpoint(checkpoint_path, records, *, device="auto", batch_size=4,
     device = resolve_device(device)
     path = model_path or checkpoint["model_path"]
     builder = InputBuilder(
-        AutoTokenizer.from_pretrained(path), source_max_length=checkpoint["source_max_length"]
+        AutoTokenizer.from_pretrained(path), source_max_length=checkpoint["source_max_length"],
+        relation_mode=(checkpoint.get("static_relations") or {}).get("mode", "none"),
     )
     model = load_model(checkpoint, device, model_path=path)
     return predict_logits(model, records, builder, device=device, batch_size=batch_size)

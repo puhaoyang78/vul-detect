@@ -82,9 +82,13 @@ def train(
     representation_mask="none",
     mask_fraction=0.05,
     mask_weight=0.2,
+    relation_mode="none",
 ):
-    if dataset not in DATASETS:
+    if dataset not in (*DATASETS, "devign", "reveal"):
         raise ValueError(f"unknown dataset: {dataset}")
+    from .relations import MODES, RANK, PER_TYPE
+    if relation_mode not in MODES or (relation_mode != "none" and (method != "bce" or representation_mask != "none")):
+        raise ValueError("static-relation readout requires plain BCE")
     if method not in (*METHODS, "lp_ft", "swa"):
         raise ValueError(f"unknown method: {method}")
     if hard_selection not in ("hardest", "boundary") or vat_direction not in VAT_DIRECTIONS:
@@ -145,8 +149,9 @@ def train(
     builder = InputBuilder(
         AutoTokenizer.from_pretrained(model_path),
         source_max_length=config["source_max_length"],
+        relation_mode=relation_mode,
     )
-    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda")
+    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda", relation_mode=relation_mode)
     seed_everything(seed)
     averaged = AveragedModel(model) if method == "swa" else None
     averaged_steps = []
@@ -168,6 +173,10 @@ def train(
         selection=f"{dataset} clean Valid: threshold MCC/F1/Accuracy/closest to 0.5; "
         "epoch MCC/F1/Accuracy/AUC",
         precision="FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+        parameter_count=sum(p.numel() for p in model.parameters()),
+        static_relations=(dict(mode=relation_mode, rank=RANK, per_type=PER_TYPE,
+                              extra_parameters=sum(p.numel() for p in model.task_modules["relations"].parameters()))
+                          if relation_mode != "none" else None),
         input_protocol=dict(
             logical_budget=config["source_max_length"],
             prefix_tokens=len(builder.source_prefix),
@@ -354,7 +363,7 @@ def train(
                 else:
                     logits = model(*inputs)
                 bce_costs.update(
-                    function_forwards=inputs[-1], encoder_sequences=len(inputs[0]),
+                    function_forwards=inputs[4], encoder_sequences=len(inputs[0]),
                     encoder_token_slots=inputs[0].numel(),
                     encoder_active_tokens=int(inputs[1].sum()),
                 )
@@ -519,5 +528,7 @@ def train(
         optimizer_steps=global_step,
         averaged_steps=averaged_steps,
     )
+    if relation_mode != "none":
+        write_json(run / "relation.coverage.json", {key: info for key, (_, info) in builder.relation_cache.items()})
     write_json(run / "training.metrics.json", summary)
     return summary

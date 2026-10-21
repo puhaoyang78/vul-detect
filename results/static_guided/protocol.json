@@ -1,0 +1,92 @@
+{
+  "datasets": [
+    "bigvul",
+    "devign",
+    "reveal"
+  ],
+  "pilot": {
+    "train": 1024,
+    "valid": 256,
+    "positive_fraction": 0.5
+  },
+  "training": {
+    "seed": 42,
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01,
+    "source_max_length": 2048,
+    "gradient_clip": 1.0
+  },
+  "optimizer_steps": 384,
+  "conditions": [
+    "source",
+    "sequence",
+    "shuffled",
+    "real"
+  ],
+  "relation_readout": {
+    "rank": 32,
+    "per_type": 32,
+    "types": [
+      "AST",
+      "CFG",
+      "CDG",
+      "REACHING_DEF",
+      "REF",
+      "POST_DOMINATE",
+      "memory",
+      "pointer",
+      "allocation",
+      "release",
+      "guard",
+      "sensitive_api"
+    ],
+    "output_initialization": "zero; same encoder/classifier and initial logits in all arms",
+    "aggregation": "tanh(A h_source + B h_target + type_embedding), mean within type then mean over active types, output projection added to unchanged function mean"
+  },
+  "shuffled": "within-function destination permutation, preserves endpoint marginals/type counts/regions; fixed source-dependent Seed42 RNG independent of label and model",
+  "sequence": "same rank/type/parameter budget; fixed source-token sequence neighbourhoods, no static graph input",
+  "references": {
+    "viper": "https://zenodo.org/records/14902701",
+    "viper_paper": "https://arxiv.org/abs/2501.13291",
+    "deepdfa": "https://arxiv.org/abs/2212.08108",
+    "deepdfa_code": "https://github.com/ISU-PAAL/DeepDFA",
+    "pvdetector": "https://github.com/jaylanli/PVDetector"
+  },
+  "static_quality": "AST/CFG/CDG/POST_DOMINATE from Joern; REACHING_DEF may-dataflow/def-use; REF symbol binding; API/operator candidate matching is heuristic, not vulnerability truth",
+  "viper_api_candidates": [
+    "fgetc",
+    "fgets",
+    "getch",
+    "getchar",
+    "gets",
+    "memcpy",
+    "memset",
+    "strcpy",
+    "strncpy",
+    "wcsncpy",
+    "wmemset"
+  ],
+  "joern": "4.0.465, isolated function files, batch128, one job, JVM Xmx4g/ActiveProcessorCount4, source+language hash cache",
+  "validation": "own Clean Valid only, established threshold/epoch selection; single-seed pilot, not independent held-out confirmation",
+  "test_used_for_model_evaluation": false,
+  "raw_data_modified": false,
+  "known_execution_issue": "one /proc resource-sampling ProcessLookupError stopped a batch; fixed race handling and resumed 1152 cached BigVul functions, no cohort/model changes",
+  "bootstrap": "1000 Seed42 paired function and native-family group resamples; group count/valid replicates retained; not repeated training seeds",
+  "observed_extraction_completed_process_seconds": 1411.5000000000002,
+  "observed_extraction_completed_batches": 30,
+  "observed_extraction_monitor_failures": 1,
+  "extraction_timing_note": "sum of completed parse/export process wall seconds, rounded progress log; excludes cache I/O, failed partial batch and interruption. BigVul resumed 1152 prior graph results; its coverage cost is the resumed call.",
+  "observed_extraction_end_to_end_wall_seconds": 1838.9987082481384,
+  "end_to_end_timing_note": "first post-benchmark batch filename timestamp to final coverage file write; includes monitor interruption, cache recovery and serialization; GPU training ran concurrently",
+  "base_git_commit": "94fff052d8bb38dd5f18acadc61fa01d527098d0",
+  "code_state": "experiment implementation in current working tree",
+  "environment": {
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "device": "NVIDIA GeForce RTX 4090"
+  }
+}

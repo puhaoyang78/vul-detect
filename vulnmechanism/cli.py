@@ -83,11 +83,24 @@ def build_parser():
     p.add_argument("--checkpoint", type=Path)
     p.add_argument("--sample-limit", type=int, choices=(128, 256), default=256)
     p.add_argument("--device", default="auto")
+    p = sub.add_parser("static", help="BigVul/Devign/ReVeal static-relation pilot; Test remains held out")
+    p.add_argument("stage", choices=("prepare", "benchmark", "extract", "train", "report"))
+    p.add_argument("--raw-root", type=Path, default=Path("/home/PublicData/PHY-data/vul_detect/data"))
+    p.add_argument("--data-dir", type=Path, default=Path("data/static_guided"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/static_guided"))
+    p.add_argument("--dataset", choices=("bigvul", "devign", "reveal", "all"), default="all")
+    p.add_argument("--modes", nargs="+", choices=("source", "sequence", "shuffled", "real"), default=["source", "sequence", "shuffled", "real"])
+    p.add_argument("--model", default="/home/PublicData/PHY-data/resource/codebert-base")
+    p.add_argument("--device", default="auto")
     return parser
 
 
 def main():
     args = build_parser().parse_args()
+    if args.command == "static":
+        from .static_experiment import run
+        run(args)
+        return
     if args.command == "prepare":
         from .data import prepare
 

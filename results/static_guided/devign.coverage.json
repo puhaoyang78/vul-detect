@@ -1,0 +1,233 @@
+{
+  "costs": {
+    "samples": 1280,
+    "unique_uncached": 1279,
+    "cache_hits": 1,
+    "batches": [
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 20.220646671950817,
+          "peak_process_tree_rss_bytes": 901906432
+        },
+        "export": {
+          "seconds": 26.884514802135527,
+          "peak_process_tree_rss_bytes": 834125824
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 21.234547432046384,
+          "peak_process_tree_rss_bytes": 906133504
+        },
+        "export": {
+          "seconds": 26.873433283064514,
+          "peak_process_tree_rss_bytes": 784191488
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 21.992811884963885,
+          "peak_process_tree_rss_bytes": 907681792
+        },
+        "export": {
+          "seconds": 26.865922541124746,
+          "peak_process_tree_rss_bytes": 849854464
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 22.74791880394332,
+          "peak_process_tree_rss_bytes": 904839168
+        },
+        "export": {
+          "seconds": 26.629227340919897,
+          "peak_process_tree_rss_bytes": 751755264
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 20.001695934915915,
+          "peak_process_tree_rss_bytes": 891547648
+        },
+        "export": {
+          "seconds": 27.91060779406689,
+          "peak_process_tree_rss_bytes": 722440192
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 21.744571066927165,
+          "peak_process_tree_rss_bytes": 897093632
+        },
+        "export": {
+          "seconds": 26.12303478596732,
+          "peak_process_tree_rss_bytes": 771928064
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 24.260431402130052,
+          "peak_process_tree_rss_bytes": 896860160
+        },
+        "export": {
+          "seconds": 25.6266940201167,
+          "peak_process_tree_rss_bytes": 780587008
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 21.484417877858505,
+          "peak_process_tree_rss_bytes": 904417280
+        },
+        "export": {
+          "seconds": 25.85145279020071,
+          "peak_process_tree_rss_bytes": 778649600
+        }
+      },
+      {
+        "functions": 128,
+        "parse": {
+          "seconds": 23.498680630000308,
+          "peak_process_tree_rss_bytes": 908009472
+        },
+        "export": {
+          "seconds": 26.12582274293527,
+          "peak_process_tree_rss_bytes": 750600192
+        }
+      },
+      {
+        "functions": 127,
+        "parse": {
+          "seconds": 19.21548482705839,
+          "peak_process_tree_rss_bytes": 886939648
+        },
+        "export": {
+          "seconds": 25.346985067939386,
+          "peak_process_tree_rss_bytes": 750944256
+        }
+      }
+    ],
+    "seconds": 596.3268250201363,
+    "joern": "4.0.465",
+    "heap": "4 GiB per JVM",
+    "cpus_per_jvm": 4
+  },
+  "status": {
+    "ok": 1209,
+    "no_definition": 68,
+    "multiple_definitions": 3
+  },
+  "relation_functions": {
+    "AST": 1209,
+    "CFG": 1209,
+    "CDG": 1027,
+    "REACHING_DEF": 1209,
+    "REF": 1181,
+    "POST_DOMINATE": 1208,
+    "memory": 670,
+    "pointer": 1045,
+    "allocation": 171,
+    "release": 9,
+    "guard": 678,
+    "sensitive_api": 172
+  },
+  "exact_spans": 236238,
+  "location_only_spans": 67005,
+  "by_split_label": {
+    "train:0": {
+      "samples": 512,
+      "status": {
+        "ok": 483,
+        "no_definition": 28,
+        "multiple_definitions": 1
+      },
+      "relation_functions": {
+        "AST": 483,
+        "CFG": 483,
+        "CDG": 422,
+        "REACHING_DEF": 483,
+        "REF": 472,
+        "POST_DOMINATE": 483,
+        "memory": 258,
+        "pointer": 416,
+        "allocation": 60,
+        "release": 5,
+        "guard": 275,
+        "sensitive_api": 62
+      }
+    },
+    "train:1": {
+      "samples": 512,
+      "status": {
+        "ok": 477,
+        "no_definition": 33,
+        "multiple_definitions": 2
+      },
+      "relation_functions": {
+        "AST": 477,
+        "CFG": 477,
+        "CDG": 406,
+        "REACHING_DEF": 477,
+        "REF": 465,
+        "POST_DOMINATE": 476,
+        "memory": 285,
+        "pointer": 413,
+        "allocation": 76,
+        "release": 4,
+        "guard": 283,
+        "sensitive_api": 75
+      }
+    },
+    "valid:0": {
+      "samples": 128,
+      "status": {
+        "ok": 124,
+        "no_definition": 4
+      },
+      "relation_functions": {
+        "AST": 124,
+        "CFG": 124,
+        "CDG": 104,
+        "REACHING_DEF": 124,
+        "REF": 122,
+        "POST_DOMINATE": 124,
+        "memory": 64,
+        "pointer": 107,
+        "allocation": 17,
+        "release": 0,
+        "guard": 64,
+        "sensitive_api": 19
+      }
+    },
+    "valid:1": {
+      "samples": 128,
+      "status": {
+        "ok": 125,
+        "no_definition": 3
+      },
+      "relation_functions": {
+        "AST": 125,
+        "CFG": 125,
+        "CDG": 95,
+        "REACHING_DEF": 125,
+        "REF": 122,
+        "POST_DOMINATE": 125,
+        "memory": 63,
+        "pointer": 109,
+        "allocation": 18,
+        "release": 0,
+        "guard": 56,
+        "sensitive_api": 16
+      }
+    }
+  },
+  "test_parsed": false
+}

@@ -1,0 +1,77 @@
+{
+  "source": "source Train only, reparse five failures without method-name filtering",
+  "examples": [
+    {
+      "sample_key": "bigvul:101426",
+      "status": "no_definition",
+      "header": "  virtual ~CreateRootTask() ",
+      "raw_methods": [
+        {
+          "file": "bigvul_101426.cpp",
+          "name": "<global>",
+          "external": false,
+          "line": 1,
+          "code": "<global>"
+        }
+      ]
+    },
+    {
+      "sample_key": "bigvul:111047",
+      "status": "no_definition",
+      "header": "    explicit DeferredTaskSetFocused(WebPagePrivate* webPagePrivate, bool focused)\n        : DeferredTaskType(webPagePrivate)\n    ",
+      "raw_methods": [
+        {
+          "file": "bigvul_111047.cpp",
+          "name": "<global>",
+          "external": false,
+          "line": 1,
+          "code": "<global>"
+        }
+      ]
+    },
+    {
+      "sample_key": "bigvul:115098",
+      "status": "no_definition",
+      "header": "  ~CrashNotificationDelegate() ",
+      "raw_methods": [
+        {
+          "file": "bigvul_115098.cpp",
+          "name": "<global>",
+          "external": false,
+          "line": 1,
+          "code": "<global>"
+        }
+      ]
+    },
+    {
+      "sample_key": "devign:10044",
+      "status": "no_definition",
+      "header": "static av_always_inline void put_h264_qpel8or16_hv1_lowpass_sse2(int16_t *tmp, uint8_t *src, int tmpStride, int srcStride, int size)",
+      "raw_methods": [
+        {
+          "file": "devign_10044.c",
+          "name": "<global>",
+          "external": false,
+          "line": 1,
+          "code": "<global>"
+        }
+      ]
+    },
+    {
+      "sample_key": "reveal:0:10105",
+      "status": "no_definition",
+      "header": "int qemuMonitorJSONAttachPCIDiskController ( qemuMonitorPtr mon ATTRIBUTE_UNUSED , const char * bus ATTRIBUTE_UNUSED , virDomainDevicePCIAddress * guestAddr ATTRIBUTE_UNUSED ) ",
+      "raw_methods": [
+        {
+          "file": "reveal_0_10105.cpp",
+          "name": "<global>",
+          "external": false,
+          "line": 1,
+          "code": "<global>"
+        }
+      ]
+    }
+  ],
+  "observation": "Only synthetic <global> methods exist for these five cases; no source-defined method was hidden by the exporter filter.",
+  "explanation": "Standalone C++ constructors/destructors lack class context; unexpanded qualifiers include av_always_inline and ATTRIBUTE_UNUSED. This identifies representative context failures, not a proven explanation for every failed sample."
+}

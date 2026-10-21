@@ -1,0 +1,76 @@
+{
+  "dataset": "bigvul",
+  "seed": 42,
+  "source": "https://github.com/ZeoVan/MSR_20_Code_vulnerability_CSV_Dataset",
+  "native": {
+    "samples": 188636,
+    "positive": 10900,
+    "negative": 177736
+  },
+  "dedup": {
+    "source_or_token_duplicate": 1862,
+    "conflicting_source_or_token_labels": 2741
+  },
+  "family_removed": 0,
+  "split_rule": "Seed 42 project groups, greedy positive-count 80/10/10; no upstream split supplied",
+  "cleaned_before_balance": {
+    "train": {
+      "samples": 146885,
+      "positive": 7596,
+      "negative": 139289
+    },
+    "valid": {
+      "samples": 17217,
+      "positive": 949,
+      "negative": 16268
+    },
+    "test": {
+      "samples": 19931,
+      "positive": 951,
+      "negative": 18980
+    }
+  },
+  "balanced_before_near": 18992,
+  "cross_split_near_pairs": 12,
+  "cross_split_near_removed": 9,
+  "final": {
+    "train": {
+      "samples": 15178,
+      "positive": 7589,
+      "negative": 7589
+    },
+    "valid": {
+      "samples": 1898,
+      "positive": 949,
+      "negative": 949
+    },
+    "test": {
+      "samples": 1902,
+      "positive": 951,
+      "negative": 951
+    }
+  },
+  "pilot": {
+    "train": {
+      "samples": 1024,
+      "positive": 512,
+      "negative": 512
+    },
+    "valid": {
+      "samples": 256,
+      "positive": 128,
+      "negative": 128
+    }
+  },
+  "seconds": 713.0784153679851,
+  "near_rule": "comment-free spelling-preserving token 5-gram set Jaccard >= 0.90; Test > Valid > Train",
+  "balance": "equal smaller-class count per split, Seed 42, without replacement",
+  "checks": {
+    "exact_cross_split": 0,
+    "near_cross_split": 0,
+    "family_cross_split": 0,
+    "unique_sample_keys": 18978,
+    "balanced_splits": true
+  },
+  "metadata_limitations": null
+}

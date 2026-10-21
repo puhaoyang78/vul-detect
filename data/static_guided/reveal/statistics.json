@@ -1,0 +1,75 @@
+{
+  "dataset": "reveal",
+  "seed": 42,
+  "source": "https://github.com/VulDetProject/ReVeal",
+  "native": {
+    "samples": 22734,
+    "positive": 2240,
+    "negative": 20494
+  },
+  "dedup": {
+    "conflicting_source_or_token_labels": 702
+  },
+  "family_removed": 0,
+  "split_rule": "Seed 42 collection+upstream-hash groups, greedy positive-count 80/10/10; project field retained",
+  "cleaned_before_balance": {
+    "train": {
+      "samples": 14109,
+      "positive": 1511,
+      "negative": 12598
+    },
+    "valid": {
+      "samples": 3791,
+      "positive": 188,
+      "negative": 3603
+    },
+    "test": {
+      "samples": 4132,
+      "positive": 190,
+      "negative": 3942
+    }
+  },
+  "balanced_before_near": 3778,
+  "cross_split_near_pairs": 0,
+  "cross_split_near_removed": 0,
+  "final": {
+    "train": {
+      "samples": 3022,
+      "positive": 1511,
+      "negative": 1511
+    },
+    "valid": {
+      "samples": 376,
+      "positive": 188,
+      "negative": 188
+    },
+    "test": {
+      "samples": 380,
+      "positive": 190,
+      "negative": 190
+    }
+  },
+  "pilot": {
+    "train": {
+      "samples": 1024,
+      "positive": 512,
+      "negative": 512
+    },
+    "valid": {
+      "samples": 256,
+      "positive": 128,
+      "negative": 128
+    }
+  },
+  "seconds": 31.969495323020965,
+  "near_rule": "comment-free spelling-preserving token 5-gram set Jaccard >= 0.90; Test > Valid > Train",
+  "balance": "equal smaller-class count per split, Seed 42, without replacement",
+  "checks": {
+    "exact_cross_split": 0,
+    "near_cross_split": 0,
+    "family_cross_split": 0,
+    "unique_sample_keys": 3778,
+    "balanced_splits": true
+  },
+  "metadata_limitations": "ReVeal lacks commit/CVE/true repository IDs; associated upstream hashes kept together; hidden family leakage cannot be certified"
+}

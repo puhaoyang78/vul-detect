@@ -1,0 +1,12 @@
+{"removed": "bigvul:180934", "jaccard": 0.9477410654079569, "higher_priority_reference": "bigvul:182791"}
+{"removed": "bigvul:182770", "jaccard": 0.9873264936632469, "higher_priority_reference": "bigvul:183374"}
+{"removed": "bigvul:182770", "jaccard": 0.9873264936632469, "higher_priority_reference": "bigvul:183375"}
+{"removed": "bigvul:182772", "jaccard": 0.9758620689655172, "higher_priority_reference": "bigvul:183365"}
+{"removed": "bigvul:182776", "jaccard": 0.9878369493754109, "higher_priority_reference": "bigvul:183368"}
+{"removed": "bigvul:182776", "jaccard": 0.9943820224719101, "higher_priority_reference": "bigvul:183370"}
+{"removed": "bigvul:182777", "jaccard": 0.9832134292565947, "higher_priority_reference": "bigvul:183378"}
+{"removed": "bigvul:183376", "jaccard": 0.9904705181655747, "higher_priority_reference": "bigvul:182768"}
+{"removed": "bigvul:183376", "jaccard": 0.9845605700712589, "higher_priority_reference": "bigvul:182769"}
+{"removed": "bigvul:183379", "jaccard": 0.9897013388259527, "higher_priority_reference": "bigvul:182775"}
+{"removed": "bigvul:60564", "jaccard": 0.9328984156570364, "higher_priority_reference": "bigvul:183372"}
+{"removed": "bigvul:96146", "jaccard": 0.9696048632218845, "higher_priority_reference": "bigvul:181915"}
