@@ -199,12 +199,12 @@ def run_process(argv, log, timeout=300):
     return dict(seconds=time.monotonic() - started, peak_process_tree_rss_bytes=peak)
 
 
-def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=True):
+def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=True, cache_root=None):
     """Only supplied functions are parsed; successful and failed outcomes persist."""
     output_dir = Path(output_dir);output_dir.mkdir(parents=True, exist_ok=True)
     script = Path(__file__).with_name("static_extract.sc")
     namespace = hashlib.sha256(JOERN_VERSION.encode() + script.read_bytes()).hexdigest()[:12]
-    cache_dir = output_dir / "cache" / namespace
+    cache_dir = (Path(cache_root) if cache_root is not None else output_dir / "cache") / namespace
     cache_dir.mkdir(parents=True, exist_ok=True)
     pending, results, hits = {}, {}, 0
     started = time.monotonic()
@@ -258,12 +258,12 @@ def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=
         seconds=time.monotonic() - started, joern=JOERN_VERSION, heap="4 GiB per JVM", cpus_per_jvm=4)
 
 
-def prepare_relations(data_dir, output_dir, datasets=("bigvul", "devign", "reveal")):
+def prepare_relations(data_dir, output_dir, datasets=("bigvul", "devign", "reveal"), *, cache_root=None):
     all_costs = {}
     for dataset in datasets:
         paths = [Path(data_dir) / "pilot" / dataset / f"{s}.jsonl" for s in ("train", "valid")]
         rows = [r for path in paths for r in read_jsonl(path)]
-        graphs, costs = extract(rows, Path(output_dir) / "joern")
+        graphs, costs = extract(rows, Path(output_dir) / "joern", cache_root=cache_root)
         for path in paths:
             write_jsonl(path, [dict(r, program_relations=graphs[r["sample_key"]]) for r in read_jsonl(path)])
         report = dict(costs=costs, status=dict(Counter(g["status"] for g in graphs.values())),

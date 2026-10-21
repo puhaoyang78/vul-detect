@@ -608,11 +608,14 @@ Epoch/阈值。报告 Clean AUC、MCC、F1，检查真实/随机连边和
 旧版静态实验结果只保留在此前 Git 历史中，不随当前源码提供；旧 checkpoint 与当前
 模块参数不兼容，新的训练输出必须使用空目录。
 
+解析缓存可通过 --cache-root 复用，避免重新启动 Joern 处理已缓存函数；
+新模型训练和报告统一使用同一空输出目录。
+
 运行：
 
     python -m vulnmechanism.cli static prepare --raw-root /home/PublicData/PHY-data/vul_detect/data
     python -m vulnmechanism.cli static benchmark
-    python -m vulnmechanism.cli static extract
+    python -m vulnmechanism.cli static extract --cache-root results/static_guided/joern/cache --output-dir results/static_current
     python -m vulnmechanism.cli static train --dataset bigvul --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
     python -m vulnmechanism.cli static train --dataset devign --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
     python -m vulnmechanism.cli static train --dataset reveal --modes source sequence shuffled real --output-dir results/static_current --device cuda:0

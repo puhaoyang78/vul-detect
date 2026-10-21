@@ -31,7 +31,7 @@ def run(args):
         benchmark(args.raw_root, args.data_dir / "indices", args.output_dir)
     elif args.stage == "extract":
         from .static_analysis import prepare_relations
-        prepare_relations(args.data_dir, args.output_dir, datasets)
+        prepare_relations(args.data_dir, args.output_dir, datasets, cache_root=args.cache_root)
     elif args.stage == "train":
         for dataset in datasets:
             for mode in args.modes:

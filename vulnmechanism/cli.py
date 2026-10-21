@@ -85,6 +85,7 @@ def build_parser():
     p.add_argument("--device", default="auto")
     p = sub.add_parser("static", help="BigVul/Devign/ReVeal static-relation pilot; Test remains held out")
     p.add_argument("stage", choices=("prepare", "benchmark", "extract", "train", "report"))
+    p.add_argument("--cache-root", type=Path, help="optional existing Joern cache root for incremental parsing")
     p.add_argument("--raw-root", type=Path, default=Path("/home/PublicData/PHY-data/vul_detect/data"))
     p.add_argument("--data-dir", type=Path, default=Path("data/static_guided"))
     p.add_argument("--output-dir", type=Path, default=Path("results/static_guided"))
