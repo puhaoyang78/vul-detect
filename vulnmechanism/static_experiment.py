@@ -32,6 +32,9 @@ def run(args):
     elif args.stage == "extract":
         from .static_analysis import prepare_relations
         prepare_relations(args.data_dir, args.output_dir, datasets, cache_root=args.cache_root)
+    elif args.stage == "audit":
+        from .static_analysis import audit_patterns
+        audit_patterns(args.data_dir, args.output_dir, datasets, model_path=args.model)
     elif args.stage == "train":
         for dataset in datasets:
             for mode in args.modes:

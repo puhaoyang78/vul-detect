@@ -1,0 +1,66 @@
+{
+  "costs": {
+    "samples": 2,
+    "unique_uncached": 2,
+    "cache_hits": 0,
+    "batches": [
+      {
+        "functions": 2,
+        "parse": {
+          "seconds": 10.128075369168073,
+          "peak_process_tree_rss_bytes": 332369920
+        },
+        "export": {
+          "seconds": 23.312149378005415,
+          "peak_process_tree_rss_bytes": 698691584
+        }
+      }
+    ],
+    "seconds": 33.649987074080855,
+    "joern": "4.0.465",
+    "heap": "4 GiB per JVM",
+    "cpus_per_jvm": 4
+  },
+  "controls": [
+    {
+      "sample_key": "control:bigvul:177924:returning",
+      "original_sample_key": "bigvul:177924",
+      "derived": true,
+      "changes": "explicit return type added; return after free retained",
+      "excluded_from_coverage": true,
+      "joern_status": "ok",
+      "pattern_counts": {
+        "guard": 2,
+        "allocation": 2,
+        "pointer_access": 9,
+        "release": 1
+      }
+    },
+    {
+      "sample_key": "control:bigvul:177924:continuing",
+      "original_sample_key": "bigvul:177924",
+      "derived": true,
+      "changes": "explicit return type added; return after free removed",
+      "excluded_from_coverage": true,
+      "joern_status": "ok",
+      "pattern_counts": {
+        "guard": 2,
+        "allocation": 2,
+        "pointer_access": 9,
+        "release": 1,
+        "use_after_free": 5
+      }
+    }
+  ],
+  "costs_cached": {
+    "samples": 2,
+    "unique_uncached": 0,
+    "cache_hits": 2,
+    "batches": [],
+    "seconds": 0.05763009516522288,
+    "joern": "4.0.465",
+    "heap": "4 GiB per JVM",
+    "cpus_per_jvm": 4
+  },
+  "warm_patterns_agree": true
+}

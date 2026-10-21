@@ -1,6 +1,7 @@
 """Cohort isolation, relation controls and actual encoder/readout gradients."""
 
 from collections import Counter
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ import torch
 from tests.test_codebert_source import CodeTokenizer, tiny_base
 from vulnmechanism import model as core
 from vulnmechanism.relations import StaticRelationEncoder, relation_tokens
-from vulnmechanism.static_analysis import align_graph, attach_patterns, run_process, RELATIONS
+from vulnmechanism.static_analysis import align_graph, attach_patterns, run_process, RELATIONS, PATTERN_SCHEMA
 from vulnmechanism.static_data import remove_duplicates, isolate_families, near_overlaps
 from vulnmechanism.static_patterns import extract_patterns
 
@@ -61,16 +62,20 @@ class StaticTests(unittest.TestCase):
           dst[-1]=2;
           char *p=malloc(8); free(p); free(p); p[0]=1;
         }"""
-        patterns = extract_patterns(code)
+        diagnostics = {}
+        patterns = extract_patterns(code, diagnostics=diagnostics)
         types = {p["kind"] for p in patterns}
         self.assertTrue({"buffer_size_mismatch", "buffer_overread",
-                         "off_by_one", "source_size_copy", "double_free",
-                         "use_after_free", "negative_index_write",
+                         "off_by_one", "source_size_copy", "negative_index_write",
                          "sensitive_write", "allocation", "release"}.issubset(types), types)
         self.assertTrue(all(p["anchor"][0] < p["anchor"][1] for p in patterns))
         self.assertTrue(all(p["kind"] in RELATIONS for p in patterns))
         self.assertTrue(all(p["status"] in {"candidate", "constant_comparison"} for p in patterns))
-        negative = "void g(int i){ char dst[8]; int r=dst[i]; }"
+        # Without a CPG, the lifetime path is unknown, not a claimed UAF/DF.
+        self.assertNotIn("use_after_free", types)
+        self.assertNotIn("double_free", types)
+        self.assertGreater(diagnostics["rule_stages"]["double_free"]["unknown"], 0)
+        negative = "void g(){ char dst[8]; int r=dst[-1]; }"
         self.assertIn("negative_index_read", {p["kind"] for p in extract_patterns(negative)})
 
     def test_source_length_copy_and_destination_length_copy(self):
@@ -94,7 +99,7 @@ class StaticTests(unittest.TestCase):
                      edges=[[0, 1, 0], [1, 0, 1], [0, 0, 6]],
                      counts={"AST": 1, "CFG": 1, "memory": 1})
         upgraded = attach_patterns(graph, source)
-        self.assertEqual(upgraded["schema_version"], 4)
+        self.assertEqual(upgraded["schema_version"], PATTERN_SCHEMA)
         self.assertNotIn("memory", upgraded["counts"])
         self.assertGreater(upgraded["counts"].get("buffer_size_mismatch", 0), 0)
         self.assertEqual(upgraded, attach_patterns(upgraded, source))
@@ -116,7 +121,7 @@ class StaticTests(unittest.TestCase):
         p = extract_patterns(read)
         self.assertIn("buffer_size_mismatch", {x["kind"] for x in p})
         other = "void f(){int dst[8];char src[16];memcpy(dst,src,10);}"
-        # Ten bytes do not exceed the capacity of an array of eight ints.
+        # Element counts alone do not prove byte overflow without the ABI size.
         self.assertNotIn("buffer_size_mismatch", {x["kind"] for x in extract_patterns(other)})
         unsigned = "void f(unsigned int i){char b[8];int x=b[i];}"
         self.assertNotIn("negative_index_read", {x["kind"] for x in extract_patterns(unsigned)})
@@ -281,6 +286,184 @@ class StaticTests(unittest.TestCase):
             for other in initial[1:]:
                 for key in initial[0]:
                     torch.testing.assert_close(initial[0][key], other[key], atol=0, rtol=0)
+
+
+class PatternRegressionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.samples = json.loads((Path(__file__).parent / "fixtures/static_patterns.json").read_text())
+
+    def analyze(self, key, transform=None):
+        row = self.samples[key]
+        source = row["raw_source"] if transform is None else transform(row["raw_source"])
+        diag = {}
+        # Edited fixtures must never reuse a CPG extracted from different source.
+        graph = row.get("graph") if source == row["raw_source"] else None
+        patterns = extract_patterns(source, language=row["language"], graph=graph, diagnostics=diag)
+        return source, patterns, diag
+
+    def test_real_cxx_subscripts_and_unknown_signed_ranges(self):
+        key = "reveal:0:10800"
+        _, patterns, diag = self.analyze(key)
+        self.assertNotIn("negative_index_read", {p["kind"] for p in patterns})
+        self.assertGreater(diag["rule_stages"]["negative_index_read"]["unknown:loop_variant_definition"], 0)
+        self.assertNotIn("unknown:subscript_ast_unsupported", diag["rule_stages"]["negative_index_read"])
+        source, patterns, _ = self.analyze(key, lambda s: s.replace("env -> fptags [ i ]", "env -> fptags [ - 1 ]"))
+        hits = [p for p in patterns if p["kind"] == "negative_index_read"]
+        self.assertEqual(len(hits), 1)
+        self.assertIn("[ - 1 ]", source[slice(*hits[0]["anchor"])])
+
+    def test_real_alias_assignment_order_and_sizeof_provenance(self):
+        key = "bigvul:180876"
+        old = 'memcpy(xbuf, "perm", 5);'
+        _, patterns, _ = self.analyze(key, lambda s: s.replace(old,
+            '{ char *p=xbuf; int n=sizeof(xbuf); n=n+1; memset(p,0,n); }'))
+        kinds = {p["kind"] for p in patterns}
+        self.assertTrue({"buffer_size_mismatch", "off_by_one", "destination_size_copy"} <= kinds)
+        _, patterns, _ = self.analyze(key, lambda s: s.replace(old,
+            '{ char *p=xbuf; int n=100; n=5; memcpy(p,"perm",n); }'))
+        self.assertFalse({"buffer_size_mismatch", "off_by_one", "buffer_overread"} & {p["kind"] for p in patterns})
+        _, patterns, _ = self.analyze(key, lambda s: s.replace(old,
+            '{ int n=17; memcpy(xbuf,"perm",n); n=5; }'))
+        self.assertIn("off_by_one", {p["kind"] for p in patterns})
+
+    def test_real_typed_capacity_and_offset_without_assumed_abi(self):
+        key = "bigvul:178941"
+        _, patterns, diag = self.analyze(key)
+        self.assertNotIn("buffer_size_mismatch", {p["kind"] for p in patterns})
+        self.assertGreaterEqual(diag["rule_stages"]["buffer_size_mismatch"]["resolved_extents"], 1)
+        _, patterns, _ = self.analyze(key, lambda s: s.replace("sizeof(__u32) * 7", "sizeof(__u32) * 8"))
+        hits = [p for p in patterns if p["kind"] == "buffer_size_mismatch"]
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["evidence"]["certainty"], "symbolic_relation")
+        self.assertIsNone(hits[0]["evidence"]["excess"])
+        self.assertNotIn("off_by_one", {p["kind"] for p in patterns})
+
+    def test_real_string_terminators_and_pointer_size_are_distinct(self):
+        key = "devign:14017"
+        _, patterns, _ = self.analyze(key)
+        self.assertNotIn("buffer_size_mismatch", {p["kind"] for p in patterns})
+        _, patterns, _ = self.analyze(key, lambda s: s.replace("proto_str[128]", "proto_str[4]"))
+        self.assertTrue({"buffer_size_mismatch", "off_by_one"} <= {p["kind"] for p in patterns})
+        _, patterns, _ = self.analyze(key, lambda s: s.replace("proto_str[128]", "proto_str[4]").replace('"file"', '"fi\\0le"'))
+        self.assertFalse({"buffer_size_mismatch", "off_by_one", "buffer_overread"} & {p["kind"] for p in patterns})
+        _, patterns, diag = self.analyze(key, lambda s: s.replace('strcpy(proto_str, "file");',
+            '{ char *p=proto_str; int n=sizeof(p); memcpy(proto_nested,p,n); }'))
+        self.assertNotIn("source_size_copy", {p["kind"] for p in patterns})
+        self.assertGreater(diag["rule_stages"]["buffer_size_mismatch"]["unknown:sizeof_pointer_is_not_extent"], 0)
+
+    def test_real_array_parameters_do_not_define_caller_extents(self):
+        key = "reveal:0:5743"
+        _, patterns, diag = self.analyze(key)
+        self.assertNotIn("buffer_size_mismatch", {p["kind"] for p in patterns})
+        self.assertGreater(diag["rule_stages"]["buffer_size_mismatch"]["unknown:array_parameter_decay"], 0)
+        source, patterns, _ = self.analyze(key, lambda s: s.replace("{\n",
+            "{\nreal local[6]; memset(local,0,sizeof(local)+1);\n", 1))
+        self.assertTrue({"buffer_size_mismatch", "off_by_one"} <= {p["kind"] for p in patterns})
+
+    def test_real_returning_failure_branch_is_not_a_later_uaf(self):
+        key = "bigvul:177924"
+        self.assertGreater(self.samples[key]["baseline_patterns"]["use_after_free"], 0)
+        _, patterns, diag = self.analyze(key)
+        self.assertNotIn("use_after_free", {p["kind"] for p in patterns})
+        self.assertGreater(diag["rule_stages"]["use_after_free"]["filtered:unconditional_return_before_use"], 0)
+
+    def test_actual_joern_paths_on_controlled_real_failure_branch(self):
+        # Both derivative sources were separately parsed by Joern, never with
+        # an old CPG. These controls are excluded from dataset coverage.
+        for mode, expected in (("returning", False), ("continuing", True)):
+            key = "control:bigvul:177924:" + mode
+            self.assertEqual(self.samples[key]["graph"]["status"], "ok")
+            _, patterns, _ = self.analyze(key)
+            self.assertEqual("use_after_free" in {p["kind"] for p in patterns}, expected)
+
+    def test_real_array_address_preserves_the_whole_storage_extent(self):
+        _, patterns, diag = self.analyze("devign:14075")
+        self.assertNotIn("buffer_size_mismatch", {p["kind"] for p in patterns})
+        self.assertGreaterEqual(diag["rule_stages"]["buffer_size_mismatch"]["resolved_extents"], 2)
+        _, patterns, _ = self.analyze("devign:14075", lambda s: s.replace("&buf_in, 1024", "&buf_in, 1025"))
+        self.assertTrue({"buffer_size_mismatch", "off_by_one"} <= {p["kind"] for p in patterns})
+
+    def test_real_reassigned_pointer_does_not_reuse_field_identity(self):
+        _, patterns, _ = self.analyze("reveal:0:4495")
+        self.assertFalse({"double_free", "use_after_free"} & {p["kind"] for p in patterns})
+
+    def test_real_copy_site_length_changes_through_aliases(self):
+        key, old = "devign:14017", 'strcpy(proto_str, "file");'
+        for content, unsafe in (("123456", True), ("x", False)):
+            _, patterns, _ = self.analyze(key, lambda s: s.replace("proto_str[128]", "proto_str[4]").replace(old,
+                '{ char src[8]="a"; char *q=src; strcpy(q,"' + content + '"); strcpy(proto_str,src); }'))
+            self.assertEqual("buffer_size_mismatch" in {p["kind"] for p in patterns}, unsafe)
+        _, patterns, diag = self.analyze(key, lambda s: s.replace("proto_str[128]", "proto_str[4]").replace(old,
+            '{ char src[8]="a"; char *q=src; get_input(q); strcpy(proto_str,src); }'))
+        self.assertNotIn("buffer_size_mismatch", {p["kind"] for p in patterns})
+        self.assertGreater(diag["rule_stages"]["buffer_size_mismatch"]["unknown"], 0)
+
+    def test_real_cfg_blocks_loop_redefinition_and_terminating_branches(self):
+        for key in ("devign:18180", "reveal:0:20026"):
+            with self.subTest(key=key):
+                _, patterns, diag = self.analyze(key)
+                self.assertFalse({"use_after_free", "double_free"} & {p["kind"] for p in patterns})
+                self.assertGreater(sum(values.get("filtered:no_redefinition_free_cfg_path", 0)
+                                       for kind, values in diag["rule_stages"].items()
+                                       if kind in ("double_free", "use_after_free")), 0)
+
+    def test_real_cpp_new_missing_nodes_and_utf8_spans(self):
+        key = "bigvul:188106"
+        _, patterns, diag = self.analyze(key)
+        allocations = sum(p["kind"] == "allocation" for p in patterns)
+        self.assertGreater(allocations, 0)
+        self.assertGreater(diag["rule_stages"]["allocation"]["missing_syntax_operands"], 0)
+        source, changed, _ = self.analyze(key, lambda s: '/* 字符坐标 😀 */\n' + s + '\n/* new int[99]; delete p; */')
+        self.assertEqual(sum(p["kind"] == "allocation" for p in changed), allocations)
+        for pattern in changed:
+            for a, b in [pattern["anchor"], *pattern["related"], *pattern["evidence"].get("definitions", [])]:
+                self.assertTrue(0 <= a < b <= len(source))
+                self.assertTrue(source[a:b])
+
+    def test_real_unexpanded_macro_invalidates_prior_constant(self):
+        _, patterns, diag = self.analyze("reveal:1:1668")
+        self.assertNotIn("negative_index_read", {p["kind"] for p in patterns})
+        self.assertGreater(diag["rule_stages"]["negative_index_read"].get(
+            "unknown:intervening_parse_error_or_macro", 0), 0)
+
+    def test_real_copy_site_calloc_realloc_and_null_padding_semantics(self):
+        key = "bigvul:180876"
+        old = 'memcpy(xbuf, "perm", 5);'
+        for allocate, expected in (("calloc(2,4)", True), ("realloc(p,16)", False)):
+            source, patterns, _ = self.analyze(key, lambda s: s.replace(old,
+                '{ char *p=malloc(8); p=' + allocate + '; memset(p,0,9); }'))
+            self.assertEqual("buffer_size_mismatch" in {p["kind"] for p in patterns}, expected)
+        for operation, unsafe in (('strncpy(d,s,8)', True), ('strncpy(d,s,4)', False), ('strcat(d,"x")', True),
+                                  ('strncat(d,"x",0)', False)):
+            source, patterns, _ = self.analyze(key, lambda s: s.replace(old,
+                '{ char d[4]="abc"; char s[4]="a"; ' + operation + '; }'))
+            self.assertEqual("buffer_size_mismatch" in {p["kind"] for p in patterns}, unsafe)
+            self.assertNotIn("buffer_overread", {p["kind"] for p in patterns})
+
+    def test_lifetime_requires_same_object_and_cfg_path(self):
+        code = "void f(){char *p=malloc(8);char *q=p;free(p);q[0]=1;free(q);}"
+        first, use, last = code.index("free(p)"), code.index("q[0]"), code.index("free(q)")
+        graph = dict(status="ok", nodes=[dict(kind="CALL", span=[a, b]) for a, b in (
+            (first, first+7), (use, use+4), (last, last+7))],
+            edges=[[0, 1, 1], [1, 2, 1]])
+        patterns = extract_patterns(code, graph=graph)
+        self.assertTrue({"use_after_free", "double_free"} <= {p["kind"] for p in patterns})
+        blocked = dict(graph, edges=[])
+        patterns = extract_patterns(code, graph=blocked)
+        self.assertFalse({"use_after_free", "double_free"} & {p["kind"] for p in patterns})
+        # A field with the same spelling is a distinct object.
+        code = "void f(struct X *x){char *p=malloc(8);free(p);x->p[0]=1;}"
+        self.assertNotIn("use_after_free", {p["kind"] for p in extract_patterns(code)})
+        # A proven local alias refers to the same field, but an intervening
+        # field write through another alias makes its old object unknown.
+        for update, expected in (("", True), ("q->p=malloc(8);", False)):
+            code = "void f(struct X *x){struct X *q=x;free(x->p);" + update + "q->p[0]=1;}"
+            first, use = code.index("free(x->p)"), code.index("q->p[0]")
+            graph = dict(status="ok", nodes=[dict(kind="CALL", span=[a,b])
+                for a,b in ((first,first+10),(use,use+7))], edges=[[0,1,1]])
+            patterns = extract_patterns(code, graph=graph)
+            self.assertEqual("use_after_free" in {p["kind"] for p in patterns}, expected)
 
 
 if __name__ == "__main__":

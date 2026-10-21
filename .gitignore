@@ -93,6 +93,16 @@ __pycache__/
 !/results/static_current/comparison.csv
 !/results/static_current/results.json
 !/results/static_current/*.coverage.json
+!/results/static_current/pattern_coverage.csv
+!/results/static_current/pattern_members.csv
+!/results/static_current/pattern_audit.json
+!/results/static_current/pattern_cases.json
+!/results/static_current/pattern_controls.json
+!/results/static_current/pattern_extract.json
+!/results/static_current/pattern_timing.csv
+!/results/static_current/pattern_timing.json
+!/results/static_current/pattern_review.json
+!/results/static_current/pattern_report.md
 !/results/static_current/source/
 !/results/static_current/sequence/
 !/results/static_current/shuffled/

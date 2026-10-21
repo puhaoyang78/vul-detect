@@ -668,3 +668,45 @@ ReVeal/shuffled 的旧混淆矩阵 `[[82,46],[29,99]]` 重算为
 `[[82,46],[30,98]]`，多一个 FN；其余 11 组混淆计数不变。
 完整旧值、新值及差异标记保存在 `training_validation_comparison`，
 CSV 和本文表格使用真实重算指标。
+
+### 静态模式覆盖率核查
+
+本次只重提取原来每库 1024 Train / 256 Valid 的关系，不改源码、标签、
+成员、划分、权重和已有分类结果，不读取 Test。历史 12 组模型使用修复前
+的关系；上表不是本次修复后的模型评价，也未据此重新训练或推理。
+
+正式提取器现在按使用位置解析局部绑定、赋值、别名、数组/分配容量及
+访问长度；支持 C++ 下标、new/delete、字节偏移、sizeof/strlen 和字符串
+终止符。类型大小保留为符号，不假定 int/结构体的 ABI 字节数；数组形参
+不视为调用方容量。未恢复语法、未知宏、条件赋值、外部对象和无法证明
+的别名/路径均记录为 unknown，不加入相应漏洞模式边。释放后使用和重复
+释放还要求同一对象及缓存 CPG 上不经过指针重定义的 CFG 路径；该路径
+仍不证明条件可满足。注释和同名但不同绑定的变量不参与字符串式匹配。
+
+`buffer_size_mismatch` 比较目的剩余字节容量与访问字节数；`off_by_one`
+按 VIPer 论文表 II 使用目的容量加一字节；`buffer_overread` 比较实际源
+读取长度与源剩余容量。`source_size_copy` / `destination_size_copy` 表示
+长度来源关系，不等于已经证明溢出。负下标表示可确定的负常量属性，
+指针向前偏移可能合法；仅知道变量为 signed 时保留 unknown。
+
+原实现的覆盖率比较需在升级缓存前运行 audit；以后重复运行比较的是
+当次输入缓存与当前提取器。audit 不启动 Joern 或分类模型，只读取已有
+Train/Valid CPG，并核查 CodeBERT Token 坐标及截断。extract 复用既有
+CPG，只更新候选关系；不要重新执行 prepare 或训练命令。
+
+    python -m vulnmechanism.cli static audit --output-dir results/static_current
+    python -m vulnmechanism.cli static extract --cache-root results/static_guided/joern/cache --output-dir results/static_current
+    python -m unittest tests.test_static
+
+逐类修改前后覆盖率、候选/过滤/unknown 原因、固定成员和人工核查样本见
+[核查报告](results/static_current/pattern_report.md)、
+[覆盖率表](results/static_current/pattern_coverage.csv)、
+[逐阶段统计](results/static_current/pattern_audit.json)和
+[真实代码与 CPG/AST 证据](results/static_current/pattern_cases.json)。
+回归样本保存在 tests/fixtures/static_patterns.json；派生正反例明确标注，
+不混入真实数据覆盖率。未解析或不能比较的情况不作为“函数没有漏洞”的证据。
+
+三库的 buffer_size_mismatch / off_by_one / buffer_overread 最终均仍为0。
+目的容量候选中分别有40/252、31/365、34/334个可以比较且未超出该上界，
+其余为 unknown；不能据零覆盖率断言没有相关漏洞。ReVeal 负常量下标读
+从0变为16个函数，但该属性也出现在安全函数及合法的指针相对访问中。

@@ -1,6 +1,7 @@
 """Batched, bounded Joern extraction; candidate relations are not bug labels."""
 
 from collections import Counter, defaultdict
+from bisect import bisect_left, bisect_right
 import hashlib
 import json
 import os
@@ -19,7 +20,7 @@ EDGE_TYPES = ("AST", "CFG", "CDG", "REACHING_DEF", "REF", "POST_DOMINATE")
 from .static_patterns import PATTERN_TYPES, extract_patterns
 
 RELATIONS = EDGE_TYPES + PATTERN_TYPES
-PATTERN_SCHEMA = 4
+PATTERN_SCHEMA = 6
 
 def source_key(source):
     return hashlib.sha256(source.encode()).hexdigest()
@@ -96,8 +97,11 @@ def attach_patterns(graph, source, *, language="c"):
     # headers/macros while still having syntactically identifiable operations.
     # Keep the original parser status and confidence distinction; do not invent
     # dataflow edges when the CPG is unavailable.
-    nodes = [{k: v for k, v in n.items() if k != "candidates"} for n in graph["nodes"]]
-    edges = [list(e) for e in graph["edges"] if e[2] < len(EDGE_TYPES)]
+    original = [i for i, n in enumerate(graph["nodes"]) if n["kind"] != "PATTERN_POSITION"]
+    remap = {old: new for new, old in enumerate(original)}
+    nodes = [{k: v for k, v in graph["nodes"][i].items() if k != "candidates"} for i in original]
+    edges = [[remap[a], remap[b], kind] for a, b, kind in graph["edges"]
+             if kind < len(EDGE_TYPES) and a in remap and b in remap]
     counts = Counter({name: sum(e[2] == i for e in edges) for i, name in enumerate(EDGE_TYPES)})
     indexed = {tuple(n["span"]): i for i, n in enumerate(nodes)}
 
@@ -110,7 +114,11 @@ def attach_patterns(graph, source, *, language="c"):
 
     # Associate call/access sites with nearby CPG definitions and conditions.
     # Only genuine Joern REACHING_DEF/CDG/REF edges extend the syntax pairs.
-    base_count = len(nodes)
+    # Only short overlapping CPG spans can supply context. Bound the lookup
+    # by source positions instead of rescanning every CPG node per pattern.
+    context_nodes = sorted((n["span"][0], i) for i, n in enumerate(nodes)
+                           if n["span"][1] - n["span"][0] < 1024)
+    context_starts = [start for start, _ in context_nodes]
     nearby = defaultdict(set)
     program_kinds = {EDGE_TYPES.index(x) for x in ("REACHING_DEF", "CDG", "REF")}
     for left, right, kind in edges:
@@ -118,7 +126,10 @@ def attach_patterns(graph, source, *, language="c"):
             nearby[left].add(right)
             nearby[right].add(left)
 
-    patterns = extract_patterns(source, language=language)
+    diagnostics = {}
+    patterns = extract_patterns(source, language=language,
+                                graph=dict(graph, nodes=nodes, edges=edges), diagnostics=diagnostics)
+    diagnostics.pop("traces")  # Detailed per-site evidence is generated for audit cases.
     for p in patterns:
         kind = RELATIONS.index(p["kind"])
         a = anchor(p["anchor"])
@@ -133,11 +144,9 @@ def attach_patterns(graph, source, *, language="c"):
         # matched operation, but its candidate keys include dependent definitions
         # and conditions from the intraprocedural CPG when available.
         start, end = p["anchor"]
-        matching = [
-            i for i in range(base_count)
-            if nodes[i]["span"][0] < end and start < nodes[i]["span"][1]
-            and nodes[i]["span"][1] - nodes[i]["span"][0] < 1024
-        ]
+        first = bisect_right(context_starts, start - 1024)
+        last = bisect_left(context_starts, end)
+        matching = [i for _, i in context_nodes[first:last] if start < nodes[i]["span"][1]]
         matching.sort(key=lambda i: (nodes[i]["span"][1] - nodes[i]["span"][0], i))
         destinations = set()
         for j in matching[:12]:
@@ -151,6 +160,7 @@ def attach_patterns(graph, source, *, language="c"):
                   schema_version=PATTERN_SCHEMA,
                   candidates="typed syntax and CPG-context patterns, not vulnerability labels",
                   analysis_source="joern_plus_syntax" if graph["status"] == "ok" else "syntax_only")
+    result["pattern_diagnostics"] = diagnostics
     return result
 
 
@@ -246,8 +256,9 @@ def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=
                     result = align_graph(definitions[0], row["raw_source"], language="c" if source_extension(row) == ".c" else "cpp")
                 else:
                     result = dict(status="no_definition" if not definitions else "multiple_definitions",
-                                  definition_count=len(definitions), nodes=[], edges=[], counts={},
-                                  schema_version=PATTERN_SCHEMA, patterns=[], pattern_counts={})
+                                  definition_count=len(definitions), nodes=[], edges=[], counts={})
+                    result = attach_patterns(result, row["raw_source"],
+                                             language="c" if source_extension(row) == ".c" else "cpp")
                 results[key] = result
                 write_json(cache_dir / (key + ".json"), result)
             costs.append(dict(functions=len(chunk), parse=parse, export=export))
@@ -282,6 +293,200 @@ def prepare_relations(data_dir, output_dir, datasets=("bigvul", "devign", "revea
         write_json(Path(output_dir) / f"{dataset}.coverage.json", report)
         all_costs[dataset] = report
     return all_costs
+
+
+def audit_patterns(data_dir, output_dir, datasets=("bigvul", "devign", "reveal"), *, model_path):
+    """Compare cached patterns with this matcher on the identical Train/Valid members.
+
+    This stage reads cached CPGs and never invokes Joern, a classifier, or Test.
+    Run before extract to preserve the pre-change comparison. Detailed site
+    decisions are included for a fixed stratified sample and first changed rules.
+    """
+    import csv
+    import random
+    from .model import AutoTokenizer, InputBuilder
+    from .syntax import byte_character_map, parser_for, walk
+
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    builder = InputBuilder(tokenizer)
+    budget = builder.source_max_length - len(builder.source_prefix) - 2
+    rng = random.Random(42)
+    specific = set(PATTERN_TYPES) - {
+        "memory_access", "pointer_access", "guard", "sensitive_read", "sensitive_write", "allocation", "release"
+    }
+    tables, members, summaries = [], [], {}
+    selected, strata_seen, changes_seen = {}, Counter(), set()
+    started = time.monotonic()
+
+    for dataset in datasets:
+        before, after, before_instances, after_instances = Counter(), Counter(), Counter(), Counter()
+        status, strata = Counter(), defaultdict(lambda: dict(samples=0, before=Counter(), after=Counter()))
+        stages = {kind: Counter() for kind in PATTERN_TYPES}
+        visible, truncated, alignment_missing = Counter(), Counter(), Counter()
+        certainty, call_models, parse_errors = Counter(), Counter(), 0
+        analysis_seconds, token_seconds = 0.0, 0.0
+        count = 0
+        for split in ("train", "valid"):
+            path = Path(data_dir) / "pilot" / dataset / (split + ".jsonl")
+            for row in read_jsonl(path):
+                count += 1
+                source, old = row["raw_source"], row["program_relations"]
+                language = "c" if source_extension(row) == ".c" else "cpp"
+                diag = {}
+                tick = time.monotonic()
+                patterns = extract_patterns(source, language=language, graph=old, diagnostics=diag)
+                analysis_seconds += time.monotonic() - tick
+                old_count = Counter(p["kind"] for p in old.get("patterns", []))
+                new_count = Counter(p["kind"] for p in patterns)
+                before.update(old_count.keys()); after.update(new_count.keys())
+                before_instances.update(old_count); after_instances.update(new_count)
+                status[old["status"]] += 1
+                parse_errors += diag["tree_has_error"]
+                certainty.update(p["evidence"].get("certainty", "syntactic_candidate") for p in patterns)
+                call_models.update(diag["unmodeled_calls"])
+                bucket = strata[f"{split}:{row['label']}"]
+                bucket["samples"] += 1
+                bucket["before"].update(old_count.keys()); bucket["after"].update(new_count.keys())
+                for kind, values in diag["rule_stages"].items():
+                    stages[kind].update(values)
+
+                tick = time.monotonic()
+                offsets = tokenizer(source, add_special_tokens=False, truncation=True, max_length=budget,
+                                    return_offsets_mapping=True)["offset_mapping"]
+                ends = [b for _, b in offsets]
+                for p in patterns:
+                    a, b = p["anchor"]
+                    if not 0 <= a < b <= len(source):
+                        raise ValueError(f"invalid syntax span: {row['sample_key']}")
+                    for c, d in p["related"] + p["evidence"].get("definitions", []):
+                        if not 0 <= c < d <= len(source):
+                            raise ValueError(f"invalid relation operand span: {row['sample_key']}")
+                    pos = bisect_right(ends, a)
+                    if pos < len(offsets) and offsets[pos][0] < b:
+                        visible[p["kind"]] += 1
+                    elif offsets and a >= offsets[-1][1] and len(offsets) == budget:
+                        truncated[p["kind"]] += 1
+                    else:
+                        alignment_missing[p["kind"]] += 1
+                token_seconds += time.monotonic() - tick
+                members.append(dict(dataset=dataset, split=split, label=row["label"], sample_key=row["sample_key"],
+                                    joern_status=old["status"], tree_sitter_has_error=diag["tree_has_error"],
+                                    before_patterns=";".join(sorted(old_count)), after_patterns=";".join(sorted(new_count)),
+                                    added=";".join(sorted(new_count.keys() - old_count.keys())),
+                                    removed=";".join(sorted(old_count.keys() - new_count.keys()))))
+
+                # One fixed reservoir sample for each label/matched stratum.
+                eligible = bool(diag["subscript_nodes"] or any(
+                    values.get("sites", 0) for kind, values in diag["rule_stages"].items() if kind in specific))
+                if eligible:
+                    stratum = (dataset, row["label"], bool(specific & old_count.keys()))
+                    strata_seen[stratum] += 1
+                    if rng.randrange(strata_seen[stratum]) == 0:
+                        selected[("stratum", *stratum)] = (row, patterns, diag)
+                # First changed target family, capped at three extra functions/dataset.
+                changed = (old_count.keys() ^ new_count.keys()) & (specific | {"allocation"})
+                for kind in sorted(changed):
+                    slot = (dataset, kind)
+                    if slot not in changes_seen and sum(k[0] == "change" and k[1] == dataset for k in selected) < 3:
+                        changes_seen.add(slot)
+                        selected[("change", dataset, kind)] = (row, patterns, diag)
+        if count != 1280:
+            raise ValueError(f"expected unchanged 1280-function pilot: {dataset}: {count}")
+        for kind in PATTERN_TYPES:
+            tables.append(dict(dataset=dataset, pattern=kind, samples=count,
+                               before_functions=before[kind], after_functions=after[kind],
+                               before_instances=before_instances[kind], after_instances=after_instances[kind],
+                               before_fraction=before[kind] / count, after_fraction=after[kind] / count,
+                               sites=stages[kind]["sites"], matched_sites=stages[kind]["matched"],
+                               filtered_sites=stages[kind]["filtered"], unknown_sites=stages[kind]["unknown"],
+                               resolved_extents=stages[kind]["resolved_extents"],
+                               visible_anchor_instances=visible[kind], truncated_anchor_instances=truncated[kind],
+                               alignment_missing_instances=alignment_missing[kind]))
+        summaries[dataset] = dict(
+            samples=count, joern_status_before=dict(status), joern_status_after=dict(status),
+            tree_sitter_error_functions=parse_errors, rule_stages={k: dict(v) for k, v in stages.items()},
+            by_split_label={key: dict(samples=v["samples"], before=dict(v["before"]), after=dict(v["after"]))
+                            for key, v in strata.items()},
+            matches_by_certainty=dict(certainty), unmodeled_calls_top30=call_models.most_common(30),
+            rule_seconds=analysis_seconds, token_audit_seconds=token_seconds,
+            visible_anchors=dict(visible), truncated_anchors=dict(truncated), alignment_missing=dict(alignment_missing),
+        )
+        print(dataset, "old/new target coverage", {
+            k: (before[k], after[k]) for k in ("buffer_size_mismatch", "off_by_one", "buffer_overread",
+                                               "double_free", "use_after_free", "negative_index_read", "negative_index_write")},
+              "rule seconds", round(analysis_seconds, 3), flush=True)
+
+    cases = []
+    unique = {row["sample_key"]: (row, p, d) for row, p, d in selected.values()}
+    for key, (row, patterns, diag) in sorted(unique.items()):
+        source, graph = row["raw_source"], row["program_relations"]
+        language = "c" if source_extension(row) == ".c" else "cpp"
+        data = source.encode()
+        mapping = byte_character_map(source)
+        syntax = list(walk(parser_for(language).parse(data).root_node))
+        events, event_keys = [], set()
+        # Keep matched/filtered/unknown examples of each target family.
+        priority = {k: i for i, k in enumerate(("buffer_size_mismatch", "off_by_one", "buffer_overread",
+                                               "double_free", "use_after_free", "source_size_copy", "destination_size_copy"))}
+        for trace in sorted(diag["traces"], key=lambda v: priority.get(v["kind"], len(priority))):
+            if trace["kind"] not in specific:
+                continue
+            signature = (trace["kind"], trace["outcome"], trace["reason"])
+            if signature in event_keys or len(events) >= 12:
+                continue
+            event_keys.add(signature)
+            a, b = trace["anchor"]
+            ast_nodes = [n for n in syntax if mapping[n.start_byte] == a and mapping[n.end_byte] == b]
+            cpg = [i for i, n in enumerate(graph["nodes"])
+                   if n["kind"] != "PATTERN_POSITION" and n["span"][0] <= a < n["span"][1]]
+            cpg.sort(key=lambda i: (graph["nodes"][i]["span"][1] - graph["nodes"][i]["span"][0], i))
+            sites = set(cpg[:3])
+            links = [[graph["nodes"][x]["span"], graph["nodes"][y]["span"], EDGE_TYPES[t]]
+                     for x, y, t in graph["edges"] if t < len(EDGE_TYPES) and (x in sites or y in sites)]
+            line = source.count("\n", 0, a) + 1
+            lines = source.splitlines()
+            parents = []
+            parent = ast_nodes[0].parent if ast_nodes else None
+            for _ in range(5):
+                if parent is None:
+                    break
+                parents.append(parent.type); parent = parent.parent
+            events.append(dict(
+                **trace, code=source[a:b], excerpt="\n".join(
+                    f"{i + 1}: {lines[i]}" for i in range(max(0, line - 3), min(len(lines), line + 3))),
+                ast_types=[n.type for n in ast_nodes],
+                ast_context=parents,
+                cpg_sites=[dict(index=i, **graph["nodes"][i]) for i in cpg[:3]],
+                cpg_incident_edges=links[:20],
+            ))
+        cases.append(dict(sample_key=key, dataset=row["dataset"], split=row["split"], label=row["label"],
+                          project=row["project"], language=language, joern_status=graph["status"],
+                          tree_sitter_has_error=diag["tree_has_error"],
+                          old_patterns=dict(Counter(p["kind"] for p in graph.get("patterns", []))),
+                          new_patterns=dict(Counter(p["kind"] for p in patterns)), events=events))
+    for name, values in (("pattern_coverage.csv", tables), ("pattern_members.csv", members)):
+        with (root / name).open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, list(values[0]))
+            writer.writeheader(); writer.writerows(values)
+    write_json(root / "pattern_cases.json", dict(
+        selection="Seed42 one reservoir sample per dataset/label/old-specific-match stratum, plus up to three first changed families per dataset; not prevalence or vulnerability-precision estimation",
+        cases=cases))
+    result = dict(
+        datasets=summaries, comparison=tables, elapsed_seconds=time.monotonic() - started,
+        protocol=dict(seed=42, splits=["train", "valid"], samples_per_dataset=1280,
+                      before="cached input program_relations, without replacing historical model results",
+                      after="current extract_patterns with the same cached CPG",
+                      models_used=False, test_used=False, joern_processes_started=0,
+                      logical_input_budget=builder.source_max_length, source_token_budget=budget,
+                      candidate_unit="rule-site or same-object event-pair attempt; accepted instances are deduplicated separately",
+                      unknowns="not admitted as vulnerability-pattern edges; generic syntax relations remain available"),
+        cases_file="pattern_cases.json",
+        interpretation="Relations/candidates are not vulnerability truth. Missing extent, path, alias or parser context is unknown. Signedness alone does not prove a negative index. Token truncation is separate from missing alignment.",
+    )
+    write_json(root / "pattern_audit.json", result)
+    return result
 
 
 def benchmark(raw_root, index_dir, output_dir):
