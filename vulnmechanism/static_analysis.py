@@ -13,11 +13,12 @@ import time
 from .artifacts import write_json
 from .data import read_jsonl, write_jsonl
 from .syntax import source_token_spans
+from .vulnerability_patterns import PATTERN_KINDS, extract_patterns
 
 JOERN_VERSION = "4.0.465"
 EDGE_TYPES = ("AST", "CFG", "CDG", "REACHING_DEF", "REF", "POST_DOMINATE")
 CANDIDATES = ("memory", "pointer", "allocation", "release", "guard", "sensitive_api")
-RELATIONS = EDGE_TYPES + CANDIDATES
+RELATIONS = EDGE_TYPES + CANDIDATES + PATTERN_KINDS
 # VIPer src/cpg_query.py: read and write lists. These are syntax/API matches,
 # not VIPer's stronger buffer-size/deallocation vulnerability rules.
 SENSITIVE = {"getch", "fgets", "gets", "getchar", "fgetc", "memcpy", "strncpy", "strcpy", "wcsncpy", "memset", "wmemset"}
@@ -56,10 +57,10 @@ def candidate_kinds(node):
 
 
 def align_graph(graph, source):
-    """Exact node-code spans when available; otherwise a marked location anchor.
+    """Align CPG nodes and VIPer-style patterns to source spans.
 
-    Joern C/C++ columns are one-based. Non-exact anchors use one lexical token,
-    rather than guessing an entire expression/line as a precise node span.
+    Joern relations and local vulnerability patterns are program-analysis
+    inputs for learning, never binary vulnerability labels.
     """
     starts = [0]
     for i, char in enumerate(source):
@@ -83,26 +84,47 @@ def align_graph(graph, source):
             if not matches:
                 continue
             start, end = matches[0]
-        mapped[node["id"]] = len(nodes)
-        nodes.append(dict(span=[start, end], kind=node["kind"], candidates=candidate_kinds(node),
+        mapped[str(node["id"])] = len(nodes)
+        nodes.append(dict(span=[start, end], kind=node["kind"],
+                          candidates=candidate_kinds(node),
                           alignment="exact_code" if is_exact else "location_token"))
         exact += is_exact
     edges, counts = [], Counter()
     for a, b, kind in graph["edges"]:
-        if kind in EDGE_TYPES and a in mapped and b in mapped:
-            edges.append([mapped[a], mapped[b], RELATIONS.index(kind)])
+        if kind in EDGE_TYPES and str(a) in mapped and str(b) in mapped:
+            edges.append([mapped[str(a)], mapped[str(b)], RELATIONS.index(kind)])
             counts[kind] += 1
     for i, node in enumerate(nodes):
         for category in node["candidates"]:
             edges.append([i, i, RELATIONS.index(category)])
             counts[category] += 1
-    return dict(status="ok" if nodes and counts["AST"] and counts["CFG"] else "incomplete_graph",
-                nodes=nodes, edges=edges, counts=dict(counts), raw_nodes=len(graph["nodes"]),
-                raw_edges=dict(Counter(e[2] for e in graph["edges"])), exact_spans=exact,
-                location_only_spans=len(nodes) - exact,
-                extraction="Joern intraprocedural; REACHING_DEF is may-dataflow/def-use; REF is symbol binding",
-                candidates="heuristic API/operator matches; comparisons are candidate guards, not verified bounds checks")
 
+    patterns = extract_patterns(graph, source)
+    aligned_patterns = []
+    for pattern in patterns:
+        participants = [mapped[node_id] for node_id in pattern["participants"] if node_id in mapped]
+        if not participants:
+            continue
+        kind = pattern["kind"]
+        anchor = participants[0]
+        # Keep direction and pairing: the operation/earliest access is the
+        # anchor and all associated variables/conditions are destinations.
+        for endpoint in dict.fromkeys(participants):
+            edges.append([anchor, endpoint, RELATIONS.index(kind)])
+            counts[kind] += 1
+        aligned_patterns.append(dict(kind=kind, status=pattern["status"],
+                                     nodes=list(dict.fromkeys(participants)),
+                                     attributes=pattern["attributes"]))
+
+    status = "ok" if nodes and counts["AST"] and counts["CFG"] else "incomplete_graph"
+    return dict(status=status, nodes=nodes, edges=edges, counts=dict(counts),
+                patterns=aligned_patterns,
+                pattern_counts=dict(Counter(p["kind"] for p in aligned_patterns)),
+                raw_nodes=len(graph["nodes"]),
+                raw_edges=dict(Counter(e[2] for e in graph["edges"])),
+                exact_spans=exact, location_only_spans=len(nodes) - exact,
+                extraction="Joern intraprocedural CPG with local vulnerability-pattern checks",
+                limitations="Candidate pattern matches; unknown aliases, symbolic bounds and branch feasibility are not proof of vulnerability")
 
 def run_process(argv, log, timeout=300):
     env = dict(os.environ, JAVA_HOME="/home/phy/jdk21")
@@ -152,56 +174,94 @@ def run_process(argv, log, timeout=300):
 
 
 def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=True):
-    """Only supplied functions are parsed; successful and failed outcomes persist."""
-    output_dir = Path(output_dir);output_dir.mkdir(parents=True, exist_ok=True)
+    """Batch Joern once per source and cache raw CPG separately from match rules.
+
+    Changes to Python-side vulnerability patterns or node alignment do not
+    require parsing the original functions again. Failures are also cached.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     script = Path(__file__).with_name("static_extract.sc")
-    namespace = hashlib.sha256(JOERN_VERSION.encode() + script.read_bytes()).hexdigest()[:12]
-    cache_dir = output_dir / "cache" / namespace
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    pending, results, hits = {}, {}, 0
+    parse_namespace = hashlib.sha256(JOERN_VERSION.encode() + script.read_bytes()).hexdigest()[:12]
+    align_namespace = hashlib.sha256(
+        parse_namespace.encode() + Path(__file__).read_bytes() +
+        Path(__file__).with_name("vulnerability_patterns.py").read_bytes()
+    ).hexdigest()[:12]
+    raw_dir = output_dir / "cache" / "cpg" / parse_namespace
+    aligned_dir = output_dir / "cache" / "aligned" / align_namespace
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    aligned_dir.mkdir(parents=True, exist_ok=True)
+    pending, results = {}, {}
+    aligned_hits = raw_hits = 0
     started = time.monotonic()
+
+    def from_raw(record, graph):
+        if "_failure" in graph:
+            return dict(status=graph["_failure"], definition_count=graph["definition_count"],
+                        nodes=[], edges=[], counts={}, patterns=[], pattern_counts={})
+        return align_graph(graph, record["raw_source"])
+
     for row in rows:
         key = cache_key(row)
-        path = cache_dir / (key + ".json")
-        if cache and path.exists():
-            results[key] = json.loads(path.read_text());hits += 1
+        aligned = aligned_dir / (key + ".json")
+        raw = raw_dir / (key + ".json")
+        if cache and aligned.exists():
+            results[key] = json.loads(aligned.read_text())
+            aligned_hits += 1
+        elif cache and raw.exists():
+            results[key] = from_raw(row, json.loads(raw.read_text()))
+            write_json(aligned, results[key])
+            raw_hits += 1
         else:
             pending[key] = row
+
     costs = []
     items = list(pending.items())
     for at in range(0, len(items), batch_size):
         chunk = items[at:at + batch_size]
         with tempfile.TemporaryDirectory(prefix="joern-", dir=output_dir) as temp:
-            work = Path(temp);src = work / "source";src.mkdir()
+            work = Path(temp)
+            src = work / "source"
+            src.mkdir()
             for key, row in chunk:
                 (src / (key + source_extension(row))).write_text(row["raw_source"])
             log_base = output_dir / f"batch.{time.time_ns()}"
-            parse = run_process([str(Path(joern) / "joern-parse"), "-J-Xmx4g", "-J-XX:ActiveProcessorCount=4", str(src), "--output", str(work / "cpg.bin")], str(log_base) + ".parse.log")
-            export = run_process([str(Path(joern) / "joern"), "-J-Xmx4g", "--script", str(script.resolve()),
-                                  "--param", f"inputPath={work / 'cpg.bin'}", "--param", f"outputPath={work / 'graphs.jsonl'}"], str(log_base) + ".export.log")
+            parse = run_process([
+                str(Path(joern) / "joern-parse"), "-J-Xmx4g",
+                "-J-XX:ActiveProcessorCount=4", str(src),
+                "--output", str(work / "cpg.bin")
+            ], str(log_base) + ".parse.log")
+            export = run_process([
+                str(Path(joern) / "joern"), "-J-Xmx4g", "--script",
+                str(script.resolve()), "--param", f"inputPath={work / 'cpg.bin'}",
+                "--param", f"outputPath={work / 'graphs.jsonl'}"
+            ], str(log_base) + ".export.log")
             by_file = defaultdict(list)
             for graph in read_jsonl(work / "graphs.jsonl"):
                 by_file[Path(graph["file"]).stem].append(graph)
             for key, row in chunk:
                 definitions = by_file.get(key, [])
-                # One function per file. Multiple definitions are explicitly
-                # marked, never silently replaced by a same-name call stub.
                 if len(definitions) == 1:
-                    result = align_graph(definitions[0], row["raw_source"])
+                    raw_graph = definitions[0]
                 else:
-                    result = dict(status="no_definition" if not definitions else "multiple_definitions",
-                                  definition_count=len(definitions), nodes=[], edges=[], counts={})
+                    raw_graph = dict(_failure="no_definition" if not definitions
+                                     else "multiple_definitions",
+                                     definition_count=len(definitions))
+                write_json(raw_dir / (key + ".json"), raw_graph)
+                result = from_raw(row, raw_graph)
                 results[key] = result
-                write_json(cache_dir / (key + ".json"), result)
+                write_json(aligned_dir / (key + ".json"), result)
             costs.append(dict(functions=len(chunk), parse=parse, export=export))
             with (output_dir / "batches.jsonl").open("a") as handle:
                 handle.write(json.dumps(dict(completed_at=time.time(), **costs[-1])) + "\n")
             print(f"Joern {min(at + batch_size, len(items))}/{len(items)}: "
                   f"{parse['seconds'] + export['seconds']:.1f}s", flush=True)
     return {r["sample_key"]: results[cache_key(r)] for r in rows}, dict(
-        samples=len(rows), unique_uncached=len(items), cache_hits=hits, batches=costs,
-        seconds=time.monotonic() - started, joern=JOERN_VERSION, heap="4 GiB per JVM", cpus_per_jvm=4)
-
+        samples=len(rows), unique_uncached=len(items),
+        cache_hits=aligned_hits + raw_hits, aligned_hits=aligned_hits,
+        raw_cpg_hits=raw_hits, batches=costs,
+        seconds=time.monotonic() - started, joern=JOERN_VERSION,
+        heap="4 GiB per JVM", cpus_per_jvm=4)
 
 def prepare_relations(data_dir, output_dir, datasets=("bigvul", "devign", "reveal")):
     all_costs = {}
@@ -213,6 +273,7 @@ def prepare_relations(data_dir, output_dir, datasets=("bigvul", "devign", "revea
             write_jsonl(path, [dict(r, program_relations=graphs[r["sample_key"]]) for r in read_jsonl(path)])
         report = dict(costs=costs, status=dict(Counter(g["status"] for g in graphs.values())),
                       relation_functions={k: sum(bool(g["counts"].get(k)) for g in graphs.values()) for k in RELATIONS},
+                      pattern_instances=dict(Counter(p["kind"] for g in graphs.values() for p in g.get("patterns", []))),
                       exact_spans=sum(g.get("exact_spans", 0) for g in graphs.values()),
                       location_only_spans=sum(g.get("location_only_spans", 0) for g in graphs.values()),
                       by_split_label={f"{s}:{y}": dict(

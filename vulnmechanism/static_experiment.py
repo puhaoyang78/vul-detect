@@ -72,7 +72,7 @@ def paired_auc(labels, baseline, comparison, groups):
 
 @torch.no_grad()
 def relation_ablation(model, rows, builder, device, threshold):
-    """Readout-only Valid ablation, sharing each encoded window across all removals."""
+    """Attention-readout Valid ablation, reusing encoder windows across edge controls."""
     from .model import _window_mean
     from .static_analysis import RELATIONS
     values = {kind: [] for kind in ("all", "none", "rewired", *RELATIONS)}
@@ -90,19 +90,20 @@ def relation_ablation(model, rows, builder, device, threshold):
         for kind in values:
             selected = (edges if kind == "all" else edges[:0] if kind == "none"
                         else shuffled_edges if kind == "rewired" else edges[edges[:, 3] != RELATIONS.index(kind)])
-            residual = module(hidden, positions, owners, pooling, selected, n)
-            values[kind].extend(head(base + residual).squeeze(-1).sigmoid().tolist())
+            focused = module(hidden, positions, owners, pooling, selected, n, base)
+            values[kind].extend(head(focused).squeeze(-1).sigmoid().tolist())
             if kind == "all":
+                difference = focused - base
                 strength["base_norm"].extend(base.norm(dim=1).tolist())
-                strength["residual_norm"].extend(residual.norm(dim=1).tolist())
-                strength["logit_delta"].extend(torch.nn.functional.linear(residual, head.weight).squeeze(-1).tolist())
+                strength["residual_norm"].extend(difference.norm(dim=1).tolist())
+                strength["logit_delta"].extend(torch.nn.functional.linear(difference, head.weight).squeeze(-1).tolist())
     labels = [r["label"] for r in rows]
     result = dict(metrics={k: metrics(labels, v, threshold) for k, v in values.items()},
                   strength={k: dict(mean=float(np.mean(v)), median=float(np.median(v)),
                                     rms=float(np.sqrt(np.mean(np.square(v)))), p95=float(np.quantile(np.abs(v), .95)))
                             for k, v in strength.items()},
                   weight_norms={k: float(p.norm()) for k, p in module.named_parameters()},
-                  interpretation="same real checkpoint/encoder; readout removal or rewiring on source Valid, no threshold reselection")
+                  interpretation="same trained encoder; attention readout under real/removed/rewired relations, no threshold reselection")
     return result, values["all"]
 
 
