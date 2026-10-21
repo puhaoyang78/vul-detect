@@ -29,7 +29,7 @@ PATTERN_TYPES = (
 )
 IDENT = re.compile(r"^[A-Za-z_]\w*$")
 SIGNED_DECL = re.compile(r"\b(?:signed|int|short|long|ssize_t|ptrdiff_t)\s+([A-Za-z_]\w*)\b")
-UNSIGNED_DECL = re.compile(r"\b(?:unsigned|size_t|uint\d+_t)\s+([A-Za-z_]\w*)\b")
+UNSIGNED_DECL = re.compile(r"\b(?:unsigned(?:\s+(?:int|long|short))?|size_t|uint\d+_t)\s+([A-Za-z_]\w*)\b")
 
 
 def _text(source, node):
@@ -59,7 +59,16 @@ def _integer(expr, constants=None, arrays=None, *, depth=0):
         return None
     constants, arrays = constants or {}, arrays or {}
     s = re.sub(r"\s+", "", expr)
-    while s.startswith("(") and s.endswith(")") and s.count("(") == s.count(")"):
+    # Strip outer parentheses only when they enclose the full expression.
+    while s.startswith("(") and s.endswith(")"):
+        nest, closes_at_end = 0, True
+        for i, ch in enumerate(s):
+            nest += (ch == "(") - (ch == ")")
+            if nest == 0 and i < len(s) - 1:
+                closes_at_end = False
+                break
+        if not closes_at_end:
+            break
         s = s[1:-1]
     if re.fullmatch(r"0x[0-9a-fA-F]+|\d+[uUlL]*", s):
         try:
@@ -146,7 +155,15 @@ def extract_patterns(source, *, language="c"):
         size = node.child_by_field_name("size")
         if identifier and size:
             value = _integer(_text(data, size), constants, arrays)
-            if value is not None and value >= 0:
+            declaration = node.parent
+            while declaration is not None and declaration.type not in (
+                "declaration", "field_declaration", "parameter_declaration"):
+                declaration = declaration.parent
+            prefix = _text(data, declaration).split(_text(data, node), 1)[0] if declaration else ""
+            # Element counts are not byte capacities for int/long/etc arrays.
+            # Only byte-addressed arrays can be compared directly to memcpy sizes.
+            byte_elements = bool(re.search(r"\b(?:char|int8_t|uint8_t|std::byte)\b", prefix))
+            if value is not None and value >= 0 and byte_elements:
                 arrays[identifier] = value
     for node in nodes:
         if node.type == "init_declarator":
@@ -287,9 +304,18 @@ def extract_patterns(source, *, language="c"):
             add("sensitive_write", node, args[:3], detail=name)
         if name not in COPY_APIS or len(args) < 2:
             continue
-        dst = args[0]
-        src = args[1] if name not in ("memset", "wmemset") else None
-        size_arg = args[2] if len(args) > 2 else None
+        if name in ("read", "recv"):
+            # read(fd, destination, bytes), recv(socket, destination, bytes).
+            dst, src = args[1], None
+            size_arg = args[2] if len(args) > 2 else None
+        elif name == "fread":
+            # fread(destination, element_size, element_count, stream):
+            # size is a product, not the third argument alone.
+            dst, src, size_arg = args[0], None, None
+        else:
+            dst = args[0]
+            src = args[1] if name not in ("memset", "wmemset") else None
+            size_arg = args[2] if len(args) > 2 else None
         dstname = _text(data, dst).strip()
         srcname = _text(data, src).strip()
         dcap = bounds(dstname)
