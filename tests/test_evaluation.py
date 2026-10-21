@@ -252,6 +252,77 @@ class EvaluationTests(unittest.TestCase):
             self.assertTrue(all(r["auc"] == 1. and r["delta_bce_auc"] == 1. for r in new_cross))
             self.assertEqual([r for r in updated["results"] if r["method"] == "bce"], result["results"])
 
+    def test_three_dataset_transfer_uses_actual_pilot_references_and_fixed_thresholds(self):
+        from vulnmechanism.artifacts import write_json
+
+        datasets = ("bigvul", "devign", "reveal")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for index, dataset in enumerate(datasets):
+                for split in ("train", "valid"):
+                    write_jsonl(root / "data/pilot" / dataset / f"{split}.jsonl",
+                                [dict(raw_source=f"{dataset}-{split}", label=1)])
+                    # This unused full-Train member was never used by the pilot.
+                    write_jsonl(root / "data" / dataset / f"{split}.jsonl",
+                                [dict(raw_source=f"{dataset}-unused", label=0)])
+                other, third = datasets[(index + 1) % 3], datasets[(index + 2) % 3]
+                write_jsonl(root / "data" / dataset / "test.jsonl", [dict(
+                    sample_key=f"{dataset}:{i}", raw_source=source, label=i % 2,
+                    dataset=dataset, split="test", train_overlap=False,
+                    project="fixture", source_row=i + 1,
+                ) for i, source in enumerate((f"{other}-train", f"{third}-valid",
+                                             f"{dataset}-unused", f"{dataset}-clean",
+                                             f"{dataset}-extra0", f"{dataset}-extra1"))])
+                run = root / "runs" / dataset / "bce"
+                write_json(run / "training.metrics.json", dict(selected_epoch=index + 1))
+                torch.save(dict(dataset=dataset, method="bce", model_path="fixture",
+                                source_max_length=2048, selected_epoch=index + 1,
+                                decision_threshold=.6 + index * .1,
+                                training_config=dict(batch_size=2)), run / "best.pt")
+            with patch.object(core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()), \
+                 patch.object(core, "load_model", return_value=object()), \
+                 patch.object(core, "predict_logits", side_effect=lambda model, rows, *a, **kw:
+                              torch.tensor([2. if r["label"] else -2. for r in rows])) as predictor:
+                summary = evaluate_transfer(root / "data", root / "runs", datasets,
+                                            train_data_dir=root / "data/pilot", device="cpu")
+            self.assertEqual((summary["models"], summary["rows"], predictor.call_count), (3, 18, 9))
+            result = json.loads((root / "runs/transfer_bigvul_devign_reveal/results.json").read_text())
+            for dataset in datasets:
+                self.assertEqual(result["cohorts"][dataset]["excluded"]["samples"], 2)
+                self.assertEqual(result["cohorts"][dataset]["independent"],
+                                 dict(samples=4, positive=2, negative=2))
+                import csv
+                with (root / "runs/transfer_bigvul_devign_reveal" / f"{dataset}.members.csv").open() as handle:
+                    saved_members = list(csv.DictReader(handle))
+                self.assertTrue(all(r["source_file"] == "" and
+                                    r["prepared_file"] == str(root / "data" / dataset / "test.jsonl")
+                                    for r in saved_members))
+            independent = [r for r in result["results"] if r["view"] == "independent"]
+            for target in datasets:
+                values = [r for r in independent if r["test_dataset"] == target]
+                self.assertEqual(len(values), 3)
+                self.assertTrue(all(r["samples"] == 4 and r["auc"] == 1 for r in values))
+            for r in independent:
+                self.assertAlmostEqual(r["threshold"], .6 + datasets.index(r["training_dataset"]) * .1)
+            with patch.object(core, "predict_logits", side_effect=AssertionError("reuse cached predictions")):
+                evaluate_transfer(root / "data", root / "runs", datasets,
+                                  train_data_dir=root / "data/pilot", device="cpu")
+            from vulnmechanism.static_experiment import transfer_report
+            output = root / "runs/transfer_bigvul_devign_reveal"
+            write_json(output / "overlap.json", dict(
+                near_pairs=[dict(target_key=f"{d}:{i}", source_label=i % 2, target_label=i % 2)
+                            for d in datasets for i in (2, 3)],
+                shared_commit_pairs=[],
+            ))
+            with patch.object(core, "predict_logits", side_effect=AssertionError("report only saved predictions")):
+                transfer_report(output, root / "runs")
+                transfer_report(output, root / "runs")
+            result = json.loads((output / "results.json").read_text())
+            near = [r for r in result["results"] if r["view"] == "near_free"]
+            self.assertEqual((len(result["results"]), len(near)), (27, 9))
+            self.assertTrue(all(r["samples"] == 2 and r["positive"] == r["negative"] == 1
+                                and r["auc"] == 1 for r in near))
+
     def test_clean_cache_predicts_only_restored_members_and_recomputes_metrics(self):
         from argparse import Namespace
         from vulnmechanism.artifacts import write_json

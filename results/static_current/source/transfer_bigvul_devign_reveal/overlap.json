@@ -1,0 +1,527 @@
+{
+  "protocol": {
+    "references": "actual 1024 Train / 256 Valid per participating source model",
+    "candidates": "unchanged full Test; no Train/Valid fitting or threshold selection",
+    "near_rule": "comment-free spelling-preserving token 5-gram set Jaccard >= 0.90; complete prefix filter from near_overlaps",
+    "timing": "matching and metadata joins, excluding input reads",
+    "use": "diagnostic near-free sensitivity cohort shared by all source models; no resampling",
+    "shared_records": "project+commit only where available; ReVeal upstream hash is not treated as a commit/CVE; hidden shared vulnerability records remain unknown"
+  },
+  "seconds": 24.05935618118383,
+  "near_pairs": [
+    {
+      "source_dataset": "bigvul",
+      "source_split": "train",
+      "source_key": "bigvul:177924",
+      "source_label": 1,
+      "target_dataset": "reveal",
+      "target_key": "reveal:1:1204",
+      "target_label": 1,
+      "jaccard": 0.9741379310344828,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:178185",
+      "source_label": 1,
+      "target_dataset": "devign",
+      "target_key": "devign:16112",
+      "target_label": 1,
+      "jaccard": 0.9526854219948849,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:178640",
+      "source_label": 1,
+      "target_dataset": "devign",
+      "target_key": "devign:18150",
+      "target_label": 0,
+      "jaccard": 0.9660194174757282,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "train",
+      "source_key": "bigvul:180239",
+      "source_label": 1,
+      "target_dataset": "reveal",
+      "target_key": "reveal:1:172",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "train",
+      "source_key": "bigvul:180431",
+      "source_label": 1,
+      "target_dataset": "reveal",
+      "target_key": "reveal:1:861",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:181509",
+      "source_label": 1,
+      "target_dataset": "reveal",
+      "target_key": "reveal:1:242",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:182097",
+      "source_label": 1,
+      "target_dataset": "devign",
+      "target_key": "devign:5060",
+      "target_label": 1,
+      "jaccard": 0.9240780911062907,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:183218",
+      "source_label": 1,
+      "target_dataset": "devign",
+      "target_key": "devign:19728",
+      "target_label": 1,
+      "jaccard": 0.9698795180722891,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:66928",
+      "source_label": 0,
+      "target_dataset": "devign",
+      "target_key": "devign:265",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "bigvul",
+      "source_split": "valid",
+      "source_key": "bigvul:70845",
+      "source_label": 0,
+      "target_dataset": "devign",
+      "target_key": "devign:19411",
+      "target_label": 0,
+      "jaccard": 0.9285714285714286,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "devign",
+      "source_split": "train",
+      "source_key": "devign:15743",
+      "source_label": 1,
+      "target_dataset": "reveal",
+      "target_key": "reveal:0:14457",
+      "target_label": 0,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:0:10357",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:51723",
+      "target_label": 0,
+      "jaccard": 0.9222797927461139,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:0:12050",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:177753",
+      "target_label": 1,
+      "jaccard": 0.9712140175219024,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:0:12066",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:595",
+      "target_label": 0,
+      "jaccard": 0.9696969696969697,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:0:12772",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:79508",
+      "target_label": 0,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:0:14197",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:180326",
+      "target_label": 1,
+      "jaccard": 0.961218836565097,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:0:14231",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:51806",
+      "target_label": 0,
+      "jaccard": 0.9937106918238994,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:0:9469",
+      "source_label": 0,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:178421",
+      "target_label": 1,
+      "jaccard": 0.9772727272727273,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1004",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:180000",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:1184",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:177870",
+      "target_label": 1,
+      "jaccard": 0.9880239520958084,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1205",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:182470",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:1238",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181678",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1242",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:180326",
+      "target_label": 1,
+      "jaccard": 0.9971387696709585,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:1258",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:182305",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:1307",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:177991",
+      "target_label": 1,
+      "jaccard": 0.9669421487603306,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1350",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:177875",
+      "target_label": 1,
+      "jaccard": 0.9768637532133676,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1353",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181951",
+      "target_label": 1,
+      "jaccard": 0.9547169811320755,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1354",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181953",
+      "target_label": 1,
+      "jaccard": 0.9913419913419913,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1355",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181955",
+      "target_label": 1,
+      "jaccard": 0.9896907216494846,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:1357",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181954",
+      "target_label": 1,
+      "jaccard": 0.9777777777777777,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:16",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:178669",
+      "target_label": 1,
+      "jaccard": 0.9953810623556582,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:299",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:177770",
+      "target_label": 1,
+      "jaccard": 0.9092702169625246,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:622",
+      "source_label": 1,
+      "target_dataset": "devign",
+      "target_key": "devign:4062",
+      "target_label": 1,
+      "jaccard": 0.9269553975436329,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:714",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:182100",
+      "target_label": 1,
+      "jaccard": 0.989247311827957,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:798",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:182298",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:801",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181365",
+      "target_label": 1,
+      "jaccard": 0.9940944881889764,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:81",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:178371",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:836",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:180885",
+      "target_label": 1,
+      "jaccard": 0.9009009009009009,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:837",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:180886",
+      "target_label": 1,
+      "jaccard": 0.9917582417582418,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "train",
+      "source_key": "reveal:1:904",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181602",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    },
+    {
+      "source_dataset": "reveal",
+      "source_split": "valid",
+      "source_key": "reveal:1:907",
+      "source_label": 1,
+      "target_dataset": "bigvul",
+      "target_key": "bigvul:181604",
+      "target_label": 1,
+      "jaccard": 1.0,
+      "raw_exact": false
+    }
+  ],
+  "shared_commit_pairs": [
+    {
+      "source_dataset": "bigvul",
+      "source_key": "bigvul:178323",
+      "target_dataset": "devign",
+      "target_key": "devign:3076",
+      "project": "qemu",
+      "commit_id": "ab9509cceabef28071e41bdfa073083859c949a7"
+    }
+  ],
+  "targets": {
+    "bigvul": {
+      "original": {
+        "samples": 1902,
+        "positive": 951,
+        "negative": 951
+      },
+      "near_overlap": {
+        "samples": 28,
+        "positive": 24,
+        "negative": 4
+      },
+      "shared_commit": {
+        "samples": 0,
+        "positive": 0,
+        "negative": 0
+      }
+    },
+    "devign": {
+      "original": {
+        "samples": 2494,
+        "positive": 1247,
+        "negative": 1247
+      },
+      "near_overlap": {
+        "samples": 7,
+        "positive": 5,
+        "negative": 2
+      },
+      "shared_commit": {
+        "samples": 1,
+        "positive": 1,
+        "negative": 0
+      }
+    },
+    "reveal": {
+      "original": {
+        "samples": 380,
+        "positive": 190,
+        "negative": 190
+      },
+      "near_overlap": {
+        "samples": 5,
+        "positive": 4,
+        "negative": 1
+      },
+      "shared_commit": {
+        "samples": 0,
+        "positive": 0,
+        "negative": 0
+      }
+    }
+  }
+}

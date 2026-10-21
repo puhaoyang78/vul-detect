@@ -12,11 +12,39 @@ from tests.test_codebert_source import CodeTokenizer, tiny_base
 from vulnmechanism import model as core
 from vulnmechanism.relations import StaticRelationEncoder, relation_tokens
 from vulnmechanism.static_analysis import align_graph, attach_patterns, run_process, RELATIONS, PATTERN_SCHEMA
-from vulnmechanism.static_data import remove_duplicates, isolate_families, near_overlaps
+from vulnmechanism.static_data import remove_duplicates, isolate_families, near_overlaps, transfer_overlap
 from vulnmechanism.static_patterns import extract_patterns
 
 
 class StaticTests(unittest.TestCase):
+    def test_transfer_overlap_uses_tokens_and_does_not_guess_reveal_commits(self):
+        from vulnmechanism.data import write_jsonl
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for dataset in ("bigvul", "devign", "reveal"):
+                for split in ("train", "valid", "test"):
+                    source = f"int {dataset}_{split}(){{return 0;}}"
+                    if dataset == "bigvul" and split == "train":
+                        source = "int f(){int x=1;return x;}"
+                    if dataset == "devign" and split == "test":
+                        source = "int f ( ) { int x = 1; /* same tokens */ return x; }"
+                    row = dict(sample_key=f"{dataset}:{split}", raw_source=source, label=0,
+                               project="qemu", dataset=dataset, split=split)
+                    if dataset != "reveal":
+                        row["commit_id"] = "shared" if (dataset, split) in (
+                            ("bigvul", "train"), ("devign", "test")) else f"{dataset}-{split}"
+                    else:
+                        row["upstream_group"] = "shared"
+                    path = root / (dataset if split == "test" else "pilot/" + dataset) / f"{split}.jsonl"
+                    write_jsonl(path, [row])
+            result = transfer_overlap(root, root / "output")
+            self.assertEqual(len(result["near_pairs"]), 1)
+            pair = result["near_pairs"][0]
+            self.assertEqual((pair["source_key"], pair["target_key"], pair["jaccard"], pair["raw_exact"]),
+                             ("bigvul:train", "devign:test", 1.0, False))
+            self.assertEqual(len(result["shared_commit_pairs"]), 1)
+            self.assertNotIn("reveal", str(result["shared_commit_pairs"]))
+
     def test_process_monitor_handles_child_exit_and_nonzero_status(self):
         import sys
         with tempfile.TemporaryDirectory() as tmp:

@@ -200,6 +200,67 @@ def check_isolation(rows, dataset):
                 unique_sample_keys=len(rows), balanced_splits=True)
 
 
+def transfer_overlap(data_dir, output_dir, datasets=DATASETS):
+    """Audit actual pilot Train/Valid versus fixed Test; never change the splits."""
+    from .data import read_jsonl
+    root = Path(data_dir)
+    references, tests, members = [], [], {}
+    for dataset in datasets:
+        for split in ("train", "valid", "test"):
+            path = root / dataset / "test.jsonl" if split == "test" else root / "pilot" / dataset / f"{split}.jsonl"
+            for row in read_jsonl(path):
+                item = {k: v for k, v in row.items() if k != "program_relations"}
+                members[item["sample_key"]] = item
+                # near_overlaps compares different splits. Both seen splits
+                # belong to the reference side; Test/Test pairs are irrelevant.
+                (tests if split == "test" else references).append(dict(item, split="test" if split == "test" else "train"))
+    started = time.monotonic()
+    _, pairs = near_overlaps(tests + references)
+    matches = []
+    for pair in pairs:
+        source, target = members[pair["removed"]], members[pair["higher_priority_reference"]]
+        if source["split"] not in ("train", "valid") or target["split"] != "test":
+            raise ValueError("near-overlap audit sides changed")
+        matches.append(dict(source_dataset=source["dataset"], source_split=source["split"],
+                            source_key=source["sample_key"], source_label=source["label"],
+                            target_dataset=target["dataset"], target_key=target["sample_key"],
+                            target_label=target["label"], jaccard=pair["jaccard"],
+                            raw_exact=source["raw_source"] == target["raw_source"]))
+    commit_matches = []
+    commits = defaultdict(list)
+    for row in references:
+        if row.get("commit_id"):
+            commits[(row["project"].casefold(), row["commit_id"].casefold())].append(row)
+    for row in tests:
+        if not row.get("commit_id"):
+            continue
+        for source in commits[(row["project"].casefold(), row["commit_id"].casefold())]:
+            commit_matches.append(dict(source_dataset=source["dataset"], source_key=source["sample_key"],
+                                       target_dataset=row["dataset"], target_key=row["sample_key"],
+                                       project=row["project"], commit_id=row["commit_id"]))
+    near_keys = {p["target_key"] for p in matches}
+    commit_keys = {p["target_key"] for p in commit_matches}
+    result = dict(
+        protocol=dict(references="actual 1024 Train / 256 Valid per participating source model",
+                      candidates="unchanged full Test; no Train/Valid fitting or threshold selection",
+                      near_rule="comment-free spelling-preserving token 5-gram set Jaccard >= 0.90; complete prefix filter from near_overlaps",
+                      timing="matching and metadata joins, excluding input reads",
+                      use="diagnostic near-free sensitivity cohort shared by all source models; no resampling",
+                      shared_records="project+commit only where available; ReVeal upstream hash is not treated as a commit/CVE; hidden shared vulnerability records remain unknown"),
+        seconds=time.monotonic() - started,
+        near_pairs=matches, shared_commit_pairs=commit_matches,
+        targets={dataset: dict(
+            original=class_counts([r for r in tests if r["dataset"] == dataset]),
+            near_overlap=class_counts([r for r in tests if r["dataset"] == dataset and
+                                      r["sample_key"] in near_keys]),
+            shared_commit=class_counts([r for r in tests if r["dataset"] == dataset and
+                                        r["sample_key"] in commit_keys]),
+        ) for dataset in datasets},
+    )
+    write_json(Path(output_dir) / "overlap.json", result)
+    return result
+
+
 def prepare(raw_root, output_dir, index_dir, datasets=DATASETS):
     for dataset in datasets:
         started = time.monotonic()

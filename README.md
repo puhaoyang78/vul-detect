@@ -631,7 +631,8 @@ GraphFormers (2021) 已研究分层图信息交互；本实验目标是测试
     python -m unittest tests.test_static
 
 现有 12 组 checkpoint 均已完成 GPU 小样本训练。报告复用这些权重，
-不重训、不重新选择 Epoch 或阈值；Test 仍未参与模型评价。
+不重训、不重新选择 Epoch 或阈值；该轮训练与 Valid 消融未使用 Test。
+后续 Source-only BCE 的独立 Test 与跨域结果在下节单独报告。
 统一指标见 [comparison.csv](results/static_current/comparison.csv)，完整消融、
 覆盖率和配对差值见 [results.json](results/static_current/results.json)。
 各组目录保存原训练配置、Epoch 日志和此次重算的 Valid 预测，权重留在本地。
@@ -710,3 +711,38 @@ CPG，只更新候选关系；不要重新执行 prepare 或训练命令。
 目的容量候选中分别有40/252、31/365、34/334个可以比较且未超出该上界，
 其余为 unknown；不能据零覆盖率断言没有相关漏洞。ReVeal 负常量下标读
 从0变为16个函数，但该属性也出现在安全函数及合法的指针相对访问中。
+
+### BigVul / Devign / ReVeal：Source-only BCE 跨域
+
+复用上述三个 Source-only BCE checkpoint（每库 Train1024 / Valid256，Seed42），
+完成六个跨域方向及三个域内 Test 对照。未重新训练或校准；Epoch和阈值
+分别固定为 BigVul 3/0.63、Devign 3/0.81、ReVeal 2/0.46。
+本轮不评价静态关系模型，上一轮静态规则修改不影响这些源码模型的输入。
+
+每个目标 Test 对三个模型使用同一队列。检查三库实际参与训练/选模的
+Train/Valid 后，原始源码精确重叠为0；保留原 Test 成员，不重新平衡。
+下面为 AUC，行为训练库、列为目标 Test，粗体为域内对照：
+
+| 训练库 | BigVul（1902） | Devign（2494） | ReVeal（380） |
+|---|---:|---:|---:|
+| BigVul | **0.9463** | 0.5238 | 0.7882 |
+| Devign | 0.7147 | **0.6061** | 0.7782 |
+| ReVeal | 0.7648 | 0.5370 | **0.8147** |
+
+六个跨域 AUC 点估计均低于在同一目标库训练的 BCE。Devign 模型迁移后
+高于自身 Test 的 AUC，反映评价人群变化，不能据此认为没有迁移损失；
+MCC/F1并非所有方向都下降，完整固定阈值指标与混淆计数见
+[统一结果](results/static_current/source/transfer_bigvul_devign_reveal/comparison.csv)。
+
+另按预先确定的 Token 5-gram Jaccard≥0.90 检查到41对近重复，涉及
+BigVul 28、Devign 7、ReVeal 5条 Test；排除后统一队列分别为1874、2487、375条，
+不调参、不重采样，六个跨域 AUC 仍低于目标库 BCE。另有1条 Devign Test
+与 BigVul Train共享项目和提交，仅报告，不据此推定同一漏洞位置。
+ReVeal 缺少可靠提交/CVE，不能证明不存在隐藏关联。
+
+    python -m vulnmechanism.cli static transfer --output-dir results/static_current --device cuda:0
+
+命令复用已有预测。原始、精确独立、近重复排除三种视图共27行，五项指标、
+逐样本预测、成员清单、实际训练配置和独立性检查保存在
+[跨域报告](results/static_current/source/transfer_bigvul_devign_reveal/report.md)及同目录。
+这是单Seed小样本 checkpoint 的结果，不代表全量训练或静态引导方法的跨域结论。

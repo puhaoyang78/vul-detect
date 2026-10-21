@@ -524,24 +524,30 @@ def evaluate(
         del checkpoint
 
 
-def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), device="auto"):
+def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), device="auto",
+                      train_data_dir=None):
     """Compare fixed source models on identical full and exact-overlap-free Test cohorts."""
-    if len(datasets) != 2 or len(set(datasets)) != 2 or any(d not in DATASETS for d in datasets):
-        raise ValueError("two distinct supported datasets required")
+    from .static_data import DATASETS as STATIC_DATASETS
+    if (len(datasets) < 2 or len(set(datasets)) != len(datasets)
+            or any(d not in (*DATASETS, *STATIC_DATASETS) for d in datasets)):
+        raise ValueError("at least two distinct supported datasets required")
     if not methods or len(set(methods)) != len(methods) or any(m not in GENERALIZATION_METHODS for m in methods):
         raise ValueError("distinct supported generalization methods required")
     datasets = tuple(sorted(datasets))
     root = Path(output_dir) / ("transfer_" + "_".join(datasets))
     root.mkdir(parents=True, exist_ok=True)
     tests = {d: test_rows(Path(data_dir) / d) for d in datasets}
+    train_data_dir = Path(data_dir if train_data_dir is None else train_data_dir)
     seen = {}
+    training_members = {}
     for dataset in datasets:
         for split in ("train", "valid"):
             values = (
-                read_jsonl(Path(data_dir) / dataset / "train.jsonl")
-                if split == "train" else validation_rows(Path(data_dir) / dataset)
+                read_jsonl(train_data_dir / dataset / "train.jsonl")
+                if split == "train" else validation_rows(train_data_dir / dataset)
             )
             seen[f"{dataset}:{split}"] = {r["raw_source"] for r in values}
+            training_members[f"{dataset}:{split}"] = class_counts(values)
     independent, cohorts = {}, {}
     for dataset, rows in tests.items():
         overlap = {
@@ -561,7 +567,9 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
         )
         members = [dict(
             sample_key=r["sample_key"], label=r["label"], project=r["project"],
-            source_file=r["source_file"], source_row=r["source_row"],
+            source_file=r.get("source_file", ""),
+            source_row=r["source_row"],
+            prepared_file=str(Path(data_dir) / dataset / "test.jsonl"),
             independent=not overlap[r["sample_key"]],
             exact_overlap=";".join(overlap[r["sample_key"]]),
         ) for r in rows]
@@ -623,11 +631,11 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
                    if "bce" in methods else None for k in metric_names},
             ))
     write_json(root / "results.json", dict(
-        cohorts=cohorts, training=training, results=results,
+        cohorts=cohorts, training=training, training_members=training_members, results=results,
         protocol=dict(
             seed=42, methods=list(methods), selection="source-Valid checkpoint and threshold fixed",
             established="full original balanced Test members, without resampling; exclude own Train/Valid exact overlap only",
-            independent="exclude exact raw-source overlap with either of these two datasets' actual Train or model-selection Valid; same target members for all models; no other datasets, project/CVE or near-duplicate filtering; no resampling",
+            independent="exclude exact raw-source overlap with any participating dataset's actual Train or model-selection Valid; same target members for all models; no other datasets, project/CVE or near-duplicate filtering; no resampling",
             delta_source="target Test metric minus the same model's own Test metric",
             delta_target="transfer metric minus the same method trained on the target dataset, on exactly the same target Test",
             delta_bce="method metric minus BCE with the same source checkpoint dataset and target Test members",
@@ -637,7 +645,7 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
         writer = csv.DictWriter(handle, fieldnames=list(results[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(results)
-    return dict(datasets=list(datasets), models=2 * len(methods), rows=len(results), output=str(root))
+    return dict(datasets=list(datasets), models=len(datasets) * len(methods), rows=len(results), output=str(root))
 
 
 def report(output_dir, data_dir):

@@ -114,3 +114,11 @@ __pycache__/
 !/results/static_current/*/*/bce/training.metrics.json
 !/results/static_current/*/*/bce/best.training.jsonl
 !/results/static_current/*/*/bce/valid.predictions.jsonl
+!/results/static_current/source/*/bce/*test.metrics.json
+!/results/static_current/source/*/bce/*test.predictions.jsonl
+!/results/static_current/source/transfer_bigvul_devign_reveal/
+!/results/static_current/source/transfer_bigvul_devign_reveal/results.json
+!/results/static_current/source/transfer_bigvul_devign_reveal/comparison.csv
+!/results/static_current/source/transfer_bigvul_devign_reveal/*.members.csv
+!/results/static_current/source/transfer_bigvul_devign_reveal/overlap.json
+!/results/static_current/source/transfer_bigvul_devign_reveal/report.md

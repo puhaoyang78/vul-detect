@@ -35,6 +35,17 @@ def run(args):
     elif args.stage == "audit":
         from .static_analysis import audit_patterns
         audit_patterns(args.data_dir, args.output_dir, datasets, model_path=args.model)
+    elif args.stage == "transfer":
+        from .evaluation import evaluate_transfer
+        for dataset in datasets:
+            config = json.loads((args.output_dir / "source" / dataset / "bce/training.metrics.json").read_text())
+            if config["static_relations"] is not None:
+                raise ValueError("this transfer experiment uses Source-only BCE checkpoints")
+        result = evaluate_transfer(args.data_dir, args.output_dir / "source", datasets,
+                                   train_data_dir=args.data_dir / "pilot", device=args.device)
+        from .static_data import transfer_overlap
+        transfer_overlap(args.data_dir, result["output"], datasets)
+        transfer_report(result["output"], args.output_dir / "source")
     elif args.stage == "train":
         for dataset in datasets:
             for mode in args.modes:
@@ -44,6 +55,91 @@ def run(args):
         if args.dataset != "all":
             raise ValueError("the unified report requires all three datasets")
         report(args.data_dir, args.output_dir, device=args.device)
+
+
+def transfer_report(output_dir, runs_dir):
+    """Summarize fixed BCE transfer and the predeclared near-free sensitivity view."""
+    root = Path(output_dir)
+    result = json.loads((root / "results.json").read_text())
+    overlap = json.loads((root / "overlap.json").read_text())
+    excluded = {p["target_key"] for p in overlap["near_pairs"]}
+    members = {}
+    for target in DATASETS:
+        with (root / f"{target}.members.csv").open() as handle:
+            members[target] = [r for r in csv.DictReader(handle)
+                               if r["independent"] == "True" and r["sample_key"] not in excluded]
+    names = ("accuracy", "f1", "mcc", "auc", "auprc")
+    thresholds = {r["training_dataset"]: r["threshold"] for r in result["results"]}
+    values = {}
+    missing = {d: len(rows) for d, rows in members.items()
+               if {int(r["label"]) for r in rows} != {0, 1}}
+    if not missing:
+        for source in DATASETS:
+            for target in DATASETS:
+                name = "test" if source == target else f"{target}.test"
+                records = read_jsonl(Path(runs_dir) / source / "bce" / f"{name}.predictions.jsonl")
+                scores = {r["sample_key"]: r for r in records}
+                rows = members[target]
+                if any(scores[r["sample_key"]]["label"] != int(r["label"]) for r in rows):
+                    raise ValueError("near-free labels differ from saved predictions")
+                values[source, target] = metrics([int(r["label"]) for r in rows],
+                                                 [scores[r["sample_key"]]["score"] for r in rows],
+                                                 thresholds[source])
+    rows = [r for r in result["results"] if r["view"] != "near_free"]
+    for (source, target), value in values.items():
+        row = next(r.copy() for r in rows if r["view"] == "independent" and
+                   r["training_dataset"] == source and r["test_dataset"] == target)
+        row.update(view="near_free", samples=len(members[target]),
+                   positive=sum(int(r["label"]) for r in members[target]))
+        row["negative"] = row["samples"] - row["positive"]
+        row.update({k: value[k] for k in (*names, "tp", "tn", "fp", "fn")})
+        row.update({f"delta_source_{k}": value[k] - values[source, source][k] for k in names})
+        row.update({f"delta_target_{k}": value[k] - values[target, target][k] for k in names})
+        rows.append(row)
+    result.update(results=rows, near_free_skipped=missing, overlap_audit="overlap.json")
+    result["protocol"]["near_free"] = (
+        "Independent cohort minus any participating actual Train/Valid token-5-gram Jaccard >= .90; "
+        "fixed before inspecting model results, no resampling or threshold adjustment; "
+        "all models share each target cohort; shared commits recorded but not excluded")
+    write_json(root / "results.json", result)
+    with (root / "comparison.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, list(rows[0]), lineterminator="\n")
+        writer.writeheader(); writer.writerows(rows)
+    lines = ["# BigVul / Devign / ReVeal：Source-only BCE 跨域评价", "",
+             "复用每库 1024 Train / 256 Valid 小样本 checkpoint，Seed42；只使用源 Valid 已选权重和阈值。没有重训、目标校准、源码增强或静态关系输入。", "",
+             "主结果 independent 排除目标 Test 与三库实际 Train/Valid 的原始源码精确重叠；同一目标队列供三个模型共用，不重新平衡。established 保存原始 Test 参考。near_free 是预先定义的近重复排除敏感性检查。", "",
+             "| 目标库 | 原始 Test | 精确排除后：正/负 | 再排除近重复：正/负 |", "|---|---:|---:|---:|"]
+    for target in DATASETS:
+        cohort = result["cohorts"][target]
+        valid = cohort["independent"]
+        near = members[target]
+        positive = sum(int(r["label"]) for r in near)
+        lines.append(f"| {target} | {cohort['established']['samples']} | {valid['positive']}/{valid['negative']} | {positive}/{len(near)-positive} |")
+    lines += ["", "| 源模型 | 实际 Train / Valid | 选定 Epoch | 固定阈值 |", "|---|---:|---:|---:|"]
+    for source in DATASETS:
+        chosen = next(r for r in rows if r["training_dataset"] == source)
+        train = result["training_members"][f"{source}:train"]["samples"]
+        valid = result["training_members"][f"{source}:valid"]["samples"]
+        lines.append(f"| {source} | {train}/{valid} | {chosen['selected_epoch']} | {chosen['threshold']:.2f} |")
+    for view in ("independent", "near_free"):
+        lines += ["", f"## {view}", "", "| 训练→Test | N | Accuracy | F1 | MCC | AUC | AUPRC | Δ自身Test AUC | Δ目标库BCE AUC |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for row in rows:
+            if row["view"] == view:
+                lines.append(f"| {row['training_dataset']}→{row['test_dataset']} | {row['samples']} | " +
+                             " | ".join(f"{row[k]:.4f}" for k in names) +
+                             f" | {row['delta_source_auc']:+.4f} | {row['delta_target_auc']:+.4f} |")
+    conflicts = sum(p["source_label"] != p["target_label"] for p in overlap["near_pairs"])
+    lines += ["", "## 独立性与解释", "",
+              f"Jaccard≥0.90 共 {len(overlap['near_pairs'])} 对；可用项目+提交元数据共 {len(overlap['shared_commit_pairs'])} 对。具体 sample_key、标签分歧及源码是否精确一致见 overlap.json。ReVeal 没有可靠提交/CVE，不能据此证明不存在共享漏洞记录。", "",
+              f"近重复对中有 {conflicts} 对标签不一致；这只表示上游标注分歧，不判定哪方正确，也不把共享提交自动当成同一漏洞位置。", "",
+              "Δ自身Test跨越了不同评价人群；Δ目标库BCE在同一目标 Test 上比较。跨域 AUC 高于源库自身 AUC，并不等于迁移没有损失。MCC/F1 还受固定阈值及域间分数尺度变化影响。", "",
+              "这些是单 Seed、小样本训练 checkpoint 的 Test 结果，不代表全量训练或静态引导方法的泛化结论。", "",
+              "复现：`python -m vulnmechanism.cli static transfer --output-dir results/static_current --device cuda:0`。命令复用已保存预测，不重新训练。", ""]
+    cross = [r for r in rows if r["view"] == "independent" and r["training_dataset"] != r["test_dataset"]]
+    worse = sum(r["delta_target_auc"] < 0 for r in cross)
+    lines += [f"本轮 {worse}/{len(cross)} 个跨域方向的 AUC 点估计低于同目标库训练的 BCE。单 Seed 点估计不作为统计显著性或普遍性证明。", ""]
+    (root / "report.md").write_text("\n".join(lines))
+    print("Source-only BCE transfer report:", root, len(rows), "rows", flush=True)
 
 
 def paired_auc(labels, baseline, comparison, groups):
