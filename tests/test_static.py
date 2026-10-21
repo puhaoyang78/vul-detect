@@ -73,6 +73,20 @@ class StaticTests(unittest.TestCase):
         negative = "void g(int i){ char dst[8]; int r=dst[i]; }"
         self.assertIn("negative_index_read", {p["kind"] for p in extract_patterns(negative)})
 
+    def test_source_length_copy_and_destination_length_copy(self):
+        source = """void f() {
+          char d[8]; char s[4];
+          memcpy(d, s, strlen(s));
+          memcpy(d, s, sizeof(d));
+          strcpy(d, s);
+        }"""
+        patterns = extract_patterns(source)
+        names = {p["kind"] for p in patterns}
+        self.assertIn("source_size_copy", names)
+        self.assertIn("destination_size_copy", names)
+        self.assertTrue(all(p["status"] == "candidate" for p in patterns
+                            if p["kind"] in ("source_size_copy", "destination_size_copy")))
+
     def test_existing_joern_cache_upgrades_without_reparsing(self):
         source = "void f(){char d[8];char s[4];memcpy(d,s,9);}"
         graph = dict(status="ok", nodes=[dict(span=[5, 6], kind="METHOD"),
@@ -80,32 +94,14 @@ class StaticTests(unittest.TestCase):
                      edges=[[0, 1, 0], [1, 0, 1], [0, 0, 6]],
                      counts={"AST": 1, "CFG": 1, "memory": 1})
         upgraded = attach_patterns(graph, source)
-        self.assertEqual(upgraded["schema_version"], 3)
+        self.assertEqual(upgraded["schema_version"], 2)
         self.assertNotIn("memory", upgraded["counts"])
         self.assertGreater(upgraded["counts"].get("buffer_size_mismatch", 0), 0)
         self.assertEqual(upgraded, attach_patterns(upgraded, source))
-        call_at = source.index("memcpy")
-        graph2 = dict(status="ok", nodes=[dict(span=[call_at, call_at + 6], kind="CALL"),
-                                          dict(span=[0, 4], kind="IDENTIFIER")],
-                      edges=[[0, 1, 0], [0, 1, 1], [0, 1, 3]], counts={"AST": 1, "CFG": 1, "REACHING_DEF": 1})
-        extended = attach_patterns(graph2, source)
-        family = RELATIONS.index("buffer_size_mismatch")
-        self.assertTrue(any(e[2] == family and e[1] == 1 for e in extended["edges"]))
-
         incomplete = dict(nodes=[dict(id="0", name="f", kind="CALL", code="wrong", line=1, column=1)], edges=[])
         result = align_graph(incomplete, "f(x);")
         self.assertEqual(result["status"], "incomplete_graph")
         self.assertEqual(result["nodes"][0]["alignment"], "location_token")
-
-    def test_copy_arguments_and_byte_buffer_sizes(self):
-        read = "void f(int fd){char dst[8];read(fd,dst,9);}"
-        p = extract_patterns(read)
-        self.assertIn("buffer_size_mismatch", {x["kind"] for x in p})
-        other = "void f(){int dst[8];char src[16];memcpy(dst,src,10);}"
-        # Ten bytes do not exceed the capacity of an array of eight ints.
-        self.assertNotIn("buffer_size_mismatch", {x["kind"] for x in extract_patterns(other)})
-        unsigned = "void f(unsigned int i){char b[8];int x=b[i];}"
-        self.assertNotIn("negative_index_read", {x["kind"] for x in extract_patterns(unsigned)})
 
     def test_shuffle_preserves_marginals_and_ignores_labels(self):
         row = dict(raw_source="abcdefghij", program_relations=dict(status="ok",

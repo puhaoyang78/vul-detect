@@ -87,12 +87,4 @@ __pycache__/
 !/data/static_guided/*/pilot.members.csv
 !/data/static_guided/*/removed.jsonl
 !/data/static_guided/*/near_overlaps.jsonl
-!/results/static_guided/
-/results/static_guided/**
-!/results/static_guided/comparison.csv
-!/results/static_guided/results.json
-!/results/static_guided/protocol.json
-!/results/static_guided/benchmark.json
-!/results/static_guided/*.coverage.json
-!/results/static_guided/failure.examples.json
-!/results/static_guided/extraction.log
+/results/static_guided/
