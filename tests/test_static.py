@@ -148,8 +148,8 @@ class StaticTests(unittest.TestCase):
         shuffled=torch.tensor([[0,0,3,0],[0,2,1,0]],dtype=torch.long)
         orig=module(hidden,positions,owners,pooling,real,1,base)
         moved=module(hidden,positions,owners,pooling,shuffled,1,base)
-        self.assertGreater(float((orig-moved).abs().max()),1e-6)
-        self.assertGreater(float((orig-base).norm()),1e-3)
+        self.assertGreater(float((orig-moved).abs().max().detach()),1e-6)
+        self.assertGreater(float((orig-base).norm().detach()),1e-3)
         (orig.square().sum()).backward()
         self.assertTrue(torch.isfinite(hidden.grad).all())
         self.assertGreater(float(module.pair.weight.grad.abs().sum()),0)
@@ -210,6 +210,73 @@ class StaticTests(unittest.TestCase):
             for other in initial[1:]:
                 for key in initial[0]:
                     torch.testing.assert_close(initial[0][key],other[key],atol=0,rtol=0)
+
+    def test_cpg_cache_reuses_raw_graph_when_matching_rules_change(self):
+        import hashlib
+        import json
+        from unittest.mock import patch
+        from vulnmechanism import static_analysis as analysis
+
+        source = "int f(){return 0;}"
+        row = dict(sample_key="bigvul:1", raw_source=source, file_name="example.c")
+        script = Path(analysis.__file__).with_name("static_extract.sc")
+        namespace = hashlib.sha256(analysis.JOERN_VERSION.encode() + script.read_bytes()).hexdigest()[:12]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            directory = root / "cache" / "cpg" / namespace
+            directory.mkdir(parents=True)
+            raw = graph([
+                cnode(1, "f", "f", 1, 5, "METHOD"),
+                cnode(2, "<operator>.return", "return 0", 1, 9)
+            ], [("1", "2", "AST"), ("1", "2", "CFG")])
+            (directory / (analysis.cache_key(row) + ".json")).write_text(json.dumps(raw))
+            with patch.object(analysis, "run_process",
+                              side_effect=AssertionError("Joern should not run for a cached CPG")):
+                parsed, costs = analysis.extract([row], root)
+                self.assertEqual(costs["raw_cpg_hits"], 1)
+                self.assertEqual(costs["unique_uncached"], 0)
+                self.assertEqual(parsed["bigvul:1"]["status"], "ok")
+                again, costs2 = analysis.extract([row], root)
+                self.assertEqual(costs2["aligned_hits"], 1)
+                self.assertEqual(again, parsed)
+
+    def test_relation_training_updates_encoder_and_attention_without_test(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        from vulnmechanism.data import write_jsonl
+        from vulnmechanism.training import TRAINING, train
+        torch.set_num_threads(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tiny_base(root / "base")
+            rows = []
+            for i in range(4):
+                src = f"int f{i}(int x){{return x + {i};}}"
+                rows.append(dict(sample_key=f"train:{i}", dataset="bigvul",
+                                 split="train", label=i % 2, raw_source=src,
+                                 program_relations=dict(
+                                     status="ok",
+                                     nodes=[dict(span=[4,6]), dict(span=[13,14])],
+                                     edges=[[0,1,0],[1,0,3]])))
+            write_jsonl(root / "data" / "bigvul" / "train.jsonl", rows)
+            write_jsonl(root / "data" / "bigvul" / "valid.jsonl", [
+                dict(rows[i], sample_key=f"valid:{i}", split="valid") for i in range(4)
+            ])
+            write_jsonl(root / "data" / "bigvul" / "test.jsonl",
+                        [dict(raw_source="FORBIDDEN_HELDOUT")])
+            with patch.object(core.AutoTokenizer, "from_pretrained",
+                              return_value=CodeTokenizer()), redirect_stdout(io.StringIO()):
+                summary = train(root / "data", root / "runs", root / "base",
+                                "bigvul", "bce", device="cpu", relation_mode="real",
+                                config=dict(TRAINING, epochs=1, batch_size=2,
+                                            gradient_accumulation=1))
+            self.assertEqual(summary["optimizer_steps"], 2)
+            cp = torch.load(root / "runs" / "bigvul" / "bce" / "best.pt",
+                            map_location="cpu", weights_only=False)
+            self.assertEqual(cp["static_relations"]["mode"], "real")
+            model = core.load_model(cp, torch.device("cpu"))
+            self.assertIn("relations", model.task_modules)
 
 
 if __name__ == "__main__":
