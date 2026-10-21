@@ -65,7 +65,7 @@ class InputBuilder:
         if capacity <= 0:
             raise ValueError("task prefix leaves no CodeBERT source capacity")
         stride = capacity // 2
-        sequences, weights, owners, positions = ([], [], [], [])
+        sequences, weights, owners, positions, spans = ([], [], [], [], [])
         for owner, record in enumerate(records):
             # Dynamic search already validated these IDs together with offsets.
             tokens = record.get("_source_token_ids")
@@ -89,6 +89,7 @@ class InputBuilder:
                     + [1.0 / len(starts)]
                 )
                 owners.append(owner)
+                spans.append((owner, start, end))
                 positions.append(
                     [-1] * (1 + len(self.source_prefix)) + list(range(start, end)) + [-1]
                 )
@@ -110,11 +111,29 @@ class InputBuilder:
             if self.relation_mode != "none":
                 from .relations import relation_tokens
                 packed = []
+                prefix = len(self.source_prefix) + 1  # BOS and task prefix
+                grouped_windows = {}
+                for window_index, (owner, start, end) in enumerate(spans):
+                    grouped_windows.setdefault(owner, []).append((window_index, start, end))
                 for owner, record in enumerate(records):
                     key = record["sample_key"]
                     if key not in self.relation_cache:
-                        self.relation_cache[key] = relation_tokens(record, self.tokenizer, budget, self.relation_mode)
-                    packed.extend((owner, a, b, kind) for a, b, kind in self.relation_cache[key][0])
+                        self.relation_cache[key] = relation_tokens(
+                            record, self.tokenizer, budget, self.relation_mode
+                        )
+                    pairs, info = self.relation_cache[key]
+                    mapped = set()
+                    copies = 0
+                    for window_index, start, end in grouped_windows[owner]:
+                        for a, b, kind in pairs:
+                            if start <= a < end and start <= b < end:
+                                packed.append((window_index, prefix + a - start,
+                                               prefix + b - start, kind))
+                                mapped.add((a, b, kind))
+                                copies += 1
+                    info["pairs_in_shared_windows"] = len(mapped)
+                    info["pairs_outside_shared_windows"] = len(set(pairs) - mapped)
+                    info["window_edge_instances"] = copies
                 edges = torch.tensor(packed, device=device, dtype=torch.long).reshape(-1, 4)
                 return (*result, source_positions, edges)
             return (*result, source_positions)
@@ -229,9 +248,39 @@ class CodeBERT(nn.Module):
             )
         hidden_size = self.encoder.config.hidden_size
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
+        self._active_relation_edges = None
+        self._relation_hooks = []
         if relation_mode != "none":
-            from .relations import StaticRelationAttention
-            self.task_modules["relations"] = StaticRelationAttention(hidden_size)
+            from .relations import StaticRelationEncoder
+            blocks = getattr(getattr(self.encoder, "encoder", None), "layer", None)
+            if blocks is None or not len(blocks):
+                raise ValueError("static relations require a RoBERTa/CodeBERT encoder")
+            n = len(blocks)
+            selected_layers = sorted({max(0, n // 3 - 1), max(0, (2 * n) // 3 - 1)})
+            self.task_modules["relations"] = StaticRelationEncoder(hidden_size, selected_layers)
+
+            def _static_layer_hook(_layer, _inputs, output, *, index):
+                # The hooked hidden state feeds the NEXT transformer layer.
+                # Keep the relation batch available for gradient checkpoint replay.
+                if self._active_relation_edges is None:
+                    return output
+                first = output[0] if isinstance(output, (tuple, list)) else output
+                changed = self.task_modules["relations"](
+                    first, self._active_relation_edges, index
+                )
+                if isinstance(output, tuple):
+                    return (changed, *output[1:])
+                if isinstance(output, list):
+                    return [changed, *output[1:]]
+                return changed
+
+            for index in selected_layers:
+                self._relation_hooks.append(
+                    blocks[index].register_forward_hook(
+                        lambda module, inputs, result, layer_id=index:
+                            _static_layer_hook(module, inputs, result, index=layer_id)
+                    )
+                )
         self.to(device)
 
     def forward(
@@ -248,6 +297,10 @@ class CodeBERT(nn.Module):
         force_fp32=False,
         return_representation=False,
     ):
+        if "relations" in self.task_modules:
+            if source_positions is None or relation_edges is None:
+                raise ValueError("static relation adapters require local window edges")
+            self._active_relation_edges = relation_edges
         with torch.autocast(
             input_ids.device.type,
             dtype=torch.bfloat16,
@@ -281,12 +334,6 @@ class CodeBERT(nn.Module):
             function_count,
             dtype=torch.float64 if force_fp32 else torch.float32,
         )
-        if "relations" in self.task_modules:
-            if source_positions is None or relation_edges is None:
-                raise ValueError("relation readout requires explicit source positions and edges")
-            pooled = self.task_modules["relations"](
-                hidden, source_positions, window_owners, pooling_weights, relation_edges, pooled
-            )
         head = self.task_modules["classifier"]
         if force_fp32:
             logits = torch.nn.functional.linear(

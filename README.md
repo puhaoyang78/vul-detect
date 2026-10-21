@@ -578,43 +578,51 @@ PRSC 两组均覆盖 580/1024 个不同 Train 函数，分别复用了 2714 / 27
 
 ## 静态分析引导的函数级漏洞检测
 
-本实验使用 BigVul、Devign、ReVeal 的独立去重平衡子集：
-每库 Train 1024 / Valid 256，固定 Seed 42，Test 保持未使用。
-项目及提交分组、去重与成员清单仍位于 data/static_guided/，
-不影响既有 PrimeVul/MegaVul 实验。
+本实验使用 BigVul、Devign、ReVeal 独立去重平衡子集：
+每库 Train 1024 / Valid 256，固定 Seed 42；Test 不参与选模。
+项目/提交分组、重复代码清理和成员清单仍位于 data/static_guided/；
+原有 PrimeVul/MegaVul 训练和普通 CodeBERT 保持不变。
 
-**程序分析。** Joern 提取 AST、CFG、CDG、REACHING_DEF、REF、
-POST_DOMINATE；Tree-sitter 分析实际调用参数、数组/指针声明、
-常量表达式、内存分配释放、索引读写和局部条件。候选漏洞模式覆盖：
-缓冲区长度不匹配、复制源/目的缓冲区长度、差一越界、源缓冲区越界读取、
-重复释放、释放后访问、可能为负的索引读取/写入、敏感读写 API、
-保护条件和操作关联。这些是候选程序位置，不是经过验证的漏洞位置；
-当前分析不证明跨过程调用、复杂别名及 CFG 路径的可行性。
-Joern 用批处理和缓存，已有 CPG 缓存可按新版语法匹配规则升级，
-无需对未变化的函数重新解析。
+**程序关系。** Joern 提取 AST/CFG/CDG/REACHING_DEF/REF/POST_DOMINATE。
+Tree-sitter 补充缓冲区长度、数组和指针访问、内存分配/释放、可能为负
+的下标、敏感 API 及条件检查等候选漏洞模式。规则均是静态分析候选，
+不作为真值漏洞位置；简单源代码顺序不能证明 UAF/DF 的路径可行性，
+仅靠函数局部信息也不能证明边界检查在所有路径上缺失。
+Joern 失败时可以使用 syntax_only 候选，保留原始解析状态。
 
-**模型。** 静态分析限制程序 Token 之间的候选交互。模型使用类型化
-query/key/value 和成对端点交互计算注意力，之后通过可学习门控形成
-函数表示，再送入二分类头。不再保留旧的均值残差关系分支。
-解析失败时退化为原 CodeBERT 表示。保留 source、sequence、
-shuffled、real 四种容量对照；打乱关系时保留每一种关系的源点、
-目标点分布及数量，不保留真实连边。
+**关系筛选。** CPG 全部边保留用于核查；模型编码阶段优先使用
+REACHING_DEF、CDG 和 REF，以及候选操作连接其参数、变量定义、
+控制条件的有类型关系。定义/控制关系按使用位置→上下文调整查询方向；
+真实连边、关系类型和方向均参与计算。按每种关系的不同查询位置
+均衡抽样，每类最多24条，函数最多192条，防止某个大型 AST 或
+源码靠前位置垄断关系选择。截断、跨窗口等关系缺失单独计数。
 
-**评价。** 每库 3 Epoch、有效 batch 8，使用本库 Valid 选择
-Epoch/阈值。报告 Clean AUC、MCC、F1，检查真实/随机连边和
-去除静态分支对同一模型预测的影响。保留单 Seed 的小样本限制；
-不得把验证集当成独立最终测试集。成功覆盖率、Joern 耗时及缓存
-收益同样报告。旧的静态关系聚合模型已移除，先前保存的
-旧版静态实验结果只保留在此前 Git 历史中，不随当前源码提供；旧 checkpoint 与当前
-模块参数不兼容，新的训练输出必须使用空目录。
+**编码层引导。** 关系模块直接放在 CodeBERT 的中间两层后面，
+用每个受影响 Token 查询同一程序上下文的多个相关 Token，使用
+带类型的 Q/K/V、成对端点交互和可学习残差系数更新该 Token
+隐藏状态；更新后的表示继续经过后续 CodeBERT Transformer 层。
+它不是原来的 mean-pooling 后单向量融合，也没有硬性限制
+原来的普通 Self-Attention。关系仅在两个端点同时出现在一个
+原生512-token滑动窗口中时参与编码，跨窗口丢失有明确统计。
+静态模型只用普通函数级 BCE 端到端训练，不使用位置伪标签。
 
-解析缓存可通过 --cache-root 复用，避免重新启动 Joern 处理已缓存函数；
-新模型训练和报告统一使用同一空输出目录。
+**对照和评价。** source（普通 CodeBERT）、sequence（同容量
+序列邻域）、shuffled（同类型关系随机重新配对）和 real
+（真实程序关系）共享 Seed42、CodeBERT 初始权重、数据和训练预算。
+报告 Clean Valid AUC/MCC/F1，以及同一 real checkpoint 上
+直接移除/打乱全部关系、去除数据流、控制依赖或候选模式后的
+实际全模型重编码效果，避免只删除末端读出造成错误消融解释。
+严格区分 Valid 选模与独立 Test 确证；真实边连接必须优于打乱
+和同容量对照，否则停止全量训练。
 
-运行：
+相关工作：GraphCodeBERT (ICLR21) 已使用数据流引导注意力，
+GraphFormers (2021) 已研究分层图信息交互；本实验目标是测试
+候选漏洞操作相关的定义、控制依赖和参数信息是否在函数级
+判别上提供额外价值，不能仅因将图模块放进编码器就声称创新。
+
+运行（Joern 缓存可以复用，训练请使用新的空输出目录）：
 
     python -m vulnmechanism.cli static prepare --raw-root /home/PublicData/PHY-data/vul_detect/data
-    python -m vulnmechanism.cli static benchmark
     python -m vulnmechanism.cli static extract --cache-root results/static_guided/joern/cache --output-dir results/static_current
     python -m vulnmechanism.cli static train --dataset bigvul --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
     python -m vulnmechanism.cli static train --dataset devign --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
@@ -622,5 +630,4 @@ Epoch/阈值。报告 Clean AUC、MCC、F1，检查真实/随机连边和
     python -m vulnmechanism.cli static report --output-dir results/static_current --device cuda:0
     python -m unittest tests.test_static
 
-尚未执行上述新模型的 GPU 训练。新代码需要完成真实实验后才能判断效果；
-若不能稳定超过同容量打乱关系对照，应停止全量训练。
+新编码层模块尚未进行这三库的 GPU 训练和独立 Test 评价。

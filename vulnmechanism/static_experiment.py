@@ -72,40 +72,59 @@ def paired_auc(labels, baseline, comparison, groups):
 
 @torch.no_grad()
 def relation_ablation(model, rows, builder, device, threshold):
-    """Readout-only Valid ablation, sharing each encoded window across all removals."""
-    from .model import _window_mean
-    from .static_analysis import RELATIONS
-    values = {kind: [] for kind in ("all", "none", "rewired", *RELATIONS)}
+    """Re-run actual CodeBERT layers with and without selected static relations.
+
+    Unlike the removed post-encoding pool, relations now modify intermediate
+    Transformer hidden states. Final hidden-state masking cannot evaluate their
+    contribution, so every counterfactual must run the encoder.
+    """
+    from .static_analysis import EDGE_TYPES, RELATIONS
+    variants = ("all", "none", "rewired", "no_dataflow", "no_control", "no_patterns")
+    values = {name: [] for name in variants}
+    logits = {name: [] for name in variants}
     rewired = InputBuilder(builder.tokenizer, relation_mode="shuffled")
-    strength = dict(base_norm=[], relation_delta_norm=[], logit_delta=[])
+    module = model.task_modules["relations"]
     model.eval()
     for at in range(0, len(rows), 4):
-        inputs = builder.codebert_batch(rows[at:at + 4], device=device)
-        ids, mask, owners, pooling, n, positions, edges = inputs
-        with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
-            hidden = model.encoder(input_ids=ids, attention_mask=mask, use_cache=False).last_hidden_state
-        base = _window_mean(hidden, mask, owners, pooling, n)
-        head, module = model.task_modules["classifier"], model.task_modules["relations"]
-        shuffled_edges = rewired.codebert_batch(rows[at:at + 4], device=device)[-1]
-        for kind in values:
-            selected = (edges if kind == "all" else edges[:0] if kind == "none"
-                        else shuffled_edges if kind == "rewired" else edges[edges[:, 3] != RELATIONS.index(kind)])
-            guided = module(hidden, positions, owners, pooling, selected, base)
-            values[kind].extend(head(guided).squeeze(-1).sigmoid().tolist())
-            delta = guided - base
+        batch = rows[at:at + 4]
+        inputs = builder.codebert_batch(batch, device=device)
+        edges = inputs[-1]
+        shuffled = rewired.codebert_batch(batch, device=device)[-1]
+        for kind in variants:
             if kind == "all":
-                strength["base_norm"].extend(base.norm(dim=1).tolist())
-                strength["relation_delta_norm"].extend(delta.norm(dim=1).tolist())
-                strength["logit_delta"].extend(torch.nn.functional.linear(delta, head.weight).squeeze(-1).tolist())
+                selected = edges
+            elif kind == "none":
+                selected = edges[:0]
+            elif kind == "rewired":
+                selected = shuffled
+            elif kind == "no_dataflow":
+                ignored = {RELATIONS.index("REACHING_DEF"), RELATIONS.index("REF")}
+                selected = edges[~torch.isin(edges[:, 3], edges.new_tensor(sorted(ignored)))]
+            elif kind == "no_control":
+                selected = edges[edges[:, 3] != RELATIONS.index("CDG")]
+            else:
+                selected = edges[edges[:, 3] < len(EDGE_TYPES)]
+            scores = model(*(*inputs[:-1], selected)).float()
+            logits[kind].extend(scores.tolist())
+            values[kind].extend(scores.sigmoid().tolist())
     labels = [r["label"] for r in rows]
-    result = dict(metrics={k: metrics(labels, v, threshold) for k, v in values.items()},
-                  strength={k: dict(mean=float(np.mean(v)), median=float(np.median(v)),
-                                    rms=float(np.sqrt(np.mean(np.square(v)))), p95=float(np.quantile(np.abs(v), .95)))
-                            for k, v in strength.items()},
-                  weight_norms={k: float(p.norm()) for k, p in module.named_parameters()},
-                  interpretation="same real checkpoint/encoder; readout removal or rewiring on source Valid, no threshold reselection")
+    original = np.array(logits["all"])
+    no_structure = np.array(logits["none"])
+    rewired_scores = np.array(logits["rewired"])
+    strength = dict(
+        abs_logit_change_without_relations=float(np.mean(np.abs(original - no_structure))),
+        abs_logit_change_rewired=float(np.mean(np.abs(original - rewired_scores))),
+        changed_logit_fraction_without_relations=float(np.mean(np.abs(original - no_structure) > 1e-4)),
+        changed_logit_fraction_rewired=float(np.mean(np.abs(original - rewired_scores) > 1e-4)),
+    )
+    result = dict(
+        metrics={kind: metrics(labels, v, threshold) for kind, v in values.items()},
+        sensitivity=strength,
+        adapter_layer_indices=list(module.layer_indices),
+        weight_norms={name: float(p.norm()) for name, p in module.named_parameters()},
+        interpretation="actual full-encoder inference with fixed real-model parameters, removed/reconnected relations; unchanged Valid threshold and membership",
+    )
     return result, values["all"]
-
 
 def report(data_dir, output_dir, *, device="auto"):
     device = resolve_device(device)

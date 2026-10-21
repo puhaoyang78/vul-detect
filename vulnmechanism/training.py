@@ -88,7 +88,7 @@ def train(
         raise ValueError(f"unknown dataset: {dataset}")
     from .relations import MODES, RANK, PER_TYPE
     if relation_mode not in MODES or (relation_mode != "none" and (method != "bce" or representation_mask != "none")):
-        raise ValueError("static-relation readout requires plain BCE")
+        raise ValueError("static in-encoder program relations currently require plain BCE")
     if method not in (*METHODS, "lp_ft", "swa"):
         raise ValueError(f"unknown method: {method}")
     if hard_selection not in ("hardest", "boundary") or vat_direction not in VAT_DIRECTIONS:
@@ -174,9 +174,14 @@ def train(
         "epoch MCC/F1/Accuracy/AUC",
         precision="FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
         parameter_count=sum(p.numel() for p in model.parameters()),
-        static_relations=(dict(mode=relation_mode, rank=RANK, per_type=PER_TYPE,
-                              extra_parameters=sum(p.numel() for p in model.task_modules["relations"].parameters()))
-                          if relation_mode != "none" else None),
+        static_relations=(dict(
+            mode=relation_mode, rank=RANK, per_type=PER_TYPE,
+            injection="sparse relation attention after selected CodeBERT layers",
+            layers=list(model.task_modules["relations"].layer_indices),
+            relation_budget=192,
+            window_scope="only endpoints sharing a native 512-token window",
+            extra_parameters=sum(p.numel() for p in model.task_modules["relations"].parameters()),
+        ) if relation_mode != "none" else None),
         input_protocol=dict(
             logical_budget=config["source_max_length"],
             prefix_tokens=len(builder.source_prefix),
