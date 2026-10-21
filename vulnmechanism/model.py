@@ -230,8 +230,8 @@ class CodeBERT(nn.Module):
         hidden_size = self.encoder.config.hidden_size
         self.task_modules = nn.ModuleDict({"classifier": nn.Linear(hidden_size, 1)})
         if relation_mode != "none":
-            from .relations import RelationPool
-            self.task_modules["relations"] = RelationPool(hidden_size)
+            from .relations import StaticRelationAttention
+            self.task_modules["relations"] = StaticRelationAttention(hidden_size)
         self.to(device)
 
     def forward(
@@ -284,8 +284,8 @@ class CodeBERT(nn.Module):
         if "relations" in self.task_modules:
             if source_positions is None or relation_edges is None:
                 raise ValueError("relation readout requires explicit source positions and edges")
-            pooled = pooled + self.task_modules["relations"](
-                hidden, source_positions, window_owners, pooling_weights, relation_edges, function_count
+            pooled = self.task_modules["relations"](
+                hidden, source_positions, window_owners, pooling_weights, relation_edges, pooled
             )
         head = self.task_modules["classifier"]
         if force_fp32:

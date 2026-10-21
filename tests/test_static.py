@@ -9,9 +9,10 @@ import torch
 
 from tests.test_codebert_source import CodeTokenizer, tiny_base
 from vulnmechanism import model as core
-from vulnmechanism.relations import RelationPool, relation_tokens
-from vulnmechanism.static_analysis import align_graph, candidate_kinds, run_process
+from vulnmechanism.relations import StaticRelationAttention, relation_tokens
+from vulnmechanism.static_analysis import align_graph, attach_patterns, run_process, RELATIONS
 from vulnmechanism.static_data import remove_duplicates, isolate_families, near_overlaps
+from vulnmechanism.static_patterns import extract_patterns
 
 
 class StaticTests(unittest.TestCase):
@@ -52,11 +53,39 @@ class StaticTests(unittest.TestCase):
         self.assertEqual(pairs[0]["removed"], "train")
         self.assertGreaterEqual(pairs[0]["jaccard"], .9)
 
-    def test_candidate_annotations_do_not_claim_verified_vulnerability(self):
-        self.assertEqual(candidate_kinds(dict(name="memcpy")), ["sensitive_api"])
-        self.assertEqual(candidate_kinds(dict(name="<operator>.lessThan")), ["guard"])
-        graph = dict(nodes=[dict(id="0", name="f", kind="CALL", code="wrong", line=1, column=1)], edges=[])
-        result = align_graph(graph, "f(x);")
+    def test_vulnerability_pattern_families_are_typed_and_auditable(self):
+        code = """void f(int i) {
+          char dst[8]; char src[4]; int n=9;
+          memcpy(dst,src,n); memcpy(dst,src,sizeof(src));
+          if(i >= 0 && i < 8) dst[i]=1;
+          dst[-1]=2;
+          char *p=malloc(8); free(p); free(p); p[0]=1;
+        }"""
+        patterns = extract_patterns(code)
+        types = {p["kind"] for p in patterns}
+        self.assertTrue({"buffer_size_mismatch", "buffer_overread",
+                         "off_by_one", "source_size_copy", "double_free",
+                         "use_after_free", "negative_index_write",
+                         "sensitive_write", "allocation", "release"}.issubset(types), types)
+        self.assertTrue(all(p["anchor"][0] < p["anchor"][1] for p in patterns))
+        self.assertTrue(all(p["kind"] in RELATIONS for p in patterns))
+        self.assertTrue(all(p["status"] in {"candidate", "constant_comparison"} for p in patterns))
+        negative = "void g(int i){ char dst[8]; int r=dst[i]; }"
+        self.assertIn("negative_index_read", {p["kind"] for p in extract_patterns(negative)})
+
+    def test_existing_joern_cache_upgrades_without_reparsing(self):
+        source = "void f(){char d[8];char s[4];memcpy(d,s,9);}"
+        graph = dict(status="ok", nodes=[dict(span=[5, 6], kind="METHOD"),
+                       dict(span=[18, 19], kind="IDENTIFIER")],
+                     edges=[[0, 1, 0], [1, 0, 1], [0, 0, 6]],
+                     counts={"AST": 1, "CFG": 1, "memory": 1})
+        upgraded = attach_patterns(graph, source)
+        self.assertEqual(upgraded["schema_version"], 2)
+        self.assertNotIn("memory", upgraded["counts"])
+        self.assertGreater(upgraded["counts"].get("buffer_size_mismatch", 0), 0)
+        self.assertEqual(upgraded, attach_patterns(upgraded, source))
+        incomplete = dict(nodes=[dict(id="0", name="f", kind="CALL", code="wrong", line=1, column=1)], edges=[])
+        result = align_graph(incomplete, "f(x);")
         self.assertEqual(result["status"], "incomplete_graph")
         self.assertEqual(result["nodes"][0]["alignment"], "location_token")
 
@@ -66,56 +95,73 @@ class StaticTests(unittest.TestCase):
                    edges=[[i, i + 1, i % 3] for i in range(9)]))
         real, _ = relation_tokens(row, CodeTokenizer(), 2025, "real")
         shuffled, info = relation_tokens(row, CodeTokenizer(), 2025, "shuffled")
-        self.assertEqual(Counter(a for a, _, _ in real), Counter(a for a, _, _ in shuffled))
-        self.assertEqual(Counter(b for _, b, _ in real), Counter(b for _, b, _ in shuffled))
+        self.assertEqual(Counter((a, k) for a, _, k in real), Counter((a, k) for a, _, k in shuffled))
+        self.assertEqual(Counter((b, k) for _, b, k in real), Counter((b, k) for _, b, k in shuffled))
         self.assertEqual(Counter(k for _, _, k in real), Counter(k for _, _, k in shuffled))
         self.assertGreater(info["changed_endpoints"], 0)
         self.assertEqual(shuffled, relation_tokens(dict(row, label=1), CodeTokenizer(), 2025, "shuffled")[0])
         self.assertTrue(relation_tokens(dict(raw_source="abc"), CodeTokenizer(), 2025, "sequence")[0])
 
-    def test_overlapping_window_positions_have_unit_weight(self):
+    def test_relation_attention_uses_pairing_and_window_weights(self):
         torch.manual_seed(42)
-        module = RelationPool(8)
-        torch.nn.init.normal_(module.output.weight)
-        hidden = torch.randn(1, 3, 8, requires_grad=True)
+        module = StaticRelationAttention(8)
+        hidden = torch.randn(1, 4, 8, requires_grad=True)
         owners = torch.tensor([0])
-        positions = torch.tensor([[0, 1, 2]])
-        edges = torch.tensor([[0, 0, 2, 0], [0, 1, 2, 1]])
-        expected = module(hidden, positions, owners, torch.ones(1, 3), edges, 1)
-        repeated = module(hidden.expand(2, -1, -1), positions.expand(2, -1), torch.tensor([0, 0]),
-                          torch.full((2, 3), .5), edges, 1)
-        torch.testing.assert_close(expected, repeated)
-        repeated.square().sum().backward()
-        self.assertTrue(torch.isfinite(hidden.grad).all())
+        positions = torch.tensor([[0, 1, 2, 3]])
+        base = torch.randn(1, 8)
+        edges = torch.tensor([[0, 0, 1, 0], [0, 2, 3, 0], [0, 0, 2, 1]])
+        real = module(hidden, positions, owners, torch.ones(1, 4), edges, base)
+        rewired = edges.clone()
+        rewired[0, 2], rewired[1, 2] = edges[1, 2], edges[0, 2]
+        other = module(hidden, positions, owners, torch.ones(1, 4), rewired, base)
+        self.assertGreater(float((real - other).abs().max()), 1e-6)
+        repeated = module(hidden.expand(2, -1, -1), positions.expand(2, -1),
+                          torch.tensor([0, 0]), torch.full((2, 4), .5), edges, base)
+        torch.testing.assert_close(real, repeated, atol=2e-6, rtol=2e-6)
+        real.square().sum().backward()
+        self.assertGreater(float(module.query.weight.grad.abs().sum()), 0)
         self.assertGreater(float(hidden.grad.abs().sum()), 0)
+        torch.testing.assert_close(module(hidden.detach(), positions, owners,
+                                           torch.ones(1, 4), edges[:0], base), base)
 
     def test_real_model_forward_backward_and_strict_reload(self):
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "base";tiny_base(path)
-            row = dict(sample_key="a", raw_source="int f(int x){return x+1;}",
-                       program_relations=dict(status="ok", nodes=[dict(span=[4, 5]), dict(span=[20, 21])],
-                                              edges=[[0, 1, 0], [1, 0, 3]]))
-            core.seed_everything(42);plain = core.CodeBERT(path, "cpu").eval()
-            reference = plain(*core.InputBuilder(CodeTokenizer()).codebert_batch([row], device="cpu"))
+            path = Path(tmp) / "base"; tiny_base(path)
+            source = "int f(int x){int z=x+1;return z;}"
+            row = dict(sample_key="a", raw_source=source,
+                       program_relations=dict(status="ok", nodes=[
+                           dict(span=[4, 5]), dict(span=[10, 11]),
+                           dict(span=[13, 16]), dict(span=[22, 23])],
+                           edges=[[0, 1, 0], [2, 3, 0], [0, 3, 3], [2, 1, 3]]))
+            core.seed_everything(42)
+            reference = core.CodeBERT(path, "cpu").eval()(
+                *core.InputBuilder(CodeTokenizer()).codebert_batch([row], device="cpu"))
             initial, counts = [], []
             for mode in ("sequence", "shuffled", "real"):
-                core.seed_everything(42);model = core.CodeBERT(path, "cpu", relation_mode=mode).eval()
+                core.seed_everything(42)
+                model = core.CodeBERT(path, "cpu", relation_mode=mode).eval()
                 builder = core.InputBuilder(CodeTokenizer(), relation_mode=mode)
                 inputs = builder.codebert_batch([row], device="cpu")
-                torch.testing.assert_close(model(*inputs), reference, atol=0, rtol=0)
+                observed = model(*inputs)
+                self.assertTrue(torch.isfinite(observed).all())
+                # Unlike the removed zero-residual model, relations affect initial predictions.
+                self.assertGreater(float((observed - reference).abs().max()), 1e-8)
                 initial.append({k: v.clone() for k, v in model.task_modules["relations"].state_dict().items()})
                 counts.append(sum(p.numel() for p in model.parameters()))
                 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
                 for _ in range(2):
-                    optimizer.zero_grad();logits = model(*inputs)
-                    torch.nn.functional.binary_cross_entropy_with_logits(logits, torch.ones_like(logits)).backward()
+                    optimizer.zero_grad()
+                    logits = model(*inputs)
+                    torch.nn.functional.binary_cross_entropy_with_logits(
+                        logits, torch.ones_like(logits)).backward()
                     self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()))
                     optimizer.step()
-                self.assertGreater(float(model.task_modules["relations"].source.weight.grad.abs().sum()), 0)
+                self.assertGreater(float(model.task_modules["relations"].query.weight.grad.abs().sum()), 0)
                 self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()), 0)
                 saved = Path(tmp) / "checkpoint.pt"
-                checkpoint = dict(model_path=str(path), state_dict=model.state_dict(), static_relations=dict(mode=mode))
+                checkpoint = dict(model_path=str(path), state_dict=model.state_dict(),
+                                  static_relations=dict(mode=mode))
                 torch.save(checkpoint, saved)
                 restored = core.load_model(torch.load(saved, weights_only=False), "cpu")
                 torch.testing.assert_close(model(*inputs), restored(*inputs), atol=0, rtol=0)

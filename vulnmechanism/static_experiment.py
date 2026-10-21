@@ -77,7 +77,7 @@ def relation_ablation(model, rows, builder, device, threshold):
     from .static_analysis import RELATIONS
     values = {kind: [] for kind in ("all", "none", "rewired", *RELATIONS)}
     rewired = InputBuilder(builder.tokenizer, relation_mode="shuffled")
-    strength = dict(base_norm=[], residual_norm=[], logit_delta=[])
+    strength = dict(base_norm=[], relation_delta_norm=[], logit_delta=[])
     model.eval()
     for at in range(0, len(rows), 4):
         inputs = builder.codebert_batch(rows[at:at + 4], device=device)
@@ -90,12 +90,13 @@ def relation_ablation(model, rows, builder, device, threshold):
         for kind in values:
             selected = (edges if kind == "all" else edges[:0] if kind == "none"
                         else shuffled_edges if kind == "rewired" else edges[edges[:, 3] != RELATIONS.index(kind)])
-            residual = module(hidden, positions, owners, pooling, selected, n)
-            values[kind].extend(head(base + residual).squeeze(-1).sigmoid().tolist())
+            guided = module(hidden, positions, owners, pooling, selected, base)
+            values[kind].extend(head(guided).squeeze(-1).sigmoid().tolist())
+            delta = guided - base
             if kind == "all":
                 strength["base_norm"].extend(base.norm(dim=1).tolist())
-                strength["residual_norm"].extend(residual.norm(dim=1).tolist())
-                strength["logit_delta"].extend(torch.nn.functional.linear(residual, head.weight).squeeze(-1).tolist())
+                strength["relation_delta_norm"].extend(delta.norm(dim=1).tolist())
+                strength["logit_delta"].extend(torch.nn.functional.linear(delta, head.weight).squeeze(-1).tolist())
     labels = [r["label"] for r in rows]
     result = dict(metrics={k: metrics(labels, v, threshold) for k, v in values.items()},
                   strength={k: dict(mean=float(np.mean(v)), median=float(np.median(v)),

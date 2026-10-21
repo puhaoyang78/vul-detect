@@ -16,12 +16,10 @@ from .syntax import source_token_spans
 
 JOERN_VERSION = "4.0.465"
 EDGE_TYPES = ("AST", "CFG", "CDG", "REACHING_DEF", "REF", "POST_DOMINATE")
-CANDIDATES = ("memory", "pointer", "allocation", "release", "guard", "sensitive_api")
-RELATIONS = EDGE_TYPES + CANDIDATES
-# VIPer src/cpg_query.py: read and write lists. These are syntax/API matches,
-# not VIPer's stronger buffer-size/deallocation vulnerability rules.
-SENSITIVE = {"getch", "fgets", "gets", "getchar", "fgetc", "memcpy", "strncpy", "strcpy", "wcsncpy", "memset", "wmemset"}
+from .static_patterns import PATTERN_TYPES, extract_patterns
 
+RELATIONS = EDGE_TYPES + PATTERN_TYPES
+PATTERN_SCHEMA = 2
 
 def source_key(source):
     return hashlib.sha256(source.encode()).hexdigest()
@@ -37,25 +35,7 @@ def cache_key(row):
     return source_key(source_extension(row) + "\0" + row["raw_source"])
 
 
-def candidate_kinds(node):
-    name = node["name"]
-    found = []
-    if name in {"<operator>.indexAccess", "<operator>.indirectIndexAccess", "<operator>.indirection"}:
-        found.append("memory")
-    if name in {"<operator>.indirection", "<operator>.addressOf", "<operator>.indirectFieldAccess"}:
-        found.append("pointer")
-    if name in {"malloc", "calloc", "realloc", "alloca", "<operator>.new", "<operator>.alloc"}:
-        found.append("allocation")
-    if name in {"free", "<operator>.delete", "<operator>.deleteArray"}:
-        found.append("release")
-    if name in {"<operator>.lessThan", "<operator>.lessEqualsThan", "<operator>.greaterThan", "<operator>.greaterEqualsThan"}:
-        found.append("guard")
-    if name in SENSITIVE:
-        found.append("sensitive_api")
-    return found
-
-
-def align_graph(graph, source):
+def align_graph(graph, source, *, language="c"):
     """Exact node-code spans when available; otherwise a marked location anchor.
 
     Joern C/C++ columns are one-based. Non-exact anchors use one lexical token,
@@ -84,7 +64,7 @@ def align_graph(graph, source):
                 continue
             start, end = matches[0]
         mapped[node["id"]] = len(nodes)
-        nodes.append(dict(span=[start, end], kind=node["kind"], candidates=candidate_kinds(node),
+        nodes.append(dict(span=[start, end], kind=node["kind"],
                           alignment="exact_code" if is_exact else "location_token"))
         exact += is_exact
     edges, counts = [], Counter()
@@ -92,16 +72,55 @@ def align_graph(graph, source):
         if kind in EDGE_TYPES and a in mapped and b in mapped:
             edges.append([mapped[a], mapped[b], RELATIONS.index(kind)])
             counts[kind] += 1
-    for i, node in enumerate(nodes):
-        for category in node["candidates"]:
-            edges.append([i, i, RELATIONS.index(category)])
-            counts[category] += 1
-    return dict(status="ok" if nodes and counts["AST"] and counts["CFG"] else "incomplete_graph",
-                nodes=nodes, edges=edges, counts=dict(counts), raw_nodes=len(graph["nodes"]),
-                raw_edges=dict(Counter(e[2] for e in graph["edges"])), exact_spans=exact,
-                location_only_spans=len(nodes) - exact,
-                extraction="Joern intraprocedural; REACHING_DEF is may-dataflow/def-use; REF is symbol binding",
-                candidates="heuristic API/operator matches; comparisons are candidate guards, not verified bounds checks")
+    result = dict(
+        status="ok" if nodes and counts["AST"] and counts["CFG"] else "incomplete_graph",
+        nodes=nodes, edges=edges, counts=dict(counts), raw_nodes=len(graph["nodes"]),
+        raw_edges=dict(Counter(e[2] for e in graph["edges"])), exact_spans=exact,
+        location_only_spans=len(nodes) - exact,
+        extraction="Joern intraprocedural AST, CFG, CDG, reaching definitions and symbol references",
+    )
+    return attach_patterns(result, source, language=language)
+
+
+def attach_patterns(graph, source, *, language="c"):
+    """Upgrade cached CPG relations with program-pattern candidates in place.
+
+    A graph's CPG edges remain unchanged; the added typed edges connect a
+    candidate operation to its operands/guard rather than simply marking API
+    names. Cached Joern outputs can be upgraded without rerunning the JVM.
+    """
+    if graph.get("schema_version") == PATTERN_SCHEMA:
+        return graph
+    result = dict(graph)
+    if graph["status"] != "ok":
+        result.update(schema_version=PATTERN_SCHEMA, patterns=[], pattern_counts={})
+        return result
+    nodes = [{k: v for k, v in n.items() if k != "candidates"} for n in graph["nodes"]]
+    edges = [list(e) for e in graph["edges"] if e[2] < len(EDGE_TYPES)]
+    counts = Counter({name: sum(e[2] == i for e in edges) for i, name in enumerate(EDGE_TYPES)})
+    indexed = {tuple(n["span"]): i for i, n in enumerate(nodes)}
+
+    def anchor(span):
+        key = tuple(span)
+        if key not in indexed:
+            indexed[key] = len(nodes)
+            nodes.append(dict(span=list(span), kind="PATTERN_POSITION", alignment="syntax_span"))
+        return indexed[key]
+
+    patterns = extract_patterns(source, language=language)
+    for p in patterns:
+        kind = RELATIONS.index(p["kind"])
+        a = anchor(p["anchor"])
+        linked = p["related"] or [p["anchor"]]
+        for span in linked:
+            b = anchor(span)
+            edges.append([a, b, kind])
+            counts[p["kind"]] += 1
+    result.update(nodes=nodes, edges=edges, counts=dict(counts),
+                  patterns=patterns, pattern_counts=dict(Counter(p["kind"] for p in patterns)),
+                  schema_version=PATTERN_SCHEMA,
+                  candidates="typed syntax and CPG-context patterns, not vulnerability labels")
+    return result
 
 
 def run_process(argv, log, timeout=300):
@@ -164,7 +183,13 @@ def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=
         key = cache_key(row)
         path = cache_dir / (key + ".json")
         if cache and path.exists():
-            results[key] = json.loads(path.read_text());hits += 1
+            cached = json.loads(path.read_text())
+            graph = attach_patterns(cached, row["raw_source"],
+                                    language="c" if source_extension(row) == ".c" else "cpp")
+            results[key] = graph
+            if graph.get("schema_version") != cached.get("schema_version"):
+                write_json(path, graph)
+            hits += 1
         else:
             pending[key] = row
     costs = []
@@ -187,10 +212,11 @@ def extract(rows, output_dir, *, joern="/home/phy/joern", batch_size=128, cache=
                 # One function per file. Multiple definitions are explicitly
                 # marked, never silently replaced by a same-name call stub.
                 if len(definitions) == 1:
-                    result = align_graph(definitions[0], row["raw_source"])
+                    result = align_graph(definitions[0], row["raw_source"], language="c" if source_extension(row) == ".c" else "cpp")
                 else:
                     result = dict(status="no_definition" if not definitions else "multiple_definitions",
-                                  definition_count=len(definitions), nodes=[], edges=[], counts={})
+                                  definition_count=len(definitions), nodes=[], edges=[], counts={},
+                                  schema_version=PATTERN_SCHEMA, patterns=[], pattern_counts={})
                 results[key] = result
                 write_json(cache_dir / (key + ".json"), result)
             costs.append(dict(functions=len(chunk), parse=parse, export=export))

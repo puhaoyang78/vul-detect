@@ -576,67 +576,48 @@ PRSC 两组均覆盖 580/1024 个不同 Train 函数，分别复用了 2714 / 27
 **本轮结论：没有得到稳定、可归因于 Pair-guided 选维的 Clean 收益。** 两个 PRSC 的 AUC 点估计均低于对应随机 Mask；相对 BCE 的 AUC 增量区间均跨 0，AUPRC 也低于 BCE。严格扰动鲁棒性较 BCE 改善，但简单掩码对照也有相当或更好的结果。独立第二变体上的贡献解释能力没有自动转化为优于简单对照的分类学习效果。保留本轮负结果，不开展全量训练，不改变默认方法，不继续叠加其他机制。
 
 
-## 静态关系引导的小样本实验
+## 静态分析引导的函数级漏洞检测
 
-这一实验只使用 BigVul、Devign、ReVeal；数据和结果分别位于 `data/static_guided/`、`results/static_guided/`，不改变旧实验。每库固定 Seed 42，Train 1024（512/512）、Valid 256（128/128）；Test 只用于数据隔离检查，不做模型评价或调参。
+本实验使用 BigVul、Devign、ReVeal 的独立去重平衡子集：
+每库 Train 1024 / Valid 256，固定 Seed 42，Test 保持未使用。
+项目及提交分组、去重与成员清单仍位于 data/static_guided/，
+不影响既有 PrimeVul/MegaVul 实验。
 
-实际原始文件为 `bigvul/MSR_data_cleaned.csv`（`func_before/vul/project/commit_id`）、`devign/dataset.json`（`func/target/project/commit_id`）、`reveal/{non-vulnerables,vulnerables}.json`（`code/hash/project`，标签由上游两个文件确定）。BigVul 使用项目分组、按正例数尽量达到 80/10/10；Devign 保留 [CodeXGLUE 官方索引](https://github.com/microsoft/CodeXGLUE/tree/main/Code-Code/Defect-detection/dataset)，跨 Split 提交族只保留在 Test > Valid > Train 的最高优先级 Split；ReVeal 未附官方划分，其项目字段只有 Debian/Chrome 集合，因此使用 collection+原生 hash 分组，并保留项目字段。作者处理代码从漏洞/修复文件记录继承 hash，但现有文件没有完整提交/CVE/配对映射，不能保证阻断未记录的关联。
+**程序分析。** Joern 提取 AST、CFG、CDG、REACHING_DEF、REF、
+POST_DOMINATE；Tree-sitter 分析实际调用参数、数组/指针声明、
+常量表达式、内存分配释放、索引读写和局部条件。候选漏洞模式覆盖：
+缓冲区长度不匹配、复制源/目的缓冲区长度、差一越界、源缓冲区越界读取、
+重复释放、释放后访问、可能为负的索引读取/写入、敏感读写 API、
+保护条件和操作关联。这些是候选程序位置，不是经过验证的漏洞位置；
+当前分析不证明跨过程调用、复杂别名及 CFG 路径的可行性。
+Joern 用批处理和缓存，已有 CPG 缓存可按新版语法匹配规则升级，
+无需对未变化的函数重新解析。
 
-先删除完全相同及去空白/注释后 token 相同的源码重复，冲突标签组全部移除；函数名、标识符和字面量不做归一化。完成分组、平衡后，枚举各 Split 间完整函数的 token 5-gram 集合 Jaccard ≥0.90 重叠，移除低优先级成员，再取两类较小数量平衡。该清理只用于本轮三库，不跨库去重。`statistics.json`、`members.csv`、`pilot.members.csv`、`removed.jsonl`、`near_overlaps.jsonl` 保存数量和成员。完整平衡 Train/Valid/Test 为 BigVul 15178/1898/1902、Devign 11042/1682/2494、ReVeal 3022/376/380；小样本只从清理后的 Train/Valid 抽取。
+**模型。** 静态分析限制程序 Token 之间的候选交互。模型使用类型化
+query/key/value 和成对端点交互计算注意力，之后通过可学习门控形成
+函数表示，再送入二分类头。不再保留旧的均值残差关系分支。
+解析失败时退化为原 CodeBERT 表示。保留 source、sequence、
+shuffled、real 四种容量对照；打乱关系时保留每一种关系的源点、
+目标点分布及数量，不保留真实连边。
 
-方法依据核查了 [VIPer 的论文与作者归档](https://zenodo.org/records/14902701)、[DeepDFA 论文](https://arxiv.org/abs/2212.08108)及其 [抽象定义提取代码](https://github.com/ISU-PAAL/DeepDFA/blob/master/DDFA/sastvd/scripts/abstract_dataflow_full.py)，以及 [PVDetector 的 C 关系提取实现](https://github.com/jaylanli/PVDetector/blob/main/parser/CSG_c.py)。VIPer 的缓冲区/释放规则还需要数据、控制及长度条件；DeepDFA 以 API、类型、常量、操作符抽象定义，并沿 CFG 传播；PVDetector 区分数据、控制和漏洞候选关系。本轮不是它们的完整复现，不把 API 出现或比较表达式当作漏洞位置真值。
+**评价。** 每库 3 Epoch、有效 batch 8，使用本库 Valid 选择
+Epoch/阈值。报告 Clean AUC、MCC、F1，检查真实/随机连边和
+去除静态分支对同一模型预测的影响。保留单 Seed 的小样本限制；
+不得把验证集当成独立最终测试集。成功覆盖率、Joern 耗时及缓存
+收益同样报告。旧的静态关系聚合模型已移除，先前保存的
+results/static_guided/ 指标仅为历史负结果，旧 checkpoint 与当前
+模块参数不兼容；新的训练输出必须使用空目录。
 
-Joern 4.0.465 在独立函数文件上批量运行，每批 128、一条任务、每 JVM 4 GiB heap/4 个处理器。按真实后缀及 Devign 的 C 语言选择 `.c/.cpp`，不修改原函数、不补造宏定义。提取 AST、CFG、CDG、POST_DOMINATE、REACHING_DEF、REF；REACHING_DEF 是 may-dataflow/Def-Use，REF 表示符号绑定。额外用作者代码中的敏感 API 列表及 AST 操作符标记内存、指针、分配、释放和候选比较条件；这些标记为启发式，不声称已证实越界、释放后使用或有效边界保护。缓存键包含源码及解析语言，脚本变化会分开缓存；中断后增量读取已保存结果。缺失定义、多个定义和不完整图分别记录，失败样本仍参加同一源码 BCE，关系残差为零。节点定位区分源码精确匹配与仅 token 位置匹配；模型仅使用 2048 逻辑输入范围内的关系端点。
+运行：
 
-四组共享原 CodeBERT、mean pooling+linear、BCE、3 Epoch、有效 batch 8、学习率 1e-5 和 384 次优化器更新，各自仅用 Clean Valid 选择 Epoch/阈值：
+    python -m vulnmechanism.cli static prepare --raw-root /home/PublicData/PHY-data/vul_detect/data
+    python -m vulnmechanism.cli static benchmark
+    python -m vulnmechanism.cli static extract
+    python -m vulnmechanism.cli static train --dataset bigvul --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
+    python -m vulnmechanism.cli static train --dataset devign --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
+    python -m vulnmechanism.cli static train --dataset reveal --modes source sequence shuffled real --output-dir results/static_current --device cuda:0
+    python -m vulnmechanism.cli static report --output-dir results/static_current --device cuda:0
+    python -m unittest tests.test_static
 
-- `source`：原始 Source-only。
-- `sequence`：同容量聚合器，使用与静态图无关的固定源码 token 序列邻域。
-- `shuffled`：保留每函数端点边际、关系种类/数量和候选区域，固定 RNG 打乱边的终点配对。
-- `real`：使用真实静态关系。
-
-后三组完全相同的 74,112 个额外参数。对关系端点表示计算 rank-32 消息 `tanh(A h_src + B h_dst + e_type)`，每类最多 32 条边，先在类内求平均，再在有覆盖的关系类间求平均，经线性投影加回原函数表示。输出投影零初始化，使所有组初始编码器、分类头及 logit 相同；其他新参数在三个增参对照间同初始化。不拼接静态统计，不约束编码器 Attention，不增加 VAT、位置监督或其他损失。静态提取失败不另行筛除训练成员。
-
-使用现有 `vul-detect` 环境、预训练 CodeBERT、Joern 和 JDK 21：
-
-```bash
-python -m vulnmechanism.cli static prepare
-python -m vulnmechanism.cli static benchmark
-python -m vulnmechanism.cli static extract
-python -m vulnmechanism.cli static train --device cuda:0
-python -m vulnmechanism.cli static report --device cuda:0
-python -m unittest tests.test_static tests.test_codebert_source tests.test_surface_vat tests.test_prsc
-```
-
-原始根目录用 `--raw-root` 指定；训练可用 `--dataset bigvul --modes source sequence shuffled real` 分组运行。Devign 的上游索引随本轮数据统计保存。训练复用 `training.py`，关系聚合位于 `relations.py`；Joern 提取在 `static_analysis.py/static_extract.sc`。`comparison.csv/results.json` 保存 Valid 指标、配对 bootstrap 差值和关系移除/置换诊断，`*.coverage.json` 保存解析与候选关系覆盖，`protocol.json` 保存固定配置；权重、逐 Epoch 日志和预测在各条件目录。单 Seed、小 Valid 且参与选模，结果只作为小样本证据，不作独立 Test 确证。
-
-### 实际小样本结果（Seed 42）
-
-下表均为各自 Valid 选中的 checkpoint，256 条平衡 Valid；不是 Test 结果。12 组均完成 3 Epoch、384 次优化器更新，并已重新加载核对预测与保存指标。
-
-| 数据集 | 方法 | Epoch | AUC | MCC | F1 |
-|---|---|---:|---:|---:|---:|
-| bigvul | Source-only | 3 | 0.9124 | 0.7897 | 0.8966 |
-| bigvul | 同容量序列 | 3 | 0.9120 | 0.7816 | 0.8923 |
-| bigvul | 打乱关系 | 3 | 0.9128 | 0.7821 | 0.8931 |
-| bigvul | 真实关系 | 3 | 0.9246 | 0.7821 | 0.8880 |
-| devign | Source-only | 3 | 0.5553 | 0.2831 | 0.2585 |
-| devign | 同容量序列 | 3 | 0.5474 | 0.2831 | 0.2585 |
-| devign | 打乱关系 | 3 | 0.5578 | 0.2750 | 0.2466 |
-| devign | 真实关系 | 3 | 0.5607 | 0.2750 | 0.2466 |
-| reveal | Source-only | 2 | 0.7302 | 0.4178 | 0.7253 |
-| reveal | 同容量序列 | 3 | 0.7370 | 0.3965 | 0.7194 |
-| reveal | 打乱关系 | 3 | 0.7429 | 0.4223 | 0.7040 |
-| reveal | 真实关系 | 2 | 0.7303 | 0.4209 | 0.7312 |
-
-真实关系相对打乱关系的 AUC 差值分别为 +0.0117、+0.0029、−0.0126；按原生项目/提交/hash 分组的配对 bootstrap 95% 区间分别为 [−0.0004, 0.0271]、[−0.0104, 0.0174]、[−0.0422, 0.0195]，均跨 0。分组与函数级 bootstrap 都只是单次训练的评价队列不确定性，不是多 Seed 训练稳定性证据。ReVeal 真实关系第 3 Epoch 虽有更高 AUC，但既定 MCC 优先规则选择第 2 Epoch，未按结果改选 Epoch。
-
-同一真实关系 checkpoint 上，完整/移除关系聚合/打乱关系配对的 AUC 为：BigVul 0.924561/0.924133/0.924561，Devign 0.560730/0.560791/0.560669，ReVeal 0.730286/0.729736/0.730286。移除单类关系的绝对 AUC 变化均不超过 0.0004；这是固定编码器的推理诊断，不等同于重新训练消融。终点实际改变比例为 96.29%/97.50%/97.41%，并非打乱未生效。关系表示平均 L2 范数为 0.0287/0.0281/0.0124，源码表示为 16.6816/16.4106/16.0357，关系分支相对尺度约 0.17%/0.17%/0.08%；其 logit 增量 RMS 为 0.0188/0.0161/0.0078。
-
-结构提取成功数为 BigVul 1163/1280（90.86%）、Devign 1209/1280（94.45%）、ReVeal 1082/1280（84.53%）。数据依赖覆盖数为 1159/1209/1078，控制依赖为 833/1027/873。所有已定位节点中，模型逻辑输入范围内可见比例为 63.06%/70.58%/76.65%。失败仍保留在相同评价成员中。五个失败样例去掉筛选后仍只有合成 `<global>` 节点，涉及缺少类上下文的构造/析构函数、`av_always_inline`、`ATTRIBUTE_UNUSED` 等未展开限定符，证据见 [failure.examples.json](results/static_guided/failure.examples.json)；不将这些原因外推至全部失败。
-
-Joern 原始官方 Train 的 32 条 Devign 基准：两次单函数冷启动平均 33.48 秒/函数；32 条批处理端到端 40.29 秒（1.26 秒/函数），30 条获得有效结构；同一 32 条缓存重读 0.133 秒。全部 3840 条小样本完成的解析/导出进程累计约 1411.5 秒，包含序列化、一次 `/proc` 采样中断与缓存恢复的实际跨度约 1839.0 秒；BigVul 恢复时复用了 1152 条缓存。已留存批次的进程树采样峰值不超过 891.1 MiB，JVM heap 上限不等于整个进程树内存上限。
-
-四组的训练函数、编码窗口和 Token slots 完全一致，关系模型不增加编码器前向。3 Epoch（含 Valid、排除初始加载和保存）的 Source-only/真实关系秒数为 BigVul 127.2/140.6、Devign 130.4/147.7、ReVeal 128.3/139.9，约增加 10.6%/13.2%/9.0%；双 GPU 和解析并发运行时测得，不作为独立硬件速度基准。
-
-**结论：没有得到跨三库稳定、可归因于真实静态关系的 Clean 分类收益，不开展全量训练。** BigVul 的 AUC 有正向点估计，但 MCC/F1 下降；Devign 的关系收益很小；ReVeal 未优于打乱关系。当前分支幅度很小、对关系配对不敏感，是本次聚合器未有效利用静态先验的证据，不能据此否定静态分析关系本身。输出零初始化及均值聚合使分支信号偏弱是待验证解释。下一步只建议在同一小样本和预算上检查输出投影初始化尺度，不追加其他模块，也不接触 Test。
+尚未执行上述新模型的 GPU 训练。新代码需要完成真实实验后才能判断效果；
+若不能稳定超过同容量打乱关系对照，应停止全量训练。
