@@ -188,7 +188,18 @@ def report(data_dir, output_dir, *, device="auto"):
         coverage[dataset] = dict(
             extraction=json.loads((out / f"{dataset}.coverage.json").read_text()),
             model_functions_with_relations=sum(v["selected_edges"] > 0 for v in info.values()),
+            model_functions_with_window_relations=sum(
+                v.get("pairs_in_shared_windows", 0) > 0 for v in info.values()
+            ),
             model_functions=len(info),
+            selected_cpg_pairs=sum(v.get("selected_cpg", 0) for v in info.values()),
+            selected_pattern_pairs=sum(v.get("selected_patterns", 0) for v in info.values()),
+            pairs_in_shared_windows=sum(
+                v.get("pairs_in_shared_windows", 0) for v in info.values()
+            ),
+            pairs_outside_shared_windows=sum(
+                v.get("pairs_outside_shared_windows", 0) for v in info.values()
+            ),
             visible_located_nodes=sum(v["visible_nodes"] for v in info.values()),
             located_nodes=sum(v.get("located_nodes", 0) for v in info.values()),
             shuffled_changed_endpoints=sum(v.get("changed_endpoints", 0) for v in shuffled.values()),
