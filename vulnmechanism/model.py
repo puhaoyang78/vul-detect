@@ -134,6 +134,12 @@ class InputBuilder:
                     info["pairs_in_shared_windows"] = len(mapped)
                     info["pairs_outside_shared_windows"] = len(set(pairs) - mapped)
                     info["window_edge_instances"] = copies
+                if self.relation_mode == "shuffled":
+                    from .relations import shuffle_window_edges
+                    packed, changed = shuffle_window_edges(packed, spans, records)
+                    for owner, record in enumerate(records):
+                        self.relation_cache[record["sample_key"]][1]["changed_endpoints"] = \
+                            changed[owner]
                 edges = torch.tensor(packed, device=device, dtype=torch.long).reshape(-1, 4)
                 return (*result, source_positions, edges)
             return (*result, source_positions)
