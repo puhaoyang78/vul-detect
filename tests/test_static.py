@@ -121,18 +121,26 @@ class StaticTests(unittest.TestCase):
         unsigned = "void f(unsigned int i){char b[8];int x=b[i];}"
         self.assertNotIn("negative_index_read", {x["kind"] for x in extract_patterns(unsigned)})
 
-    def test_shuffle_preserves_marginals_and_ignores_labels(self):
-        row = dict(raw_source="abcdefghij", program_relations=dict(status="ok",
-                   nodes=[dict(span=[i, i + 1]) for i in range(10)],
-                   edges=[[i, i + 1, 3] for i in range(9)]))
-        real, _ = relation_tokens(row, CodeTokenizer(), 2025, "real")
-        shuffled, info = relation_tokens(row, CodeTokenizer(), 2025, "shuffled")
-        self.assertEqual(Counter((a, k) for a, _, k in real), Counter((a, k) for a, _, k in shuffled))
-        self.assertEqual(Counter((b, k) for _, b, k in real), Counter((b, k) for _, b, k in shuffled))
-        self.assertEqual(Counter(k for _, _, k in real), Counter(k for _, _, k in shuffled))
-        self.assertGreater(info["changed_endpoints"], 0)
-        self.assertEqual(shuffled, relation_tokens(dict(row, label=1), CodeTokenizer(), 2025, "shuffled")[0])
+    def test_shuffle_preserves_window_marginals_and_ignores_labels(self):
+        row = dict(sample_key="pair", raw_source="abcdefghij",
+                   program_relations=dict(status="ok",
+                       nodes=[dict(span=[i, i + 1]) for i in range(10)],
+                       edges=[[i, i + 1, 3] for i in range(9)]))
+        real_pairs, _ = relation_tokens(row, CodeTokenizer(), 2025, "real")
+        shuffled_pairs, _ = relation_tokens(row, CodeTokenizer(), 2025, "shuffled")
+        self.assertEqual(real_pairs, shuffled_pairs)
+        real = core.InputBuilder(CodeTokenizer(), relation_mode="real")
+        shuffled = core.InputBuilder(CodeTokenizer(), relation_mode="shuffled")
+        a = real.codebert_batch([row], device="cpu")[-1].tolist()
+        b = shuffled.codebert_batch([row], device="cpu")[-1].tolist()
+        self.assertEqual(Counter((w, q, typ) for w, q, k, typ in a),
+                         Counter((w, q, typ) for w, q, k, typ in b))
+        self.assertEqual(Counter((w, k, typ) for w, q, k, typ in a),
+                         Counter((w, k, typ) for w, q, k, typ in b))
+        self.assertGreater(shuffled.relation_cache["pair"][1]["changed_endpoints"], 0)
+        self.assertEqual(b, shuffled.codebert_batch([dict(row, label=1)], device="cpu")[-1].tolist())
         self.assertTrue(relation_tokens(dict(raw_source="abc"), CodeTokenizer(), 2025, "sequence")[0])
+
 
     def test_relation_attention_is_per_query_and_changes_encoder_state(self):
         torch.manual_seed(42)
