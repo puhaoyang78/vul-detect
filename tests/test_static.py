@@ -181,6 +181,30 @@ class StaticTests(unittest.TestCase):
         self.assertGreaterEqual(int(batch[-1][:, 1:3].min()), 1)
         self.assertGreaterEqual(builder.relation_cache["w"][1]["pairs_in_shared_windows"], 1)
 
+    def test_checkpointed_codebert_relations_receive_gradients(self):
+        torch.set_num_threads(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "base"; tiny_base(path)
+            row = dict(
+                sample_key="ck", raw_source="int f(int x){int n=x+1;return n;}",
+                program_relations=dict(status="ok", nodes=[
+                    dict(span=[4, 5]), dict(span=[16, 17]),
+                    dict(span=[21, 22]), dict(span=[30, 31])],
+                    edges=[[0, 1, 3], [0, 2, 3], [1, 3, 2], [2, 3, 3]]),
+            )
+            model = core.CodeBERT(path, "cpu", gradient_checkpointing=True,
+                                  relation_mode="real").train()
+            builder = core.InputBuilder(CodeTokenizer(), relation_mode="real")
+            inputs = builder.codebert_batch([row], device="cpu")
+            self.assertTrue(inputs[-1].numel() > 0)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                model(*inputs), torch.ones(1))
+            loss.backward()
+            adapters = model.task_modules["relations"].adapters
+            self.assertTrue(any(p.grad is not None and p.grad.abs().sum() > 0
+                                for p in adapters.parameters()))
+            self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()), 0)
+
     def test_real_model_forward_backward_and_strict_reload(self):
         torch.set_num_threads(2)
         with tempfile.TemporaryDirectory() as tmp:
