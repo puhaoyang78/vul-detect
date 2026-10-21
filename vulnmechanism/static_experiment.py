@@ -104,7 +104,7 @@ def relation_ablation(model, rows, builder, device, threshold):
                 selected = edges[edges[:, 3] != RELATIONS.index("CDG")]
             else:
                 selected = edges[edges[:, 3] < len(EDGE_TYPES)]
-            scores = model(*(*inputs[:-1], selected)).float()
+            scores = model(*(*inputs[:-1], selected)).float().cpu()
             logits[kind].extend(scores.tolist())
             values[kind].extend(scores.sigmoid().tolist())
     labels = [r["label"] for r in rows]
@@ -128,11 +128,12 @@ def relation_ablation(model, rows, builder, device, threshold):
 
 def report(data_dir, output_dir, *, device="auto"):
     device = resolve_device(device)
-    tables, predictions, ablations = [], {}, {}
+    tables, predictions, ablations, snapshot_comparisons = [], {}, {}, {}
     for dataset in DATASETS:
         rows = read_jsonl(Path(data_dir) / "pilot" / dataset / "valid.jsonl")
         labels = [r["label"] for r in rows]
         predictions[dataset] = {}
+        snapshot_comparisons[dataset] = {}
         for mode in MODES:
             run = Path(output_dir) / mode / dataset / "bce"
             path = run / "best.pt"
@@ -143,8 +144,27 @@ def report(data_dir, output_dir, *, device="auto"):
             started = time.monotonic()
             scores = predict_logits(model, rows, builder, device=device).sigmoid().tolist()
             metric = metrics(labels, scores, checkpoint["decision_threshold"])
-            if any(abs(metric[k] - checkpoint["validation"][k]) > 1e-6 for k in ("auc", "mcc", "f1")):
-                raise ValueError(f"reloaded Valid metrics changed: {dataset}/{mode}")
+            stored = checkpoint["validation"]
+            if metric["samples"] != stored["samples"]:
+                raise ValueError(f"reloaded Valid sample count changed: {dataset}/{mode}")
+            # Old checkpoints used nondeterministic CUDA atomics. Near-tied
+            # rankings and near-threshold predictions can change under
+            # repeatable reduction. Keep both measurements and mark differences;
+            # never substitute the training snapshot for current predictions.
+            counts_match = all(metric[k] == stored[k] for k in ("tp", "tn", "fp", "fn"))
+            snapshot_comparisons[dataset][mode] = dict(
+                training=stored, reloaded=metric, confusion_counts_equal=counts_match,
+                deltas={k: metric[k] - stored[k] for k in
+                        ("accuracy", "f1", "mcc", "auc", "auprc", "tp", "tn", "fp", "fn")},
+            )
+            ranking = dict(training_auc=stored["auc"], training_auprc=stored["auprc"],
+                           auc_delta_from_training=metric["auc"] - stored["auc"],
+                           auprc_delta_from_training=metric["auprc"] - stored["auprc"],
+                           training_confusion_counts_equal=counts_match)
+            if ranking["auc_delta_from_training"] or ranking["auprc_delta_from_training"] or not counts_match:
+                print(f"{dataset}/{mode}: stable reload AUC {metric['auc']:.9f} "
+                      f"(training snapshot {stored['auc']:.9f}); confusion counts "
+                      f"{stored['confusion_matrix']} -> {metric['confusion_matrix']}", flush=True)
             elapsed = time.monotonic() - started
             predictions[dataset][mode] = scores
             write_jsonl(run / "valid.predictions.jsonl", [dict(sample_key=r["sample_key"], label=r["label"], score=s) for r, s in zip(rows, scores)])
@@ -159,11 +179,14 @@ def report(data_dir, output_dir, *, device="auto"):
                                epoch_seconds=sum(e["epoch_seconds"] for e in epochs),
                                train_encoder_sequences=sum(e["bce_costs"]["encoder_sequences"] for e in epochs),
                                train_token_slots=sum(e["bce_costs"]["encoder_token_slots"] for e in epochs),
-                               prediction_seconds=elapsed))
+                               prediction_seconds=elapsed, **ranking))
             if mode == "real":
                 ablations[dataset], all_scores = relation_ablation(model, rows, builder, device, metric["threshold"])
+                difference = float(np.max(np.abs(np.asarray(all_scores) - scores)))
                 if not np.allclose(all_scores, scores, atol=1e-7, rtol=1e-6):
-                    raise ValueError("cached-window readout ablation does not reproduce normal predictions")
+                    raise ValueError(f"full-encoder relation ablation does not reproduce normal predictions: "
+                                     f"{dataset}/real, max probability difference={difference:.8g}")
+                ablations[dataset]["clean_prediction_max_abs_difference"] = difference
             del model, checkpoint
             if device.type == "cuda":
                 torch.cuda.empty_cache()
@@ -184,7 +207,7 @@ def report(data_dir, output_dir, *, device="auto"):
     for dataset in DATASETS:
         info = json.loads((out / "real" / dataset / "bce/relation.coverage.json").read_text())
         shuffled = json.loads((out / "shuffled" / dataset / "bce/relation.coverage.json").read_text())
-        edges = sum(v["selected_edges"] for v in shuffled.values())
+        edges = sum(v["window_edge_instances"] for v in shuffled.values())
         coverage[dataset] = dict(
             extraction=json.loads((out / f"{dataset}.coverage.json").read_text()),
             model_functions_with_relations=sum(v["selected_edges"] > 0 for v in info.values()),
@@ -210,7 +233,8 @@ def report(data_dir, output_dir, *, device="auto"):
         writer = csv.DictWriter(handle, list(tables[0]));writer.writeheader();writer.writerows(tables)
     write_json(out / "results.json", dict(validation=tables, real_minus_control=contrasts,
                                           relation_readout_ablation=ablations,
+                                          training_validation_comparison=snapshot_comparisons,
                                           coverage=coverage,
                                           protocol="Seed42 Train1024/Valid256, 3 epochs/effective batch8; same initialization, optimizer and 384 steps; source Valid epoch+threshold selection; Test unused",
-                                          interpretation="Validation selection and one seed: pilot evidence, not independent Test confirmation; readout ablation does not retrain the encoder"))
+                                          interpretation="Validation selection and one seed: pilot evidence, not independent Test confirmation; ablations re-run the full encoder without retraining; deterministic query reductions preserve attention semantics; metrics come from stable reload predictions at the frozen epoch/threshold; original training snapshots and all metric/confusion differences are explicitly retained, not declared equal"))
     print(json.dumps(contrasts), flush=True)

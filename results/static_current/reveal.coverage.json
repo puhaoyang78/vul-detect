@@ -1,0 +1,178 @@
+{
+  "costs": {
+    "samples": 1280,
+    "unique_uncached": 0,
+    "cache_hits": 1280,
+    "batches": [],
+    "seconds": 95.48151810304262,
+    "joern": "4.0.465",
+    "heap": "4 GiB per JVM",
+    "cpus_per_jvm": 4
+  },
+  "status": {
+    "ok": 1082,
+    "no_definition": 184,
+    "multiple_definitions": 14
+  },
+  "relation_functions": {
+    "AST": 1082,
+    "CFG": 1082,
+    "CDG": 873,
+    "REACHING_DEF": 1078,
+    "REF": 1061,
+    "POST_DOMINATE": 1082,
+    "memory_access": 557,
+    "pointer_access": 955,
+    "allocation": 39,
+    "release": 56,
+    "guard": 790,
+    "sensitive_read": 6,
+    "sensitive_write": 174,
+    "buffer_size_mismatch": 0,
+    "source_size_copy": 14,
+    "destination_size_copy": 19,
+    "off_by_one": 0,
+    "buffer_overread": 0,
+    "double_free": 15,
+    "use_after_free": 6,
+    "negative_index_read": 0,
+    "negative_index_write": 0,
+    "guarded_operation": 22
+  },
+  "exact_spans": 219391,
+  "location_only_spans": 61963,
+  "by_split_label": {
+    "train:0": {
+      "samples": 512,
+      "status": {
+        "ok": 416,
+        "no_definition": 90,
+        "multiple_definitions": 6
+      },
+      "relation_functions": {
+        "AST": 416,
+        "CFG": 416,
+        "CDG": 297,
+        "REACHING_DEF": 414,
+        "REF": 403,
+        "POST_DOMINATE": 416,
+        "memory_access": 127,
+        "pointer_access": 329,
+        "allocation": 6,
+        "release": 20,
+        "guard": 258,
+        "sensitive_read": 1,
+        "sensitive_write": 43,
+        "buffer_size_mismatch": 0,
+        "source_size_copy": 2,
+        "destination_size_copy": 2,
+        "off_by_one": 0,
+        "buffer_overread": 0,
+        "double_free": 4,
+        "use_after_free": 1,
+        "negative_index_read": 0,
+        "negative_index_write": 0,
+        "guarded_operation": 4
+      }
+    },
+    "train:1": {
+      "samples": 512,
+      "status": {
+        "ok": 429,
+        "no_definition": 76,
+        "multiple_definitions": 7
+      },
+      "relation_functions": {
+        "AST": 429,
+        "CFG": 429,
+        "CDG": 372,
+        "REACHING_DEF": 427,
+        "REF": 424,
+        "POST_DOMINATE": 429,
+        "memory_access": 297,
+        "pointer_access": 408,
+        "allocation": 18,
+        "release": 16,
+        "guard": 334,
+        "sensitive_read": 3,
+        "sensitive_write": 74,
+        "buffer_size_mismatch": 0,
+        "source_size_copy": 7,
+        "destination_size_copy": 9,
+        "off_by_one": 0,
+        "buffer_overread": 0,
+        "double_free": 4,
+        "use_after_free": 2,
+        "negative_index_read": 0,
+        "negative_index_write": 0,
+        "guarded_operation": 8
+      }
+    },
+    "valid:0": {
+      "samples": 128,
+      "status": {
+        "ok": 120,
+        "no_definition": 8
+      },
+      "relation_functions": {
+        "AST": 120,
+        "CFG": 120,
+        "CDG": 93,
+        "REACHING_DEF": 120,
+        "REF": 118,
+        "POST_DOMINATE": 120,
+        "memory_access": 41,
+        "pointer_access": 102,
+        "allocation": 6,
+        "release": 10,
+        "guard": 88,
+        "sensitive_read": 0,
+        "sensitive_write": 12,
+        "buffer_size_mismatch": 0,
+        "source_size_copy": 2,
+        "destination_size_copy": 4,
+        "off_by_one": 0,
+        "buffer_overread": 0,
+        "double_free": 3,
+        "use_after_free": 1,
+        "negative_index_read": 0,
+        "negative_index_write": 0,
+        "guarded_operation": 1
+      }
+    },
+    "valid:1": {
+      "samples": 128,
+      "status": {
+        "ok": 117,
+        "no_definition": 10,
+        "multiple_definitions": 1
+      },
+      "relation_functions": {
+        "AST": 117,
+        "CFG": 117,
+        "CDG": 111,
+        "REACHING_DEF": 117,
+        "REF": 116,
+        "POST_DOMINATE": 117,
+        "memory_access": 92,
+        "pointer_access": 116,
+        "allocation": 9,
+        "release": 10,
+        "guard": 110,
+        "sensitive_read": 2,
+        "sensitive_write": 45,
+        "buffer_size_mismatch": 0,
+        "source_size_copy": 3,
+        "destination_size_copy": 4,
+        "off_by_one": 0,
+        "buffer_overread": 0,
+        "double_free": 4,
+        "use_after_free": 2,
+        "negative_index_read": 0,
+        "negative_index_write": 0,
+        "guarded_operation": 9
+      }
+    }
+  },
+  "test_parsed": false
+}

@@ -1,0 +1,60 @@
+{
+  "dataset": "reveal",
+  "method": "bce",
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "training_config": {
+    "seed": 42,
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01,
+    "source_max_length": 2048,
+    "gradient_clip": 1.0
+  },
+  "train_samples": 1024,
+  "valid_samples": 256,
+  "diagnostic_limits": {
+    "train": null,
+    "valid": null
+  },
+  "environment": {
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "device": "NVIDIA GeForce RTX 4090"
+  },
+  "selection": "reveal clean Valid: threshold MCC/F1/Accuracy/closest to 0.5; epoch MCC/F1/Accuracy/AUC",
+  "precision": "FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+  "parameter_count": 124553393,
+  "static_relations": {
+    "mode": "shuffled",
+    "rank": 64,
+    "per_type": 24,
+    "injection": "sparse relation attention after selected CodeBERT layers",
+    "layers": [
+      3,
+      7
+    ],
+    "relation_budget": 192,
+    "window_scope": "only endpoints sharing a native 512-token window",
+    "extra_parameters": 497584
+  },
+  "input_protocol": {
+    "logical_budget": 2048,
+    "prefix_tokens": 21,
+    "source_budget": 2025,
+    "window": 512,
+    "stride": 244,
+    "pooling": "mean over unique source positions; prefix/BOS/EOS averaged across windows"
+  },
+  "vat": null,
+  "representation_mask": null,
+  "lp_ft": null,
+  "swa": null,
+  "augmentation": null,
+  "selected_epoch": 2,
+  "completed_epochs": 3,
+  "optimizer_steps": 384,
+  "averaged_steps": []
+}

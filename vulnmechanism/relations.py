@@ -203,16 +203,22 @@ class _RelationLayer(nn.Module):
                       self.relation_bias(kind).squeeze(-1))
             groups = window * width + query
             num_groups = windows * width
-            maxima = logits.new_full((num_groups,), float("-inf"))
-            maxima.scatter_reduce_(0, groups, logits, reduce="amax", include_self=True)
+            # CUDA index_add_ uses unordered floating-point atomics. Their
+            # rounding differences can cross a BF16 boundary in later encoder
+            # layers, making identical inference calls disagree. Reduce each
+            # query's edges in a fixed order without changing the attention.
+            order = torch.argsort(groups, stable=True)
+            lengths = torch.bincount(groups, minlength=num_groups)
+            maxima = torch.segment_reduce(logits[order], "max", lengths=lengths)
             probabilities = torch.exp(logits - maxima[groups])
-            denominators = logits.new_zeros(num_groups).index_add_(0, groups, probabilities)
+            denominators = torch.segment_reduce(probabilities[order], "sum", lengths=lengths)
             weights = probabilities / denominators[groups].clamp_min(1e-12)
             messages = torch.tanh(
                 self.value(right) + self.interaction(left * right) + self.relation(kind)
             )
-            context = messages.new_zeros((num_groups, RANK))
-            context.index_add_(0, groups, weights[:, None] * messages)
+            context = torch.segment_reduce(
+                (weights[:, None] * messages)[order], "sum", lengths=lengths
+            )
             context = self.normalization(self.output(context))
             present = denominators > 0
             delta = (torch.sigmoid(self.gate_logit) * context *

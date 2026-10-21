@@ -630,4 +630,41 @@ GraphFormers (2021) 已研究分层图信息交互；本实验目标是测试
     python -m vulnmechanism.cli static report --output-dir results/static_current --device cuda:0
     python -m unittest tests.test_static
 
-新编码层模块尚未进行这三库的 GPU 训练和独立 Test 评价。
+现有 12 组 checkpoint 均已完成 GPU 小样本训练。报告复用这些权重，
+不重训、不重新选择 Epoch 或阈值；Test 仍未参与模型评价。
+统一指标见 [comparison.csv](results/static_current/comparison.csv)，完整消融、
+覆盖率和配对差值见 [results.json](results/static_current/results.json)。
+各组目录保存原训练配置、Epoch 日志和此次重算的 Valid 预测，权重留在本地。
+
+关系 Attention 的查询内归约使用固定顺序的分段计算，数学公式及参数不变。
+这修复了 CUDA 浮点原子累加经后续 BF16 层放大、导致重复推理不一致的问题。
+正常预测与消融 `all` 的严格一致性检查仍保留，实测差值写入结果。
+原训练快照可能存在小幅排名变化或阈值附近翻转；报告同时保存原始指标、
+稳定重算指标及逐项差值，不将历史值充当新预测结果。
+所有指标均来自 256 条平衡 Clean Valid，参与过选模，不是独立 Test 结论。
+
+| 数据集 | 方法 | Epoch | AUC | MCC | F1 |
+|---|---|---:|---:|---:|---:|
+| BigVul | source | 3 | 0.9085 | 0.7740 | 0.8889 |
+| BigVul | sequence | 3 | 0.9091 | 0.7545 | 0.8815 |
+| BigVul | shuffled | 3 | 0.9219 | 0.7973 | 0.9000 |
+| BigVul | real | 3 | 0.9263 | 0.8129 | 0.9077 |
+| Devign | source | 3 | 0.5573 | 0.2831 | 0.2585 |
+| Devign | sequence | 3 | 0.5664 | 0.2869 | 0.2914 |
+| Devign | shuffled | 3 | 0.5569 | 0.2831 | 0.2585 |
+| Devign | real | 3 | 0.5529 | 0.2831 | 0.2585 |
+| ReVeal | source | 2 | 0.7322 | 0.4295 | 0.7357 |
+| ReVeal | sequence | 3 | 0.7347 | 0.4075 | 0.6911 |
+| ReVeal | shuffled | 2 | 0.7309 | 0.4095 | 0.7206 |
+| ReVeal | real | 3 | 0.7422 | 0.4147 | 0.6988 |
+
+真实关系相对 shuffled 的 AUC 差为 +0.0044、−0.0040、+0.0113；
+按原生项目/提交/hash 分组的配对 bootstrap 95% 区间均跨 0。
+本轮未得到三库一致、可归因于真实连边的分类收益。
+
+三库正常预测与消融 `all` 的最大概率差均为 `5.96e-8`，原检查通过。
+历史快照与稳定重算的最大 AUC 差为 `0.00024414`。
+ReVeal/shuffled 的旧混淆矩阵 `[[82,46],[29,99]]` 重算为
+`[[82,46],[30,98]]`，多一个 FN；其余 11 组混淆计数不变。
+完整旧值、新值及差异标记保存在 `training_validation_comparison`，
+CSV 和本文表格使用真实重算指标。

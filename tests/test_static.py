@@ -175,6 +175,27 @@ class StaticTests(unittest.TestCase):
         self.assertTrue(pair)
         self.assertEqual(info["graph_status"], "no_definition")
 
+    def test_relation_attention_repeats_exactly_with_shared_query_edges(self):
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        torch.manual_seed(42)
+        module = StaticRelationEncoder(16, [0]).to(device).eval()
+        hidden = torch.randn(2, 32, 16, device=device, requires_grad=True)
+        edges = torch.stack((torch.randint(2, (1024,)),
+                             torch.randint(4, (1024,)),
+                             torch.randint(32, (1024,)),
+                             torch.randint(len(RELATIONS), (1024,))), dim=1).to(device)
+        actual = module(hidden, edges, 0)
+        for _ in range(5):
+            torch.testing.assert_close(module(hidden, edges, 0), actual, atol=0, rtol=0)
+        # Query groups remain independent, including positions with no edges.
+        isolated = edges[edges[:, 0] == 0].clone()
+        torch.testing.assert_close(module(hidden[:1], isolated, 0), actual[:1])
+        torch.testing.assert_close(actual[:, 4:], hidden[:, 4:], atol=0, rtol=0)
+        actual.square().mean().backward()
+        self.assertTrue(torch.isfinite(hidden.grad).all())
+        self.assertTrue(all(p.grad is not None and torch.isfinite(p.grad).all()
+                            for p in module.parameters()))
+
     def test_windows_include_only_co_visible_relation_endpoints(self):
         from vulnmechanism.model import InputBuilder
         src = "int f() { return 0; }"
