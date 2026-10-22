@@ -9,7 +9,7 @@ from .data import DATASETS
 
 
 def build_parser():
-    from .training import METHODS, GENERALIZATION_METHODS, PAIRED_METHODS
+    from .training import METHODS, GENERALIZATION_METHODS, PAIRED_METHODS, MIL_METHODS
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -29,7 +29,7 @@ def build_parser():
         if command in ("train", "candidates"):
             p.add_argument("--model", default="microsoft/codebert-base")
         if command in ("train", "evaluate"):
-            p.add_argument("--methods", nargs="+", choices=(*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:]), default=list(METHODS))
+            p.add_argument("--methods", nargs="+", choices=(*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:], *MIL_METHODS[1:]), default=list(METHODS))
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
@@ -46,7 +46,9 @@ def build_parser():
             p.add_argument("--train-pair-limit", type=int, help="sample complete official Train pairs; default: full paired Train")
             p.add_argument("--pair-margin", type=float, default=0.2)
             p.add_argument("--pair-gap", type=float, default=0.6)
-            p.add_argument("--pair-weight", type=float, default=0.2)
+            p.add_argument("--pair-weight", type=float, default=0.2, help="weight for legacy paired-logit ablations; MIL region ranking is fixed at 0.1")
+            p.add_argument("--full-source", action="store_true", help="paired MIL pilot: all source windows; ordinary official Valid PR-AUC selection")
+            p.add_argument("--pair-raw-root", type=Path, default=Path("/home/PublicData/PHY-data/vul_detect/data"))
         if command in ("train", "evaluate"):
             p.add_argument("--valid-limit", type=int, help="balanced diagnostic subset; default: full Valid")
         if command in ("candidates", "evaluate"):
@@ -152,6 +154,8 @@ def main():
                     pair_margin=args.pair_margin,
                     pair_gap=args.pair_gap,
                     pair_weight=args.pair_weight,
+                    full_source=args.full_source,
+                    pair_raw_root=args.pair_raw_root,
                 )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
@@ -229,9 +233,11 @@ def main():
         from .model import predict_checkpoint
 
         cp = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+        with args.source_file.open(encoding="utf-8", newline="") as handle:
+            raw_source = handle.read()
         logits = predict_checkpoint(
             args.checkpoint,
-            [{"raw_source": args.source_file.read_text(encoding="utf-8")}],
+            [{"raw_source": raw_source}],
             device=args.device,
             model_path=args.model,
         )

@@ -1,4 +1,4 @@
-"""One CodeBERT training loop for BCE, LP-FT, SWA and source-view baselines."""
+"""One CodeBERT training loop for BCE, source views, LP-FT/SWA and paired MIL."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from .progress import TrainingProgress, training_bar
 from .syntax import surface_materials
 from .prsc import MASK_METHODS, RSC_REFERENCE, training_masks, masked_bce
 from .vat import VAT_CONFIG, VAT_DIRECTIONS, vat_loss
+from .pair_representation import METHODS as MIL_METHODS, RANK_WEIGHT, region_pair_ranking, representation_data, save_members
 
 METHODS = ("bce", "vat", "random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
 GENERALIZATION_METHODS = ("bce", "lp_ft", "swa")
@@ -102,22 +103,30 @@ def train(
     pair_margin=0.2,
     pair_gap=0.6,
     pair_weight=0.2,
+    full_source=False,
+    pair_raw_root=None,
 ):
     paired = dataset == "primevul_paired"
+    full_pairs = paired and full_source
     if dataset not in (*DATASETS, "devign", "reveal", "primevul_paired"):
         raise ValueError(f"unknown dataset: {dataset}")
     from .relations import MODES, RANK, PER_TYPE
     if relation_mode not in MODES or (relation_mode != "none" and (method != "bce" or representation_mask != "none")):
         raise ValueError("static in-encoder program relations currently require plain BCE")
-    if method not in (*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:]):
+    if method not in (*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:], *MIL_METHODS[1:]):
         raise ValueError(f"unknown method: {method}")
     if paired:
-        if (method not in PAIRED_METHODS or relation_mode != "none" or representation_mask != "none"
+        allowed = MIL_METHODS if full_pairs else PAIRED_METHODS
+        if (method not in allowed or relation_mode != "none" or representation_mask != "none"
                 or train_limit is not None or valid_limit is not None
                 or not math.isfinite(pair_weight) or pair_weight < 0):
             raise ValueError("official pairs require BCE/pair ablations, whole pairs and no extra modules")
-        pair_regularizer(torch.zeros(1, 2), method, margin=pair_margin, gap=pair_gap)
-    elif method in PAIRED_METHODS[1:] or train_pair_limit is not None:
+        if full_pairs:
+            if pair_raw_root is None:
+                raise ValueError("full-source paired MIL protocol requires the official raw root")
+        else:
+            pair_regularizer(torch.zeros(1, 2), method, margin=pair_margin, gap=pair_gap)
+    elif method in (*PAIRED_METHODS[1:], *MIL_METHODS[1:]) or train_pair_limit is not None or full_source:
         raise ValueError("pair loss/limit requires the official primevul_paired dataset")
     if hard_selection not in ("hardest", "boundary") or vat_direction not in VAT_DIRECTIONS:
         raise ValueError("unknown hard selection or VAT direction")
@@ -150,10 +159,20 @@ def train(
         raise FileExistsError(
             f"{run}: training already started; refusing to reuse fitted weights"
         )
-    train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
-    train_rows = (paired_subset(train_rows, train_pair_limit, config["seed"]) if paired else
-                  balanced_subset(train_rows, train_limit, config["seed"]))
-    valid_rows = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit, config["seed"])
+    builder = InputBuilder(
+        AutoTokenizer.from_pretrained(model_path, trim_offsets=not full_source), source_max_length=config["source_max_length"],
+        relation_mode=relation_mode, full_source=full_source,
+    )
+    if full_pairs:
+        train_rows, valid_rows, paired_valid, members, coverage = representation_data(
+            pair_raw_root, builder, limit=train_pair_limit, seed=42, context=2,
+            overfit=config.get("overfit_train_replay", False))
+        save_members(run, members, coverage)
+    else:
+        train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
+        train_rows = (paired_subset(train_rows, train_pair_limit, config["seed"]) if paired else
+                      balanced_subset(train_rows, train_limit, config["seed"]))
+        valid_rows = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit, config["seed"])
     if paired and config["batch_size"] % 2:
         raise ValueError("paired micro batch must contain a whole number of pairs")
     units = paired_groups(train_rows) if paired else train_rows
@@ -164,7 +183,8 @@ def train(
     for split, rows in (("train", train_rows), ("valid", valid_rows)):
         if not rows or {r["label"] for r in rows} != {0, 1}:
             raise ValueError(f"{split}: both classes required")
-        if any(r["dataset"] != dataset or r["split"] != split for r in rows):
+        expected_dataset = "primevul" if full_pairs and split == "valid" else dataset
+        if any(r["dataset"] != expected_dataset or r["split"] != split for r in rows):
             raise ValueError(f"training and selection require {dataset} {split}")
     source_views = method in ("random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
     use_vat = method in ("vat", "random_aug_vat", "hard_aug_vat")
@@ -178,12 +198,10 @@ def train(
     device = resolve_device(device)
     seed = config["seed"]
     seed_everything(seed)
-    builder = InputBuilder(
-        AutoTokenizer.from_pretrained(model_path),
-        source_max_length=config["source_max_length"],
-        relation_mode=relation_mode,
-    )
-    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda", relation_mode=relation_mode)
+    line_mil = full_pairs and method != "bce"
+    rank_regions = method in ("mil_patch_rank", "mil_random_rank")
+    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda" and not full_source,
+                     relation_mode=relation_mode, readout="line_mil" if line_mil else "mean")
     seed_everything(seed)
     averaged = AveragedModel(model) if method == "swa" else None
     averaged_steps = []
@@ -206,6 +224,7 @@ def train(
         "epoch MCC/F1/Accuracy/AUC",
         precision="FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
         parameter_count=sum(p.numel() for p in model.parameters()),
+        readout=model.readout,
         static_relations=(dict(
             mode=relation_mode, rank=RANK, per_type=PER_TYPE,
             injection="sparse relation attention after selected CodeBERT layers",
@@ -215,9 +234,11 @@ def train(
             extra_parameters=sum(p.numel() for p in model.task_modules["relations"].parameters()),
         ) if relation_mode != "none" else None),
         input_protocol=dict(
+            full_source=full_source,
+            token_offsets="untrimmed source offsets" if full_source else "tokenizer default",
             logical_budget=config["source_max_length"],
             prefix_tokens=len(builder.source_prefix),
-            source_budget=config["source_max_length"] - len(builder.source_prefix) - 2,
+            source_budget=None if full_source else config["source_max_length"] - len(builder.source_prefix) - 2,
             window=512,
             stride=(512 - len(builder.source_prefix) - 2) // 2,
             pooling="mean over unique source positions; prefix/BOS/EOS averaged across windows",
@@ -260,16 +281,36 @@ def train(
             else None
         ),
     )
-    if paired:
+    if paired and not full_pairs:
         metadata.update(
             selection="fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
             paired=dict(margin=pair_margin, gap=pair_gap, weight=pair_weight, train_pair_limit=train_pair_limit,
-                        train_pairs=len(units), valid_pairs=len(paired_groups(valid_rows)),
+                        train_pairs=len(units), valid_pairs=len(paired_valid)//2 if full_pairs else len(paired_groups(valid_rows)),
                         eligible_train_pairs=sum(p[0]["pair_distinguishable"] for p in units),
                         loss="mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
                         boundary="logsumexp(0,m-z_v,m+z_p)", ranking="logsumexp(0,gap-z_v+z_p)",
                         joint="logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
                         selection_keys=["strict_pairwise_accuracy", "mcc", "auc", "f1"]))
+    if full_pairs:
+        metadata.update(
+            selection="fixed sigmoid threshold 0.5; official ordinary single-function Valid PR-AUC/MCC; earlier epoch wins ties",
+            pair_raw_root=str(pair_raw_root),
+            line_mil=dict(enabled=line_mil, rank_regions=rank_regions, method=method,
+                          weight=RANK_WEIGHT if rank_regions else 0.0, context_lines=2,
+                          top_k=3, attention_hidden=128 if line_mil else None,
+                          window_batch_size=8,
+                          extra_parameters=sum(p.numel() for k,m in model.task_modules.items()
+                                               if k.startswith("attention_") for p in m.parameters()),
+                          loss="two-function BCE mean + 0.1 * mean effective-pair softplus(U_p-U_v); no other auxiliary losses"),
+            paired=dict(train_pairs=len(units), valid_pairs=len(paired_groups(paired_valid)),
+                        train_pair_limit=train_pair_limit,
+                        eligible_train_pairs=coverage["coverage"]["eligible_pairs"],
+                        selection_keys=["auprc", "mcc"]),
+        )
+        if line_mil:
+            metadata["input_protocol"]["pooling"] = "overlap-averaged source tokens -> nonempty source-line means -> gated attention; prefix/special/pad excluded"
+        if config.get("overfit_train_replay"):
+            metadata["selection"] = "diagnostic Train replay only; not a Valid or Test experiment"
     write_json(run / "config.json", metadata)
     best_key = (float("-inf"),) * 4
     global_step = 0
@@ -314,6 +355,9 @@ def train(
             group_start = batch_index // accumulation * accumulation
             group_end = min(group_start + accumulation, num_batches)
             group_samples = (min(group_end * unit_batch_size, len(order)) - group_start * unit_batch_size) * (2 if paired else 1)
+            group_pairs = ([units[order[i]] for i in range(group_start*unit_batch_size,
+                           min(group_end*unit_batch_size, len(order)))] if rank_regions else [])
+            group_eligible = sum(pair[0]["patch_eligible"] for pair in group_pairs)
             selections, views, masks, references = [], {}, {}, {}
             if source_views:
                 search_started = time.monotonic()
@@ -405,16 +449,18 @@ def train(
                         )
             batch_loss = 0.0
             for forwarded, weights in function_view_batches(batch, views, batch_size):
-                inputs = builder.codebert_batch(forwarded, device=device)
+                inputs = builder.codebert_batch(forwarded, device=device, return_source_positions=line_mil)
                 active = [i for i, row in enumerate(forwarded) if row["sample_key"] in masks]
-                if active:
+                if line_mil:
+                    line_info = builder.line_mapping(forwarded, inputs)
+                    logits, risks, attention = model(*inputs, **line_info, return_line_scores=True, window_batch_size=8)
+                elif active:
                     logits, representations = model(*inputs, return_representation=True)
                 else:
-                    logits = model(*inputs)
+                    logits = model(*inputs, window_batch_size=8 if full_source else None)
                 bce_costs.update(
                     function_forwards=inputs[4], encoder_sequences=len(inputs[0]),
-                    encoder_token_slots=inputs[0].numel(),
-                    encoder_active_tokens=int(inputs[1].sum()),
+                    encoder_token_slots=inputs[0].numel(), encoder_active_tokens=int(inputs[1].sum()),
                 )
                 labels = logits.new_tensor([r["label"] for r in forwarded])
                 terms = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -422,7 +468,13 @@ def train(
                 )
                 loss = (terms * terms.new_tensor(weights)).sum()
                 total_loss = loss
-                if paired:
+                if rank_regions:
+                    ranks = region_pair_ranking(risks, line_info["line_owners"], forwarded,
+                                                field="random_lines" if method == "mil_random_rank" else "candidate_lines")
+                    if len(ranks):
+                        total_loss = total_loss + RANK_WEIGHT * ranks.sum() * group_samples / group_eligible
+                        pair_total += float(ranks.detach().sum())
+                elif paired and not full_pairs:
                     pair_logits = logits.reshape(-1, 2)
                     eligibility = logits.new_tensor([r["pair_distinguishable"] for r in forwarded[::2]])
                     extra = 2 * (pair_regularizer(pair_logits, method, margin=pair_margin, gap=pair_gap) * eligibility).sum()
@@ -511,6 +563,8 @@ def train(
                         f"{dataset}/{method} epoch {epoch} step {steps}/{steps_per_epoch}",
                         flush=True,
                     )
+        training_seconds = time.monotonic() - started
+        validation_started = time.monotonic()
         candidate = averaged.module if averaged_steps else model
         eligible = not linear_probe and (averaged is None or len(averaged_steps) >= 2)
         valid_logits = predict_logits(
@@ -520,20 +574,31 @@ def train(
         if paired:
             threshold = 0.5
             validation = metrics([r["label"] for r in valid_rows], probabilities.tolist(), threshold)
-            validation.update(paired_metrics(valid_rows, valid_logits.tolist(), margin=pair_margin, gap=pair_gap))
+            if not full_pairs:
+                validation.update(paired_metrics(valid_rows, valid_logits.tolist(), margin=pair_margin, gap=pair_gap))
         else:
             threshold, validation = select_threshold([r["label"] for r in valid_rows], probabilities.tolist())
+        if full_pairs:
+            auxiliary_logits = predict_logits(candidate, paired_valid, builder, device=device, batch_size=batch_size)
+            auxiliary_metrics = metrics([r["label"] for r in paired_valid], auxiliary_logits.sigmoid().tolist(), .5)
+            auxiliary_metrics.update(paired_metrics(paired_valid, auxiliary_logits.tolist()))
+        pair_mean = (pair_total / max(1, coverage["coverage"]["eligible_pairs"])
+                     if full_pairs else pair_total / len(train_rows))
+        epoch_loss = ((running + vat_total + mask_weight * mask_total) / len(train_rows)
+                      + (RANK_WEIGHT if full_pairs else pair_weight) * pair_mean)
         history.add(
             dict(
                 event="epoch",
                 method=method,
                 epoch=epoch,
                 train_loss=running / len(train_rows),
-                total_loss=(running + vat_total + mask_weight * mask_total + pair_weight * pair_total) / len(train_rows),
-                **(dict(pair_regularizer=pair_total / len(train_rows)) if paired else {}),
+                total_loss=epoch_loss,
+                **(dict(pair_regularizer=pair_mean) if paired else {}),
+                **(dict(ranking_pairs=coverage["coverage"]["eligible_pairs"] if rank_regions else 0) if full_pairs else {}),
                 optimizer_steps=steps,
                 validation_threshold=threshold,
                 validation=validation,
+                **(dict(paired_validation=auxiliary_metrics) if full_pairs else {}),
                 augmented_functions=transformed,
                 candidate_queries=queries,
                 original_search_queries=original_queries,
@@ -551,6 +616,8 @@ def train(
                         mask_reasons=dict(mask_reasons), mask_costs=dict(mask_costs))
                    if representation_mask != "none" else {}),
                 epoch_seconds=time.monotonic() - started,
+                training_seconds=training_seconds,
+                validation_seconds=time.monotonic() - validation_started,
                 stage="linear_probe" if linear_probe else "fine_tune",
                 learning_rate=optimizer.param_groups[0]["lr"],
                 encoder_trainable=not linear_probe,
@@ -561,7 +628,8 @@ def train(
         )
         key = tuple(
             validation[k] if validation[k] is not None else float("-inf")
-            for k in (("strict_pairwise_accuracy", "mcc", "auc", "f1") if paired else ("mcc", "f1", "accuracy", "auc"))
+            for k in (("auprc", "mcc") if full_pairs else
+                      ("strict_pairwise_accuracy", "mcc", "auc", "f1") if paired else ("mcc", "f1", "accuracy", "auc"))
         )
         if eligible and key > best_key:
             best_key = key
@@ -580,6 +648,12 @@ def train(
             temporary = target.with_suffix(".pt.tmp")
             torch.save(checkpoint, temporary)
             temporary.replace(target)
+            if full_pairs:
+                from .evaluation import _evaluate_clean
+                # Persist the predictions already used for selection. This avoids
+                # a second costly full-Valid encoding and retains exact selection scores.
+                _evaluate_clean(valid_rows, run, "valid", checkpoint, None, logits=valid_logits)
+                _evaluate_clean(paired_valid, run, "paired.valid", checkpoint, None, logits=auxiliary_logits)
             del checkpoint
     summary = dict(
         metadata,

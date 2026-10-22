@@ -889,7 +889,54 @@ Joint与BCE严格正确数都为32/480；Joint修正25对、同时损伤25对。
 但AUC下降0.0023、MCC下降0.0057。预设门槛未通过，停止全量训练，
 没有对Paired Test或普通PrimeVul Test推理，也未追加配置。
 
-真实重载与训练记录的AUC最大差为0.00001953；Strict/MCC/F1不变。
-完整旧值、新值和Ranking平局修正保存在结果JSON，报告使用真实重载预测。
-78项回归测试、真实CodeBERT CUDA前后向及四个checkpoint重载检查通过；
-3840条Valid预测已独立复算，缓存重放零新增前向，结果逐字节一致。
+### 上下文化行级 attention-MIL 与修复区域成对排序
+
+四组复用 `train/evaluate/report/infer`，同一CodeBERT和风险线性头。
+`--full-source` 对完整源码采用原生512-token滑窗和半源码窗步长，输入不依赖diff。
+MIL复用 `source_positions`，按出现次数平均同一源码token的上下文状态，再对
+非空源码行均值池化。使用`trim_offsets=False`保留缩进空格的实际坐标，Token按
+首字符所在物理行归属；非空行上的换行Token保留。prefix、特殊ID、padding和
+空白行不进入行池化，零宽offset单独记录。每次编码最多8个窗口，并对编码与池化使用梯度检查点，
+不单独编码行。mean-pooling BCE对照使用完全相同的输入窗口。
+
+行表示经过128维gated attention：`softmax(vᵀ[tanh(Vh) * sigmoid(Uh)])`。
+同一线性头产生行风险 `r_i=wᵀh_i+b`，函数logit为 `sum(a_i*r_i)`。
+标签1为漏洞，`sigmoid(S)`是漏洞概率，阈值固定0.5。
+`mil_bce`只使用两侧函数BCE平均；`mil_patch_rank`额外对训练diff的修改行±2行
+合并集合计算top-k风险均值，`k=min(3,|Dv|,|Dp|)`，仅增加
+`0.1 * mean_effective_pairs(softplus(Up-Uv))`。纯新增/删除在缺失侧锚定相邻行。
+输入相同、改动不可见、区域映射失败或项目/提交/CVE元数据不一致的配对屏蔽排序，
+仍保留官方函数BCE。梯度累积按整个有效batch内的有效pair数归一化。
+不使用局部伪标签、cosine、独立投影头或其他辅助项。推理仅输入单函数。
+
+`mil_random_rank`平移候选物理行联合集合，严格匹配行数、跨度和hunk形状。
+存在替代位置时不选原位置；只有原位置合法时保留并报告，避免偷偷改变区域大小。
+三个MIL对照有相同参数预算，额外参数仅来自gated attention；所有方法使用相同
+预训练初始化、Train成员、输入窗口及优化器步数。
+
+pilot固定Seed42、256个官方Train配对、3 Epoch、有效Batch8（192次更新）。
+仅按完整普通官方Valid的PR-AUC选Epoch，MCC用于平局；PR-AUC使用
+`average_precision_score`。paired Valid辅助报告两侧同时正确率，不参与选模。
+核查实际Train与两个Valid的源码及完整编码重叠，训练前整对排除，不重采样。
+Test不参与开发或选择。长度分层预设为1–20、21–60、61–150和151+行。
+
+```bash
+python -m vulnmechanism.cli train --dataset primevul_paired \
+  --methods bce mil_bce mil_patch_rank mil_random_rank --train-pair-limit 256 \
+  --full-source --pair-raw-root /home/PublicData/PHY-data/vul_detect/data \
+  --model /home/PublicData/PHY-data/resource/codebert-base \
+  --output-dir results/line_mil --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset primevul_paired \
+  --methods bce mil_bce mil_patch_rank mil_random_rank --clean-only --split valid \
+  --output-dir results/line_mil --device cuda:0
+python -m vulnmechanism.cli report --paired --output-dir results/line_mil
+python -m unittest tests.test_pair_representation tests.test_paired
+```
+
+预设多Seed复核门槛：真实区域组Valid PR-AUC至少高于全部三个对照0.002，
+且MCC/F1不低于MIL+BCE；通过后才以Seed43/44复核全部四组，否则停止pilot。
+多Seed复核固定Train抽样和随机区域的Seed42，仅改变初始化、Dropout和优化顺序种子。
+不根据模型分数修改区域规则，不以行风险或表示变化替代分类收益。
+结果、差异可见率、有效配对原因、长度分层及实际运行成本保存在
+[实验报告](results/line_mil/report.md)及各组配置/预测文件。
+此前已停止的cosine实验结果保留；本轮不复用其训练权重或目标。

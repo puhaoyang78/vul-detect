@@ -271,6 +271,36 @@ def paired_subset(rows, limit=None, seed=42):
     return [r for pair in pairs for r in pair]
 
 
+def official_paired_rows(raw_root, split):
+    """Official adjacency defines a pair; upstream idx is not unique."""
+    path = Path(raw_root) / "PrimeVul_v0.1" / f"primevul_{split}_paired.jsonl"
+    native = read_jsonl(path)
+    if len(native) % 2:
+        raise ValueError(f"{path}: incomplete adjacent pair")
+    rows, anomalies = [], []
+    for at in range(0, len(native), 2):
+        a, b = native[at:at + 2]
+        if {a["target"], b["target"]} != {0, 1}:
+            raise ValueError(f"{path}:{at + 1}: noncomplementary official labels")
+        pair_key = f"primevul_paired:{split}:{at // 2}"
+        mismatch = [k for k in ("project", "commit_id", "cve") if a.get(k) != b.get(k)]
+        if mismatch:
+            anomalies.append(dict(pair_key=pair_key, fields=mismatch,
+                                  vulnerable_idx=a["idx"] if a["target"] else b["idx"],
+                                  patched_idx=b["idx"] if a["target"] else a["idx"]))
+        for offset, r in enumerate((a, b)):
+            if type(r["target"]) is not int or not isinstance(r["func"], str) or not r["func"].strip():
+                raise ValueError(f"{path}:{at + offset + 1}: invalid official function/label")
+            rows.append(dict(sample_key=f"primevul_paired:{split}:{at + offset + 1}",
+                             pair_key=pair_key, dataset="primevul_paired", split=split,
+                             label=r["target"], raw_source=r["func"], project=r["project"],
+                             commit_id=r["commit_id"], cve=r.get("cve"),
+                             source_file=str(path.relative_to(raw_root)), source_row=at + offset + 1,
+                             upstream_idx=r["idx"], language="c_cpp", train_overlap=False,
+                             valid_overlap=False))
+    return rows, anomalies
+
+
 def prepare_paired(raw_root, output, model_path):
     """Keep official held-out members; remove only Train-to-held-out input leakage."""
     from itertools import combinations
@@ -279,39 +309,18 @@ def prepare_paired(raw_root, output, model_path):
     dest = Path(output) / "primevul_paired"
     if any((dest / f"{s}.jsonl").exists() for s in SPLITS):
         raise FileExistsError(f"paired data already prepared: {dest}")
-    root = Path(raw_root) / "PrimeVul_v0.1"
     builder = InputBuilder(AutoTokenizer.from_pretrained(model_path))
     budget = builder.source_max_length - len(builder.source_prefix) - 2
     splits, tokens, signatures, anomalies, duplicates = {}, {}, {}, [], {}
     for split in SPLITS:
-        path = root / f"primevul_{split}_paired.jsonl"
-        native = read_jsonl(path)
-        if len(native) % 2:
-            raise ValueError(f"{path}: incomplete adjacent pair")
-        rows = []
-        for at in range(0, len(native), 2):
-            a, b = native[at:at + 2]
-            if {a["target"], b["target"]} != {0, 1}:
-                raise ValueError(f"{path}:{at + 1}: noncomplementary official labels")
-            pair_key = f"primevul_paired:{split}:{at // 2}"
-            mismatch = [k for k in ("project", "commit_id", "cve") if a.get(k) != b.get(k)]
-            if mismatch:
-                anomalies.append(dict(pair_key=pair_key, fields=mismatch,
-                                      vulnerable_idx=a["idx"] if a["target"] else b["idx"],
-                                      patched_idx=b["idx"] if a["target"] else a["idx"]))
-            encoded = [tuple(builder._encode(r["func"], budget)) for r in (a, b)]
+        rows, mismatches = official_paired_rows(raw_root, split)
+        anomalies.extend(mismatches)
+        for a, b in zip(rows[::2], rows[1::2]):
+            encoded = [tuple(builder._encode(r["raw_source"], budget)) for r in (a, b)]
             distinguishable = encoded[0] != encoded[1]
-            for offset, (r, ids) in enumerate(zip((a, b), encoded)):
-                if type(r["target"]) is not int or not isinstance(r["func"], str) or not r["func"].strip():
-                    raise ValueError(f"{path}:{at + offset + 1}: invalid official function/label")
-                key = f"primevul_paired:{split}:{at + offset + 1}"
-                tokens[key] = ids
-                rows.append(dict(sample_key=key, pair_key=pair_key, dataset="primevul_paired",
-                                 split=split, label=r["target"], raw_source=r["func"],
-                                 project=r["project"], commit_id=r["commit_id"], cve=r.get("cve"),
-                                 source_file=str(path.relative_to(raw_root)), source_row=at + offset + 1,
-                                 upstream_idx=r["idx"], language="c_cpp", train_overlap=False,
-                                 valid_overlap=False, pair_distinguishable=distinguishable))
+            for r, ids in zip((a, b), encoded):
+                tokens[r["sample_key"]] = ids
+                r["pair_distinguishable"] = distinguishable
         splits[split] = rows
         signatures[split] = {tokens[r["sample_key"]] for r in rows}
         duplicates[split] = dict(repeated_upstream_idx_rows=len(rows) - len({r["upstream_idx"] for r in rows}),

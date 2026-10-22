@@ -158,3 +158,13 @@ __pycache__/
 !/results/paired_pilot/primevul_paired/*/best.training.jsonl
 !/results/paired_pilot/primevul_paired/*/*.metrics.json
 !/results/paired_pilot/primevul_paired/*/*.predictions.jsonl
+
+!/results/line_mil/
+/results/line_mil/**
+!/results/line_mil/*.json
+!/results/line_mil/*.csv
+!/results/line_mil/*.md
+!/results/line_mil/primevul_paired/
+!/results/line_mil/primevul_paired/*/
+!/results/line_mil/primevul_paired/*/*.json
+!/results/line_mil/primevul_paired/*/*.jsonl

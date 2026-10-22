@@ -13,13 +13,13 @@ from . import model as core
 from .training import METHODS, GENERALIZATION_METHODS, prepare_materials
 
 
-def _evaluate_clean(rows, run, name, checkpoint, args):
+def _evaluate_clean(rows, run, name, checkpoint, args, *, logits=None):
     output = run / f"{name}.metrics.json"
     predictions = run / f"{name}.predictions.jsonl"
     threshold = checkpoint["decision_threshold"]
     by_key = {}
     previous, cached = None, []
-    if output.exists():
+    if output.exists() and logits is None:
         previous = json.loads(output.read_text())
         if previous["selected_epoch"] != checkpoint["selected_epoch"]:
             raise ValueError("cached evaluation checkpoint selection differs")
@@ -33,14 +33,18 @@ def _evaluate_clean(rows, run, name, checkpoint, args):
             raise ValueError("cached evaluation members, labels or threshold differ")
     missing = [r for r in rows if r["sample_key"] not in by_key]
     if missing:
-        print(f"{run.name}/{name}: reuse {len(by_key)}, predict {len(missing)} members", flush=True)
-        device = core.resolve_device(args.device)
-        builder = core.InputBuilder(
-            core.AutoTokenizer.from_pretrained(args.model),
-            source_max_length=checkpoint["source_max_length"],
-        )
-        model = core.load_model(checkpoint, device, model_path=args.model)
-        logits = core.predict_logits(model, missing, builder, device=device, batch_size=args.batch_size)
+        if logits is None:
+            print(f"{run.name}/{name}: reuse {len(by_key)}, predict {len(missing)} members", flush=True)
+            device = core.resolve_device(args.device)
+            builder = core.InputBuilder(
+                core.AutoTokenizer.from_pretrained(args.model, trim_offsets=not checkpoint.get("input_protocol", {}).get("full_source", False)),
+                source_max_length=checkpoint["source_max_length"],
+                full_source=checkpoint.get("input_protocol", {}).get("full_source", False),
+            )
+            model = core.load_model(checkpoint, device, model_path=args.model)
+            logits = core.predict_logits(model, missing, builder, device=device, batch_size=args.batch_size)
+        elif len(logits) != len(rows):
+            raise ValueError("provided evaluation logits must cover the entire cohort")
         for row, logit, score in zip(missing, logits, logits.sigmoid().tolist()):
             by_key[row["sample_key"]] = dict(
                 sample_key=row["sample_key"], label=row["label"], logit=float(logit), score=score,
@@ -63,8 +67,9 @@ def _evaluate_clean(rows, run, name, checkpoint, args):
     if checkpoint.get("paired") and all("pair_key" in r for r in rows):
         if threshold != 0.5:
             raise ValueError("paired evaluation requires fixed threshold 0.5")
-        result["metrics"].update(paired_metrics(
-            rows, logits.tolist(), margin=checkpoint["paired"]["margin"], gap=checkpoint["paired"]["gap"]))
+        pair_args = ({} if checkpoint.get("line_mil") else
+                     dict(margin=checkpoint["paired"]["margin"], gap=checkpoint["paired"]["gap"]))
+        result["metrics"].update(paired_metrics(rows, logits.tolist(), **pair_args))
     if result == previous and ordered == cached:
         return result
     write_jsonl(predictions, ordered)
@@ -506,8 +511,10 @@ def evaluate(
     if robust and "test" not in splits:
         raise ValueError("robustness evaluation requires Test")
     root = Path(output_dir) / dataset
-    valid = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit) if "valid" in splits else None
-    own_test = balanced_subset(test_rows(Path(data_dir) / dataset), test_limit) if "test" in splits else None
+    valid = (balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit)
+             if "valid" in splits and dataset != "primevul_paired" else None)
+    own_test = (balanced_subset(test_rows(Path(data_dir) / dataset), test_limit)
+                if "test" in splits and dataset != "primevul_paired" else None)
     materials = prepare_materials(data_dir, output_dir, dataset) if robust else None
     for method in methods:
         run = root / method
@@ -523,6 +530,20 @@ def evaluate(
             device=device,
             batch_size=checkpoint["training_config"]["batch_size"],
         )
+        if dataset == "primevul_paired" and not checkpoint.get("line_mil"):
+            valid = validation_rows(Path(data_dir) / dataset) if "valid" in splits else None
+            own_test = test_rows(Path(data_dir) / dataset) if "test" in splits else None
+        if checkpoint.get("line_mil"):
+            from .pair_representation import representation_data
+            if "test" in splits:
+                raise ValueError("repair representation pilot is Valid-only; Test is not used for development")
+            builder = core.InputBuilder(core.AutoTokenizer.from_pretrained(args.model, trim_offsets=False), full_source=True)
+            _, valid, auxiliary, _, _ = representation_data(
+                checkpoint["pair_raw_root"], builder,
+                limit=checkpoint["paired"]["train_pair_limit"],
+                seed=42,
+                context=checkpoint["line_mil"]["context_lines"])
+            _evaluate_clean(auxiliary, run, "paired.valid", checkpoint, args)
         if valid is not None:
             _evaluate_clean(valid, run, "valid", checkpoint, args)
         if own_test is not None:
@@ -667,6 +688,9 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
 
 
 def paired_report(output_dir, data_dir):
+    if (Path(output_dir) / "primevul_paired/mil_patch_rank/training.metrics.json").exists():
+        from .pair_representation import report as representation_report
+        return representation_report(output_dir)
     """Summarize saved Valid evidence before deciding whether full training is warranted."""
     from .training import PAIRED_METHODS
     from .data import paired_groups
