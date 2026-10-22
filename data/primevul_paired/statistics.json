@@ -1,0 +1,250 @@
+{
+  "seed": 42,
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "source_budget": 2025,
+  "native_pairs": {
+    "train": 3789,
+    "valid": 480,
+    "test": 435
+  },
+  "final": {
+    "train": {
+      "samples": 7562,
+      "positive": 3781,
+      "negative": 3781,
+      "pairs": 3781,
+      "indistinguishable_pairs": 386
+    },
+    "valid": {
+      "samples": 960,
+      "positive": 480,
+      "negative": 480,
+      "pairs": 480,
+      "indistinguishable_pairs": 52
+    },
+    "test": {
+      "samples": 870,
+      "positive": 435,
+      "negative": 435,
+      "pairs": 435,
+      "indistinguishable_pairs": 44
+    }
+  },
+  "cross_split_overlap": {
+    "train:valid": {
+      "exact_sources": 0,
+      "encoded_inputs": 7
+    },
+    "train:test": {
+      "exact_sources": 0,
+      "encoded_inputs": 2
+    },
+    "valid:test": {
+      "exact_sources": 0,
+      "encoded_inputs": 0
+    }
+  },
+  "removed_training_pairs": [
+    "primevul_paired:train:2219",
+    "primevul_paired:train:2274",
+    "primevul_paired:train:2324",
+    "primevul_paired:train:2512",
+    "primevul_paired:train:2557",
+    "primevul_paired:train:2708",
+    "primevul_paired:train:3399",
+    "primevul_paired:train:3552"
+  ],
+  "within_split_duplicates": {
+    "train": {
+      "repeated_upstream_idx_rows": 4,
+      "repeated_source_rows": 4
+    },
+    "valid": {
+      "repeated_upstream_idx_rows": 4,
+      "repeated_source_rows": 4
+    },
+    "test": {
+      "repeated_upstream_idx_rows": 2,
+      "repeated_source_rows": 2
+    }
+  },
+  "metadata_anomalies": [
+    {
+      "pair_key": "primevul_paired:train:2117",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 195818,
+      "patched_idx": 60043
+    },
+    {
+      "pair_key": "primevul_paired:train:2333",
+      "fields": [
+        "project",
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 199221,
+      "patched_idx": 14398
+    },
+    {
+      "pair_key": "primevul_paired:train:2361",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 199823,
+      "patched_idx": 77460
+    },
+    {
+      "pair_key": "primevul_paired:train:2434",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 200657,
+      "patched_idx": 187226
+    },
+    {
+      "pair_key": "primevul_paired:train:2527",
+      "fields": [
+        "project",
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 202134,
+      "patched_idx": 173474
+    },
+    {
+      "pair_key": "primevul_paired:train:2530",
+      "fields": [
+        "project",
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 202142,
+      "patched_idx": 155111
+    },
+    {
+      "pair_key": "primevul_paired:train:2604",
+      "fields": [
+        "project",
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 202931,
+      "patched_idx": 14448
+    },
+    {
+      "pair_key": "primevul_paired:train:2630",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 204020,
+      "patched_idx": 174145
+    },
+    {
+      "pair_key": "primevul_paired:train:2648",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 204198,
+      "patched_idx": 58747
+    },
+    {
+      "pair_key": "primevul_paired:train:2665",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 204372,
+      "patched_idx": 174120
+    },
+    {
+      "pair_key": "primevul_paired:train:2685",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 204525,
+      "patched_idx": 68533
+    },
+    {
+      "pair_key": "primevul_paired:train:2859",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 206690,
+      "patched_idx": 81717
+    },
+    {
+      "pair_key": "primevul_paired:train:3280",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 210916,
+      "patched_idx": 69666
+    },
+    {
+      "pair_key": "primevul_paired:train:3467",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 213575,
+      "patched_idx": 77512
+    },
+    {
+      "pair_key": "primevul_paired:train:3604",
+      "fields": [
+        "project",
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 215497,
+      "patched_idx": 32099
+    },
+    {
+      "pair_key": "primevul_paired:train:3688",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 216354,
+      "patched_idx": 175178
+    },
+    {
+      "pair_key": "primevul_paired:train:3708",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 216630,
+      "patched_idx": 16373
+    },
+    {
+      "pair_key": "primevul_paired:test:125",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 197517,
+      "patched_idx": 230147
+    },
+    {
+      "pair_key": "primevul_paired:test:133",
+      "fields": [
+        "commit_id",
+        "cve"
+      ],
+      "vulnerable_idx": 197796,
+      "patched_idx": 187732
+    }
+  ],
+  "protocol": "official adjacent complementary labels; metadata anomalies retained; identical encoded Train pairs keep BCE but no pair constraint; exclude whole Train pairs with held-out identical inputs; Valid/Test untouched; no near/project/CVE filtering"
+}

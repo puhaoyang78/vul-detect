@@ -9,7 +9,7 @@ from .data import DATASETS
 
 
 def build_parser():
-    from .training import METHODS, GENERALIZATION_METHODS
+    from .training import METHODS, GENERALIZATION_METHODS, PAIRED_METHODS
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -19,18 +19,22 @@ def build_parser():
     prepare.add_argument("--raw-root", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, default=Path("data"))
     prepare.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
+    prepare.add_argument("--paired", action="store_true", help="prepare official PrimeVul pairs, preserving held-out members")
+    prepare.add_argument("--model", default="/home/PublicData/PHY-data/resource/codebert-base")
     for command in ("train", "candidates", "evaluate"):
         p = sub.add_parser(command)
         p.add_argument("--data-dir", type=Path, default=Path("data"))
         p.add_argument("--output-dir", type=Path, default=Path("results"))
-        p.add_argument("--dataset", choices=(*DATASETS, "reveal", "all"), default="all")
+        p.add_argument("--dataset", choices=(*DATASETS, "reveal", "primevul_paired", "all"), default="all")
         if command in ("train", "candidates"):
             p.add_argument("--model", default="microsoft/codebert-base")
         if command in ("train", "evaluate"):
-            p.add_argument("--methods", nargs="+", choices=(*METHODS, "lp_ft", "swa"), default=list(METHODS))
+            p.add_argument("--methods", nargs="+", choices=(*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:]), default=list(METHODS))
             p.add_argument("--device", default="auto")
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
+            p.add_argument("--split", choices=("valid", "test", "all"), default="all")
+            p.add_argument("--single-function-test", action="store_true", help="also evaluate ordinary PrimeVul Test with paired checkpoints")
         if command == "train":
             from .prsc import MASK_METHODS
             p.add_argument("--hard-selection", choices=("hardest", "boundary"), default="hardest")
@@ -39,6 +43,10 @@ def build_parser():
             p.add_argument("--mask-fraction", type=float, default=0.05)
             p.add_argument("--mask-weight", type=float, default=0.2)
             p.add_argument("--train-limit", type=int, help="balanced diagnostic subset; default: full Train")
+            p.add_argument("--train-pair-limit", type=int, help="sample complete official Train pairs; default: full paired Train")
+            p.add_argument("--pair-margin", type=float, default=0.2)
+            p.add_argument("--pair-gap", type=float, default=0.6)
+            p.add_argument("--pair-weight", type=float, default=0.2)
         if command in ("train", "evaluate"):
             p.add_argument("--valid-limit", type=int, help="balanced diagnostic subset; default: full Valid")
         if command in ("candidates", "evaluate"):
@@ -50,6 +58,7 @@ def build_parser():
     p.add_argument("--device", default="auto")
     p.add_argument("--methods", nargs="+", choices=GENERALIZATION_METHODS, default=["bce"])
     p = sub.add_parser("report", help="summarize the saved PrimeVul/MegaVul six-method experiment")
+    p.add_argument("--paired", action="store_true", help="paired BCE ablation metrics and predeclared Valid gate")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p = sub.add_parser("motivation", help="four-dataset ordinary-BCE and Shortcut Features diagnostics")
@@ -103,9 +112,14 @@ def main():
         run(args)
         return
     if args.command == "prepare":
-        from .data import prepare
+        from .data import prepare, prepare_paired
 
-        prepare(args.raw_root, args.output_dir, datasets=args.datasets)
+        if args.paired:
+            if args.datasets != ["primevul"]:
+                raise ValueError("--paired requires --datasets primevul")
+            prepare_paired(args.raw_root, args.output_dir, args.model)
+        else:
+            prepare(args.raw_root, args.output_dir, datasets=args.datasets)
         return
     import torch
 
@@ -134,6 +148,10 @@ def main():
                     representation_mask=args.representation_mask,
                     mask_fraction=args.mask_fraction,
                     mask_weight=args.mask_weight,
+                    train_pair_limit=args.train_pair_limit,
+                    pair_margin=args.pair_margin,
+                    pair_gap=args.pair_gap,
+                    pair_weight=args.pair_weight,
                 )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
@@ -155,6 +173,8 @@ def main():
                 robust=not args.clean_only,
                 valid_limit=args.valid_limit,
                 test_limit=args.test_limit,
+                splits=("valid", "test") if args.split == "all" else (args.split,),
+                single_function_test=args.single_function_test,
             )
     elif args.command == "transfer":
         from .evaluation import evaluate_transfer
@@ -163,9 +183,9 @@ def main():
             args.data_dir, args.output_dir, args.datasets, methods=args.methods, device=args.device
         ), indent=2))
     elif args.command == "report":
-        from .evaluation import report
+        from .evaluation import report, paired_report
 
-        print(json.dumps(report(args.output_dir, args.data_dir), indent=2))
+        print(json.dumps((paired_report if args.paired else report)(args.output_dir, args.data_dir), indent=2))
     elif args.command == "motivation":
         from .motivation import feature_experiment, motivation_report, tfidf_experiment, tfidf_report, transfer_diagnostics, transfer_train_probe
 

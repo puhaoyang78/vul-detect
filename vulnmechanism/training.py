@@ -15,8 +15,8 @@ import transformers
 
 from .artifacts import write_json
 from .augmentation import search_surface_views, surface_seed
-from .data import DATASETS, balanced_subset, read_jsonl, validation_rows
-from .metrics import select_threshold
+from .data import DATASETS, balanced_subset, paired_groups, paired_subset, read_jsonl, validation_rows
+from .metrics import metrics, paired_metrics, select_threshold
 from .model import (
     AutoTokenizer,
     CodeBERT,
@@ -33,6 +33,7 @@ from .vat import VAT_CONFIG, VAT_DIRECTIONS, vat_loss
 
 METHODS = ("bce", "vat", "random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
 GENERALIZATION_METHODS = ("bce", "lp_ft", "swa")
+PAIRED_METHODS = ("bce", "pair_ranking", "pair_boundary", "pair_joint")
 TRAINING = dict(
     seed=42,
     epochs=3,
@@ -43,6 +44,20 @@ TRAINING = dict(
     source_max_length=2048,
     gradient_clip=1.0,
 )
+
+
+def pair_regularizer(logits, method, *, margin=0.2, gap=0.6):
+    """One stable constraint value per [vulnerable, patched] pair."""
+    if (logits.ndim != 2 or logits.shape[1] != 2 or method not in PAIRED_METHODS
+            or not math.isfinite(margin) or not math.isfinite(gap) or margin < 0 or gap <= 2 * margin):
+        raise ValueError("paired loss requires [N,2] logits and gap > 2 * margin >= 0")
+    zv, zp = logits.unbind(dim=1)
+    terms = [torch.zeros_like(zv)]
+    if method in ("pair_boundary", "pair_joint"):
+        terms.extend((margin - zv, margin + zp))
+    if method in ("pair_ranking", "pair_joint"):
+        terms.append(gap - zv + zp)
+    return torch.logsumexp(torch.stack(terms, dim=1), dim=1)
 
 
 def function_view_batches(records, views, micro_size):
@@ -83,14 +98,27 @@ def train(
     mask_fraction=0.05,
     mask_weight=0.2,
     relation_mode="none",
+    train_pair_limit=None,
+    pair_margin=0.2,
+    pair_gap=0.6,
+    pair_weight=0.2,
 ):
-    if dataset not in (*DATASETS, "devign", "reveal"):
+    paired = dataset == "primevul_paired"
+    if dataset not in (*DATASETS, "devign", "reveal", "primevul_paired"):
         raise ValueError(f"unknown dataset: {dataset}")
     from .relations import MODES, RANK, PER_TYPE
     if relation_mode not in MODES or (relation_mode != "none" and (method != "bce" or representation_mask != "none")):
         raise ValueError("static in-encoder program relations currently require plain BCE")
-    if method not in (*METHODS, "lp_ft", "swa"):
+    if method not in (*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:]):
         raise ValueError(f"unknown method: {method}")
+    if paired:
+        if (method not in PAIRED_METHODS or relation_mode != "none" or representation_mask != "none"
+                or train_limit is not None or valid_limit is not None
+                or not math.isfinite(pair_weight) or pair_weight < 0):
+            raise ValueError("official pairs require BCE/pair ablations, whole pairs and no extra modules")
+        pair_regularizer(torch.zeros(1, 2), method, margin=pair_margin, gap=pair_gap)
+    elif method in PAIRED_METHODS[1:] or train_pair_limit is not None:
+        raise ValueError("pair loss/limit requires the official primevul_paired dataset")
     if hard_selection not in ("hardest", "boundary") or vat_direction not in VAT_DIRECTIONS:
         raise ValueError("unknown hard selection or VAT direction")
     if hard_selection != "hardest" and method not in ("hard_aug_bce", "hard_aug_vat"):
@@ -122,10 +150,14 @@ def train(
         raise FileExistsError(
             f"{run}: training already started; refusing to reuse fitted weights"
         )
-    train_rows = balanced_subset(
-        read_jsonl(Path(data_dir) / dataset / "train.jsonl"), train_limit, config["seed"]
-    )
+    train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
+    train_rows = (paired_subset(train_rows, train_pair_limit, config["seed"]) if paired else
+                  balanced_subset(train_rows, train_limit, config["seed"]))
     valid_rows = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit, config["seed"])
+    if paired and config["batch_size"] % 2:
+        raise ValueError("paired micro batch must contain a whole number of pairs")
+    units = paired_groups(train_rows) if paired else train_rows
+    unit_batch_size = config["batch_size"] // 2 if paired else config["batch_size"]
     steps_per_epoch = math.ceil(len(train_rows) / (config["batch_size"] * config["gradient_accumulation"]))
     if method == "swa" and steps_per_epoch < 2:
         raise ValueError("SWA requires two distinct weight samples per averaging epoch")
@@ -228,6 +260,16 @@ def train(
             else None
         ),
     )
+    if paired:
+        metadata.update(
+            selection="fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
+            paired=dict(margin=pair_margin, gap=pair_gap, weight=pair_weight, train_pair_limit=train_pair_limit,
+                        train_pairs=len(units), valid_pairs=len(paired_groups(valid_rows)),
+                        eligible_train_pairs=sum(p[0]["pair_distinguishable"] for p in units),
+                        loss="mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
+                        boundary="logsumexp(0,m-z_v,m+z_p)", ranking="logsumexp(0,gap-z_v+z_p)",
+                        joint="logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
+                        selection_keys=["strict_pairwise_accuracy", "mcc", "auc", "f1"]))
     write_json(run / "config.json", metadata)
     best_key = (float("-inf"),) * 4
     global_step = 0
@@ -244,7 +286,7 @@ def train(
                 lr=1e-3 if linear_probe else config["learning_rate"],
                 weight_decay=config["weight_decay"],
             )
-        order = list(range(len(train_rows)))
+        order = list(range(len(units)))
         random.Random(seed + epoch - 1).shuffle(order)
         model.train()
         if linear_probe:
@@ -258,18 +300,20 @@ def train(
         bce_costs = Counter()
         vat_costs = Counter()
         mask_total, mask_seconds = 0.0, 0.0
+        pair_total = 0.0
         mask_reasons, mask_costs = Counter(), Counter()
         steps = 0
-        num_batches = math.ceil(len(order) / batch_size)
+        num_batches = math.ceil(len(order) / unit_batch_size)
         bar = training_bar(
-            range(0, len(order), batch_size),
+            range(0, len(order), unit_batch_size),
             desc=f'{dataset}/{method} epoch {epoch}/{config["epochs"]}',
         )
         for batch_index, start in enumerate(bar):
-            batch = [train_rows[i] for i in order[start : start + batch_size]]
+            selected_units = [units[i] for i in order[start:start + unit_batch_size]]
+            batch = [r for pair in selected_units for r in pair] if paired else selected_units
             group_start = batch_index // accumulation * accumulation
             group_end = min(group_start + accumulation, num_batches)
-            group_samples = min(group_end * batch_size, len(order)) - group_start * batch_size
+            group_samples = (min(group_end * unit_batch_size, len(order)) - group_start * unit_batch_size) * (2 if paired else 1)
             selections, views, masks, references = [], {}, {}, {}
             if source_views:
                 search_started = time.monotonic()
@@ -378,6 +422,12 @@ def train(
                 )
                 loss = (terms * terms.new_tensor(weights)).sum()
                 total_loss = loss
+                if paired:
+                    pair_logits = logits.reshape(-1, 2)
+                    eligibility = logits.new_tensor([r["pair_distinguishable"] for r in forwarded[::2]])
+                    extra = 2 * (pair_regularizer(pair_logits, method, margin=pair_margin, gap=pair_gap) * eligibility).sum()
+                    total_loss = total_loss + pair_weight * extra
+                    pair_total += float(extra.detach())
                 if active:
                     extra = masked_bce(
                         model.task_modules["classifier"], representations[active], labels[active],
@@ -454,28 +504,33 @@ def train(
                             epoch=epoch,
                             step=global_step,
                             loss=batch_loss / len(batch),
-                            samples_seen=min(start + len(batch), len(order)),
+                            samples_seen=min(start + unit_batch_size, len(order)) * (2 if paired else 1),
                         )
                     )
                     print(
-                        f"{dataset}/{method} epoch {epoch} step {steps}/{math.ceil(len(order) / (batch_size * accumulation))}",
+                        f"{dataset}/{method} epoch {epoch} step {steps}/{steps_per_epoch}",
                         flush=True,
                     )
         candidate = averaged.module if averaged_steps else model
         eligible = not linear_probe and (averaged is None or len(averaged_steps) >= 2)
-        probabilities = predict_logits(
+        valid_logits = predict_logits(
             candidate, valid_rows, builder, device=device, batch_size=batch_size
-        ).sigmoid()
-        threshold, validation = select_threshold(
-            [r["label"] for r in valid_rows], probabilities.tolist()
         )
+        probabilities = valid_logits.sigmoid()
+        if paired:
+            threshold = 0.5
+            validation = metrics([r["label"] for r in valid_rows], probabilities.tolist(), threshold)
+            validation.update(paired_metrics(valid_rows, valid_logits.tolist(), margin=pair_margin, gap=pair_gap))
+        else:
+            threshold, validation = select_threshold([r["label"] for r in valid_rows], probabilities.tolist())
         history.add(
             dict(
                 event="epoch",
                 method=method,
                 epoch=epoch,
                 train_loss=running / len(train_rows),
-                total_loss=(running + vat_total + mask_weight * mask_total) / len(train_rows),
+                total_loss=(running + vat_total + mask_weight * mask_total + pair_weight * pair_total) / len(train_rows),
+                **(dict(pair_regularizer=pair_total / len(train_rows)) if paired else {}),
                 optimizer_steps=steps,
                 validation_threshold=threshold,
                 validation=validation,
@@ -506,7 +561,7 @@ def train(
         )
         key = tuple(
             validation[k] if validation[k] is not None else float("-inf")
-            for k in ("mcc", "f1", "accuracy", "auc")
+            for k in (("strict_pairwise_accuracy", "mcc", "auc", "f1") if paired else ("mcc", "f1", "accuracy", "auc"))
         )
         if eligible and key > best_key:
             best_key = key

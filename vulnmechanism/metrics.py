@@ -57,3 +57,54 @@ def select_threshold(labels, scores):
         if key(candidate) > key(best):
             best = candidate
     return best["threshold"], best
+
+
+def paired_metrics(rows, logits, *, margin=0.2, gap=0.6):
+    """Single-function decisions at 0.5; strict pair success needs both correct."""
+    from collections import defaultdict
+    import numpy as np
+    import torch
+
+    if len(rows) != len(logits) or any(not math.isfinite(float(z)) for z in logits):
+        raise ValueError("finite paired logits aligned with all official members required")
+    groups = defaultdict(dict)
+    predictions = torch.tensor(logits, dtype=torch.float32).sigmoid().ge(0.5).tolist()
+    for row, z, prediction in zip(rows, logits, predictions):
+        group = groups[row["pair_key"]]
+        if row["label"] in group:
+            raise ValueError("duplicate role in pair")
+        group[row["label"]] = (float(z), bool(row["pair_distinguishable"]), prediction)
+    if not groups or any(set(g) != {0, 1} for g in groups.values()):
+        raise ValueError("complete vulnerable/patched pairs required")
+    zv = np.array([g[1][0] for g in groups.values()])
+    zp = np.array([g[0][0] for g in groups.values()])
+    differences = zv - zp
+    pv = np.array([g[1][2] for g in groups.values()])
+    pp = np.array([g[0][2] for g in groups.values()])
+    strict = pv & ~pp
+    distinguishable = np.array([g[1][1] for g in groups.values()])
+    # Identical encoder inputs are an exact ranking tie. CUDA reduction noise
+    # must not earn credit for ordering two indistinguishable functions.
+    ranking = (zv > zp) & distinguishable
+    violations = (zv < margin) | (zp > -margin)
+    result = dict(
+        pairs=len(groups), strict_pairwise_accuracy=float(strict.mean()),
+        strict_correct_pairs=int(strict.sum()), pairwise_ranking_accuracy=float(ranking.mean()),
+        ranking_correct_pairs=int(ranking.sum()), ranking_ties=int(((differences == 0) | ~distinguishable).sum()),
+        logit_gap=float(differences.mean()), logit_gap_median=float(np.median(differences)),
+        mean_abs_logit=float(np.abs(np.r_[zv, zp]).mean()),
+        vulnerable_logit_mean=float(zv.mean()), patched_logit_mean=float(zp.mean()),
+        boundary_violation_rate=float(violations.mean()),
+        vulnerable_boundary_violation_rate=float((zv < margin).mean()),
+        patched_boundary_violation_rate=float((zp > -margin).mean()),
+        gap_violation_rate=float((differences < gap).mean()),
+        all_constraints_violation_rate=float((violations | (differences < gap)).mean()),
+        both_predicted_vulnerable=int((pv & pp).sum()),
+        both_predicted_safe=int((~pv & ~pp).sum()),
+        reversed_pairs=int((~pv & pp).sum()),
+        indistinguishable_pairs=int((~distinguishable).sum()),
+        distinguishable_pairs=int(distinguishable.sum()),
+        distinguishable_strict_pairwise_accuracy=float(strict[distinguishable].mean()) if distinguishable.any() else None,
+        distinguishable_pairwise_ranking_accuracy=float(ranking[distinguishable].mean()) if distinguishable.any() else None,
+    )
+    return result

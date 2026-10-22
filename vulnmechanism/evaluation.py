@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from .artifacts import write_json
 from .data import DATASETS, balanced_subset, class_counts, read_jsonl, test_rows, validation_rows, write_jsonl
-from .metrics import decision_boundary, metrics
+from .metrics import decision_boundary, metrics, paired_metrics
 from . import model as core
 from .training import METHODS, GENERALIZATION_METHODS, prepare_materials
 
@@ -60,6 +60,11 @@ def _evaluate_clean(rows, run, name, checkpoint, args):
             )
         ),
     )
+    if checkpoint.get("paired") and all("pair_key" in r for r in rows):
+        if threshold != 0.5:
+            raise ValueError("paired evaluation requires fixed threshold 0.5")
+        result["metrics"].update(paired_metrics(
+            rows, logits.tolist(), margin=checkpoint["paired"]["margin"], gap=checkpoint["paired"]["gap"]))
     if result == previous and ordered == cached:
         return result
     write_jsonl(predictions, ordered)
@@ -488,12 +493,21 @@ def prepare_candidates(data_dir, output_dir, model_path, dataset, *, test_limit=
 def evaluate(
     data_dir, output_dir, dataset, methods=METHODS, *, device="auto", robust=True,
     valid_limit=None, test_limit=None,
+    splits=("valid", "test"), single_function_test=False,
 ):
-    if dataset not in (*DATASETS, "reveal"):
+    if dataset not in (*DATASETS, "reveal", "primevul_paired"):
         raise ValueError(f"unknown dataset: {dataset}")
+    if not splits or any(s not in ("valid", "test") for s in splits):
+        raise ValueError("evaluation splits must be valid/test")
+    if dataset == "primevul_paired" and (robust or valid_limit is not None or test_limit is not None):
+        raise ValueError("paired evaluation preserves whole official pairs and uses Clean only")
+    if single_function_test and (dataset != "primevul_paired" or "test" not in splits):
+        raise ValueError("single-function Test is only available with final paired Test evaluation")
+    if robust and "test" not in splits:
+        raise ValueError("robustness evaluation requires Test")
     root = Path(output_dir) / dataset
-    valid = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit)
-    own_test = balanced_subset(test_rows(Path(data_dir) / dataset), test_limit)
+    valid = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit) if "valid" in splits else None
+    own_test = balanced_subset(test_rows(Path(data_dir) / dataset), test_limit) if "test" in splits else None
     materials = prepare_materials(data_dir, output_dir, dataset) if robust else None
     for method in methods:
         run = root / method
@@ -509,8 +523,12 @@ def evaluate(
             device=device,
             batch_size=checkpoint["training_config"]["batch_size"],
         )
-        _evaluate_clean(valid, run, "valid", checkpoint, args)
-        _evaluate_clean(own_test, run, "test", checkpoint, args)
+        if valid is not None:
+            _evaluate_clean(valid, run, "valid", checkpoint, args)
+        if own_test is not None:
+            _evaluate_clean(own_test, run, "test", checkpoint, args)
+        if single_function_test:
+            _evaluate_clean(test_rows(Path(data_dir) / "primevul"), run, "primevul.test", checkpoint, args)
         if robust:
             if not all(
                 (root / f"{name}.candidates.jsonl").exists() for name in ("fixed", "heldout")
@@ -646,6 +664,99 @@ def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), devic
         writer.writeheader()
         writer.writerows(results)
     return dict(datasets=list(datasets), models=len(datasets) * len(methods), rows=len(results), output=str(root))
+
+
+def paired_report(output_dir, data_dir):
+    """Summarize saved Valid evidence before deciding whether full training is warranted."""
+    from .training import PAIRED_METHODS
+    from .data import paired_groups
+    root = Path(output_dir)
+    data = json.loads((Path(data_dir) / "primevul_paired/statistics.json").read_text())
+    names = ("accuracy", "strict_pairwise_accuracy", "pairwise_ranking_accuracy", "auc", "mcc", "f1",
+             "logit_gap", "mean_abs_logit", "boundary_violation_rate", "gap_violation_rate",
+             "indistinguishable_pairs", "bce")
+    rows, configs, reloaded = [], {}, {}
+    for method in PAIRED_METHODS:
+        run = root / "primevul_paired" / method
+        if not (run / "training.metrics.json").exists():
+            continue
+        configs[method] = json.loads((run / "training.metrics.json").read_text())
+        history = read_jsonl(run / "best.training.jsonl")
+        selected = next(r["validation"] for r in history if r["event"] == "epoch" and
+                        r["epoch"] == configs[method]["selected_epoch"])
+        for split in ("valid", "test", "primevul.test"):
+            path = run / f"{split}.metrics.json"
+            if not path.exists():
+                continue
+            result = json.loads(path.read_text())
+            values = result["metrics"]
+            if split == "valid":
+                reloaded[method] = {k: dict(training=selected[k], reloaded=values[k],
+                                            difference=values[k] - selected[k])
+                                     for k in ("strict_pairwise_accuracy", "pairwise_ranking_accuracy", "auc", "mcc", "f1")}
+            rows.append(dict(method=method, split=split, selected_epoch=result["selected_epoch"],
+                             threshold=values["threshold"], samples=values["samples"],
+                             pairs=values.get("pairs"), **{k: values.get(k, result.get(k)) for k in names}))
+    valid = {r["method"]: r for r in rows if r["split"] == "valid"}
+    if not {"bce", "pair_joint"}.issubset(valid):
+        raise ValueError("BCE and Joint require completed Valid predictions")
+    budgets = {(c["train_samples"], c["valid_samples"], c["optimizer_steps"],
+                json.dumps(c["training_config"], sort_keys=True)) for c in configs.values()}
+    if len(budgets) != 1 or any(r["threshold"] != 0.5 for r in rows):
+        raise ValueError("paired controls must share data budgets and threshold 0.5")
+    baseline, joint = valid["bce"], valid["pair_joint"]
+    members = read_jsonl(Path(data_dir) / "primevul_paired/valid.jsonl")
+    pairs = paired_groups(members)
+    statuses = {}
+    for method in valid:
+        predictions = read_jsonl(root / "primevul_paired" / method / "valid.predictions.jsonl")
+        if [(r["sample_key"], r["label"]) for r in predictions] != [(r["sample_key"], r["label"]) for r in members]:
+            raise ValueError("all pair methods must evaluate the same ordered official Valid members")
+        by_key = {r["sample_key"]: r for r in predictions}
+        statuses[method] = [all(by_key[r["sample_key"]]["prediction"] == r["label"] for r in pair) for pair in pairs]
+    changes = {method: dict(
+        fixed_pairs=sum(not a and b for a, b in zip(statuses["bce"], own)),
+        regressed_pairs=sum(a and not b for a, b in zip(statuses["bce"], own)),
+        common_wrong_pairs=sum(not a and not b for a, b in zip(statuses["bce"], own)))
+        for method, own in statuses.items()}
+    gains = {k: joint[k] - baseline[k] for k in ("strict_pairwise_accuracy", "auc", "mcc", "f1", "logit_gap", "mean_abs_logit")}
+    passed = gains["strict_pairwise_accuracy"] >= 0.02 and gains["auc"] >= 0 and gains["mcc"] >= 0
+    gate = dict(passed=passed, rule="Joint minus BCE: Strict Pairwise Accuracy >= +0.02, AUC >= 0, MCC >= 0; fixed before pilot training; Test never used", differences=gains)
+    write_json(root / "results.json", dict(data=data, training=configs, results=rows, valid_gate=gate,
+                                         valid_pair_changes=changes, training_validation_comparison=reloaded))
+    with (root / "comparison.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
+        writer.writeheader(); writer.writerows(rows)
+    lines = ["# PrimeVul 官方漏洞—修复对判别学习", "",
+             "CodeBERT、2048逻辑输入、原生滑动窗口及共享线性分类头不变。单函数推理；固定Sigmoid阈值0.5，不搜索阈值。", "",
+             "BCE为两函数BCE的平均；Ranking=logsumexp(0, Δ−z_v+z_p)，Boundary=logsumexp(0,m−z_v,m+z_p)，Joint=logsumexp(0,m−z_v,m+z_p,Δ−z_v+z_p)。三组约束统一λ=0.2、m=0.2、Δ=0.6。按配对平均。", "",
+             "官方配对按相邻互补标签读取，不用项目/提交元数据异常删对。重复的上游idx用原始行位置区分并保留；源idx另存。Train与任意Valid/Test编码输入相同的整对不进入训练。对内不可区分的Train配对保留相同BCE成员，但不施加任何成对约束。Valid/Test原始成员全部保留。", "",
+             "选模：仅Clean Valid，Strict Pairwise Accuracy/MCC/AUC/F1顺序，完全相同保留早轮。严格配对正确要求漏洞预测为1、修复预测为0；Ranking要求z_v>z_p，平局不计正确；已核实编码相同的配对视为排序平局，保留在分母中，不把浮点归约噪声当成功。训练日志的原始浮点Ranking值原样保留；最终指标从已保存预测统一重算，此修正不影响不使用Ranking的选模。边界违反率表示z_v<m或z_p>−m，不等同于分类错误。", "",
+             "| Split | 原始配对 | 使用配对 | 对内不可区分 |", "|---|---:|---:|---:|"]
+    for split in ("train", "valid", "test"):
+        item = data["final"][split]
+        lines.append(f"| {split} | {data['native_pairs'][split]} | {item['pairs']} | {item['indistinguishable_pairs']} |")
+    lines += ["", f"Train泄漏排除{len(data['removed_training_pairs'])}对；元数据异常{len(data['metadata_anomalies'])}对。原始跨Split重复及上游idx重复详见results.json。Test这里只作数据核验，是否模型评价由后面的结果行明确区分。", "",
+              "| 方法 | Split | Epoch | N对 | Strict Pair Acc | Ranking Acc | AUC | MCC | F1 | Logit Gap | 平均绝对Logit | 边界违反率 |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in rows:
+        values = [r[k] for k in ("strict_pairwise_accuracy", "pairwise_ranking_accuracy", "auc", "mcc", "f1", "logit_gap", "mean_abs_logit", "boundary_violation_rate")]
+        lines.append(f"| {r['method']} | {r['split']} | {r['selected_epoch']} | {r['pairs'] or '—'} | " + " | ".join("—" if v is None else f"{v:.4f}" for v in values) + " |")
+    lines += ["", "完整指标、逐样本Logit、混淆计数和成对可区分子集指标保存在各方法目录。AUC和MCC/F1同时用于检查分类收益，不能仅依据Logit Gap或绝对Logit扩大判定有效。", "",
+              "## 预设Valid门槛", "", gate["rule"], "",
+              f"Joint−BCE：Strict {gains['strict_pairwise_accuracy']:+.4f}，AUC {gains['auc']:+.4f}，MCC {gains['mcc']:+.4f}，F1 {gains['f1']:+.4f}。", "",
+              "门槛通过，可按预设协议进入完整Train的BCE/Joint对照及一次最终Test评价。" if passed else "门槛未通过，停止全量训练；不根据Test调整模型或损失。", "",
+              "单Seed、固定512对试验用于检验最小假设，不证明跨种子稳定性。若目录中没有test指标，说明没有进行Test推理。", ""]
+    lines += ["| 方法 | BCE错误→正确对 | BCE正确→错误对 | 共同错误对 |", "|---|---:|---:|---:|"]
+    lines += [f"| {method} | {c['fixed_pairs']} | {c['regressed_pairs']} | {c['common_wrong_pairs']} |" for method, c in changes.items()]
+    lines += ["", f"Joint的Logit Gap相对BCE改变{gains['logit_gap']:+.6f}，平均绝对Logit改变{gains['mean_abs_logit']:+.6f}。"
+              f"但严格配对正确数为{round(joint['strict_pairwise_accuracy'] * len(pairs))}/{len(pairs)}，"
+              f"BCE为{round(baseline['strict_pairwise_accuracy'] * len(pairs))}/{len(pairs)}。"
+              "分数差或尺度扩大不能替代固定阈值下的分类改善；方法间也可能同时修正和损伤不同配对，不能将其直接解释成单一标量缩放。", ""]
+    auc_drift = max(abs(v["auc"]["difference"]) for v in reloaded.values())
+    lines += [f"训练记录与真实重载的AUC最大差为{auc_drift:.8f}；具体差异保存在training_validation_comparison。"
+              "最终表使用已保存的重载预测。编码相同的函数仍可能因浮点归约产生微小分数差，排序指标按已核实的输入等价关系处理平局。", ""]
+    (root / "report.md").write_text("\n".join(lines))
+    return dict(output=str(root), rows=len(rows), valid_gate=gate)
 
 
 def report(output_dir, data_dir):

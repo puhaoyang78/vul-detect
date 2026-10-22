@@ -1,0 +1,67 @@
+{
+  "dataset": "primevul_paired",
+  "method": "bce",
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "training_config": {
+    "seed": 42,
+    "epochs": 3,
+    "batch_size": 4,
+    "gradient_accumulation": 2,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.01,
+    "source_max_length": 2048,
+    "gradient_clip": 1.0
+  },
+  "train_samples": 1024,
+  "valid_samples": 960,
+  "diagnostic_limits": {
+    "train": null,
+    "valid": null
+  },
+  "environment": {
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "device": "NVIDIA GeForce RTX 4090"
+  },
+  "selection": "fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
+  "precision": "FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+  "parameter_count": 124055809,
+  "static_relations": null,
+  "input_protocol": {
+    "logical_budget": 2048,
+    "prefix_tokens": 21,
+    "source_budget": 2025,
+    "window": 512,
+    "stride": 244,
+    "pooling": "mean over unique source positions; prefix/BOS/EOS averaged across windows"
+  },
+  "vat": null,
+  "representation_mask": null,
+  "lp_ft": null,
+  "swa": null,
+  "augmentation": null,
+  "paired": {
+    "margin": 0.2,
+    "gap": 0.6,
+    "weight": 0.2,
+    "train_pair_limit": 512,
+    "train_pairs": 512,
+    "valid_pairs": 480,
+    "eligible_train_pairs": 460,
+    "loss": "mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
+    "boundary": "logsumexp(0,m-z_v,m+z_p)",
+    "ranking": "logsumexp(0,gap-z_v+z_p)",
+    "joint": "logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
+    "selection_keys": [
+      "strict_pairwise_accuracy",
+      "mcc",
+      "auc",
+      "f1"
+    ]
+  },
+  "selected_epoch": 2,
+  "completed_epochs": 3,
+  "optimizer_steps": 384,
+  "averaged_steps": []
+}

@@ -1,0 +1,54 @@
+{
+  "selected_epoch": 2,
+  "dataset": "primevul_paired",
+  "split": "valid",
+  "metrics": {
+    "accuracy": 0.5229166666666667,
+    "precision": 0.5859375,
+    "recall": 0.15625,
+    "f1": 0.24671052631578946,
+    "mcc": 0.06741492145375076,
+    "auc": 0.5401974826388889,
+    "auprc": 0.5350496118611224,
+    "tp": 75,
+    "tn": 427,
+    "fp": 53,
+    "fn": 405,
+    "confusion_matrix": [
+      [
+        427,
+        53
+      ],
+      [
+        405,
+        75
+      ]
+    ],
+    "samples": 960,
+    "threshold": 0.5,
+    "pairs": 480,
+    "strict_pairwise_accuracy": 0.06666666666666667,
+    "strict_correct_pairs": 32,
+    "pairwise_ranking_accuracy": 0.5666666666666667,
+    "ranking_correct_pairs": 272,
+    "ranking_ties": 52,
+    "logit_gap": 0.015582121132562557,
+    "logit_gap_median": 0.002291560173034668,
+    "mean_abs_logit": 0.14592374127047758,
+    "vulnerable_logit_mean": -0.1132157529781883,
+    "patched_logit_mean": -0.12879787411075086,
+    "boundary_violation_rate": 1.0,
+    "vulnerable_boundary_violation_rate": 0.975,
+    "patched_boundary_violation_rate": 0.74375,
+    "gap_violation_rate": 1.0,
+    "all_constraints_violation_rate": 1.0,
+    "both_predicted_vulnerable": 43,
+    "both_predicted_safe": 395,
+    "reversed_pairs": 10,
+    "indistinguishable_pairs": 52,
+    "distinguishable_pairs": 428,
+    "distinguishable_strict_pairwise_accuracy": 0.07476635514018691,
+    "distinguishable_pairwise_ranking_accuracy": 0.6355140186915887
+  },
+  "bce": 0.692748486995697
+}

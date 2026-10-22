@@ -1,0 +1,748 @@
+{
+  "data": {
+    "seed": 42,
+    "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+    "source_budget": 2025,
+    "native_pairs": {
+      "train": 3789,
+      "valid": 480,
+      "test": 435
+    },
+    "final": {
+      "train": {
+        "samples": 7562,
+        "positive": 3781,
+        "negative": 3781,
+        "pairs": 3781,
+        "indistinguishable_pairs": 386
+      },
+      "valid": {
+        "samples": 960,
+        "positive": 480,
+        "negative": 480,
+        "pairs": 480,
+        "indistinguishable_pairs": 52
+      },
+      "test": {
+        "samples": 870,
+        "positive": 435,
+        "negative": 435,
+        "pairs": 435,
+        "indistinguishable_pairs": 44
+      }
+    },
+    "cross_split_overlap": {
+      "train:valid": {
+        "exact_sources": 0,
+        "encoded_inputs": 7
+      },
+      "train:test": {
+        "exact_sources": 0,
+        "encoded_inputs": 2
+      },
+      "valid:test": {
+        "exact_sources": 0,
+        "encoded_inputs": 0
+      }
+    },
+    "removed_training_pairs": [
+      "primevul_paired:train:2219",
+      "primevul_paired:train:2274",
+      "primevul_paired:train:2324",
+      "primevul_paired:train:2512",
+      "primevul_paired:train:2557",
+      "primevul_paired:train:2708",
+      "primevul_paired:train:3399",
+      "primevul_paired:train:3552"
+    ],
+    "within_split_duplicates": {
+      "train": {
+        "repeated_upstream_idx_rows": 4,
+        "repeated_source_rows": 4
+      },
+      "valid": {
+        "repeated_upstream_idx_rows": 4,
+        "repeated_source_rows": 4
+      },
+      "test": {
+        "repeated_upstream_idx_rows": 2,
+        "repeated_source_rows": 2
+      }
+    },
+    "metadata_anomalies": [
+      {
+        "pair_key": "primevul_paired:train:2117",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 195818,
+        "patched_idx": 60043
+      },
+      {
+        "pair_key": "primevul_paired:train:2333",
+        "fields": [
+          "project",
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 199221,
+        "patched_idx": 14398
+      },
+      {
+        "pair_key": "primevul_paired:train:2361",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 199823,
+        "patched_idx": 77460
+      },
+      {
+        "pair_key": "primevul_paired:train:2434",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 200657,
+        "patched_idx": 187226
+      },
+      {
+        "pair_key": "primevul_paired:train:2527",
+        "fields": [
+          "project",
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 202134,
+        "patched_idx": 173474
+      },
+      {
+        "pair_key": "primevul_paired:train:2530",
+        "fields": [
+          "project",
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 202142,
+        "patched_idx": 155111
+      },
+      {
+        "pair_key": "primevul_paired:train:2604",
+        "fields": [
+          "project",
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 202931,
+        "patched_idx": 14448
+      },
+      {
+        "pair_key": "primevul_paired:train:2630",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 204020,
+        "patched_idx": 174145
+      },
+      {
+        "pair_key": "primevul_paired:train:2648",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 204198,
+        "patched_idx": 58747
+      },
+      {
+        "pair_key": "primevul_paired:train:2665",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 204372,
+        "patched_idx": 174120
+      },
+      {
+        "pair_key": "primevul_paired:train:2685",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 204525,
+        "patched_idx": 68533
+      },
+      {
+        "pair_key": "primevul_paired:train:2859",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 206690,
+        "patched_idx": 81717
+      },
+      {
+        "pair_key": "primevul_paired:train:3280",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 210916,
+        "patched_idx": 69666
+      },
+      {
+        "pair_key": "primevul_paired:train:3467",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 213575,
+        "patched_idx": 77512
+      },
+      {
+        "pair_key": "primevul_paired:train:3604",
+        "fields": [
+          "project",
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 215497,
+        "patched_idx": 32099
+      },
+      {
+        "pair_key": "primevul_paired:train:3688",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 216354,
+        "patched_idx": 175178
+      },
+      {
+        "pair_key": "primevul_paired:train:3708",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 216630,
+        "patched_idx": 16373
+      },
+      {
+        "pair_key": "primevul_paired:test:125",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 197517,
+        "patched_idx": 230147
+      },
+      {
+        "pair_key": "primevul_paired:test:133",
+        "fields": [
+          "commit_id",
+          "cve"
+        ],
+        "vulnerable_idx": 197796,
+        "patched_idx": 187732
+      }
+    ],
+    "protocol": "official adjacent complementary labels; metadata anomalies retained; identical encoded Train pairs keep BCE but no pair constraint; exclude whole Train pairs with held-out identical inputs; Valid/Test untouched; no near/project/CVE filtering"
+  },
+  "training": {
+    "bce": {
+      "dataset": "primevul_paired",
+      "method": "bce",
+      "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+      "training_config": {
+        "seed": 42,
+        "epochs": 3,
+        "batch_size": 4,
+        "gradient_accumulation": 2,
+        "learning_rate": 1e-05,
+        "weight_decay": 0.01,
+        "source_max_length": 2048,
+        "gradient_clip": 1.0
+      },
+      "train_samples": 1024,
+      "valid_samples": 960,
+      "diagnostic_limits": {
+        "train": null,
+        "valid": null
+      },
+      "environment": {
+        "torch": "2.9.1+cu128",
+        "transformers": "4.57.3",
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 4090"
+      },
+      "selection": "fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
+      "precision": "FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+      "parameter_count": 124055809,
+      "static_relations": null,
+      "input_protocol": {
+        "logical_budget": 2048,
+        "prefix_tokens": 21,
+        "source_budget": 2025,
+        "window": 512,
+        "stride": 244,
+        "pooling": "mean over unique source positions; prefix/BOS/EOS averaged across windows"
+      },
+      "vat": null,
+      "representation_mask": null,
+      "lp_ft": null,
+      "swa": null,
+      "augmentation": null,
+      "paired": {
+        "margin": 0.2,
+        "gap": 0.6,
+        "weight": 0.2,
+        "train_pair_limit": 512,
+        "train_pairs": 512,
+        "valid_pairs": 480,
+        "eligible_train_pairs": 460,
+        "loss": "mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
+        "boundary": "logsumexp(0,m-z_v,m+z_p)",
+        "ranking": "logsumexp(0,gap-z_v+z_p)",
+        "joint": "logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
+        "selection_keys": [
+          "strict_pairwise_accuracy",
+          "mcc",
+          "auc",
+          "f1"
+        ]
+      },
+      "selected_epoch": 2,
+      "completed_epochs": 3,
+      "optimizer_steps": 384,
+      "averaged_steps": []
+    },
+    "pair_ranking": {
+      "dataset": "primevul_paired",
+      "method": "pair_ranking",
+      "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+      "training_config": {
+        "seed": 42,
+        "epochs": 3,
+        "batch_size": 4,
+        "gradient_accumulation": 2,
+        "learning_rate": 1e-05,
+        "weight_decay": 0.01,
+        "source_max_length": 2048,
+        "gradient_clip": 1.0
+      },
+      "train_samples": 1024,
+      "valid_samples": 960,
+      "diagnostic_limits": {
+        "train": null,
+        "valid": null
+      },
+      "environment": {
+        "torch": "2.9.1+cu128",
+        "transformers": "4.57.3",
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 4090"
+      },
+      "selection": "fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
+      "precision": "FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+      "parameter_count": 124055809,
+      "static_relations": null,
+      "input_protocol": {
+        "logical_budget": 2048,
+        "prefix_tokens": 21,
+        "source_budget": 2025,
+        "window": 512,
+        "stride": 244,
+        "pooling": "mean over unique source positions; prefix/BOS/EOS averaged across windows"
+      },
+      "vat": null,
+      "representation_mask": null,
+      "lp_ft": null,
+      "swa": null,
+      "augmentation": null,
+      "paired": {
+        "margin": 0.2,
+        "gap": 0.6,
+        "weight": 0.2,
+        "train_pair_limit": 512,
+        "train_pairs": 512,
+        "valid_pairs": 480,
+        "eligible_train_pairs": 460,
+        "loss": "mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
+        "boundary": "logsumexp(0,m-z_v,m+z_p)",
+        "ranking": "logsumexp(0,gap-z_v+z_p)",
+        "joint": "logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
+        "selection_keys": [
+          "strict_pairwise_accuracy",
+          "mcc",
+          "auc",
+          "f1"
+        ]
+      },
+      "selected_epoch": 2,
+      "completed_epochs": 3,
+      "optimizer_steps": 384,
+      "averaged_steps": []
+    },
+    "pair_boundary": {
+      "dataset": "primevul_paired",
+      "method": "pair_boundary",
+      "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+      "training_config": {
+        "seed": 42,
+        "epochs": 3,
+        "batch_size": 4,
+        "gradient_accumulation": 2,
+        "learning_rate": 1e-05,
+        "weight_decay": 0.01,
+        "source_max_length": 2048,
+        "gradient_clip": 1.0
+      },
+      "train_samples": 1024,
+      "valid_samples": 960,
+      "diagnostic_limits": {
+        "train": null,
+        "valid": null
+      },
+      "environment": {
+        "torch": "2.9.1+cu128",
+        "transformers": "4.57.3",
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 4090"
+      },
+      "selection": "fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
+      "precision": "FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+      "parameter_count": 124055809,
+      "static_relations": null,
+      "input_protocol": {
+        "logical_budget": 2048,
+        "prefix_tokens": 21,
+        "source_budget": 2025,
+        "window": 512,
+        "stride": 244,
+        "pooling": "mean over unique source positions; prefix/BOS/EOS averaged across windows"
+      },
+      "vat": null,
+      "representation_mask": null,
+      "lp_ft": null,
+      "swa": null,
+      "augmentation": null,
+      "paired": {
+        "margin": 0.2,
+        "gap": 0.6,
+        "weight": 0.2,
+        "train_pair_limit": 512,
+        "train_pairs": 512,
+        "valid_pairs": 480,
+        "eligible_train_pairs": 460,
+        "loss": "mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
+        "boundary": "logsumexp(0,m-z_v,m+z_p)",
+        "ranking": "logsumexp(0,gap-z_v+z_p)",
+        "joint": "logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
+        "selection_keys": [
+          "strict_pairwise_accuracy",
+          "mcc",
+          "auc",
+          "f1"
+        ]
+      },
+      "selected_epoch": 3,
+      "completed_epochs": 3,
+      "optimizer_steps": 384,
+      "averaged_steps": []
+    },
+    "pair_joint": {
+      "dataset": "primevul_paired",
+      "method": "pair_joint",
+      "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+      "training_config": {
+        "seed": 42,
+        "epochs": 3,
+        "batch_size": 4,
+        "gradient_accumulation": 2,
+        "learning_rate": 1e-05,
+        "weight_decay": 0.01,
+        "source_max_length": 2048,
+        "gradient_clip": 1.0
+      },
+      "train_samples": 1024,
+      "valid_samples": 960,
+      "diagnostic_limits": {
+        "train": null,
+        "valid": null
+      },
+      "environment": {
+        "torch": "2.9.1+cu128",
+        "transformers": "4.57.3",
+        "cuda": "12.8",
+        "device": "NVIDIA GeForce RTX 4090"
+      },
+      "selection": "fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
+      "precision": "FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
+      "parameter_count": 124055809,
+      "static_relations": null,
+      "input_protocol": {
+        "logical_budget": 2048,
+        "prefix_tokens": 21,
+        "source_budget": 2025,
+        "window": 512,
+        "stride": 244,
+        "pooling": "mean over unique source positions; prefix/BOS/EOS averaged across windows"
+      },
+      "vat": null,
+      "representation_mask": null,
+      "lp_ft": null,
+      "swa": null,
+      "augmentation": null,
+      "paired": {
+        "margin": 0.2,
+        "gap": 0.6,
+        "weight": 0.2,
+        "train_pair_limit": 512,
+        "train_pairs": 512,
+        "valid_pairs": 480,
+        "eligible_train_pairs": 460,
+        "loss": "mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
+        "boundary": "logsumexp(0,m-z_v,m+z_p)",
+        "ranking": "logsumexp(0,gap-z_v+z_p)",
+        "joint": "logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
+        "selection_keys": [
+          "strict_pairwise_accuracy",
+          "mcc",
+          "auc",
+          "f1"
+        ]
+      },
+      "selected_epoch": 3,
+      "completed_epochs": 3,
+      "optimizer_steps": 384,
+      "averaged_steps": []
+    }
+  },
+  "results": [
+    {
+      "method": "bce",
+      "split": "valid",
+      "selected_epoch": 2,
+      "threshold": 0.5,
+      "samples": 960,
+      "pairs": 480,
+      "accuracy": 0.521875,
+      "strict_pairwise_accuracy": 0.06666666666666667,
+      "pairwise_ranking_accuracy": 0.5770833333333333,
+      "auc": 0.5409331597222222,
+      "mcc": 0.04658908279478052,
+      "f1": 0.4226415094339622,
+      "logit_gap": 0.011169854349767168,
+      "mean_abs_logit": 0.06467283048356573,
+      "boundary_violation_rate": 1.0,
+      "gap_violation_rate": 1.0,
+      "indistinguishable_pairs": 52,
+      "bce": 0.6912059783935547
+    },
+    {
+      "method": "pair_ranking",
+      "split": "valid",
+      "selected_epoch": 2,
+      "threshold": 0.5,
+      "samples": 960,
+      "pairs": 480,
+      "accuracy": 0.5229166666666667,
+      "strict_pairwise_accuracy": 0.06666666666666667,
+      "pairwise_ranking_accuracy": 0.5666666666666667,
+      "auc": 0.5401974826388889,
+      "mcc": 0.06741492145375076,
+      "f1": 0.24671052631578946,
+      "logit_gap": 0.015582121132562557,
+      "mean_abs_logit": 0.14592374127047758,
+      "boundary_violation_rate": 1.0,
+      "gap_violation_rate": 1.0,
+      "indistinguishable_pairs": 52,
+      "bce": 0.692748486995697
+    },
+    {
+      "method": "pair_boundary",
+      "split": "valid",
+      "selected_epoch": 3,
+      "threshold": 0.5,
+      "samples": 960,
+      "pairs": 480,
+      "accuracy": 0.5229166666666667,
+      "strict_pairwise_accuracy": 0.06666666666666667,
+      "pairwise_ranking_accuracy": 0.5958333333333333,
+      "auc": 0.5361805555555557,
+      "mcc": 0.04846426357166436,
+      "f1": 0.43034825870646765,
+      "logit_gap": 0.018878752652866145,
+      "mean_abs_logit": 0.11897903491820519,
+      "boundary_violation_rate": 1.0,
+      "gap_violation_rate": 1.0,
+      "indistinguishable_pairs": 52,
+      "bce": 0.6911442279815674
+    },
+    {
+      "method": "pair_joint",
+      "split": "valid",
+      "selected_epoch": 3,
+      "threshold": 0.5,
+      "samples": 960,
+      "pairs": 480,
+      "accuracy": 0.5197916666666667,
+      "strict_pairwise_accuracy": 0.06666666666666667,
+      "pairwise_ranking_accuracy": 0.5916666666666667,
+      "auc": 0.5386349826388889,
+      "mcc": 0.04085889232227184,
+      "f1": 0.4518430439952437,
+      "logit_gap": 0.02002746149664745,
+      "mean_abs_logit": 0.11931440898333676,
+      "boundary_violation_rate": 1.0,
+      "gap_violation_rate": 1.0,
+      "indistinguishable_pairs": 52,
+      "bce": 0.690839409828186
+    }
+  ],
+  "valid_gate": {
+    "passed": false,
+    "rule": "Joint minus BCE: Strict Pairwise Accuracy >= +0.02, AUC >= 0, MCC >= 0; fixed before pilot training; Test never used",
+    "differences": {
+      "strict_pairwise_accuracy": 0.0,
+      "auc": -0.0022981770833333526,
+      "mcc": -0.005730190472508681,
+      "f1": 0.029201534561281495,
+      "logit_gap": 0.00885760714688028,
+      "mean_abs_logit": 0.054641578499771026
+    }
+  },
+  "valid_pair_changes": {
+    "bce": {
+      "fixed_pairs": 0,
+      "regressed_pairs": 0,
+      "common_wrong_pairs": 448
+    },
+    "pair_ranking": {
+      "fixed_pairs": 25,
+      "regressed_pairs": 25,
+      "common_wrong_pairs": 423
+    },
+    "pair_boundary": {
+      "fixed_pairs": 22,
+      "regressed_pairs": 22,
+      "common_wrong_pairs": 426
+    },
+    "pair_joint": {
+      "fixed_pairs": 25,
+      "regressed_pairs": 25,
+      "common_wrong_pairs": 423
+    }
+  },
+  "training_validation_comparison": {
+    "bce": {
+      "strict_pairwise_accuracy": {
+        "training": 0.06666666666666667,
+        "reloaded": 0.06666666666666667,
+        "difference": 0.0
+      },
+      "pairwise_ranking_accuracy": {
+        "training": 0.6291666666666667,
+        "reloaded": 0.5770833333333333,
+        "difference": -0.05208333333333337
+      },
+      "auc": {
+        "training": 0.5409266493055556,
+        "reloaded": 0.5409331597222222,
+        "difference": 6.5104166666607455e-06
+      },
+      "mcc": {
+        "training": 0.04658908279478052,
+        "reloaded": 0.04658908279478052,
+        "difference": 0.0
+      },
+      "f1": {
+        "training": 0.4226415094339622,
+        "reloaded": 0.4226415094339622,
+        "difference": 0.0
+      }
+    },
+    "pair_ranking": {
+      "strict_pairwise_accuracy": {
+        "training": 0.06666666666666667,
+        "reloaded": 0.06666666666666667,
+        "difference": 0.0
+      },
+      "pairwise_ranking_accuracy": {
+        "training": 0.6208333333333333,
+        "reloaded": 0.5666666666666667,
+        "difference": -0.054166666666666696
+      },
+      "auc": {
+        "training": 0.5402170138888889,
+        "reloaded": 0.5401974826388889,
+        "difference": -1.9531249999982236e-05
+      },
+      "mcc": {
+        "training": 0.06741492145375076,
+        "reloaded": 0.06741492145375076,
+        "difference": 0.0
+      },
+      "f1": {
+        "training": 0.24671052631578946,
+        "reloaded": 0.24671052631578946,
+        "difference": 0.0
+      }
+    },
+    "pair_boundary": {
+      "strict_pairwise_accuracy": {
+        "training": 0.06666666666666667,
+        "reloaded": 0.06666666666666667,
+        "difference": 0.0
+      },
+      "pairwise_ranking_accuracy": {
+        "training": 0.64375,
+        "reloaded": 0.5958333333333333,
+        "difference": -0.04791666666666672
+      },
+      "auc": {
+        "training": 0.5361827256944445,
+        "reloaded": 0.5361805555555557,
+        "difference": -2.1701388888129003e-06
+      },
+      "mcc": {
+        "training": 0.04846426357166436,
+        "reloaded": 0.04846426357166436,
+        "difference": 0.0
+      },
+      "f1": {
+        "training": 0.43034825870646765,
+        "reloaded": 0.43034825870646765,
+        "difference": 0.0
+      }
+    },
+    "pair_joint": {
+      "strict_pairwise_accuracy": {
+        "training": 0.06666666666666667,
+        "reloaded": 0.06666666666666667,
+        "difference": 0.0
+      },
+      "pairwise_ranking_accuracy": {
+        "training": 0.6395833333333333,
+        "reloaded": 0.5916666666666667,
+        "difference": -0.04791666666666661
+      },
+      "auc": {
+        "training": 0.5386480034722222,
+        "reloaded": 0.5386349826388889,
+        "difference": -1.3020833333321491e-05
+      },
+      "mcc": {
+        "training": 0.04085889232227184,
+        "reloaded": 0.04085889232227184,
+        "difference": 0.0
+      },
+      "f1": {
+        "training": 0.4518430439952437,
+        "reloaded": 0.4518430439952437,
+        "difference": 0.0
+      }
+    }
+  }
+}

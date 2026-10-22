@@ -814,3 +814,82 @@ transfer_report(root, Path("results"))
 新 ReVeal 完整平衡训练的域内 Test AUC=0.7700，低于历史1024/256小样本
 checkpoint的0.8147；两者用同一380条Test，但训练预算及Valid成员不同。
 如实保留此次结果，没有据Test重新选择配置、延长训练或替换为旧模型。
+
+### PrimeVul 官方漏洞—修复对判别学习
+
+直接读取 `PrimeVul_v0.1/primevul_{train,valid,test}_paired.jsonl`，保留官方
+相邻漏洞/修复配对及原始0/1标签，不由CVE或提交重新拼对。上游idx有重复，
+样本键使用Split和原始行位置，上游idx、项目、提交及CVE另存。
+元数据异常记录后保留。只排除Train中与任意Valid/Test在当前编码输入完全
+相同的整对；Valid/Test保留全部官方成员并报告重复及不可区分数量。
+对内2025源码Token截断后相同的Train配对仍参加BCE，但不施加成对约束。
+
+复用现有CodeBERT、2048逻辑长度、512 Token滑动窗口、函数mean pooling
+和单个共享线性分类头；训练编码两个函数，推理只需要一个函数。
+固定Sigmoid阈值0.5，完全不搜索阈值。每对BCE为两函数BCE的平均，
+额外约束使用稳定LogSumExp，统一λ=0.2、m=0.2、Δ=0.6（Δ>2m）：
+
+- `bce`：只有BCE。
+- `pair_ranking`：BCE + λ·logsumexp(0, Δ−z_v+z_p)。
+- `pair_boundary`：BCE + λ·logsumexp(0, m−z_v, m+z_p)。
+- `pair_joint`：BCE + λ·logsumexp(0, m−z_v, m+z_p, Δ−z_v+z_p)。
+
+四组按配对平均，以Seed42固定抽取512个完整Train配对，共1024函数。
+使用全部480个官方Valid配对选择Epoch；微批4函数、累积2，有效批4对，
+3 Epoch各384次优化器更新。初始化、训练成员、配对顺序、优化器和学习率
+完全相同，无增强、VAT或额外编码器。四组都从预训练模型重新初始化。
+仅按Valid的Strict Pairwise Accuracy/MCC/AUC/F1顺序选Epoch，完全相同
+保留更早轮次。Strict要求漏洞判1且修复判0；Ranking要求z_v>z_p，平局不算正确。
+编码完全相同的配对按排序平局处理，不把GPU浮点归约的微小差异算作成功。
+本次运行的训练日志保留原始浮点排序值；最终表用统一规则从保存预测重算，
+该修正不影响不使用Ranking的Epoch选模。
+边界违反为z_v<m或z_p>−m，另外报告Gap不足Δ的比例、Logit Gap和绝对Logit。
+
+进入全量训练的门槛在小样本训练前固定：Joint比BCE的Valid Strict Pairwise
+Accuracy至少提高0.02，且AUC和MCC不下降。只有通过才训练完整Paired Train
+上的BCE/Joint，并进行一次最终Paired Test及普通PrimeVul平衡Test评价。
+否则保留负结果并停止，不以Logit尺度或Ranking单项改善代替分类收益。
+
+```bash
+python -m vulnmechanism.cli prepare --paired --datasets primevul \
+  --raw-root /home/PublicData/PHY-data/vul_detect/data
+python -m vulnmechanism.cli train --dataset primevul_paired \
+  --methods bce pair_ranking pair_boundary pair_joint --train-pair-limit 512 \
+  --model /home/PublicData/PHY-data/resource/codebert-base \
+  --output-dir results/paired_pilot --device cuda:0
+python -m vulnmechanism.cli evaluate --dataset primevul_paired \
+  --methods bce pair_ranking pair_boundary pair_joint --clean-only --split valid \
+  --output-dir results/paired_pilot --device cuda:0
+python -m vulnmechanism.cli report --paired --output-dir results/paired_pilot
+python -m unittest tests.test_paired
+```
+
+派生成员及数据核查在 `data/primevul_paired/`；配置、Epoch记录、Valid预测
+和实际门槛判断见 [小样本报告](results/paired_pilot/report.md)及
+[统一指标](results/paired_pilot/comparison.csv)。原始数据、已有模型及历史结果不变。
+
+实际核查：源码跨Split精确重复为0；编码截断后Train/Valid有7种相同输入、
+Train/Test有2种，涉及8个Train配对，整对排除后剩3781对。
+其中386对对内不可区分；Valid为52/480、Test为44/435，成员不删。
+固定512对中460对可施加约束，52对只参加BCE。元数据异常共19对，全部保留。
+
+四组真实完成3 Epoch、各384步，固定阈值0.5，重载后Valid结果如下。
+Ranking分母保留全部480对，编码相同的52对计为平局：
+
+| 方法 | Epoch | Strict Pair Acc | Ranking Acc | AUC | MCC | F1 | Logit Gap |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BCE | 2 | 0.0667 | 0.5771 | 0.5409 | 0.0466 | 0.4226 | 0.01117 |
+| BCE+Ranking | 2 | 0.0667 | 0.5667 | 0.5402 | 0.0674 | 0.2467 | 0.01558 |
+| BCE+Boundary | 3 | 0.0667 | 0.5958 | 0.5362 | 0.0485 | 0.4303 | 0.01888 |
+| BCE+Joint | 3 | 0.0667 | 0.5917 | 0.5386 | 0.0409 | 0.4518 | 0.02003 |
+
+Joint与BCE严格正确数都为32/480；Joint修正25对、同时损伤25对。
+其平均绝对Logit从0.06467增至0.11931，Gap扩大但没有净严格分类收益；
+四组的边界违反率和Gap违反率均为100%。Joint的F1上升0.0292，
+但AUC下降0.0023、MCC下降0.0057。预设门槛未通过，停止全量训练，
+没有对Paired Test或普通PrimeVul Test推理，也未追加配置。
+
+真实重载与训练记录的AUC最大差为0.00001953；Strict/MCC/F1不变。
+完整旧值、新值和Ranking平局修正保存在结果JSON，报告使用真实重载预测。
+78项回归测试、真实CodeBERT CUDA前后向及四个checkpoint重载检查通过；
+3840条Valid预测已独立复算，缓存重放零新增前向，结果逐字节一致。

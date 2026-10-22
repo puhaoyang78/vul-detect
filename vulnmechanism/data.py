@@ -248,6 +248,107 @@ def validation_rows(data_dir):
     ]
 
 
+def paired_groups(rows):
+    """Official pair order, with vulnerable/patch roles checked rather than inferred."""
+    groups = {}
+    for row in rows:
+        groups.setdefault(row["pair_key"], []).append(row)
+    result = []
+    for key, members in groups.items():
+        if len(members) != 2 or {r["label"] for r in members} != {0, 1}:
+            raise ValueError(f"{key}: a pair needs exactly one vulnerable and one patched function")
+        result.append(tuple(sorted(members, key=lambda r: -r["label"])))
+    return result
+
+
+def paired_subset(rows, limit=None, seed=42):
+    pairs = paired_groups(rows)
+    if limit is not None:
+        if limit <= 0 or limit > len(pairs):
+            raise ValueError("pair limit exceeds available training pairs")
+        selected = set(random.Random(seed).sample(range(len(pairs)), limit))
+        pairs = [p for i, p in enumerate(pairs) if i in selected]
+    return [r for pair in pairs for r in pair]
+
+
+def prepare_paired(raw_root, output, model_path):
+    """Keep official held-out members; remove only Train-to-held-out input leakage."""
+    from itertools import combinations
+    from .model import AutoTokenizer, InputBuilder
+
+    dest = Path(output) / "primevul_paired"
+    if any((dest / f"{s}.jsonl").exists() for s in SPLITS):
+        raise FileExistsError(f"paired data already prepared: {dest}")
+    root = Path(raw_root) / "PrimeVul_v0.1"
+    builder = InputBuilder(AutoTokenizer.from_pretrained(model_path))
+    budget = builder.source_max_length - len(builder.source_prefix) - 2
+    splits, tokens, signatures, anomalies, duplicates = {}, {}, {}, [], {}
+    for split in SPLITS:
+        path = root / f"primevul_{split}_paired.jsonl"
+        native = read_jsonl(path)
+        if len(native) % 2:
+            raise ValueError(f"{path}: incomplete adjacent pair")
+        rows = []
+        for at in range(0, len(native), 2):
+            a, b = native[at:at + 2]
+            if {a["target"], b["target"]} != {0, 1}:
+                raise ValueError(f"{path}:{at + 1}: noncomplementary official labels")
+            pair_key = f"primevul_paired:{split}:{at // 2}"
+            mismatch = [k for k in ("project", "commit_id", "cve") if a.get(k) != b.get(k)]
+            if mismatch:
+                anomalies.append(dict(pair_key=pair_key, fields=mismatch,
+                                      vulnerable_idx=a["idx"] if a["target"] else b["idx"],
+                                      patched_idx=b["idx"] if a["target"] else a["idx"]))
+            encoded = [tuple(builder._encode(r["func"], budget)) for r in (a, b)]
+            distinguishable = encoded[0] != encoded[1]
+            for offset, (r, ids) in enumerate(zip((a, b), encoded)):
+                if type(r["target"]) is not int or not isinstance(r["func"], str) or not r["func"].strip():
+                    raise ValueError(f"{path}:{at + offset + 1}: invalid official function/label")
+                key = f"primevul_paired:{split}:{at + offset + 1}"
+                tokens[key] = ids
+                rows.append(dict(sample_key=key, pair_key=pair_key, dataset="primevul_paired",
+                                 split=split, label=r["target"], raw_source=r["func"],
+                                 project=r["project"], commit_id=r["commit_id"], cve=r.get("cve"),
+                                 source_file=str(path.relative_to(raw_root)), source_row=at + offset + 1,
+                                 upstream_idx=r["idx"], language="c_cpp", train_overlap=False,
+                                 valid_overlap=False, pair_distinguishable=distinguishable))
+        splits[split] = rows
+        signatures[split] = {tokens[r["sample_key"]] for r in rows}
+        duplicates[split] = dict(repeated_upstream_idx_rows=len(rows) - len({r["upstream_idx"] for r in rows}),
+                                 repeated_source_rows=len(rows) - len({r["raw_source"] for r in rows}))
+    overlaps = {}
+    for a, b in combinations(SPLITS, 2):
+        overlaps[f"{a}:{b}"] = dict(
+            exact_sources=len({r["raw_source"] for r in splits[a]} & {r["raw_source"] for r in splits[b]}),
+            encoded_inputs=len(signatures[a] & signatures[b]))
+    heldout = signatures["valid"] | signatures["test"]
+    removed = {r["pair_key"] for r in splits["train"] if tokens[r["sample_key"]] in heldout}
+    original = splits["train"]
+    splits["train"] = [r for r in original if r["pair_key"] not in removed]
+    pilot = {r["sample_key"] for r in paired_subset(splits["train"], min(512, len(splits["train"]) // 2))}
+    dest.mkdir(parents=True, exist_ok=True)
+    members = []
+    for split in SPLITS:
+        write_jsonl(dest / f"{split}.jsonl", splits[split])
+        for row in (original if split == "train" else splits[split]):
+            members.append({k: row[k] for k in ("sample_key", "pair_key", "split", "label", "source_file", "source_row", "upstream_idx", "pair_distinguishable")})
+            members[-1].update(excluded_train_overlap=row["pair_key"] in removed,
+                               pilot_train=row["sample_key"] in pilot)
+    with (dest / "members.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(members[0]), lineterminator="\n")
+        writer.writeheader(); writer.writerows(members)
+    write_json(dest / "statistics.json", dict(
+        seed=42, model_path=str(model_path), source_budget=budget,
+        native_pairs={s: (len(original) if s == "train" else len(splits[s])) // 2 for s in SPLITS},
+        final={s: dict(**class_counts(rows), pairs=len(rows) // 2,
+                       indistinguishable_pairs=sum(not r[0]["pair_distinguishable"] for r in paired_groups(rows)))
+               for s, rows in splits.items()},
+        cross_split_overlap=overlaps, removed_training_pairs=sorted(removed),
+        within_split_duplicates=duplicates,
+        metadata_anomalies=anomalies,
+        protocol="official adjacent complementary labels; metadata anomalies retained; identical encoded Train pairs keep BCE but no pair constraint; exclude whole Train pairs with held-out identical inputs; Valid/Test untouched; no near/project/CVE filtering"))
+
+
 def prepare(raw_root, output, seed=42, datasets=DATASETS):
     output = Path(output)
     for dataset in datasets:
