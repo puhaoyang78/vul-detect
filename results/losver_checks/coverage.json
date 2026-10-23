@@ -1,0 +1,300 @@
+{
+  "reference_commit": "12c4c337916623c12b49b934fa7149fb5a5ff6df",
+  "before": {
+    "train": {
+      "counts": {
+        "functions": 8708,
+        "modified_lines": 49771,
+        "baseline_truncated_functions": 5541,
+        "detector_truncated_functions": 5533,
+        "baseline_code_tokens": 2980340,
+        "detector_code_tokens": 2984802,
+        "detector_line_outputs": 355566,
+        "detector_unassigned_code_tokens": 38926,
+        "detector_readout_visible_modified_lines": 22338,
+        "detector_oracle_padding_mass_max": 0.9586373570210732,
+        "localizer_emitted_lines": 355095,
+        "localizer_declared_lines": 360188,
+        "localizer_declared_positive_lines": 22320,
+        "localizer_consumed_positive_labels": 21898,
+        "localizer_functions_with_mapping_errors": 2532,
+        "localizer_readout_visible_modified_lines": 22316,
+        "detector_empty_line_groups": 42105,
+        "detector_wrong_physical_line_groups": 49375,
+        "localizer_empty_line_outputs": 42023,
+        "localizer_wrong_physical_line_outputs": 49740,
+        "baseline_identical_pairs": 1254,
+        "localizer_identical_pairs": 1268,
+        "oracle_identical_pairs": 1249,
+        "detector_oracle_padding_mass_mean": 0.035286421771128604
+      },
+      "examples": [
+        {
+          "sample_key": "primevul_paired:train:3",
+          "output_line": 19,
+          "physical_lines": [
+            20
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:train:3",
+          "output_line": 20,
+          "physical_lines": [
+            21
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:train:3",
+          "output_line": 21,
+          "physical_lines": [
+            22
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:train:3",
+          "output_line": 22,
+          "physical_lines": [
+            23
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:train:3",
+          "output_line": 23,
+          "physical_lines": [
+            24
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:train:3",
+          "output_line": 24,
+          "physical_lines": [
+            26
+          ]
+        }
+      ]
+    },
+    "valid": {
+      "counts": {
+        "functions": 1124,
+        "modified_lines": 5401,
+        "baseline_truncated_functions": 671,
+        "detector_truncated_functions": 671,
+        "baseline_code_tokens": 378655,
+        "detector_code_tokens": 379199,
+        "detector_line_outputs": 43309,
+        "detector_unassigned_code_tokens": 4540,
+        "detector_readout_visible_modified_lines": 2666,
+        "detector_oracle_padding_mass_max": 0.727527319665115,
+        "localizer_emitted_lines": 43266,
+        "localizer_declared_lines": 43430,
+        "localizer_declared_positive_lines": 2665,
+        "localizer_consumed_positive_labels": 2663,
+        "localizer_functions_with_mapping_errors": 68,
+        "localizer_readout_visible_modified_lines": 2665,
+        "detector_empty_line_groups": 5120,
+        "detector_wrong_physical_line_groups": 1520,
+        "localizer_empty_line_outputs": 5121,
+        "localizer_wrong_physical_line_outputs": 1539,
+        "baseline_identical_pairs": 164,
+        "localizer_identical_pairs": 165,
+        "oracle_identical_pairs": 164,
+        "detector_oracle_padding_mass_mean": 0.036549319968573545
+      },
+      "examples": [
+        {
+          "sample_key": "primevul_paired:valid:3",
+          "output_line": 18,
+          "physical_lines": [
+            19
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:valid:3",
+          "output_line": 19,
+          "physical_lines": [
+            20
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:valid:3",
+          "output_line": 20,
+          "physical_lines": [
+            21
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:valid:3",
+          "output_line": 21,
+          "physical_lines": [
+            22
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:valid:3",
+          "output_line": 22,
+          "physical_lines": [
+            23
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:valid:3",
+          "output_line": 23,
+          "physical_lines": [
+            25
+          ]
+        }
+      ]
+    },
+    "test": {
+      "counts": {
+        "functions": 1128,
+        "modified_lines": 5162,
+        "baseline_truncated_functions": 732,
+        "detector_truncated_functions": 732,
+        "baseline_code_tokens": 389605,
+        "detector_code_tokens": 390187,
+        "detector_line_outputs": 44878,
+        "detector_empty_line_groups": 5109,
+        "detector_unassigned_code_tokens": 4961,
+        "detector_readout_visible_modified_lines": 2690,
+        "detector_oracle_padding_mass_max": 0.8422669601430948,
+        "localizer_emitted_lines": 44809,
+        "localizer_declared_lines": 45003,
+        "localizer_declared_positive_lines": 2684,
+        "localizer_consumed_positive_labels": 2679,
+        "localizer_empty_line_outputs": 5095,
+        "localizer_functions_with_mapping_errors": 75,
+        "localizer_readout_visible_modified_lines": 2684,
+        "detector_wrong_physical_line_groups": 1504,
+        "localizer_wrong_physical_line_outputs": 1679,
+        "baseline_identical_pairs": 163,
+        "localizer_identical_pairs": 163,
+        "oracle_identical_pairs": 163,
+        "detector_oracle_padding_mass_mean": 0.0366121638430357
+      },
+      "examples": [
+        {
+          "sample_key": "primevul_paired:test:5",
+          "output_line": 12,
+          "physical_lines": [
+            13
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:test:5",
+          "output_line": 13,
+          "physical_lines": [
+            14
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:test:5",
+          "output_line": 14,
+          "physical_lines": [
+            15
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:test:5",
+          "output_line": 15,
+          "physical_lines": [
+            16
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:test:5",
+          "output_line": 16,
+          "physical_lines": [
+            17
+          ]
+        },
+        {
+          "sample_key": "primevul_paired:test:6",
+          "output_line": 12,
+          "physical_lines": [
+            13
+          ]
+        }
+      ]
+    }
+  },
+  "seconds": 1167.5624985429458,
+  "definitions": {
+    "wrong_physical_line": "Nonempty group contains source code tokens from a physical line set different from its assigned output index. Whitespace-only tokens are excluded from this diagnostic.",
+    "padding_mass": "Actual old Oracle softmax probability mass on padding, with original 5/1/0 scores.",
+    "reference_tokenizer": "Fast tokenizer with the same vocabulary/BPE, trim_offsets=False. Aggregate input/label counts are checked against saved original statistics."
+  },
+  "after": {
+    "train": {
+      "counts": {
+        "functions": 8708,
+        "source_tokens": 15367036,
+        "physical_lines": 1462730,
+        "code_tokens": 2980340,
+        "truncated_functions": 5541,
+        "nonempty_lines": 1311260,
+        "visible_nonempty_lines": 318058,
+        "fully_visible_nonempty_lines": 314027,
+        "partial_lines": 4031,
+        "modified_lines": 49771,
+        "visible_modified_lines": 22627,
+        "fully_visible_modified_lines": 22341,
+        "unmapped_nonempty_lines": 0,
+        "identical_pairs": 1254,
+        "mapping_errors": 0,
+        "invalid_aggregation_memberships": 0
+      },
+      "seconds": 140.13033140194602
+    },
+    "valid": {
+      "counts": {
+        "functions": 1124,
+        "source_tokens": 1678783,
+        "physical_lines": 153033,
+        "code_tokens": 378655,
+        "truncated_functions": 671,
+        "nonempty_lines": 137992,
+        "visible_nonempty_lines": 38745,
+        "fully_visible_nonempty_lines": 38251,
+        "partial_lines": 494,
+        "modified_lines": 5401,
+        "visible_modified_lines": 2698,
+        "fully_visible_modified_lines": 2667,
+        "unmapped_nonempty_lines": 0,
+        "identical_pairs": 164,
+        "mapping_errors": 0,
+        "invalid_aggregation_memberships": 0
+      },
+      "seconds": 16.38297086698003
+    },
+    "test": {
+      "counts": {
+        "functions": 1128,
+        "source_tokens": 2061198,
+        "physical_lines": 192862,
+        "code_tokens": 389605,
+        "truncated_functions": 732,
+        "nonempty_lines": 173669,
+        "visible_nonempty_lines": 40378,
+        "fully_visible_nonempty_lines": 39839,
+        "partial_lines": 539,
+        "modified_lines": 5162,
+        "visible_modified_lines": 2719,
+        "fully_visible_modified_lines": 2690,
+        "unmapped_nonempty_lines": 0,
+        "identical_pairs": 163,
+        "mapping_errors": 0,
+        "invalid_aggregation_memberships": 0
+      },
+      "seconds": 18.984478479949757
+    }
+  },
+  "policy": {
+    "tokens": "BOS + first 510 original-source tokens + EOS; right-pad to 512",
+    "lines": "zero-based physical IDs; empty/whitespace-only lines have no predictions",
+    "crossing_tokens": "membership in every physical line with non-whitespace overlap; weight 5 if any selected line overlaps",
+    "partial_line": "retain visible tokens and unchanged Diff label; count partial/full coverage separately",
+    "selection": "modified-line positive F1; detectors Valid P-C; strict probability >0.5",
+    "test_usage": "input/annotation coverage only; no Test model inference or selection"
+  }
+}

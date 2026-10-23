@@ -1,4 +1,4 @@
-"""Prepare, train and evaluate dynamic augmentation and official LOSVER."""
+"""Prepare, train and evaluate dynamic augmentation and LOSVER."""
 
 from __future__ import annotations
 import argparse
@@ -45,6 +45,9 @@ def build_parser():
             )
             p.add_argument("--device", default="auto")
         if command == "train":
+            p.add_argument("--paired-input", choices=("512", "l1"), default="512")
+            p.add_argument("--window-micro-batch", type=int)
+            p.add_argument("--function-micro-batch", type=int)
             p.add_argument(
                 "--hard-selection", choices=("hardest", "boundary"), default="hardest"
             )
@@ -88,6 +91,16 @@ def build_parser():
     p.add_argument("--train-limit", type=int, default=1024)
     p.add_argument("--valid-limit", type=int, default=256)
     p.add_argument("--test-limit", type=int, default=256)
+    p = sub.add_parser(
+        "check-paired", help="input coverage and tiny GPU/training-loop checks"
+    )
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/losver_checks"))
+    p.add_argument(
+        "--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine"
+    )
+    p.add_argument("--device", default="auto")
+    p.add_argument("--paired-input", choices=("512", "l1"), default="512")
     return parser
 
 
@@ -132,7 +145,25 @@ def main():
                     vat_direction=args.vat_direction,
                     train_limit=args.train_limit,
                     valid_limit=args.valid_limit,
+                    paired_input=args.paired_input,
+                    window_micro_batch=args.window_micro_batch,
+                    function_micro_batch=args.function_micro_batch,
                 )
+    elif args.command == "check-paired":
+        from .evaluation import check_paired
+
+        print(
+            json.dumps(
+                check_paired(
+                    args.data_dir,
+                    args.output_dir,
+                    args.model,
+                    device=args.device,
+                    input_mode=args.paired_input,
+                ),
+                indent=2,
+            )
+        )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
 

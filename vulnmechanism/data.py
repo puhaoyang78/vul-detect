@@ -361,56 +361,190 @@ def modified_lines(source, counterpart):
     return result
 
 
-def paired_features(row, tokenizer, variant):
-    """Upstream's distinct localizer, baseline and weighted 512-token encodings."""
-    code = row["func"]
-    if variant == "localizer":
-        lines = code.splitlines()
-        gt = row.get("lines_ground_truth", [])
-        labels = [int(i in gt) for i in range(len(lines))][:512] + [-1] * max(
-            0, 512 - len(lines)
+def paired_encoding(code, tokenizer, input_mode="512", *, tokenization=None):
+    """One original-source tokenization, shared by localization and detection.
+
+    Physical line IDs are zero-based, including blank lines in their numbering.
+    A token spanning several nonempty lines belongs to each of those lines.
+    Whitespace-only tokens and special tokens have no aggregation membership.
+    The 512 mode retains and marks the visible part of a truncated final line.
+    L1 keeps every source token. Stored IDs/offsets use unique-source coordinates;
+    (left, right, core_start, core_end) ranges are half-open source-token indices.
+    paired_collate builds the actual native 512-token encoder windows.
+    """
+    from bisect import bisect_right
+
+    if input_mode not in ("512", "l1"):
+        raise ValueError("paired input must be 512 or l1")
+    if not tokenizer.is_fast:
+        raise ValueError(
+            "paired encoding requires a fast tokenizer with source offsets"
         )
-        tokens = []
-        for i, line in enumerate(lines):
-            part = tokenizer.tokenize(line + "\n")
-            if len(tokens) + len(part) <= 510:
-                tokens.extend(part)
-            else:
-                labels[i:] = [-1] * len(labels[i:])
-                break
-        ids = tokenizer.convert_tokens_to_ids(
-            [tokenizer.cls_token] + tokens + [tokenizer.sep_token]
+    encoded = (
+        tokenization
+        if tokenization is not None
+        else tokenizer(
+            code,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+            return_attention_mask=False,
+            verbose=False,
         )
-        ids += [tokenizer.pad_token_id] * (512 - len(ids))
-        return dict(input_ids=ids, labels=labels)
-    tokens = tokenizer.tokenize(code)
-    if variant == "baseline":
-        tokens = tokens[:510]
-    ids = tokenizer.convert_tokens_to_ids(
-        [tokenizer.cls_token] + tokens + [tokenizer.sep_token]
     )
-    ids += [tokenizer.pad_token_id] * (512 - len(ids))
-    ids = ids[:512]
-    if variant == "oracle":
-        lines = row["lines_ground_truth"]
-    elif variant == "predicted":
-        lines = row["lines_predicted"]
+    parts = code.splitlines(keepends=True)
+    starts, position = [], 0
+    for part in parts:
+        starts.append(position)
+        position += len(part)
+    memberships = [[] for _ in parts]
+    special_ids = set(tokenizer.all_special_ids)
+    for token, (token_id, (start, end)) in enumerate(
+        zip(encoded["input_ids"], encoded["offset_mapping"])
+    ):
+        if token_id in special_ids or end <= start:
+            continue
+        line = max(0, bisect_right(starts, start) - 1)
+        while line < len(parts) and starts[line] < end:
+            a, b = max(start, starts[line]), min(end, starts[line] + len(parts[line]))
+            if code[a:b].strip():
+                memberships[line].append(token)
+            line += 1
+    source_count = len(encoded["input_ids"])
+    visible_count = min(510, source_count) if input_mode == "512" else source_count
+    ids = (
+        [tokenizer.cls_token_id]
+        + encoded["input_ids"][:visible_count]
+        + [tokenizer.sep_token_id]
+    )
+    length = len(ids)
+    ids += [tokenizer.pad_token_id] * max(0, 512 - length)
+    if visible_count <= 510:
+        windows = [(0, visible_count, 0, visible_count)]
     else:
-        lines = []
+        windows = [
+            (
+                max(0, a - 63),
+                min(source_count, a + 384 + 63),
+                a,
+                min(source_count, a + 384),
+            )
+            for a in range(0, source_count, 384)
+        ]
+    line_numbers, line_tokens, complete = [], [], []
+    for line, tokens in enumerate(memberships):
+        visible = [token + 1 for token in tokens if token < visible_count]
+        if visible:
+            line_numbers.append(line)
+            line_tokens.append(visible)
+            complete.append(tokens[-1] < visible_count)
+    code_mask = [False] * len(ids)
+    for tokens in line_tokens:
+        for token in tokens:
+            code_mask[token] = True
+    if not any(code_mask):
+        raise ValueError("no non-whitespace source tokens in the input")
     return dict(
+        input_mode=input_mode,
+        windows=windows,
+        pad_token_id=tokenizer.pad_token_id,
         input_ids=ids,
-        attention_mask=[int(i != tokenizer.pad_token_id) for i in ids],
-        labels=row["target"],
-        line_indices=lines,
+        attention_mask=[int(i < length) for i in range(len(ids))],
+        code_mask=code_mask,
+        offset_mapping=[(0, 0)]
+        + encoded["offset_mapping"][:visible_count]
+        + [(0, 0)] * (len(ids) - 1 - visible_count),
+        line_numbers=line_numbers,
+        line_token_indices=line_tokens,
+        line_complete=complete,
+        source_tokens=len(encoded["input_ids"]),
+        source_lines=len(parts),
+        nonempty_lines=sum(bool(part.strip()) for part in parts),
+        unmapped_nonempty_lines=sum(
+            bool(part.strip()) and not tokens
+            for part, tokens in zip(parts, memberships)
+        ),
     )
+
+
+def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512"):
+    """Attach labels or binary 5/1 weights to the same source-aligned input."""
+    if variant not in ("localizer", "baseline", "predicted", "oracle"):
+        raise ValueError(f"unknown paired variant: {variant}")
+    f = dict(
+        paired_encoding(row["func"], tokenizer, input_mode)
+        if encoding is None
+        else encoding
+    )
+    if variant == "localizer":
+        gt = set(row.get("lines_ground_truth", []))
+        f["labels"] = [int(n in gt) for n in f["line_numbers"]]
+    else:
+        f["labels"] = row["target"]
+    if variant == "oracle":
+        selected = set(row["lines_ground_truth"])
+    elif variant == "predicted":
+        selected = set(row["lines_predicted"])
+        if row["line_numbers"] != f["line_numbers"]:
+            raise ValueError("predicted line numbers do not match source offsets")
+        if not selected.issubset(f["line_numbers"]):
+            raise ValueError("predicted line is outside the visible source")
+    else:
+        selected = set()
+    weights = [1.0] * len(f["input_ids"])
+    for number, tokens in zip(f["line_numbers"], f["line_token_indices"]):
+        if number in selected:
+            for token in tokens:
+                weights[token] = 5.0
+    f["token_weights"] = weights
+    return f
+
+
+def paired_statistics(rows, features):
+    """Summarize known Diff labels and actual source-token visibility."""
+    counts = Counter()
+    signatures = []
+    for row, f in zip(rows, features):
+        visible = set(f["line_numbers"])
+        full = {
+            n for n, complete in zip(f["line_numbers"], f["line_complete"]) if complete
+        }
+        gt = set(row["lines_ground_truth"])
+        counts.update(
+            functions=1,
+            source_tokens=f["source_tokens"],
+            physical_lines=f["source_lines"],
+            code_tokens=sum(f["code_mask"]),
+            truncated_functions=int(
+                sum(d - c for a, b, c, d in f["windows"]) < f["source_tokens"]
+            ),
+            windows=len(f["windows"]),
+            encoder_tokens=512 * len(f["windows"]),
+            encoder_source_tokens=sum(b - a for a, b, c, d in f["windows"]),
+            core_tokens=sum(d - c for a, b, c, d in f["windows"]),
+            context_tokens=sum((b - a) - (d - c) for a, b, c, d in f["windows"]),
+            nonempty_lines=f["nonempty_lines"],
+            visible_nonempty_lines=len(visible),
+            fully_visible_nonempty_lines=len(full),
+            partial_lines=len(visible - full),
+            modified_lines=len(gt),
+            visible_modified_lines=len(gt & visible),
+            fully_visible_modified_lines=len(gt & full),
+            unmapped_nonempty_lines=f["unmapped_nonempty_lines"],
+        )
+        signatures.append(tuple(f["input_ids"]))
+        counts["max_windows"] = max(counts["max_windows"], len(f["windows"]))
+    counts["identical_pairs"] = sum(
+        signatures[i] == signatures[i + 1] for i in range(0, len(signatures), 2)
+    )
+    return dict(counts)
 
 
 def prepare_paired(raw_root, output_dir, model_path):
     """Official original PrimeVul members; Diff supervision is stored separately."""
     from itertools import combinations
-    from transformers import RobertaTokenizer
+    from transformers import RobertaTokenizerFast
 
-    tokenizer = RobertaTokenizer.from_pretrained(model_path)
+    tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
     root = Path(raw_root) / "PrimeVul_original"
     dest = Path(output_dir) / "primevul_paired"
     if any((dest / f"{s}.jsonl").exists() for s in SPLITS):
@@ -420,11 +554,12 @@ def prepare_paired(raw_root, output_dir, model_path):
         raw_root=str(root),
         model_path=str(model_path),
         release="PrimeVul original",
+        line_mapping="source_offsets",
         upstream_commit="a158905cb45b4400f481f18eeb1cb4473ccfccdc",
         splits={},
         overlap={},
         protocol="All official adjacent members retained; no resampling, no extra duplicate exclusions. Oracle Diff labels are separate from normal inputs.",
-        identical_inputs_definition="These are token-ID equality counts per encoder protocol. Oracle line weights can still differ; no pair is removed.",
+        identical_inputs_definition="Token-ID equality under the common source encoding. Oracle line weights can still differ; no pair is removed.",
     )
     members = []
     for split in SPLITS:
@@ -462,43 +597,21 @@ def prepare_paired(raw_root, output_dir, model_path):
                 )
                 members.append({k: v for k, v in row.items() if k != "func"})
         print(f"{split}: encoding {len(rows)} official functions", flush=True)
-        ff = {
-            v: [paired_features(r, tokenizer, v) for r in annotations]
-            for v in ("baseline", "localizer", "oracle")
-        }
-        encoded[split] = {
-            v: {tuple(f["input_ids"]) for f in batch} for v, batch in ff.items()
-        }
+        features = [paired_encoding(r["func"], tokenizer) for r in rows]
+        encoded[split] = {tuple(f["input_ids"]) for f in features}
         sources[split] = {r["func"] for r in rows}
         v01 = Path(raw_root) / "PrimeVul_v0.1" / f"primevul_{split}_paired.jsonl"
         old = read_jsonl(v01) if v01.exists() else []
         old_sources = {r["func"] for r in old}
         stats["splits"][split] = dict(
             pairs=len(rows) // 2,
-            functions=len(rows),
             positive=len(rows) // 2,
             negative=len(rows) // 2,
             v01_pairs=len(old) // 2,
             old_source_members=sum(r["func"] in old_sources for r in rows),
             duplicate_idx_rows=len(rows) - len({r["idx"] for r in rows}),
             metadata_anomalies=anomalies,
-            identical_inputs={
-                v: sum(
-                    fs[i]["input_ids"] == fs[i + 1]["input_ids"]
-                    for i in range(0, len(rows), 2)
-                )
-                for v, fs in ff.items()
-            },
-            visible_lines=sum(
-                sum(x >= 0 for x in f["labels"]) for f in ff["localizer"]
-            ),
-            visible_modified_lines=sum(
-                sum(x == 1 for x in f["labels"]) for f in ff["localizer"]
-            ),
-            modified_lines=sum(len(r["lines_ground_truth"]) for r in annotations),
-            no_visible_line_functions=sum(
-                all(x < 0 for x in f["labels"]) for f in ff["localizer"]
-            ),
+            **paired_statistics(annotations, features),
         )
         write_jsonl(dest / f"{split}.jsonl", rows)
         write_jsonl(
@@ -509,7 +622,7 @@ def prepare_paired(raw_root, output_dir, model_path):
     for a, b in combinations(SPLITS, 2):
         stats["overlap"][f"{a}:{b}"] = dict(
             exact_sources=len(sources[a] & sources[b]),
-            encoded_inputs={v: len(encoded[a][v] & encoded[b][v]) for v in encoded[a]},
+            encoded_inputs=len(encoded[a] & encoded[b]),
         )
     write_json(dest / "statistics.json", stats)
     with (dest / "members.csv").open("w", newline="", encoding="utf-8") as f:

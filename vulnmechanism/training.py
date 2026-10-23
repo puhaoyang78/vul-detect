@@ -1,4 +1,4 @@
-"""CodeBERT BCE, dynamic source augmentation and VAT training."""
+"""Shared training for CodeBERT augmentation/VAT and UniXcoder LOSVER."""
 
 from __future__ import annotations
 
@@ -85,6 +85,9 @@ def train(
     vat_direction="finite_difference",
     train_limit=None,
     valid_limit=None,
+    paired_input="512",
+    window_micro_batch=None,
+    function_micro_batch=None,
 ):
     if method in LOSVER_METHODS:
         if (
@@ -98,7 +101,22 @@ def train(
             raise ValueError(
                 "LOSVER requires whole official paired data and the unchanged official protocol"
             )
-        return train_losver(data_dir, output_dir, model_path, method, device=device)
+        return train_losver(
+            data_dir,
+            output_dir,
+            model_path,
+            method,
+            device=device,
+            input_mode=paired_input,
+            window_micro_batch=window_micro_batch,
+            function_micro_batch=function_micro_batch,
+        )
+    if (
+        paired_input != "512"
+        or window_micro_batch is not None
+        or function_micro_batch is not None
+    ):
+        raise ValueError("paired window options apply only to LOSVER methods")
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
     if method not in METHODS:
@@ -559,37 +577,111 @@ class LOSVERAdamW(torch.optim.Optimizer):
                 p.addcdiv_(avg, denom, value=-step_size)
 
 
-def paired_loader(rows, tokenizer, variant, *, train=False, batch_size=8):
+def paired_collate(features):
+    """Native windows and unique cores; physical lines are shared across windows."""
+    ids, attention, masks, contexts, weights, owners, positions, window_lines = (
+        [] for _ in range(8)
+    )
+    line_offset = 0
+    for owner, f in enumerate(features):
+        lookup = {}
+        visible_count = sum(d - c for a, b, c, d in f["windows"])
+        for line, tokens in enumerate(f["line_token_indices"]):
+            for token in tokens:
+                lookup.setdefault(token - 1, []).append(line_offset + line)
+        for left, right, core_start, core_end in f["windows"]:
+            width = right - left
+            ids.append(
+                [
+                    f["input_ids"][0],
+                    *f["input_ids"][left + 1 : right + 1],
+                    f["input_ids"][visible_count + 1],
+                ]
+                + [f["pad_token_id"]] * (510 - width)
+            )
+            attention.append([1] * (width + 2) + [0] * (510 - width))
+            core = [False] * 512
+            context = [False] * 512
+            token_weights = [1.0] * 512
+            mapping = {}
+            for slot, source in enumerate(range(left, right), 1):
+                context[slot] = f["code_mask"][source + 1]
+                if core_start <= source < core_end:
+                    core[slot] = context[slot]
+                    token_weights[slot] = f["token_weights"][source + 1]
+                    for line in lookup.get(source, []):
+                        mapping.setdefault(line, []).append(slot)
+            masks.append(core)
+            contexts.append(context)
+            weights.append(token_weights)
+            owners.append(owner)
+            positions.append([-1, *range(left, right), *([-1] * (511 - width))])
+            window_lines.append(mapping)
+        line_offset += len(f["line_numbers"])
+    window_line_count = max(len(m) for m in window_lines)
+    membership = torch.zeros(len(ids), window_line_count, 512, dtype=torch.bool)
+    line_indices = torch.full((len(ids), window_line_count), -1, dtype=torch.long)
+    for window, mapping in enumerate(window_lines):
+        for slot, (line, tokens) in enumerate(mapping.items()):
+            membership[window, slot, tokens] = True
+            line_indices[window, slot] = line
+    batch = dict(
+        input_ids=torch.tensor(ids),
+        attention_mask=torch.tensor(attention),
+        code_mask=torch.tensor(masks, dtype=torch.bool),
+        context_mask=torch.tensor(contexts, dtype=torch.bool),
+        token_weights=torch.tensor(weights),
+        window_owners=torch.tensor(owners),
+        source_positions=torch.tensor(positions),
+        line_indices=line_indices,
+        line_counts=torch.tensor([len(f["line_numbers"]) for f in features]),
+    )
+    count = max(len(f["line_numbers"]) for f in features)
+    numbers = torch.full((len(features), count), -1, dtype=torch.long)
+    local = isinstance(features[0]["labels"], list)
+    labels = (
+        torch.full((len(features), count), -1, dtype=torch.long)
+        if local
+        else torch.tensor([f["labels"] for f in features])
+    )
+    for i, f in enumerate(features):
+        n = len(f["line_numbers"])
+        numbers[i, :n] = torch.tensor(f["line_numbers"])
+        if local:
+            labels[i, :n] = torch.tensor(f["labels"])
+    return dict(batch, line_token_mask=membership, line_numbers=numbers, labels=labels)
+
+
+def paired_loader(
+    rows, tokenizer, variant, *, train=False, batch_size=8, input_mode="512"
+):
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
     from .data import paired_features
 
-    features = [paired_features(r, tokenizer, variant) for r in rows]
-    dataset = [
-        (
-            torch.tensor(f["input_ids"]),
-            torch.tensor(f["labels"]),
-            torch.tensor(f.get("attention_mask", [0] * 512)),
-            torch.tensor((f.get("line_indices", [])[:512] + [-1] * 512)[:512]),
-        )
-        for f in features
+    features = [
+        paired_features(r, tokenizer, variant, input_mode=input_mode) for r in rows
     ]
-    sampler = RandomSampler(dataset) if train else SequentialSampler(dataset)
+    sampler = RandomSampler(features) if train else SequentialSampler(features)
     return DataLoader(
-        dataset, sampler=sampler, batch_size=batch_size, num_workers=4, pin_memory=True
+        features,
+        sampler=sampler,
+        batch_size=batch_size,
+        collate_fn=paired_collate,
+        num_workers=4,
+        pin_memory=True,
     )
 
 
 def paired_forward(model, batch, variant, device, *, with_labels=True):
-    ids, y, mask, lines = batch
-    kwargs = dict(input_ids=ids.to(device))
+    keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
+    keys.extend(
+        ["line_token_mask", "context_mask", "line_indices", "line_counts"]
+        if variant == "localizer"
+        else ["token_weights"]
+    )
     if with_labels:
-        kwargs["labels"] = y.to(device)
-    if variant in ("predicted", "oracle"):
-        kwargs.update(
-            attention_mask=mask.to(device),
-            line_indices=[[x for x in r if x >= 0] for r in lines.tolist()],
-        )
-    return model(**kwargs)
+        keys.append("labels")
+    return model(**{key: batch[key].to(device) for key in keys})
 
 
 def paired_rows(data_dir, output_dir, variant, split):
@@ -607,15 +699,39 @@ def paired_rows(data_dir, output_dir, variant, split):
 
 
 def train_losver(
-    data_dir, output_dir, model_path, method, *, device="auto", config=None
+    data_dir,
+    output_dir,
+    model_path,
+    method,
+    *,
+    device="auto",
+    config=None,
+    input_mode="512",
+    window_micro_batch=None,
+    function_micro_batch=None,
 ):
-    """Run the original training and Valid selection on all official paired members."""
+    """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
     from .evaluation import validate_paired, localize_paired
     import platform
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    if input_mode not in ("512", "l1"):
+        raise ValueError("paired input must be 512 or l1")
+    window_micro_batch = (
+        window_micro_batch
+        if window_micro_batch is not None
+        else (1 if input_mode == "l1" else 8)
+    )
+    function_micro_batch = (
+        function_micro_batch
+        if function_micro_batch is not None
+        else (1 if input_mode == "l1" else settings["batch_size"])
+    )
+    if function_micro_batch < 1 or settings["batch_size"] % function_micro_batch:
+        raise ValueError("function micro-batch must divide effective batch size")
+    accumulation = settings["batch_size"] // function_micro_batch
     root = Path(output_dir) / "primevul_paired"
     run = root / method
     run.mkdir(parents=True, exist_ok=True)
@@ -629,25 +745,68 @@ def train_losver(
     seed_everything(settings["seed"])
     np.random.seed(settings["seed"])
     torch.backends.cudnn.deterministic = True
-    model, tokenizer = losver_model(model_path, variant)
+    model, tokenizer = losver_model(
+        model_path,
+        variant,
+        window_micro_batch=window_micro_batch,
+        gradient_checkpointing=input_mode == "l1",
+    )
+    model.input_mode = input_mode
     model.to(device)
     loader = paired_loader(
-        train_rows, tokenizer, variant, train=True, batch_size=settings["batch_size"]
+        train_rows,
+        tokenizer,
+        variant,
+        train=True,
+        batch_size=function_micro_batch,
+        input_mode=input_mode,
     )
     valid_loader = paired_loader(
-        valid_rows, tokenizer, variant, batch_size=settings["eval_batch_size"]
+        valid_rows,
+        tokenizer,
+        variant,
+        batch_size=settings["eval_batch_size"],
+        input_mode=input_mode,
     )
+    from .data import paired_statistics
+
+    input_coverage = {}
+    for split, data_loader, rows in (
+        ("train", loader, train_rows),
+        ("valid", valid_loader, valid_rows),
+    ):
+        annotations = read_jsonl(
+            Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl"
+        )
+        if [r["sample_key"] for r in annotations] != [r["sample_key"] for r in rows]:
+            raise ValueError("input coverage annotations and training members differ")
+        # Annotation statistics only; no Diff feature enters a normal detector.
+        input_coverage[split] = paired_statistics(annotations, data_loader.dataset)
     epochs = settings["epochs"][variant]
+    steps_per_epoch = math.ceil(len(train_rows) / settings["batch_size"])
     optimizer = LOSVERAdamW(
         model.parameters(), lr=settings["learning_rate"], eps=settings["adam_epsilon"]
     )
     scheduler = transformers.get_linear_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=epochs * len(loader) * settings["warmup_fraction"],
-        num_training_steps=epochs * len(loader),
+        num_warmup_steps=epochs * steps_per_epoch * settings["warmup_fraction"],
+        num_training_steps=epochs * steps_per_epoch,
     )
     metadata = dict(
         protocol="losver",
+        line_mapping="source_offsets",
+        input_mode=input_mode,
+        window_micro_batch=window_micro_batch,
+        function_micro_batch=function_micro_batch,
+        gradient_accumulation=accumulation,
+        gradient_checkpointing=input_mode == "l1",
+        input_coverage=input_coverage,
+        window_rule=(
+            "single window up to 510 source tokens; otherwise 384 core + up to 63 context each side"
+            if input_mode == "l1"
+            else "first 510 source tokens"
+        ),
+        classifier_head="code-only pooling + shared Linear(hidden_size, 1)",
         dataset="primevul_paired",
         method=method,
         variant=variant,
@@ -660,13 +819,13 @@ def train_losver(
         comparison=">",
         upstream_commit="a158905cb45b4400f481f18eeb1cb4473ccfccdc",
         selection=(
-            "Valid weighted line F1 rounded to 4 decimals"
+            "Valid modified-line positive F1 rounded to 4 decimals"
             if variant == "localizer"
             else "Valid P-C rounded to 4 decimals"
         ),
         selection_ties="earlier epoch; strict improvement",
         precision="FP32 eager attention; no AMP/checkpointing",
-        localizer_attention="same 8-head cross-attention, queries batched per function; dropout=0",
+        localizer_attention="same 8-head attention within each window; core-token sums merged by physical line before classification; dropout=0",
         localizer_path=(
             str(root / "losver_localizer/best-f1.pt")
             if variant == "predicted"
@@ -686,9 +845,9 @@ def train_losver(
     write_json(run / "config.json", metadata)
     history = TrainingProgress(run / "best.pt")
     best = (
-        {"f1": 0.0}
+        {"f1": -1.0}
         if variant == "localizer"
-        else {"accuracy": 0.0, "f1": 0.0, "p_c": 0.0}
+        else {"accuracy": -1.0, "f1": -1.0, "p_c": -1.0}
     )
     chosen = {}
     global_step = 0
@@ -697,13 +856,33 @@ def train_losver(
         started = time.monotonic()
         running = 0.0
         model.train()
-        for step, batch in enumerate(
-            training_bar(loader, desc=f"{method} {epoch}/{epochs}")
+        from itertools import islice
+
+        iterator = iter(loader)
+        for step in training_bar(
+            range(steps_per_epoch), desc=f"{method} {epoch}/{epochs}"
         ):
-            loss, _ = paired_forward(model, batch, variant, device)
-            if not torch.isfinite(loss):
-                raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
-            loss.backward()
+            group = list(islice(iterator, accumulation))
+            if not group:
+                raise ValueError("training loader ended before the function budget")
+            # Preserve the original line-average Focal objective and function-
+            # average BCE, including the smaller final effective batch.
+            sizes = [
+                (
+                    int((b["labels"] >= 0).sum())
+                    if variant == "localizer"
+                    else len(b["labels"])
+                )
+                for b in group
+            ]
+            group_loss = 0.0
+            for batch, size in zip(group, sizes):
+                loss, _ = paired_forward(model, batch, variant, device)
+                if not torch.isfinite(loss):
+                    raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
+                coefficient = size / sum(sizes)
+                (loss * coefficient).backward()
+                group_loss += float(loss.detach()) * coefficient
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
             )
@@ -711,14 +890,14 @@ def train_losver(
             optimizer.zero_grad()
             scheduler.step()
             global_step += 1
-            running += float(loss.detach())
+            running += group_loss
             if global_step == 1 or global_step % 100 == 0:
                 item = dict(
                     event="step",
                     epoch=epoch,
                     step=global_step,
                     batch=step + 1,
-                    loss=float(loss.detach()),
+                    loss=group_loss,
                     learning_rate=optimizer.param_groups[0]["lr"],
                 )
                 history.add(item)
@@ -731,8 +910,8 @@ def train_losver(
             event="epoch",
             variant=method,
             epoch=epoch,
-            train_loss=running / len(loader),
-            optimizer_steps=len(loader),
+            train_loss=running / steps_per_epoch,
+            optimizer_steps=steps_per_epoch,
             global_step=global_step,
             validation_threshold=0.5,
             validation=validation,
@@ -763,9 +942,7 @@ def train_losver(
                 del cp
     required = "f1" if variant == "localizer" else "p_c"
     if required not in chosen:
-        raise RuntimeError(
-            f"{method}: no checkpoint improved above the official zero initialization"
-        )
+        raise RuntimeError(f"{method}: no finite validation checkpoint was selected")
     summary = dict(
         metadata,
         completed_epochs=epochs,

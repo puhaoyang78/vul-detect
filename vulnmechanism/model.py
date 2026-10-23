@@ -1,4 +1,4 @@
-"""Shared CodeBERT with native sliding windows and mean pooling."""
+"""CodeBERT and UniXcoder encoders with native windows and function pooling."""
 
 from __future__ import annotations
 from contextlib import contextmanager
@@ -12,8 +12,7 @@ from transformers import (
     AutoTokenizer,
     RobertaConfig,
     RobertaModel,
-    RobertaForSequenceClassification,
-    RobertaTokenizer,
+    RobertaTokenizerFast,
 )
 import torch.nn.functional as F
 from .progress import training_bar
@@ -345,31 +344,17 @@ class LOSVERResidualBlock(nn.Module):
 
 
 class LOSVERLocalizer(nn.Module):
-    def __init__(self, encoder, config, tokenizer, args):
-        super(LOSVERLocalizer, self).__init__()
+    def __init__(self, encoder, config, args):
+        super().__init__()
         self.encoder = encoder
         self.config = config
-        self.tokenizer = tokenizer
         self.hidden_size = self.config.hidden_size
         self.args = args
         self.drop_out = 0.0
+        self.window_micro_batch = getattr(args, "window_micro_batch", 8)
+        self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
+        self.input_mode = "512"
 
-        self.newline_token_id = self.tokenizer.convert_tokens_to_ids("\n")
-
-        # If tokenizer doesn't recognize '\n' directly, try alternate encodings
-        if self.newline_token_id == self.tokenizer.unk_token_id:
-            # Try with special token format
-            self.newline_token_id = self.tokenizer.convert_tokens_to_ids(
-                "Ċ"
-            )  # Some tokenizers use this
-
-            # If still not found, you can try to encode a string with a newline and check
-            if self.newline_token_id == self.tokenizer.unk_token_id:
-                newline_tokens = self.tokenizer.encode("\n", add_special_tokens=False)
-                if newline_tokens:  # If not empty
-                    self.newline_token_id = newline_tokens[0]
-
-        print(f"Newline token ID: {self.newline_token_id}")
         # Single attention layer for global context
         self.line_attention = nn.MultiheadAttention(
             self.hidden_size, num_heads=8, batch_first=True, dropout=self.drop_out
@@ -407,251 +392,234 @@ class LOSVERLocalizer(nn.Module):
         modulating_factor = (1.0 - p_t).pow(gamma)
         return alpha_factor * modulating_factor * ce_loss
 
-    def forward(self, input_ids=None, labels=None):
-        outputs = self.encoder(input_ids, attention_mask=input_ids.ne(1))[0]
-        line_logits = []
-        for i in range(input_ids.size(0)):  # Batch loop
-            line_indices = (input_ids[i] == self.newline_token_id).nonzero(
-                as_tuple=True
-            )[
-                0
-            ]  # 30790
-            line_start_indices = torch.cat(
-                [torch.tensor([0], device=input_ids.device), line_indices + 1]
-            )
-            code_end = line_start_indices[-1]  # Last line start is end of code
+    def forward(
+        self,
+        input_ids,
+        attention_mask,
+        code_mask,
+        line_token_mask,
+        context_mask,
+        line_indices,
+        line_counts,
+        window_owners,
+        labels=None,
+    ):
+        from torch.utils.checkpoint import checkpoint
 
-            sample_line_logits = []
-            line_features, feature_slots = [], []
-            global_context = outputs[i, :code_end]
-            # The official MHA has dropout=0 and independent queries. Compute the
-            # same context attention once per function, then pool each line's queries.
-            # Newline queries are unused; keys/values and every line boundary match upstream.
-            if code_end > 0:
-                contextual, _ = self.line_attention(
-                    global_context.unsqueeze(0),
-                    global_context.unsqueeze(0),
-                    global_context.unsqueeze(0),
-                )
-                contextual = contextual.squeeze(0)
-            for j in range(len(line_start_indices) - 1):
-                start = line_start_indices[j]
-                end = line_start_indices[j + 1] - 1
-
-                if not end > start:
-                    sample_line_logits.append(
-                        torch.tensor(-10, device=input_ids.device)
-                    )
+        def encode(ids, attention, context_valid, membership):
+            states = self.encoder(ids, attention_mask=attention)[0]
+            parts = []
+            for hidden, valid, lines in zip(states, context_valid, membership):
+                occupied = lines.any(-1)
+                if not occupied.any():
                     continue
-
-                line_repr = outputs[i, start:end]
-                line_final = torch.cat(
-                    [
-                        line_repr.mean(0),
-                        contextual[start:end].mean(0),
-                    ]
+                context = hidden[valid]
+                contextual, _ = self.line_attention(
+                    context[None], context[None], context[None]
                 )
-                feature_slots.append(len(sample_line_logits))
-                line_features.append(line_final)
-                sample_line_logits.append(None)
+                core = lines[occupied][:, valid].to(hidden.dtype)
+                parts.append(torch.cat((core @ context, core @ contextual[0]), -1))
+            return (
+                torch.cat(parts)
+                if parts
+                else states.new_zeros((0, self.hidden_size * 2))
+            )
 
-            if line_features:
-                # LayerNorm/GELU/zero-dropout classifier acts independently on each line.
-                classified = self.line_classifier(torch.stack(line_features)).squeeze(
-                    -1
-                )
-                for slot, logit in zip(feature_slots, classified):
-                    sample_line_logits[slot] = logit
-            if sample_line_logits:
-                line_logits.append(torch.stack(sample_line_logits))
-            else:
-                line_logits.append(torch.zeros(1, device=input_ids.device))
-
-        # Loss computation with focal loss
+        total_lines = int(line_counts.sum())
+        sums = self.line_classifier[0].weight.new_zeros(
+            (total_lines, self.hidden_size * 2)
+        )
+        counts = sums.new_zeros(total_lines)
+        for start in range(0, len(input_ids), self.window_micro_batch):
+            end = start + self.window_micro_batch
+            args = (
+                input_ids[start:end],
+                attention_mask[start:end],
+                context_mask[start:end],
+                line_token_mask[start:end],
+            )
+            features = (
+                checkpoint(encode, *args, use_reentrant=False)
+                if self.gradient_checkpointing
+                and self.training
+                and torch.is_grad_enabled()
+                else encode(*args)
+            )
+            valid_lines = line_indices[start:end] >= 0
+            indices = line_indices[start:end][valid_lines]
+            sums = sums.index_add(0, indices, features)
+            counts = counts.index_add(
+                0,
+                indices,
+                line_token_mask[start:end].sum(-1)[valid_lines].to(counts.dtype),
+            )
+        if not (counts > 0).all():
+            raise ValueError("physical line has no core source-token membership")
+        z = self.line_classifier(sums / counts[:, None]).squeeze(-1)
+        probabilities = list(z.sigmoid().split(line_counts.tolist()))
         if labels is not None:
-            loss = 0.0
-            total_valid = 0
-
-            for i, logit in enumerate(line_logits):
-                valid_length = min(logit.size(0), labels[i].size(0))
-                valid_mask = (labels[i, :valid_length] != -1).float()
-                valid_labels = labels[i, :valid_length].clamp(0, 1).float()
-                focal_loss = self.focal_loss(
-                    logit[:valid_length],
-                    valid_labels,
-                )
-                loss += (focal_loss * valid_mask).sum()
-                total_valid += valid_mask.sum()
-
-            loss = loss / total_valid if total_valid > 0 else loss * 0.0
-            line_logits = [torch.sigmoid(logits) for logits in line_logits]
-            return loss, line_logits
-
-        return [torch.sigmoid(logits) for logits in line_logits]
-
-
-class LOSVERBaseline(nn.Module):
-    def __init__(self, encoder, config, tokenizer, args):
-        super(LOSVERBaseline, self).__init__()
-        self.encoder = encoder
-        self.config = config
-        self.tokenizer = tokenizer
-        self.args = args
-
-        # Define dropout layer, dropout_probability is taken from args.
-        self.dropout = nn.Dropout(args.dropout_probability)
-
-    def forward(self, input_ids=None, labels=None):
-        outputs = self.encoder(input_ids, attention_mask=input_ids.ne(1))[0]
-        outputs = self.dropout(outputs)
-
-        logits = outputs
-        prob = torch.sigmoid(logits)
-        if labels is not None:
-            labels = labels.float()
-            weight = labels * self.args.class_weight + (1 - labels) * 1.0
-            loss = torch.log(prob[:, 0] + 1e-10) * labels + torch.log(
-                (1 - prob)[:, 0] + 1e-10
-            ) * (1 - labels)
-            loss = loss * weight
-            loss = -loss.mean()
-            return loss, prob
-        else:
-            return prob
+            y = torch.cat([row[:n] for row, n in zip(labels, line_counts.tolist())])
+            if not ((y == 0) | (y == 1)).all():
+                raise ValueError("visible physical lines require binary labels")
+            return self.focal_loss(z, y.float()).mean(), probabilities
+        return probabilities
 
 
 class LOSVERDetector(nn.Module):
-    def __init__(self, encoder, config, tokenizer, args):
-        super(LOSVERDetector, self).__init__()
+    """One code-only pooling and linear head for baseline, predicted and Oracle."""
+
+    def __init__(self, encoder, config, args):
+        super().__init__()
         self.encoder = encoder
-        self.config = config
-        self.tokenizer = tokenizer
-        self.args = args
-        # Get hidden size from encoder's output
+        self.classifier = nn.Linear(config.hidden_size, 1)
+        self.class_weight = args.class_weight
+        self.window_micro_batch = getattr(args, "window_micro_batch", 8)
+        self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
+        self.input_mode = "512"
 
-    def get_line_boundaries(self, input_ids, batch_idx):
-        """Extract line boundary information from input tokens"""
-        line_boundaries = []
-        current_start = 0
-
-        for pos, token_id in enumerate(input_ids[batch_idx].tolist()):
-            token = self.tokenizer.convert_ids_to_tokens([token_id])[0]
-
-            if token == self.tokenizer.sep_token or token == self.tokenizer.pad_token:
-                if current_start < pos:
-                    line_boundaries.append((current_start, pos))
-                break
-
-            if "\n" in token or token == "<EOL>" or token.startswith("Ċ"):
-                line_boundaries.append((current_start, pos + 1))
-                current_start = pos + 1
-
-        return line_boundaries
+    @staticmethod
+    def pool(states, code_mask, token_weights):
+        code_mask = code_mask.bool()
+        if not code_mask.any(-1).all():
+            raise ValueError("detector input has no valid source tokens")
+        attention = token_weights.masked_fill(~code_mask, float("-inf")).softmax(-1)
+        return (states * attention.unsqueeze(-1)).sum(1)
 
     def forward(
-        self, input_ids=None, labels=None, attention_mask=None, line_indices=None
+        self,
+        input_ids,
+        attention_mask,
+        code_mask,
+        token_weights,
+        window_owners,
+        labels=None,
     ):
-        outputs = self.encoder(input_ids, attention_mask=attention_mask)[
-            0
-        ]  # Use attention_mask instead of mask
-        hidden_states = outputs
-        batch_size, seq_len = input_ids.shape
-        weight_value = 5
+        from torch.utils.checkpoint import checkpoint
 
-        # Initialize line weights
-        line_weights = torch.ones((batch_size, seq_len), device=hidden_states.device)
-        if line_indices is not None:
-            for batch_idx in range(batch_size):
-                line_boundaries = self.get_line_boundaries(input_ids, batch_idx)
+        def encode(ids, attention, valid, weights):
+            states = self.encoder(ids, attention_mask=attention)[0]
+            occupied = valid.any(-1)
+            pooled = states.new_zeros((len(states), states.shape[-1]))
+            if occupied.any():
+                pooled = pooled.index_copy(
+                    0,
+                    occupied.nonzero().flatten(),
+                    self.pool(states[occupied], valid[occupied], weights[occupied]),
+                )
+            return pooled
 
-                if line_indices[batch_idx]:
-                    for line_idx, (start, end) in enumerate(line_boundaries):
-                        if line_idx in line_indices[batch_idx]:
-                            line_weights[batch_idx, start:end] = weight_value
-            # Apply attention mask and normalize
-
-        line_weights = line_weights.masked_fill(~attention_mask.bool(), 0)
-        attn_scores = torch.softmax(line_weights, dim=1).unsqueeze(-1)
-        # Apply weights and sum
-        weighted_hidden = hidden_states * attn_scores
-        logits = weighted_hidden.sum(dim=1) / (attn_scores.sum(dim=1) + 1e-9)
-
-        prob = torch.sigmoid(logits)
-
-        if labels is not None:
-            labels = labels.float()
-            weight = labels * self.args.class_weight + (1 - labels) * 1.0
-            loss = torch.log(prob[:, 0] + 1e-10) * labels + torch.log(
-                (1 - prob)[:, 0] + 1e-10
-            ) * (1 - labels)
-            loss = loss * weight
-            loss = -loss.mean()
-            return loss, prob
+        parts = []
+        for start in range(0, len(input_ids), self.window_micro_batch):
+            end = start + self.window_micro_batch
+            args = (
+                input_ids[start:end],
+                attention_mask[start:end],
+                code_mask[start:end],
+                token_weights[start:end],
+            )
+            parts.append(
+                checkpoint(encode, *args, use_reentrant=False)
+                if self.gradient_checkpointing
+                and self.training
+                and torch.is_grad_enabled()
+                else encode(*args)
+            )
+        windows = torch.cat(parts)
+        function_count = int(window_owners.max()) + 1
+        if len(windows) == function_count and torch.equal(
+            window_owners, torch.arange(function_count, device=window_owners.device)
+        ):
+            pooled = windows
         else:
-            return prob
+            # Reuse the native sliding-window function pool. Window mass makes
+            # this exactly one global Softmax over all unique core code tokens.
+            mass = (
+                (token_weights.masked_fill(~code_mask, float("-inf")) - 5).exp().sum(-1)
+            )
+            pooled = _window_mean(
+                windows[:, None],
+                (mass > 0)[:, None],
+                window_owners,
+                mass[:, None],
+                function_count,
+            )
+        logits = self.classifier(pooled)
+        probability = logits.sigmoid()
+        if labels is not None:
+            y = labels.float()
+            weights = y * self.class_weight + (1 - y)
+            loss = F.binary_cross_entropy_with_logits(logits[:, 0], y, weight=weights)
+            return loss, probability
+        return probability
 
 
-def losver_model(model_path, variant):
-    """Official heads and eager FP32 encoder; no task prefix or CodeBERT head."""
+def losver_model(
+    model_path, variant, *, window_micro_batch=8, gradient_checkpointing=False
+):
+    """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
     config = RobertaConfig.from_pretrained(model_path)
-    config.num_labels = 1
-    tokenizer = RobertaTokenizer.from_pretrained(model_path)
-    args = SimpleNamespace(class_weight=1.0, dropout_probability=0.0)
-    cls = RobertaForSequenceClassification if variant == "baseline" else RobertaModel
-    encoder = cls.from_pretrained(
-        model_path, config=config, attn_implementation="eager"
+    tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
+    if window_micro_batch < 1:
+        raise ValueError("window micro-batch must be positive")
+    args = SimpleNamespace(
+        class_weight=1.0,
+        dropout_probability=0.0,
+        window_micro_batch=window_micro_batch,
+        gradient_checkpointing=gradient_checkpointing,
     )
-    model_cls = {
-        "localizer": LOSVERLocalizer,
-        "baseline": LOSVERBaseline,
-        "predicted": LOSVERDetector,
-        "oracle": LOSVERDetector,
-    }[variant]
-    return model_cls(encoder, config, tokenizer, args), tokenizer
+    encoder = RobertaModel.from_pretrained(
+        model_path, config=config, attn_implementation="eager", add_pooling_layer=False
+    )
+    model_cls = LOSVERLocalizer if variant == "localizer" else LOSVERDetector
+    if variant not in ("localizer", "baseline", "predicted", "oracle"):
+        raise ValueError(f"unknown LOSVER variant: {variant}")
+    return model_cls(encoder, config, args), tokenizer
 
 
 @torch.no_grad()
 def predict_paired(checkpoint, records, *, device="auto", model_path=None):
-    """Same official detector/localizer encoding, with one raw function at inference."""
-    from .data import paired_features
+    """Single-function localization/detection, sharing one tokenization and map."""
+    from .data import paired_encoding, paired_features
+    from .training import paired_collate, paired_forward
+    from .evaluation import load_paired
 
     device = resolve_device(device)
     variant = checkpoint["variant"]
-    if variant in ("oracle", "localizer"):
+    if variant not in ("baseline", "predicted"):
         raise ValueError(
-            "single-function detection uses the baseline or predicted-line LOSVER; Oracle requires Diff"
+            "single-function detection uses baseline or predicted lines; Oracle requires Diff"
         )
-    path = model_path or checkpoint["model_path"]
-    model, tokenizer = losver_model(path, variant)
-    model.load_state_dict(checkpoint["state_dict"], strict=True)
-    model.to(device).eval()
+    if model_path is not None:
+        checkpoint = dict(checkpoint, model_path=model_path)
+    model, tokenizer = load_paired(checkpoint, device)
     localizer = None
     if variant == "predicted":
         cp = torch.load(
             checkpoint["localizer_path"], map_location="cpu", weights_only=False
         )
-        localizer, _ = losver_model(path, "localizer")
-        localizer.load_state_dict(cp["state_dict"], strict=True)
-        localizer.to(device).eval()
+        if model_path is not None:
+            cp = dict(cp, model_path=model_path)
+        localizer, _ = load_paired(cp, device)
+        if cp["input_mode"] != checkpoint["input_mode"]:
+            raise ValueError("localizer and detector input modes differ")
     result = []
     for r in records:
         row = dict(func=r["raw_source"], target=0)
+        encoding = paired_encoding(row["func"], tokenizer, checkpoint["input_mode"])
         if localizer is not None:
-            f = paired_features(row, tokenizer, "localizer")
-            scores = localizer(input_ids=torch.tensor([f["input_ids"]], device=device))[
-                0
-            ]
-            row["lines_predicted"] = [i for i, p in enumerate(scores) if p > 0.5]
-        f = paired_features(row, tokenizer, variant)
-        ids = torch.tensor([f["input_ids"]], device=device)
-        if variant == "baseline":
-            prob = model(input_ids=ids)[:, 0]
-        else:
-            prob = model(
-                input_ids=ids,
-                attention_mask=torch.tensor([f["attention_mask"]], device=device),
-                line_indices=[f["line_indices"]],
-            )[:, 0]
-        # Return exact effective logits for the common CLI sigmoid probability output.
-        result.append(torch.logit(prob).cpu())
+            f = paired_features(row, tokenizer, "localizer", encoding=encoding)
+            scores = paired_forward(
+                localizer, paired_collate([f]), "localizer", device, with_labels=False
+            )[0]
+            row.update(
+                line_numbers=encoding["line_numbers"],
+                lines_predicted=[
+                    n for n, p in zip(encoding["line_numbers"], scores) if p > 0.5
+                ],
+            )
+        f = paired_features(row, tokenizer, variant, encoding=encoding)
+        probability = paired_forward(
+            model, paired_collate([f]), variant, device, with_labels=False
+        )[:, 0]
+        result.append(torch.logit(probability).cpu())
     return torch.cat(result)

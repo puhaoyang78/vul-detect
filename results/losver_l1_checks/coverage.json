@@ -1,0 +1,168 @@
+{
+  "after": {
+    "train": {
+      "counts": {
+        "functions": 8708,
+        "source_tokens": 15367036,
+        "physical_lines": 1462730,
+        "code_tokens": 12347251,
+        "truncated_functions": 0,
+        "windows": 43571,
+        "encoder_tokens": 22308352,
+        "encoder_source_tokens": 19735385,
+        "core_tokens": 15367036,
+        "context_tokens": 4368349,
+        "nonempty_lines": 1311260,
+        "visible_nonempty_lines": 1311260,
+        "fully_visible_nonempty_lines": 1311260,
+        "partial_lines": 0,
+        "modified_lines": 49771,
+        "visible_modified_lines": 49771,
+        "fully_visible_modified_lines": 49771,
+        "unmapped_nonempty_lines": 0,
+        "max_windows": 607,
+        "identical_pairs": 0,
+        "mapping_errors": 0,
+        "invalid_aggregation_memberships": 0
+      },
+      "seconds": 283.2474511768669
+    },
+    "valid": {
+      "counts": {
+        "functions": 1124,
+        "source_tokens": 1678783,
+        "physical_lines": 153033,
+        "code_tokens": 1357855,
+        "truncated_functions": 0,
+        "windows": 4832,
+        "encoder_tokens": 2473984,
+        "encoder_source_tokens": 2143044,
+        "core_tokens": 1678783,
+        "context_tokens": 464261,
+        "nonempty_lines": 137992,
+        "visible_nonempty_lines": 137992,
+        "fully_visible_nonempty_lines": 137992,
+        "partial_lines": 0,
+        "modified_lines": 5401,
+        "visible_modified_lines": 5401,
+        "fully_visible_modified_lines": 5401,
+        "unmapped_nonempty_lines": 0,
+        "max_windows": 71,
+        "identical_pairs": 0,
+        "mapping_errors": 0,
+        "invalid_aggregation_memberships": 0
+      },
+      "seconds": 31.64348293095827
+    },
+    "test": {
+      "counts": {
+        "functions": 1128,
+        "source_tokens": 2061198,
+        "physical_lines": 192862,
+        "code_tokens": 1659566,
+        "truncated_functions": 0,
+        "windows": 5842,
+        "encoder_tokens": 2991104,
+        "encoder_source_tokens": 2652272,
+        "core_tokens": 2061198,
+        "context_tokens": 591074,
+        "nonempty_lines": 173669,
+        "visible_nonempty_lines": 173669,
+        "fully_visible_nonempty_lines": 173669,
+        "partial_lines": 0,
+        "modified_lines": 5162,
+        "visible_modified_lines": 5162,
+        "fully_visible_modified_lines": 5162,
+        "unmapped_nonempty_lines": 0,
+        "max_windows": 112,
+        "identical_pairs": 0,
+        "mapping_errors": 0,
+        "invalid_aggregation_memberships": 0
+      },
+      "seconds": 40.69898636988364
+    }
+  },
+  "reference_512": {
+    "train": {
+      "counts": {
+        "functions": 8708,
+        "source_tokens": 15367036,
+        "physical_lines": 1462730,
+        "code_tokens": 2980340,
+        "truncated_functions": 5541,
+        "windows": 8708,
+        "encoder_tokens": 4458496,
+        "encoder_source_tokens": 3701600,
+        "core_tokens": 3701600,
+        "context_tokens": 0,
+        "nonempty_lines": 1311260,
+        "visible_nonempty_lines": 318058,
+        "fully_visible_nonempty_lines": 314027,
+        "partial_lines": 4031,
+        "modified_lines": 49771,
+        "visible_modified_lines": 22627,
+        "fully_visible_modified_lines": 22341,
+        "unmapped_nonempty_lines": 0,
+        "max_windows": 1,
+        "identical_pairs": 1254
+      }
+    },
+    "valid": {
+      "counts": {
+        "functions": 1124,
+        "source_tokens": 1678783,
+        "physical_lines": 153033,
+        "code_tokens": 378655,
+        "truncated_functions": 671,
+        "windows": 1124,
+        "encoder_tokens": 575488,
+        "encoder_source_tokens": 465304,
+        "core_tokens": 465304,
+        "context_tokens": 0,
+        "nonempty_lines": 137992,
+        "visible_nonempty_lines": 38745,
+        "fully_visible_nonempty_lines": 38251,
+        "partial_lines": 494,
+        "modified_lines": 5401,
+        "visible_modified_lines": 2698,
+        "fully_visible_modified_lines": 2667,
+        "unmapped_nonempty_lines": 0,
+        "max_windows": 1,
+        "identical_pairs": 164
+      }
+    },
+    "test": {
+      "counts": {
+        "functions": 1128,
+        "source_tokens": 2061198,
+        "physical_lines": 192862,
+        "code_tokens": 389605,
+        "truncated_functions": 732,
+        "windows": 1128,
+        "encoder_tokens": 577536,
+        "encoder_source_tokens": 481241,
+        "core_tokens": 481241,
+        "context_tokens": 0,
+        "nonempty_lines": 173669,
+        "visible_nonempty_lines": 40378,
+        "fully_visible_nonempty_lines": 39839,
+        "partial_lines": 539,
+        "modified_lines": 5162,
+        "visible_modified_lines": 2719,
+        "fully_visible_modified_lines": 2690,
+        "unmapped_nonempty_lines": 0,
+        "max_windows": 1,
+        "identical_pairs": 163
+      }
+    }
+  },
+  "input_mode": "l1",
+  "policy": {
+    "tokens": "BOS/EOS per window; single window up to 510 source tokens; L1 uses 384 core + at most 63 left/right context, without a function limit",
+    "lines": "zero-based physical IDs; empty/whitespace-only lines have no predictions",
+    "crossing_tokens": "membership in every physical line with non-whitespace overlap; weight 5 if any selected line overlaps",
+    "partial_line": "retain visible tokens and unchanged Diff label; count partial/full coverage separately",
+    "selection": "modified-line positive F1; detectors Valid P-C; strict probability >0.5",
+    "test_usage": "input/annotation coverage only; no Test model inference or selection"
+  }
+}

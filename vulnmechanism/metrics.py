@@ -62,7 +62,13 @@ def select_threshold(labels, scores):
 def paired_metrics(rows, scores):
     """Official LOSVER pairing and strict probability > .5 classification."""
     import numpy as np
-    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    from sklearn.metrics import (
+        accuracy_score,
+        precision_score,
+        recall_score,
+        f1_score,
+        matthews_corrcoef,
+    )
 
     if not rows or len(rows) % 2 or len(rows) != len(scores):
         raise ValueError("complete, aligned official pairs required")
@@ -91,4 +97,7 @@ def paired_metrics(rows, scores):
         precision=precision_score(labels, p, zero_division=0),
         recall=recall_score(labels, p, zero_division=0),
         f1=f1_score(labels, p, zero_division=0),
+        mcc=float(matthews_corrcoef(labels, p)),
+        auc=float(roc_auc_score(labels, scores)),
+        auprc=float(average_precision_score(labels, scores)),
     )

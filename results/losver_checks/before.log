@@ -1,0 +1,15 @@
+Reference imports captured; current implementation is unchanged.
+train 1000
+train 2000
+train 3000
+train 4000
+train 5000
+train 6000
+train 7000
+train 8000
+train {'functions': 8708, 'modified_lines': 49771, 'baseline_truncated_functions': 5541, 'detector_truncated_functions': 5533, 'baseline_code_tokens': 2980340, 'detector_code_tokens': 2984802, 'detector_line_outputs': 355566, 'detector_unassigned_code_tokens': 38926, 'detector_readout_visible_modified_lines': 22338, 'detector_oracle_padding_mass_max': 0.9586373570210732, 'localizer_emitted_lines': 355095, 'localizer_declared_lines': 360188, 'localizer_declared_positive_lines': 22320, 'localizer_consumed_positive_labels': 21898, 'localizer_functions_with_mapping_errors': 2532, 'localizer_readout_visible_modified_lines': 22316, 'detector_empty_line_groups': 42105, 'detector_wrong_physical_line_groups': 49375, 'localizer_empty_line_outputs': 42023, 'localizer_wrong_physical_line_outputs': 49740, 'baseline_identical_pairs': 1254, 'localizer_identical_pairs': 1268, 'oracle_identical_pairs': 1249, 'detector_oracle_padding_mass_mean': 0.035286421771128604}
+valid 1000
+valid {'functions': 1124, 'modified_lines': 5401, 'baseline_truncated_functions': 671, 'detector_truncated_functions': 671, 'baseline_code_tokens': 378655, 'detector_code_tokens': 379199, 'detector_line_outputs': 43309, 'detector_unassigned_code_tokens': 4540, 'detector_readout_visible_modified_lines': 2666, 'detector_oracle_padding_mass_max': 0.727527319665115, 'localizer_emitted_lines': 43266, 'localizer_declared_lines': 43430, 'localizer_declared_positive_lines': 2665, 'localizer_consumed_positive_labels': 2663, 'localizer_functions_with_mapping_errors': 68, 'localizer_readout_visible_modified_lines': 2665, 'detector_empty_line_groups': 5120, 'detector_wrong_physical_line_groups': 1520, 'localizer_empty_line_outputs': 5121, 'localizer_wrong_physical_line_outputs': 1539, 'baseline_identical_pairs': 164, 'localizer_identical_pairs': 165, 'oracle_identical_pairs': 164, 'detector_oracle_padding_mass_mean': 0.036549319968573545}
+test 1000
+test {'functions': 1128, 'modified_lines': 5162, 'baseline_truncated_functions': 732, 'detector_truncated_functions': 732, 'baseline_code_tokens': 389605, 'detector_code_tokens': 390187, 'detector_line_outputs': 44878, 'detector_empty_line_groups': 5109, 'detector_unassigned_code_tokens': 4961, 'detector_readout_visible_modified_lines': 2690, 'detector_oracle_padding_mass_max': 0.8422669601430948, 'localizer_emitted_lines': 44809, 'localizer_declared_lines': 45003, 'localizer_declared_positive_lines': 2684, 'localizer_consumed_positive_labels': 2679, 'localizer_empty_line_outputs': 5095, 'localizer_functions_with_mapping_errors': 75, 'localizer_readout_visible_modified_lines': 2684, 'detector_wrong_physical_line_groups': 1504, 'localizer_wrong_physical_line_outputs': 1679, 'baseline_identical_pairs': 163, 'localizer_identical_pairs': 163, 'oracle_identical_pairs': 163, 'detector_oracle_padding_mass_mean': 0.0366121638430357}
+Saved results/losver_checks/coverage.json elapsed 1167.5624985429458

@@ -1,0 +1,67 @@
+{
+  "smoke_only": true,
+  "gpu_split": "train",
+  "device": "cuda:0",
+  "device_name": "NVIDIA GeForce RTX 4090",
+  "torch_version": "2.9.1+cu128",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "optimizer_steps_per_variant": 1,
+  "learning_rate": 2e-05,
+  "optimizer": "LOSVERAdamW (Transformers 4.19 rule)",
+  "seed": 123456,
+  "functions": 8,
+  "sample_keys": [
+    "primevul_paired:train:4871",
+    "primevul_paired:train:4872",
+    "primevul_paired:train:519",
+    "primevul_paired:train:520",
+    "primevul_paired:train:2965",
+    "primevul_paired:train:2966",
+    "primevul_paired:train:43",
+    "primevul_paired:train:44"
+  ],
+  "variants": {
+    "localizer": {
+      "loss": 0.36060288548469543,
+      "gradient_norm": 18.85343360900879,
+      "encoder_gradient_norm": 0.08077429980039597,
+      "head_gradient_norm": 1.2389841480180621,
+      "parameters": 129476353,
+      "reload_max_probability_difference": 0.0,
+      "padding_max_probability_difference": 5.960464477539063e-08,
+      "seconds": 8.162945763906464
+    },
+    "baseline": {
+      "loss": 0.7351706027984619,
+      "gradient_norm": 8.102359771728516,
+      "encoder_gradient_norm": 0.10527032613754272,
+      "head_gradient_norm": 0.40693560522049665,
+      "parameters": 125339905,
+      "reload_max_probability_difference": 0.0,
+      "padding_max_probability_difference": 2.9802322387695312e-08,
+      "source_only_inference_max_difference": 8.940696716308594e-08,
+      "seconds": 5.902655031066388
+    },
+    "predicted": {
+      "loss": 0.7351706027984619,
+      "gradient_norm": 8.102359771728516,
+      "encoder_gradient_norm": 0.10527032613754272,
+      "head_gradient_norm": 0.40693560522049665,
+      "parameters": 125339905,
+      "reload_max_probability_difference": 0.0,
+      "padding_max_probability_difference": 2.9802322387695312e-08,
+      "source_only_inference_max_difference": 8.940696716308594e-08,
+      "seconds": 8.112326652975753
+    },
+    "oracle": {
+      "loss": 0.6988272070884705,
+      "gradient_norm": 8.212193489074707,
+      "encoder_gradient_norm": 0.09340054541826248,
+      "head_gradient_norm": 0.43140607699751854,
+      "parameters": 125339905,
+      "reload_max_probability_difference": 0.0,
+      "padding_max_probability_difference": 1.1920928955078125e-07,
+      "seconds": 4.835671482142061
+    }
+  }
+}
