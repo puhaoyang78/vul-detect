@@ -67,83 +67,13 @@ def tiny_base(path):
 
 
 class CodeBERTTests(unittest.TestCase):
-    def test_lp_ft_and_swa_train_both_sources_without_target_selection(self):
-        from vulnmechanism import training
-
-        torch.set_num_threads(2)
-        predict = training.predict_logits
-        update_average = training.AveragedModel.update_parameters
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            base = tiny_base(root / "base")
-            core.seed_everything(42)
-            initial = core.CodeBERT(str(root / "base"), "cpu").state_dict()
-            for dataset in ("primevul", "secvuleval"):
-                rows = [dict(sample_key=str(i), dataset=dataset, split="train", label=i % 2,
-                             raw_source=f"int f{i}(){{return {i};}}") for i in range(8)]
-                write_jsonl(root / "data" / dataset / "train.jsonl", rows)
-                write_jsonl(root / "data" / dataset / "valid.jsonl", [
-                    dict(rows[i], sample_key=f"v{i}", split="valid") for i in (0, 1)
-                ])
-                write_jsonl(root / "data" / dataset / "test.jsonl", [dict(raw_source="FORBIDDEN_HELDOUT")])
-                for method in ("lp_ft", "swa"):
-                    with self.subTest(dataset=dataset, method=method):
-                        snapshots, validations, encoder_modes = [], [], []
-
-                        def capture_average(average, online):
-                            snapshots.append({k: v.detach().clone() for k, v in online.state_dict().items()})
-                            return update_average(average, online)
-
-                        def source_validation(model, records, *args, **kwargs):
-                            self.assertTrue(all(r["dataset"] == dataset and r["split"] == "valid" for r in records))
-                            encoder_modes.append(model.encoder.training)
-                            validations.append({k: v.detach().clone() for k, v in model.state_dict().items()})
-                            return predict(model, records, *args, **kwargs)
-
-                        with patch.object(core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()), \
-                                patch.object(training, "predict_logits", side_effect=source_validation), \
-                                patch.object(training.AveragedModel, "update_parameters", capture_average), \
-                                redirect_stdout(io.StringIO()):
-                            summary = train(root / "data", root / "runs", str(root / "base"), dataset,
-                                            method, device="cpu", config=dict(TRAINING, batch_size=2))
-                        run = root / "runs" / dataset / method
-                        cp = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
-                        events = [json.loads(s) for s in (run / "best.training.jsonl").read_text().splitlines()]
-                        epochs = [r for r in events if r["event"] == "epoch"]
-                        self.assertEqual((summary["completed_epochs"], summary["optimizer_steps"]), (3, 6))
-                        self.assertIn(cp["selected_epoch"], (2, 3))
-                        self.assertEqual([r["selection_eligible"] for r in epochs], [False, True, True])
-                        self.assertIsNone(summary["augmentation"])
-                        self.assertIsNone(summary["vat"])
-                        loaded = core.load_model(cp, torch.device("cpu"))
-                        for k, v in loaded.state_dict().items():
-                            torch.testing.assert_close(v, cp["state_dict"][k], rtol=0, atol=0)
-                        if method == "lp_ft":
-                            name = "encoder.embeddings.word_embeddings.weight"
-                            torch.testing.assert_close(validations[0][name], base.embeddings.word_embeddings.weight, rtol=0, atol=0)
-                            self.assertFalse(torch.equal(validations[0]["task_modules.classifier.weight"],
-                                                         initial["task_modules.classifier.weight"]))
-                            self.assertFalse(torch.equal(validations[1][name], validations[0][name]))
-                            self.assertEqual(encoder_modes, [False, True, True])
-                            self.assertEqual([r["learning_rate"] for r in epochs], [1e-3, 1e-5, 1e-5])
-                            self.assertEqual([r["encoder_trainable"] for r in epochs], [False, True, True])
-                            self.assertEqual(snapshots, [])
-                        else:
-                            self.assertEqual(summary["averaged_steps"], [3, 4, 5, 6])
-                            self.assertEqual([r["averaged_steps"] for r in epochs], [[], [3, 4], [3, 4, 5, 6]])
-                            self.assertEqual(len(snapshots), 4)
-                            for at, n in ((1, 2), (2, 4)):
-                                for k in snapshots[0]:
-                                    expected = torch.stack([s[k] for s in snapshots[:n]]).mean(0)
-                                    torch.testing.assert_close(validations[at][k], expected, rtol=1e-6, atol=1e-7)
-                            self.assertEqual(cp["averaged_steps"], epochs[cp["selected_epoch"] - 1]["averaged_steps"])
-                        for k, v in cp["state_dict"].items():
-                            torch.testing.assert_close(v, validations[cp["selected_epoch"] - 1][k], rtol=0, atol=0)
 
     def test_window_coverage_and_function_normalization(self):
         builder = core.InputBuilder(CodeTokenizer())
         records = [dict(raw_source="a" * 31), dict(raw_source="abcd" * 800)]
-        ids, mask, owners, weights, count = builder.codebert_batch(records, device="cpu")
+        ids, mask, owners, weights, count = builder.codebert_batch(
+            records, device="cpu"
+        )
         self.assertLessEqual(ids.shape[1], 512)
         self.assertEqual(count, 2)
         self.assertEqual(int((owners == 0).sum()), 1)
@@ -153,7 +83,9 @@ class CodeBERTTests(unittest.TestCase):
         pooled = core._window_mean(embedding(ids), mask, owners, weights, count)
         expected = []
         for row in records:
-            source = builder._encode(row["raw_source"], 2048 - len(builder.source_prefix) - 2)
+            source = builder._encode(
+                row["raw_source"], 2048 - len(builder.source_prefix) - 2
+            )
             direct = torch.tensor([[2, *builder.source_prefix, *source, 1]])
             expected.append(embedding(direct).mean(1)[0])
         torch.testing.assert_close(pooled, torch.stack(expected), rtol=1e-5, atol=1e-6)
@@ -161,7 +93,11 @@ class CodeBERTTests(unittest.TestCase):
         self.assertGreater(float(embedding.weight.grad.abs().sum()), 0.0)
         with self.assertRaisesRegex(ValueError, "every function"):
             core._window_mean(
-                torch.ones(1, 3, 2), torch.ones(1, 3), torch.tensor([0]), torch.ones(1, 3), 2
+                torch.ones(1, 3, 2),
+                torch.ones(1, 3),
+                torch.tensor([0]),
+                torch.ones(1, 3),
+                2,
             )
 
     def test_twelve_fresh_paths_updates_and_strict_save_load(self):
@@ -196,7 +132,9 @@ class CodeBERTTests(unittest.TestCase):
                 config = dict(TRAINING, epochs=1, batch_size=2, gradient_accumulation=4)
                 for method in METHODS:
                     with self.subTest(dataset=dataset, method=method), patch.object(
-                        core.AutoTokenizer, "from_pretrained", return_value=CodeTokenizer()
+                        core.AutoTokenizer,
+                        "from_pretrained",
+                        return_value=CodeTokenizer(),
                     ), redirect_stdout(io.StringIO()):
                         summary = train(
                             root / "data",
@@ -216,17 +154,23 @@ class CodeBERTTests(unittest.TestCase):
                         self.assertTrue(cp["selection"].startswith(dataset))
                         self.assertFalse(
                             torch.equal(
-                                cp["state_dict"]["encoder.embeddings.word_embeddings.weight"],
+                                cp["state_dict"][
+                                    "encoder.embeddings.word_embeddings.weight"
+                                ],
                                 base.embeddings.word_embeddings.weight,
                             )
                         )
                         model = core.load_model(cp, torch.device("cpu"))
                         builder = core.InputBuilder(CodeTokenizer())
-                        expected = core.predict_logits(model, rows[:2], builder, device="cpu")
+                        expected = core.predict_logits(
+                            model, rows[:2], builder, device="cpu"
+                        )
                         actual = core.predict_checkpoint(target, rows[:2], device="cpu")
                         torch.testing.assert_close(expected, actual, rtol=0, atol=0)
                         broken = dict(cp, state_dict=dict(cp["state_dict"]))
-                        broken["state_dict"].pop("encoder.embeddings.word_embeddings.weight")
+                        broken["state_dict"].pop(
+                            "encoder.embeddings.word_embeddings.weight"
+                        )
                         with self.assertRaisesRegex(RuntimeError, "Missing key"):
                             core.load_model(broken, torch.device("cpu"))
                         epoch = [
@@ -278,7 +222,9 @@ class CodeBERTTests(unittest.TestCase):
             self.assertAlmostEqual(info["norm_min"], 1.0, places=6)
             self.assertAlmostEqual(info["norm_max"], 1.0, places=6)
             terms.mean().backward()
-            self.assertGreater(float(model.task_modules["classifier"].weight.grad.norm()), 0.0)
+            self.assertGreater(
+                float(model.task_modules["classifier"].weight.grad.norm()), 0.0
+            )
             self.assertGreater(
                 float(model.encoder.embeddings.word_embeddings.weight.grad.norm()), 0.0
             )

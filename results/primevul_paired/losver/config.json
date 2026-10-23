@@ -1,0 +1,47 @@
+{
+  "protocol": "losver",
+  "dataset": "primevul_paired",
+  "method": "losver",
+  "variant": "predicted",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "training_config": {
+    "seed": 123456,
+    "batch_size": 8,
+    "eval_batch_size": 8,
+    "learning_rate": 2e-05,
+    "adam_epsilon": 1e-08,
+    "weight_decay": 0.0,
+    "gradient_clip": 1.0,
+    "warmup_fraction": 0.1,
+    "block_size": 512,
+    "epochs": {
+      "baseline": 16,
+      "localizer": 40,
+      "predicted": 16,
+      "oracle": 16
+    },
+    "fp16": false,
+    "dropout_probability": 0.0,
+    "class_weight": 1.0,
+    "early_stopping": null
+  },
+  "epochs": 16,
+  "train_samples": 8708,
+  "valid_samples": 1124,
+  "decision_threshold": 0.5,
+  "comparison": ">",
+  "upstream_commit": "a158905cb45b4400f481f18eeb1cb4473ccfccdc",
+  "selection": "Valid P-C rounded to 4 decimals",
+  "selection_ties": "earlier epoch; strict improvement",
+  "precision": "FP32 eager attention; no AMP/checkpointing",
+  "localizer_attention": "same 8-head cross-attention, queries batched per function; dropout=0",
+  "localizer_path": "results/primevul_paired/losver_localizer/best-f1.pt",
+  "parameters": 125929728,
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "device": "NVIDIA GeForce RTX 4090"
+  }
+}

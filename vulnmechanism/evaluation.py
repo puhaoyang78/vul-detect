@@ -1,4 +1,4 @@
-"""Test robustness, fixed-checkpoint transfer and saved experiment reports."""
+"""Clean and robustness evaluation, and saved experiment reports."""
 
 from __future__ import annotations
 from argparse import Namespace
@@ -7,10 +7,19 @@ import json
 from pathlib import Path
 import torch
 from .artifacts import write_json
-from .data import DATASETS, balanced_subset, class_counts, read_jsonl, test_rows, validation_rows, write_jsonl
-from .metrics import decision_boundary, metrics, paired_metrics
+from .data import (
+    DATASETS,
+    balanced_subset,
+    class_counts,
+    read_jsonl,
+    test_rows,
+    validation_rows,
+    write_jsonl,
+)
+from .metrics import decision_boundary, metrics
 from . import model as core
-from .training import METHODS, GENERALIZATION_METHODS, prepare_materials
+from .progress import training_bar
+from .training import METHODS, prepare_materials
 
 
 def _evaluate_clean(rows, run, name, checkpoint, args, *, logits=None):
@@ -27,28 +36,38 @@ def _evaluate_clean(rows, run, name, checkpoint, args, *, logits=None):
         labels = {r["sample_key"]: r["label"] for r in rows}
         by_key = {r["sample_key"]: r for r in cached}
         if len(by_key) != len(cached) or any(
-            r["sample_key"] not in labels or labels[r["sample_key"]] != r["label"]
-            or r["threshold"] != threshold for r in cached
+            r["sample_key"] not in labels
+            or labels[r["sample_key"]] != r["label"]
+            or r["threshold"] != threshold
+            for r in cached
         ):
             raise ValueError("cached evaluation members, labels or threshold differ")
     missing = [r for r in rows if r["sample_key"] not in by_key]
     if missing:
         if logits is None:
-            print(f"{run.name}/{name}: reuse {len(by_key)}, predict {len(missing)} members", flush=True)
+            print(
+                f"{run.name}/{name}: reuse {len(by_key)}, predict {len(missing)} members",
+                flush=True,
+            )
             device = core.resolve_device(args.device)
             builder = core.InputBuilder(
-                core.AutoTokenizer.from_pretrained(args.model, trim_offsets=not checkpoint.get("input_protocol", {}).get("full_source", False)),
+                core.AutoTokenizer.from_pretrained(args.model),
                 source_max_length=checkpoint["source_max_length"],
-                full_source=checkpoint.get("input_protocol", {}).get("full_source", False),
             )
             model = core.load_model(checkpoint, device, model_path=args.model)
-            logits = core.predict_logits(model, missing, builder, device=device, batch_size=args.batch_size)
+            logits = core.predict_logits(
+                model, missing, builder, device=device, batch_size=args.batch_size
+            )
         elif len(logits) != len(rows):
             raise ValueError("provided evaluation logits must cover the entire cohort")
         for row, logit, score in zip(missing, logits, logits.sigmoid().tolist()):
             by_key[row["sample_key"]] = dict(
-                sample_key=row["sample_key"], label=row["label"], logit=float(logit), score=score,
-                prediction=int(score >= decision_boundary(threshold)), threshold=threshold,
+                sample_key=row["sample_key"],
+                label=row["label"],
+                logit=float(logit),
+                score=score,
+                prediction=int(score >= decision_boundary(threshold)),
+                threshold=threshold,
             )
     ordered = [by_key[r["sample_key"]] for r in rows]
     scores = [r["score"] for r in ordered]
@@ -64,12 +83,6 @@ def _evaluate_clean(rows, run, name, checkpoint, args, *, logits=None):
             )
         ),
     )
-    if checkpoint.get("paired") and all("pair_key" in r for r in rows):
-        if threshold != 0.5:
-            raise ValueError("paired evaluation requires fixed threshold 0.5")
-        pair_args = ({} if checkpoint.get("line_mil") else
-                     dict(margin=checkpoint["paired"]["margin"], gap=checkpoint["paired"]["gap"]))
-        result["metrics"].update(paired_metrics(rows, logits.tolist(), **pair_args))
     if result == previous and ordered == cached:
         return result
     write_jsonl(predictions, ordered)
@@ -94,7 +107,9 @@ def _robustness_fixed_candidates(rows, materials, root, tokenizer, source_budget
         if path.exists():
             with path.open() as handle:
                 cached = [json.loads(l) for l in handle]
-            if [r["sample_key"] for r in cached] != [r["sample_key"] for r in evaluation_rows]:
+            if [r["sample_key"] for r in cached] != [
+                r["sample_key"] for r in evaluation_rows
+            ]:
                 raise ValueError("robustness candidate cache members/order differ")
             continue
         entries = []
@@ -137,11 +152,17 @@ def _robustness_fixed_candidates(rows, materials, root, tokenizer, source_budget
                 )
                 rng.shuffle(candidates)
                 groups[kind] = [
-                    {k: v for k, v in c.items() if k != "raw_source"} for c in candidates[:2]
+                    {k: v for k, v in c.items() if k != "raw_source"}
+                    for c in candidates[:2]
                 ]
-            entries.append(dict(sample_key=row["sample_key"], groups=groups, reasons=reasons))
+            entries.append(
+                dict(sample_key=row["sample_key"], groups=groups, reasons=reasons)
+            )
             if (index + 1) % 100 == 0:
-                print(f"Test {name} candidates {index+1}/{len(evaluation_rows)}", flush=True)
+                print(
+                    f"Test {name} candidates {index+1}/{len(evaluation_rows)}",
+                    flush=True,
+                )
         with path.open("x") as handle:
             for entry in entries:
                 handle.write(json.dumps(entry) + "\n")
@@ -213,7 +234,11 @@ def _robustness_summary(originals, views, threshold):
         coverage=rate(n, len(originals)),
         candidates=sum(len(c) for c in views.values()),
         perturbed=(
-            metrics([r["label"] for r in selected], [r["score"] for r in selected], threshold)
+            metrics(
+                [r["label"] for r in selected],
+                [r["score"] for r in selected],
+                threshold,
+            )
             if selected
             else None
         ),
@@ -235,18 +260,23 @@ def _robustness_summary(originals, views, threshold):
             rate=rate(wrong_to_correct, n - original_correct),
         ),
         asr=dict(
-            count=attacked, denominator=original_correct, rate=rate(attacked, original_correct)
+            count=attacked,
+            denominator=original_correct,
+            rate=rate(attacked, original_correct),
         ),
         vulnerability_escape=dict(
             count=escape,
             denominator=sum(r["label"] == 1 and r["prediction"] == 1 for r in eligible),
-            rate=rate(escape, sum(r["label"] == 1 and r["prediction"] == 1 for r in eligible)),
+            rate=rate(
+                escape, sum(r["label"] == 1 and r["prediction"] == 1 for r in eligible)
+            ),
         ),
         benign_false_alarm=dict(
             count=false_alarm,
             denominator=sum(r["label"] == 0 and r["prediction"] == 0 for r in eligible),
             rate=rate(
-                false_alarm, sum(r["label"] == 0 and r["prediction"] == 0 for r in eligible)
+                false_alarm,
+                sum(r["label"] == 0 and r["prediction"] == 0 for r in eligible),
             ),
         ),
     )
@@ -284,7 +314,11 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
         source_max_length=cp["source_max_length"],
     )
     costs = dict(
-        calls=0, function_forwards=0, encoder_sequences=0, encoder_token_slots=0, seconds=0.0
+        calls=0,
+        function_forwards=0,
+        encoder_sequences=0,
+        encoder_token_slots=0,
+        seconds=0.0,
     )
 
     def score(batch):
@@ -293,7 +327,8 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
         with torch.no_grad(), core.auxiliary_mode(model):
             for at in range(0, len(batch), args.batch_size):
                 grouped = builder.codebert_batch(
-                    batch[at : at + args.batch_size], device=core.resolve_device(args.device)
+                    batch[at : at + args.batch_size],
+                    device=core.resolve_device(args.device),
                 )
                 values.extend(model(*grouped).detach().cpu().tolist())
                 costs["calls"] += 1
@@ -330,7 +365,9 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
                             ),
                         )
                     )
-                    index.append((row["sample_key"], kind, ci, candidate["strict_semantic"]))
+                    index.append(
+                        (row["sample_key"], kind, ci, candidate["strict_semantic"])
+                    )
         logits = score(flat) if flat else []
         for (key, kind, ci, strict), z in zip(index, logits):
             views.setdefault(kind, {}).setdefault(key, []).append(
@@ -372,12 +409,18 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
             all=_robustness_summary(originals, combined, cp["decision_threshold"]),
             strict_semantic=_robustness_summary(
                 originals,
-                {k: [v for v in vs if v["strict_semantic"]] for k, vs in combined.items()},
+                {
+                    k: [v for v in vs if v["strict_semantic"]]
+                    for k, vs in combined.items()
+                },
                 cp["decision_threshold"],
             ),
             input_only_stress=_robustness_summary(
                 originals,
-                {k: [v for v in vs if not v["strict_semantic"]] for k, vs in combined.items()},
+                {
+                    k: [v for v in vs if not v["strict_semantic"]]
+                    for k, vs in combined.items()
+                },
                 cp["decision_threshold"],
             ),
         )
@@ -388,7 +431,10 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
                         dict(
                             sample_key=row["sample_key"],
                             label=row["label"],
-                            groups={k: g.get(row["sample_key"], []) for k, g in views.items()},
+                            groups={
+                                k: g.get(row["sample_key"], [])
+                                for k, g in views.items()
+                            },
                         )
                     )
                     + "\n"
@@ -436,7 +482,11 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
                     entry["selected"] = (
                         None
                         if entry["selected"] is None
-                        else {k: v for k, v in entry["selected"].items() if k != "raw_source"}
+                        else {
+                            k: v
+                            for k, v in entry["selected"].items()
+                            if k != "raw_source"
+                        }
                     )
                     handle.write(json.dumps(entry) + "\n")
                     attacks.append(entry)
@@ -454,13 +504,17 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
         group = [
             dict(
                 logit=c["logit"],
-                prediction=int(torch.sigmoid(torch.tensor(c["logit"])).item() >= boundary),
+                prediction=int(
+                    torch.sigmoid(torch.tensor(c["logit"])).item() >= boundary
+                ),
                 strict_semantic=c["strict_semantic"],
             )
             for c in entry["visited"]
         ]
         group.sort(
-            key=lambda c: float(np.logaddexp(0, c["logit"]) - by[key]["label"] * c["logit"]),
+            key=lambda c: float(
+                np.logaddexp(0, c["logit"]) - by[key]["label"] * c["logit"]
+            ),
             reverse=True,
         )
         groups[key] = group
@@ -468,8 +522,12 @@ def _robustness_evaluation(rows, run, target, cp, root, materials, args):
         stress[key] = [c for c in group if not c["strict_semantic"]]
     report["adaptive"] = dict(
         all=_robustness_summary(originals, groups, cp["decision_threshold"]),
-        strict_semantic=_robustness_summary(originals, strict, cp["decision_threshold"]),
-        input_only_stress=_robustness_summary(originals, stress, cp["decision_threshold"]),
+        strict_semantic=_robustness_summary(
+            originals, strict, cp["decision_threshold"]
+        ),
+        input_only_stress=_robustness_summary(
+            originals, stress, cp["decision_threshold"]
+        ),
         candidate_queries=queries,
         original_queries=original_queries,
         query_limit=48,
@@ -496,30 +554,47 @@ def prepare_candidates(data_dir, output_dir, model_path, dataset, *, test_limit=
 
 
 def evaluate(
-    data_dir, output_dir, dataset, methods=METHODS, *, device="auto", robust=True,
-    valid_limit=None, test_limit=None,
-    splits=("valid", "test"), single_function_test=False,
+    data_dir,
+    output_dir,
+    dataset,
+    methods=METHODS,
+    *,
+    device="auto",
+    robust=True,
+    valid_limit=None,
+    test_limit=None,
+    splits=("valid", "test"),
 ):
-    if dataset not in (*DATASETS, "reveal", "primevul_paired"):
+    if dataset == "primevul_paired":
+        if valid_limit is not None or test_limit is not None:
+            raise ValueError("LOSVER evaluation keeps all official paired members")
+        return evaluate_paired(
+            data_dir, output_dir, methods, device=device, splits=splits
+        )
+    if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
     if not splits or any(s not in ("valid", "test") for s in splits):
         raise ValueError("evaluation splits must be valid/test")
-    if dataset == "primevul_paired" and (robust or valid_limit is not None or test_limit is not None):
-        raise ValueError("paired evaluation preserves whole official pairs and uses Clean only")
-    if single_function_test and (dataset != "primevul_paired" or "test" not in splits):
-        raise ValueError("single-function Test is only available with final paired Test evaluation")
     if robust and "test" not in splits:
         raise ValueError("robustness evaluation requires Test")
     root = Path(output_dir) / dataset
-    valid = (balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit)
-             if "valid" in splits and dataset != "primevul_paired" else None)
-    own_test = (balanced_subset(test_rows(Path(data_dir) / dataset), test_limit)
-                if "test" in splits and dataset != "primevul_paired" else None)
+    valid = (
+        balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit)
+        if "valid" in splits
+        else None
+    )
+    own_test = (
+        balanced_subset(test_rows(Path(data_dir) / dataset), test_limit)
+        if "test" in splits
+        else None
+    )
     materials = prepare_materials(data_dir, output_dir, dataset) if robust else None
     for method in methods:
         run = root / method
         if not (run / "training.metrics.json").exists():
-            raise ValueError(f"{dataset}/{method}: training must finish before evaluation")
+            raise ValueError(
+                f"{dataset}/{method}: training must finish before evaluation"
+            )
         checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
         if checkpoint["dataset"] != dataset:
             raise ValueError("checkpoint training dataset differs")
@@ -530,32 +605,21 @@ def evaluate(
             device=device,
             batch_size=checkpoint["training_config"]["batch_size"],
         )
-        if dataset == "primevul_paired" and not checkpoint.get("line_mil"):
-            valid = validation_rows(Path(data_dir) / dataset) if "valid" in splits else None
-            own_test = test_rows(Path(data_dir) / dataset) if "test" in splits else None
-        if checkpoint.get("line_mil"):
-            from .pair_representation import representation_data
-            if "test" in splits:
-                raise ValueError("repair representation pilot is Valid-only; Test is not used for development")
-            builder = core.InputBuilder(core.AutoTokenizer.from_pretrained(args.model, trim_offsets=False), full_source=True)
-            _, valid, auxiliary, _, _ = representation_data(
-                checkpoint["pair_raw_root"], builder,
-                limit=checkpoint["paired"]["train_pair_limit"],
-                seed=42,
-                context=checkpoint["line_mil"]["context_lines"])
-            _evaluate_clean(auxiliary, run, "paired.valid", checkpoint, args)
         if valid is not None:
             _evaluate_clean(valid, run, "valid", checkpoint, args)
         if own_test is not None:
             _evaluate_clean(own_test, run, "test", checkpoint, args)
-        if single_function_test:
-            _evaluate_clean(test_rows(Path(data_dir) / "primevul"), run, "primevul.test", checkpoint, args)
         if robust:
             if not all(
-                (root / f"{name}.candidates.jsonl").exists() for name in ("fixed", "heldout")
+                (root / f"{name}.candidates.jsonl").exists()
+                for name in ("fixed", "heldout")
             ):
                 prepare_candidates(
-                    data_dir, output_dir, checkpoint["model_path"], dataset, test_limit=test_limit
+                    data_dir,
+                    output_dir,
+                    checkpoint["model_path"],
+                    dataset,
+                    test_limit=test_limit,
                 )
             _robustness_evaluation(
                 own_test, run, run / "best.pt", checkpoint, root, materials, args
@@ -563,232 +627,11 @@ def evaluate(
         del checkpoint
 
 
-def evaluate_transfer(data_dir, output_dir, datasets, *, methods=("bce",), device="auto",
-                      train_data_dir=None):
-    """Compare fixed source models on identical full and exact-overlap-free Test cohorts."""
-    from .static_data import DATASETS as STATIC_DATASETS
-    if (len(datasets) < 2 or len(set(datasets)) != len(datasets)
-            or any(d not in (*DATASETS, *STATIC_DATASETS) for d in datasets)):
-        raise ValueError("at least two distinct supported datasets required")
-    if not methods or len(set(methods)) != len(methods) or any(m not in GENERALIZATION_METHODS for m in methods):
-        raise ValueError("distinct supported generalization methods required")
-    datasets = tuple(sorted(datasets))
-    root = Path(output_dir) / ("transfer_" + "_".join(datasets))
-    root.mkdir(parents=True, exist_ok=True)
-    tests = {d: test_rows(Path(data_dir) / d) for d in datasets}
-    train_data_dir = Path(data_dir if train_data_dir is None else train_data_dir)
-    seen = {}
-    training_members = {}
-    for dataset in datasets:
-        for split in ("train", "valid"):
-            values = (
-                read_jsonl(train_data_dir / dataset / "train.jsonl")
-                if split == "train" else validation_rows(train_data_dir / dataset)
-            )
-            seen[f"{dataset}:{split}"] = {r["raw_source"] for r in values}
-            training_members[f"{dataset}:{split}"] = class_counts(values)
-    independent, cohorts = {}, {}
-    for dataset, rows in tests.items():
-        overlap = {
-            r["sample_key"]: [name for name, sources in seen.items() if r["raw_source"] in sources]
-            for r in rows
-        }
-        independent[dataset] = [r for r in rows if not overlap[r["sample_key"]]]
-        if {r["label"] for r in independent[dataset]} != {0, 1}:
-            raise ValueError(f"{dataset}: independent Test needs both classes")
-        cohorts[dataset] = dict(
-            established=class_counts(rows), independent=class_counts(independent[dataset]),
-            excluded=class_counts([r for r in rows if overlap[r["sample_key"]]]),
-            exact_overlap_by_split={
-                name: class_counts([r for r in rows if name in overlap[r["sample_key"]]])
-                for name in seen
-            },
-        )
-        members = [dict(
-            sample_key=r["sample_key"], label=r["label"], project=r["project"],
-            source_file=r.get("source_file", ""),
-            source_row=r["source_row"],
-            prepared_file=str(Path(data_dir) / dataset / "test.jsonl"),
-            independent=not overlap[r["sample_key"]],
-            exact_overlap=";".join(overlap[r["sample_key"]]),
-        ) for r in rows]
-        with (root / f"{dataset}.members.csv").open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(members[0]), lineterminator="\n")
-            writer.writeheader()
-            writer.writerows(members)
-    core.seed_everything(42)
-    scores, training = {}, {}
-    for source, method in ((source, method) for source in datasets for method in methods):
-        run = Path(output_dir) / source / method
-        training.setdefault(source, {})[method] = json.loads((run / "training.metrics.json").read_text())
-        checkpoint = torch.load(run / "best.pt", map_location="cpu", weights_only=False)
-        if checkpoint["dataset"] != source or checkpoint["method"] != method:
-            raise ValueError("checkpoint source dataset/method differs")
-        args = Namespace(
-            model=checkpoint["model_path"], device=device,
-            batch_size=checkpoint["training_config"]["batch_size"],
-        )
-        for target in datasets:
-            name = "test" if source == target else f"{target}.test"
-            print(f"Fixed {method}: {source} -> {target}, {len(tests[target])} Test samples", flush=True)
-            result = _evaluate_clean(tests[target], run, name, checkpoint, args)
-            predictions = read_jsonl(run / f"{name}.predictions.jsonl")
-            threshold = checkpoint["decision_threshold"]
-            if result["selected_epoch"] != checkpoint["selected_epoch"] or any(
-                r["threshold"] != threshold for r in predictions
-            ):
-                raise ValueError("cached transfer checkpoint selection differs")
-            recomputed = metrics(
-                [r["label"] for r in predictions], [r["score"] for r in predictions], threshold
-            )
-            if recomputed != result["metrics"]:
-                raise ValueError("cached transfer metrics differ")
-            scores[method, source, target] = (
-                {r["sample_key"]: r["score"] for r in predictions}, threshold,
-            )
-        del checkpoint
-    results = []
-    metric_names = ("accuracy", "f1", "mcc", "auc", "auprc")
-    for view, members in (("established", tests), ("independent", independent)):
-        values = {}
-        for method, source in ((method, source) for method in methods for source in datasets):
-            for target in datasets:
-                by_key, threshold = scores[method, source, target]
-                rows = members[target]
-                values[method, source, target] = metrics(
-                    [r["label"] for r in rows], [by_key[r["sample_key"]] for r in rows], threshold
-                )
-        for (method, source, target), value in values.items():
-            results.append(dict(
-                view=view, training_dataset=source, test_dataset=target, method=method,
-                selected_epoch=training[source][method]["selected_epoch"], threshold=value["threshold"],
-                **class_counts(members[target]), **{k: value[k] for k in metric_names},
-                **{k: value[k] for k in ("tp", "tn", "fp", "fn")},
-                **{f"delta_source_{k}": value[k] - values[method, source, source][k] for k in metric_names},
-                **{f"delta_target_{k}": value[k] - values[method, target, target][k] for k in metric_names},
-                **{f"delta_bce_{k}": value[k] - values["bce", source, target][k]
-                   if "bce" in methods else None for k in metric_names},
-            ))
-    write_json(root / "results.json", dict(
-        cohorts=cohorts, training=training, training_members=training_members, results=results,
-        protocol=dict(
-            seed=42, methods=list(methods), selection="source-Valid checkpoint and threshold fixed",
-            established="full original balanced Test members, without resampling; exclude own Train/Valid exact overlap only",
-            independent="exclude exact raw-source overlap with any participating dataset's actual Train or model-selection Valid; same target members for all models; no other datasets, project/CVE or near-duplicate filtering; no resampling",
-            delta_source="target Test metric minus the same model's own Test metric",
-            delta_target="transfer metric minus the same method trained on the target dataset, on exactly the same target Test",
-            delta_bce="method metric minus BCE with the same source checkpoint dataset and target Test members",
-        ),
-    ))
-    with (root / "comparison.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(results[0]), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(results)
-    return dict(datasets=list(datasets), models=len(datasets) * len(methods), rows=len(results), output=str(root))
-
-
-def paired_report(output_dir, data_dir):
-    if (Path(output_dir) / "primevul_paired/mil_patch_rank/training.metrics.json").exists():
-        from .pair_representation import report as representation_report
-        return representation_report(output_dir)
-    """Summarize saved Valid evidence before deciding whether full training is warranted."""
-    from .training import PAIRED_METHODS
-    from .data import paired_groups
-    root = Path(output_dir)
-    data = json.loads((Path(data_dir) / "primevul_paired/statistics.json").read_text())
-    names = ("accuracy", "strict_pairwise_accuracy", "pairwise_ranking_accuracy", "auc", "mcc", "f1",
-             "logit_gap", "mean_abs_logit", "boundary_violation_rate", "gap_violation_rate",
-             "indistinguishable_pairs", "bce")
-    rows, configs, reloaded = [], {}, {}
-    for method in PAIRED_METHODS:
-        run = root / "primevul_paired" / method
-        if not (run / "training.metrics.json").exists():
-            continue
-        configs[method] = json.loads((run / "training.metrics.json").read_text())
-        history = read_jsonl(run / "best.training.jsonl")
-        selected = next(r["validation"] for r in history if r["event"] == "epoch" and
-                        r["epoch"] == configs[method]["selected_epoch"])
-        for split in ("valid", "test", "primevul.test"):
-            path = run / f"{split}.metrics.json"
-            if not path.exists():
-                continue
-            result = json.loads(path.read_text())
-            values = result["metrics"]
-            if split == "valid":
-                reloaded[method] = {k: dict(training=selected[k], reloaded=values[k],
-                                            difference=values[k] - selected[k])
-                                     for k in ("strict_pairwise_accuracy", "pairwise_ranking_accuracy", "auc", "mcc", "f1")}
-            rows.append(dict(method=method, split=split, selected_epoch=result["selected_epoch"],
-                             threshold=values["threshold"], samples=values["samples"],
-                             pairs=values.get("pairs"), **{k: values.get(k, result.get(k)) for k in names}))
-    valid = {r["method"]: r for r in rows if r["split"] == "valid"}
-    if not {"bce", "pair_joint"}.issubset(valid):
-        raise ValueError("BCE and Joint require completed Valid predictions")
-    budgets = {(c["train_samples"], c["valid_samples"], c["optimizer_steps"],
-                json.dumps(c["training_config"], sort_keys=True)) for c in configs.values()}
-    if len(budgets) != 1 or any(r["threshold"] != 0.5 for r in rows):
-        raise ValueError("paired controls must share data budgets and threshold 0.5")
-    baseline, joint = valid["bce"], valid["pair_joint"]
-    members = read_jsonl(Path(data_dir) / "primevul_paired/valid.jsonl")
-    pairs = paired_groups(members)
-    statuses = {}
-    for method in valid:
-        predictions = read_jsonl(root / "primevul_paired" / method / "valid.predictions.jsonl")
-        if [(r["sample_key"], r["label"]) for r in predictions] != [(r["sample_key"], r["label"]) for r in members]:
-            raise ValueError("all pair methods must evaluate the same ordered official Valid members")
-        by_key = {r["sample_key"]: r for r in predictions}
-        statuses[method] = [all(by_key[r["sample_key"]]["prediction"] == r["label"] for r in pair) for pair in pairs]
-    changes = {method: dict(
-        fixed_pairs=sum(not a and b for a, b in zip(statuses["bce"], own)),
-        regressed_pairs=sum(a and not b for a, b in zip(statuses["bce"], own)),
-        common_wrong_pairs=sum(not a and not b for a, b in zip(statuses["bce"], own)))
-        for method, own in statuses.items()}
-    gains = {k: joint[k] - baseline[k] for k in ("strict_pairwise_accuracy", "auc", "mcc", "f1", "logit_gap", "mean_abs_logit")}
-    passed = gains["strict_pairwise_accuracy"] >= 0.02 and gains["auc"] >= 0 and gains["mcc"] >= 0
-    gate = dict(passed=passed, rule="Joint minus BCE: Strict Pairwise Accuracy >= +0.02, AUC >= 0, MCC >= 0; fixed before pilot training; Test never used", differences=gains)
-    write_json(root / "results.json", dict(data=data, training=configs, results=rows, valid_gate=gate,
-                                         valid_pair_changes=changes, training_validation_comparison=reloaded))
-    with (root / "comparison.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
-        writer.writeheader(); writer.writerows(rows)
-    lines = ["# PrimeVul 官方漏洞—修复对判别学习", "",
-             "CodeBERT、2048逻辑输入、原生滑动窗口及共享线性分类头不变。单函数推理；固定Sigmoid阈值0.5，不搜索阈值。", "",
-             "BCE为两函数BCE的平均；Ranking=logsumexp(0, Δ−z_v+z_p)，Boundary=logsumexp(0,m−z_v,m+z_p)，Joint=logsumexp(0,m−z_v,m+z_p,Δ−z_v+z_p)。三组约束统一λ=0.2、m=0.2、Δ=0.6。按配对平均。", "",
-             "官方配对按相邻互补标签读取，不用项目/提交元数据异常删对。重复的上游idx用原始行位置区分并保留；源idx另存。Train与任意Valid/Test编码输入相同的整对不进入训练。对内不可区分的Train配对保留相同BCE成员，但不施加任何成对约束。Valid/Test原始成员全部保留。", "",
-             "选模：仅Clean Valid，Strict Pairwise Accuracy/MCC/AUC/F1顺序，完全相同保留早轮。严格配对正确要求漏洞预测为1、修复预测为0；Ranking要求z_v>z_p，平局不计正确；已核实编码相同的配对视为排序平局，保留在分母中，不把浮点归约噪声当成功。训练日志的原始浮点Ranking值原样保留；最终指标从已保存预测统一重算，此修正不影响不使用Ranking的选模。边界违反率表示z_v<m或z_p>−m，不等同于分类错误。", "",
-             "| Split | 原始配对 | 使用配对 | 对内不可区分 |", "|---|---:|---:|---:|"]
-    for split in ("train", "valid", "test"):
-        item = data["final"][split]
-        lines.append(f"| {split} | {data['native_pairs'][split]} | {item['pairs']} | {item['indistinguishable_pairs']} |")
-    lines += ["", f"Train泄漏排除{len(data['removed_training_pairs'])}对；元数据异常{len(data['metadata_anomalies'])}对。原始跨Split重复及上游idx重复详见results.json。Test这里只作数据核验，是否模型评价由后面的结果行明确区分。", "",
-              "| 方法 | Split | Epoch | N对 | Strict Pair Acc | Ranking Acc | AUC | MCC | F1 | Logit Gap | 平均绝对Logit | 边界违反率 |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    for r in rows:
-        values = [r[k] for k in ("strict_pairwise_accuracy", "pairwise_ranking_accuracy", "auc", "mcc", "f1", "logit_gap", "mean_abs_logit", "boundary_violation_rate")]
-        lines.append(f"| {r['method']} | {r['split']} | {r['selected_epoch']} | {r['pairs'] or '—'} | " + " | ".join("—" if v is None else f"{v:.4f}" for v in values) + " |")
-    lines += ["", "完整指标、逐样本Logit、混淆计数和成对可区分子集指标保存在各方法目录。AUC和MCC/F1同时用于检查分类收益，不能仅依据Logit Gap或绝对Logit扩大判定有效。", "",
-              "## 预设Valid门槛", "", gate["rule"], "",
-              f"Joint−BCE：Strict {gains['strict_pairwise_accuracy']:+.4f}，AUC {gains['auc']:+.4f}，MCC {gains['mcc']:+.4f}，F1 {gains['f1']:+.4f}。", "",
-              "门槛通过，可按预设协议进入完整Train的BCE/Joint对照及一次最终Test评价。" if passed else "门槛未通过，停止全量训练；不根据Test调整模型或损失。", "",
-              "单Seed、固定512对试验用于检验最小假设，不证明跨种子稳定性。若目录中没有test指标，说明没有进行Test推理。", ""]
-    lines += ["| 方法 | BCE错误→正确对 | BCE正确→错误对 | 共同错误对 |", "|---|---:|---:|---:|"]
-    lines += [f"| {method} | {c['fixed_pairs']} | {c['regressed_pairs']} | {c['common_wrong_pairs']} |" for method, c in changes.items()]
-    lines += ["", f"Joint的Logit Gap相对BCE改变{gains['logit_gap']:+.6f}，平均绝对Logit改变{gains['mean_abs_logit']:+.6f}。"
-              f"但严格配对正确数为{round(joint['strict_pairwise_accuracy'] * len(pairs))}/{len(pairs)}，"
-              f"BCE为{round(baseline['strict_pairwise_accuracy'] * len(pairs))}/{len(pairs)}。"
-              "分数差或尺度扩大不能替代固定阈值下的分类改善；方法间也可能同时修正和损伤不同配对，不能将其直接解释成单一标量缩放。", ""]
-    auc_drift = max(abs(v["auc"]["difference"]) for v in reloaded.values())
-    lines += [f"训练记录与真实重载的AUC最大差为{auc_drift:.8f}；具体差异保存在training_validation_comparison。"
-              "最终表使用已保存的重载预测。编码相同的函数仍可能因浮点归约产生微小分数差，排序指标按已核实的输入等价关系处理平局。", ""]
-    (root / "report.md").write_text("\n".join(lines))
-    return dict(output=str(root), rows=len(rows), valid_gate=gate)
-
-
 def report(output_dir, data_dir):
     root = Path(output_dir)
     rows, training_runs = [], {}
     metric_names = ("accuracy", "precision", "recall", "f1", "mcc", "auc", "auprc")
     for dataset in ("primevul", "megavul"):
-        target_dataset = next(d for d in ("primevul", "megavul") if d != dataset)
         training_runs[dataset] = {}
         for method in METHODS:
             run = root / dataset / method
@@ -805,11 +648,19 @@ def report(output_dir, data_dir):
                     "metrics"
                 ]
                 rows.append(
-                    dict(common, dataset=dataset, split=split, view="clean", **clean[split])
+                    dict(
+                        common,
+                        dataset=dataset,
+                        split=split,
+                        view="clean",
+                        **clean[split],
+                    )
                 )
             robustness = json.loads((run / "robustness.metrics.json").read_text())
             for setting in ("fixed", "heldout", "adaptive"):
-                value = robustness[setting if setting == "adaptive" else setting + "_overall"]
+                value = robustness[
+                    setting if setting == "adaptive" else setting + "_overall"
+                ]
                 for kind in ("all", "strict_semantic", "input_only_stress"):
                     result = value[kind]
                     rows.append(
@@ -825,31 +676,13 @@ def report(output_dir, data_dir):
                             eligible=result["eligible"],
                         )
                     )
-            target = json.loads((run / f"{target_dataset}.test.metrics.json").read_text())[
-                "metrics"
-            ]
-            differences = {
-                f"delta_{key}": (
-                    target[key] - clean["test"][key]
-                    if target[key] is not None and clean["test"][key] is not None
-                    else None
-                )
-                for key in metric_names
-            }
-            rows.append(
-                dict(
-                    common,
-                    dataset=target_dataset,
-                    split="test",
-                    view="transfer",
-                    **target,
-                    **differences,
-                )
-            )
     data = {
-        d: json.loads((Path(data_dir) / d / "statistics.json").read_text()) for d in ("primevul", "megavul")
+        d: json.loads((Path(data_dir) / d / "statistics.json").read_text())
+        for d in ("primevul", "megavul")
     }
-    write_json(root / "comparison.json", dict(data=data, training=training_runs, results=rows))
+    write_json(
+        root / "comparison.json", dict(data=data, training=training_runs, results=rows)
+    )
     fields = [
         "training_dataset",
         "method",
@@ -868,7 +701,6 @@ def report(output_dir, data_dir):
         "asr_count",
         "asr_denominator",
         "eligible",
-        *(f"delta_{key}" for key in metric_names),
     ]
     with (root / "comparison.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
@@ -882,3 +714,317 @@ def report(output_dir, data_dir):
         rows=len(rows),
         comparison=str(root / "comparison.csv"),
     )
+
+
+@torch.no_grad()
+def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
+    """Official probability threshold and line-weighted F1 checkpoint criterion."""
+    import numpy as np
+    from sklearn.metrics import (
+        f1_score,
+        precision_score,
+        recall_score,
+        confusion_matrix,
+    )
+    from .training import paired_loader, paired_forward
+    from .metrics import paired_metrics
+
+    loader = loader if loader is not None else paired_loader(rows, tokenizer, variant)
+    model.eval()
+    predictions = []
+    scores = []
+    line_y = []
+    line_p = []
+    loss = 0.0
+    at = 0
+    for batch in training_bar(loader, desc=f"Valid {variant}"):
+        value, prob = paired_forward(model, batch, variant, device)
+        loss += float(value)
+        if variant == "localizer":
+            for y, p in zip(batch[1], prob):
+                p = p.cpu().tolist()
+                ys = y[: len(p)].tolist()
+                if any(v < 0 for v in ys):
+                    raise ValueError(
+                        "upstream localizer emitted a padded/undefined line; inspect truncation before training"
+                    )
+                line_y.extend(ys)
+                line_p.extend(p)
+                predictions.append(
+                    dict(
+                        sample_key=rows[at]["sample_key"],
+                        line_scores=p,
+                        lines_predicted=[i for i, v in enumerate(p) if v > 0.5],
+                    )
+                )
+                at += 1
+        else:
+            scores.extend(prob[:, 0].cpu().tolist())
+    if variant == "localizer":
+        pred = np.asarray(line_p) > 0.5
+        result = dict(
+            f1=f1_score(line_y, pred, average="weighted", zero_division=0),
+            precision=precision_score(line_y, pred, zero_division=0),
+            recall=recall_score(line_y, pred, zero_division=0),
+            lines=len(line_y),
+            modified_lines=sum(line_y),
+            confusion_matrix=confusion_matrix(line_y, pred, labels=[0, 1]).tolist(),
+            loss=loss / len(loader),
+        )
+    else:
+        result = paired_metrics(rows, scores)
+        result["loss"] = loss / len(loader)
+        predictions = [
+            dict(
+                sample_key=r["sample_key"],
+                pair_key=r["pair_key"],
+                target=r["target"],
+                probability=p,
+                prediction=int(p > 0.5),
+            )
+            for r, p in zip(rows, scores)
+        ]
+    return result, predictions
+
+
+def load_paired(checkpoint, device):
+    model, tokenizer = core.losver_model(
+        checkpoint["model_path"], checkpoint["variant"]
+    )
+    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    return model.to(device).eval(), tokenizer
+
+
+@torch.no_grad()
+def localize_paired(data_dir, output_dir, split, *, device="auto"):
+    """Single-function prediction: this function never opens Diff annotations."""
+    from .training import paired_loader, paired_forward
+
+    device = core.resolve_device(device)
+    root = Path(output_dir) / "primevul_paired/losver_localizer"
+    cp = torch.load(root / "best-f1.pt", map_location="cpu", weights_only=False)
+    model, tokenizer = load_paired(cp, device)
+    rows = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.jsonl")
+    # No training/Valid/Test counterpart or modification label enters this loader.
+    probabilities = []
+    for batch in training_bar(
+        paired_loader(rows, tokenizer, "localizer"), desc=f"Localize {split}"
+    ):
+        probabilities.extend(
+            p.cpu().tolist()
+            for p in paired_forward(
+                model, batch, "localizer", device, with_labels=False
+            )
+        )
+    if len(probabilities) != len(rows):
+        raise ValueError("localizer prediction count differs")
+    predicted = [
+        dict(r, lines_predicted=[i for i, p in enumerate(v) if p > 0.5])
+        for r, v in zip(rows, probabilities)
+    ]
+    write_jsonl(root / f"{split}.predicted.jsonl", predicted)
+    write_jsonl(
+        root / f"{split}.line_scores.jsonl",
+        [
+            dict(sample_key=r["sample_key"], line_scores=v)
+            for r, v in zip(rows, probabilities)
+        ],
+    )
+    del model, cp
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    return predicted
+
+
+def evaluate_paired(
+    data_dir, output_dir, methods, *, device="auto", splits=("valid", "test")
+):
+    from .training import LOSVER_METHODS, LOSVER_VARIANTS, paired_rows
+
+    if any(m not in LOSVER_METHODS for m in methods):
+        raise ValueError("official paired evaluation requires LOSVER methods")
+    device = core.resolve_device(device)
+    for method in methods:
+        variant = LOSVER_VARIANTS[method]
+        run = Path(output_dir) / "primevul_paired" / method
+        cp = torch.load(
+            run / ("best-f1.pt" if variant == "localizer" else "best-p_c.pt"),
+            map_location="cpu",
+            weights_only=False,
+        )
+        if not (run / "training.metrics.json").exists():
+            raise ValueError("training must complete before formal evaluation")
+        model, tokenizer = load_paired(cp, device)
+        for split in splits:
+            if variant == "localizer" and split == "test":
+                # Normal detector localization is source-only. Oracle line-quality metrics are separate.
+                localize_paired(data_dir, output_dir, split, device=device)
+                continue
+            rows = paired_rows(data_dir, output_dir, variant, split)
+            value, predictions = validate_paired(
+                model, rows, tokenizer, variant, device
+            )
+            write_json(
+                run / f"{split}.metrics.json",
+                dict(
+                    selected_epoch=cp["selected_epoch"],
+                    oracle=variant == "oracle",
+                    metrics=value,
+                ),
+            )
+            write_jsonl(run / f"{split}.predictions.jsonl", predictions)
+            print(method, split, json.dumps(value), flush=True)
+        del cp, model
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+
+def paired_report(output_dir, data_dir):
+    from .training import LOSVER_CONFIG
+
+    root = Path(output_dir) / "primevul_paired"
+    data = json.loads((Path(data_dir) / "primevul_paired/statistics.json").read_text())
+    results = []
+    paper = dict(unixcoder=0.1011, losver=0.1401, losver_oracle=0.3316)
+    for method in ("unixcoder", "losver", "losver_oracle"):
+        run = root / method
+        training = json.loads((run / "training.metrics.json").read_text())
+        for split in ("valid", "test"):
+            record = json.loads((run / f"{split}.metrics.json").read_text())
+            if record["selected_epoch"] != training["selected_epochs"]["p_c"]:
+                raise ValueError("saved evaluation uses a different selected epoch")
+            v = record["metrics"]
+            rows = read_jsonl(run / f"{split}.predictions.jsonl")
+            from .metrics import paired_metrics
+
+            checked = paired_metrics(rows, [r["probability"] for r in rows])
+            if any(checked[k] != v[k] for k in checked):
+                raise ValueError("saved metrics differ from predictions")
+            results.append(
+                dict(
+                    method=method,
+                    split=split,
+                    oracle=method == "losver_oracle",
+                    epoch=record["selected_epoch"],
+                    **v,
+                    paper_p_c=paper[method] if split == "test" else None,
+                    delta_paper_p_c=(
+                        v["p_c"] - paper[method] if split == "test" else None
+                    ),
+                )
+            )
+    write_json(
+        root / "comparison.json", dict(config=LOSVER_CONFIG, data=data, results=results)
+    )
+    fields = [
+        "method",
+        "split",
+        "oracle",
+        "epoch",
+        "pairs",
+        "p_c",
+        "p_v",
+        "p_b",
+        "p_r",
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "paper_p_c",
+        "delta_paper_p_c",
+    ]
+    with (root / "comparison.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fields, extrasaction="ignore", lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(results)
+    lines = [
+        "# LOSVER：PrimeVul 原始 Paired 复现",
+        "",
+        "官方原始 Train/Valid/Test：4354/562/564 对；不重划分、不重采样。Seed 123456，Batch 8，512 Token。定位器40 Epoch按Valid加权行F1选模；三个分类器16 Epoch按Valid P-C选模。固定概率>0.5。",
+        "",
+        "| 模型 | Epoch | Test P-C | P-V | P-B | P-R | Accuracy | Precision | Recall | F1 | 论文 P-C |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in results:
+        if r["split"] == "test":
+            lines.append(
+                "| "
+                + r["method"]
+                + f" | {r['epoch']}"
+                + " | "
+                + " | ".join(
+                    f"{r[k]*100:.2f}%"
+                    for k in (
+                        "p_c",
+                        "p_v",
+                        "p_b",
+                        "p_r",
+                        "accuracy",
+                        "precision",
+                        "recall",
+                        "f1",
+                        "paper_p_c",
+                    )
+                )
+                + " |"
+            )
+    test = {r["method"]: r for r in results if r["split"] == "test"}
+    lines += [
+        "",
+        "预测修改行LOSVER相对baseline："
+        + "、".join(
+            f"{key} {(test['losver'][key] - test['unixcoder'][key])*100:+.2f}个百分点"
+            for key in ("p_c", "accuracy", "f1")
+        )
+        + "。这些是本轮固定协议的实测差值。",
+        "",
+        "源Valid选模："
+        + "；".join(
+            f"{r['method']} Epoch {r['epoch']}，P-C {r['p_c']*100:.2f}%"
+            for r in results
+            if r["split"] == "valid"
+        )
+        + "。",
+        "",
+        "| Split | 原始对数 | 函数数 | baseline编码相同对 | 加权检测器Token ID相同对 | 可见修改行/全部修改行 |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for split, info in data["splits"].items():
+        lines.append(
+            f"| {split} | {info['pairs']} | {info['functions']} | "
+            f"{info['identical_inputs']['baseline']} | {info['identical_inputs']['oracle']} | "
+            f"{info['visible_modified_lines']}/{info['modified_lines']} |"
+        )
+    locator = json.loads((root / "losver_localizer/best-f1.json").read_text())
+    lv = locator["validation"]
+    lines += [
+        "",
+        "编码相同指Token ID相同，Oracle的真实修改行权重仍可能不同；不删除这些官方成员。跨Split交集："
+        + "；".join(
+            f"{name} 源码={info['exact_sources']}、baseline编码={info['encoded_inputs']['baseline']}"
+            for name, info in data["overlap"].items()
+        )
+        + "。",
+        "",
+        f"定位器选定Epoch {locator['epoch']}：Valid加权行F1 {lv['f1']*100:.2f}%，"
+        f"修改行Precision {lv['precision']*100:.2f}%、Recall {lv['recall']*100:.2f}%。"
+        "加权行F1与修改行正类F1不同。",
+        "",
+        f"官方换行匹配保留：Valid物理可见行{data['splits']['valid']['visible_lines']}，"
+        f"实际定位器输出行{lv['lines']}；可见正标签{data['splits']['valid']['visible_modified_lines']}，"
+        f"实际消费正标签{lv['modified_lines']}。Tokenizer会将空白和换行合并，官方精确换行ID匹配可能遗漏这些边界；"
+        "以上数量差不代表已量化全部错位。没有据此修改规则或使用Test调参。",
+        "",
+        "Oracle单独读取真实修改行；正常检测只读取单函数及定位器预测，不读测试Diff。",
+        "",
+        "模型和预处理忠实对照官方源码 a158905cb45b4400f481f18eeb1cb4473ccfccdc；加权检测器保留原实现的第0维风险、Softmax前padding分数0及512截断细节。基线使用官方RobertaForSequenceClassification头。",
+        "",
+        "环境差异：当前Torch 2.9.1/Transformers 4.57.3，官方Torch 2.4.1/Transformers 4.19.0；使用eager FP32注意力和Transformers4.19的AdamW更新。完整参数、逐Epoch日志、预测和权重分别保存在各方法目录。",
+        "",
+        "数据与编码重复、元数据异常及不可区分配对见data/primevul_paired/statistics.json；原始成员全部保留，不通过修改Test口径追逐论文指标。",
+        "",
+        "论文与源码差异：正式论文IV-E的通用检测设置为8 Epoch、按Valid Accuracy选模；官方PrimeVul专用脚本默认16 Epoch，Test加载最佳Valid P-C权重。本轮采用后者，未根据Test切换权重或选择协议。",
+        "",
+    ]
+    (root / "report.md").write_text("\n".join(lines))
+    return results

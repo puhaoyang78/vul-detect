@@ -1,84 +1,85 @@
-"""Shared data preparation, training, evaluation and Motivation experiments."""
+"""Prepare, train and evaluate dynamic augmentation and official LOSVER."""
 
 from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-
 from .data import DATASETS
 
 
 def build_parser():
-    from .training import METHODS, GENERALIZATION_METHODS, PAIRED_METHODS, MIL_METHODS
+    from .training import METHODS, LOSVER_METHODS
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    prepare = sub.add_parser(
-        "prepare", help="retain positives, balance negatives and check exact leakage"
+    p = sub.add_parser("prepare")
+    p.add_argument("--raw-root", type=Path, required=True)
+    p.add_argument("--output-dir", type=Path, default=Path("data"))
+    p.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
+    p.add_argument(
+        "--paired",
+        action="store_true",
+        help="official PrimeVul original pairs for LOSVER",
     )
-    prepare.add_argument("--raw-root", type=Path, required=True)
-    prepare.add_argument("--output-dir", type=Path, default=Path("data"))
-    prepare.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
-    prepare.add_argument("--paired", action="store_true", help="prepare official PrimeVul pairs, preserving held-out members")
-    prepare.add_argument("--model", default="/home/PublicData/PHY-data/resource/codebert-base")
+    p.add_argument(
+        "--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine"
+    )
     for command in ("train", "candidates", "evaluate"):
         p = sub.add_parser(command)
         p.add_argument("--data-dir", type=Path, default=Path("data"))
         p.add_argument("--output-dir", type=Path, default=Path("results"))
-        p.add_argument("--dataset", choices=(*DATASETS, "reveal", "primevul_paired", "all"), default="all")
+        p.add_argument(
+            "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
+        )
         if command in ("train", "candidates"):
-            p.add_argument("--model", default="microsoft/codebert-base")
+            p.add_argument(
+                "--model",
+                help="defaults to the local pretrained model for the selected method",
+            )
         if command in ("train", "evaluate"):
-            p.add_argument("--methods", nargs="+", choices=(*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:], *MIL_METHODS[1:]), default=list(METHODS))
+            p.add_argument(
+                "--methods",
+                nargs="+",
+                choices=(*METHODS, *LOSVER_METHODS),
+                default=list(METHODS),
+            )
             p.add_argument("--device", default="auto")
+        if command == "train":
+            p.add_argument(
+                "--hard-selection", choices=("hardest", "boundary"), default="hardest"
+            )
+            p.add_argument(
+                "--vat-direction",
+                choices=("finite_difference", "logit"),
+                default="finite_difference",
+            )
+            p.add_argument("--train-limit", type=int)
+        if command in ("train", "evaluate"):
+            p.add_argument("--valid-limit", type=int)
+        if command in ("candidates", "evaluate"):
+            p.add_argument("--test-limit", type=int)
         if command == "evaluate":
             p.add_argument("--clean-only", action="store_true")
             p.add_argument("--split", choices=("valid", "test", "all"), default="all")
-            p.add_argument("--single-function-test", action="store_true", help="also evaluate ordinary PrimeVul Test with paired checkpoints")
-        if command == "train":
-            from .prsc import MASK_METHODS
-            p.add_argument("--hard-selection", choices=("hardest", "boundary"), default="hardest")
-            p.add_argument("--vat-direction", choices=("finite_difference", "logit"), default="finite_difference")
-            p.add_argument("--representation-mask", choices=MASK_METHODS, default="none")
-            p.add_argument("--mask-fraction", type=float, default=0.05)
-            p.add_argument("--mask-weight", type=float, default=0.2)
-            p.add_argument("--train-limit", type=int, help="balanced diagnostic subset; default: full Train")
-            p.add_argument("--train-pair-limit", type=int, help="sample complete official Train pairs; default: full paired Train")
-            p.add_argument("--pair-margin", type=float, default=0.2)
-            p.add_argument("--pair-gap", type=float, default=0.6)
-            p.add_argument("--pair-weight", type=float, default=0.2, help="weight for legacy paired-logit ablations; MIL region ranking is fixed at 0.1")
-            p.add_argument("--full-source", action="store_true", help="paired MIL pilot: all source windows; ordinary official Valid PR-AUC selection")
-            p.add_argument("--pair-raw-root", type=Path, default=Path("/home/PublicData/PHY-data/vul_detect/data"))
-        if command in ("train", "evaluate"):
-            p.add_argument("--valid-limit", type=int, help="balanced diagnostic subset; default: full Valid")
-        if command in ("candidates", "evaluate"):
-            p.add_argument("--test-limit", type=int, help="balanced diagnostic subset; default: full Test")
-    p = sub.add_parser("transfer", help="bidirectional Clean transfer with source-selected checkpoints and thresholds")
-    p.add_argument("--datasets", nargs=2, choices=(*DATASETS, "reveal"), required=True)
-    p.add_argument("--data-dir", type=Path, default=Path("data"))
-    p.add_argument("--output-dir", type=Path, default=Path("results"))
-    p.add_argument("--device", default="auto")
-    p.add_argument("--methods", nargs="+", choices=GENERALIZATION_METHODS, default=["bce"])
-    p = sub.add_parser("report", help="summarize the saved PrimeVul/MegaVul six-method experiment")
-    p.add_argument("--paired", action="store_true", help="paired BCE ablation metrics and predeclared Valid gate")
+    p = sub.add_parser("report")
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
-    p = sub.add_parser("motivation", help="four-dataset ordinary-BCE and Shortcut Features diagnostics")
-    p.add_argument("stage", choices=("features", "report", "tfidf", "tfidf-report", "transfer-diagnosis", "transfer-train-probe"))
-    p.add_argument("--data-dir", type=Path, default=Path("data"))
-    p.add_argument("--output-dir", type=Path, default=Path("results"))
-    p.add_argument("--dataset", choices=(*DATASETS, "all"), default="all")
-    p.add_argument("--model", default="microsoft/codebert-base")
-    p.add_argument("--device", default="auto")
+    p.add_argument(
+        "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
+    )
     p = sub.add_parser("infer")
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--source-file", type=Path, required=True)
-    p.add_argument("--model", help="pretrained CodeBERT location if the checkpoint has moved")
+    p.add_argument("--model")
     p.add_argument("--device", default="auto")
-    p = sub.add_parser("ablation", help="real-checkpoint search/VAT diagnostics and four-combination report")
+    p = sub.add_parser(
+        "ablation", help="existing Hardest/Boundary and VAT direction diagnostics"
+    )
     p.add_argument("stage", choices=("probe", "report"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
-    p.add_argument("--output-dir", type=Path, default=Path("results/search_vat_ablation"))
+    p.add_argument(
+        "--output-dir", type=Path, default=Path("results/search_vat_ablation")
+    )
     p.add_argument("--checkpoint", type=Path)
     p.add_argument("--dataset", choices=DATASETS, default="primevul")
     p.add_argument("--sample-limit", type=int, default=32)
@@ -87,32 +88,11 @@ def build_parser():
     p.add_argument("--train-limit", type=int, default=1024)
     p.add_argument("--valid-limit", type=int, default=256)
     p.add_argument("--test-limit", type=int, default=256)
-    p = sub.add_parser("prsc", help="source-Train representation diagnostic and matched Clean pilot report")
-    p.add_argument("stage", choices=("probe", "report"))
-    p.add_argument("--data-dir", type=Path, default=Path("data"))
-    p.add_argument("--output-dir", type=Path, default=Path("results/prsc"))
-    p.add_argument("--checkpoint", type=Path)
-    p.add_argument("--sample-limit", type=int, choices=(128, 256), default=256)
-    p.add_argument("--device", default="auto")
-    p = sub.add_parser("static", help="BigVul/Devign/ReVeal pilot and fixed-checkpoint Test transfer")
-    p.add_argument("stage", choices=("prepare", "benchmark", "extract", "audit", "train", "report", "transfer"))
-    p.add_argument("--cache-root", type=Path, help="optional existing Joern cache root for incremental parsing")
-    p.add_argument("--raw-root", type=Path, default=Path("/home/PublicData/PHY-data/vul_detect/data"))
-    p.add_argument("--data-dir", type=Path, default=Path("data/static_guided"))
-    p.add_argument("--output-dir", type=Path, default=Path("results/static_guided"))
-    p.add_argument("--dataset", choices=("bigvul", "devign", "reveal", "all"), default="all")
-    p.add_argument("--modes", nargs="+", choices=("source", "sequence", "shuffled", "real"), default=["source", "sequence", "shuffled", "real"])
-    p.add_argument("--model", default="/home/PublicData/PHY-data/resource/codebert-base")
-    p.add_argument("--device", default="auto")
     return parser
 
 
 def main():
     args = build_parser().parse_args()
-    if args.command == "static":
-        from .static_experiment import run
-        run(args)
-        return
     if args.command == "prepare":
         from .data import prepare, prepare_paired
 
@@ -132,14 +112,19 @@ def main():
         else (getattr(args, "dataset", None),)
     )
     if args.command == "train":
-        from .training import train
+        from .training import train, LOSVER_METHODS
 
         for dataset in datasets:
             for method in args.methods:
+                path = args.model or (
+                    "/home/PublicData/PHY-data/resource/unixcoder-base-nine"
+                    if method in LOSVER_METHODS
+                    else "/home/PublicData/PHY-data/resource/codebert-base"
+                )
                 train(
                     args.data_dir,
                     args.output_dir,
-                    args.model,
+                    path,
                     dataset,
                     method,
                     device=args.device,
@@ -147,22 +132,19 @@ def main():
                     vat_direction=args.vat_direction,
                     train_limit=args.train_limit,
                     valid_limit=args.valid_limit,
-                    representation_mask=args.representation_mask,
-                    mask_fraction=args.mask_fraction,
-                    mask_weight=args.mask_weight,
-                    train_pair_limit=args.train_pair_limit,
-                    pair_margin=args.pair_margin,
-                    pair_gap=args.pair_gap,
-                    pair_weight=args.pair_weight,
-                    full_source=args.full_source,
-                    pair_raw_root=args.pair_raw_root,
                 )
     elif args.command == "candidates":
         from .evaluation import prepare_candidates
 
+        if "primevul_paired" in datasets:
+            raise ValueError("LOSVER uses the official clean paired evaluation")
         for dataset in datasets:
             prepare_candidates(
-                args.data_dir, args.output_dir, args.model, dataset, test_limit=args.test_limit
+                args.data_dir,
+                args.output_dir,
+                args.model or "/home/PublicData/PHY-data/resource/codebert-base",
+                dataset,
+                test_limit=args.test_limit,
             )
     elif args.command == "evaluate":
         from .evaluation import evaluate
@@ -178,81 +160,71 @@ def main():
                 valid_limit=args.valid_limit,
                 test_limit=args.test_limit,
                 splits=("valid", "test") if args.split == "all" else (args.split,),
-                single_function_test=args.single_function_test,
             )
-    elif args.command == "transfer":
-        from .evaluation import evaluate_transfer
-
-        print(json.dumps(evaluate_transfer(
-            args.data_dir, args.output_dir, args.datasets, methods=args.methods, device=args.device
-        ), indent=2))
     elif args.command == "report":
         from .evaluation import report, paired_report
 
-        print(json.dumps((paired_report if args.paired else report)(args.output_dir, args.data_dir), indent=2))
-    elif args.command == "motivation":
-        from .motivation import feature_experiment, motivation_report, tfidf_experiment, tfidf_report, transfer_diagnostics, transfer_train_probe
-
-        if args.stage == "transfer-train-probe":
-            print(json.dumps(transfer_train_probe(args.data_dir, args.output_dir, args.model, args.device), indent=2))
-        elif args.stage == "transfer-diagnosis":
-            print(json.dumps(transfer_diagnostics(args.data_dir, args.output_dir, args.model), indent=2))
-        elif args.stage == "features":
-            for dataset in datasets:
-                feature_experiment(args.data_dir, args.output_dir, dataset, args.model)
-        elif args.stage == "report":
-            print(json.dumps(motivation_report(args.data_dir, args.output_dir, datasets), indent=2))
-        else:
-            if args.stage == "tfidf":
-                for dataset in datasets:
-                    tfidf_experiment(args.data_dir, args.output_dir, dataset)
-            print(json.dumps(tfidf_report(args.output_dir, datasets), indent=2))
-    elif args.command == "ablation":
-        from .ablation import comparison, probe
-
-        if args.stage == "probe":
-            if args.checkpoint is None:
-                raise ValueError("ablation probe requires --checkpoint")
-            probe(args.data_dir, args.output_dir, args.checkpoint, sample_limit=args.sample_limit,
-                  repeats=args.repeats, device=args.device)
-        else:
-            comparison(args.data_dir, args.output_dir, args.dataset, train_limit=args.train_limit,
-                       valid_limit=args.valid_limit, test_limit=args.test_limit)
-    elif args.command == "prsc":
-        from . import prsc
-
-        if args.stage == "probe":
-            if args.checkpoint is None:
-                raise ValueError("prsc probe requires --checkpoint")
-            prsc.probe(args.data_dir, args.output_dir, args.checkpoint,
-                       sample_limit=args.sample_limit, device=args.device)
-        else:
-            prsc.comparison(args.data_dir, args.output_dir)
+        print(
+            json.dumps(
+                (paired_report if args.dataset == "primevul_paired" else report)(
+                    args.output_dir, args.data_dir
+                ),
+                indent=2,
+            )
+        )
     elif args.command == "infer":
         from .metrics import decision_boundary
         from .model import predict_checkpoint
 
         cp = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-        with args.source_file.open(encoding="utf-8", newline="") as handle:
-            raw_source = handle.read()
+        with args.source_file.open(encoding="utf-8", newline="") as f:
+            source = f.read()
         logits = predict_checkpoint(
             args.checkpoint,
-            [{"raw_source": raw_source}],
+            [{"raw_source": source}],
             device=args.device,
             model_path=args.model,
         )
         score = float(logits.sigmoid()[0])
         threshold = cp["decision_threshold"]
+        prediction = (
+            score > threshold
+            if cp.get("protocol") == "losver"
+            else score >= decision_boundary(threshold)
+        )
         print(
             json.dumps(
                 dict(
                     logit=float(logits[0]),
                     probability=score,
                     threshold=threshold,
-                    prediction=int(score >= decision_boundary(threshold)),
+                    prediction=int(prediction),
                 )
             )
         )
+    elif args.command == "ablation":
+        from .ablation import probe, comparison
+
+        if args.stage == "probe":
+            if args.checkpoint is None:
+                raise ValueError("probe requires --checkpoint")
+            probe(
+                args.data_dir,
+                args.output_dir,
+                args.checkpoint,
+                sample_limit=args.sample_limit,
+                repeats=args.repeats,
+                device=args.device,
+            )
+        else:
+            comparison(
+                args.data_dir,
+                args.output_dir,
+                args.dataset,
+                train_limit=args.train_limit,
+                valid_limit=args.valid_limit,
+                test_limit=args.test_limit,
+            )
 
 
 if __name__ == "__main__":

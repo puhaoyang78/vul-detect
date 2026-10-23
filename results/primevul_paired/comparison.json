@@ -1,0 +1,280 @@
+{
+  "config": {
+    "seed": 123456,
+    "batch_size": 8,
+    "eval_batch_size": 8,
+    "learning_rate": 2e-05,
+    "adam_epsilon": 1e-08,
+    "weight_decay": 0.0,
+    "gradient_clip": 1.0,
+    "warmup_fraction": 0.1,
+    "block_size": 512,
+    "epochs": {
+      "baseline": 16,
+      "localizer": 40,
+      "predicted": 16,
+      "oracle": 16
+    },
+    "fp16": false,
+    "dropout_probability": 0.0,
+    "class_weight": 1.0,
+    "early_stopping": null
+  },
+  "data": {
+    "raw_root": "/home/PublicData/PHY-data/vul_detect/data/PrimeVul_original",
+    "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+    "release": "PrimeVul original",
+    "upstream_commit": "a158905cb45b4400f481f18eeb1cb4473ccfccdc",
+    "splits": {
+      "train": {
+        "pairs": 4354,
+        "functions": 8708,
+        "positive": 4354,
+        "negative": 4354,
+        "v01_pairs": 3789,
+        "old_source_members": 7561,
+        "duplicate_idx_rows": 5,
+        "metadata_anomalies": [],
+        "identical_inputs": {
+          "baseline": 1254,
+          "localizer": 1268,
+          "oracle": 1249
+        },
+        "visible_lines": 360188,
+        "visible_modified_lines": 22320,
+        "modified_lines": 49771,
+        "no_visible_line_functions": 0
+      },
+      "valid": {
+        "pairs": 562,
+        "functions": 1124,
+        "positive": 562,
+        "negative": 562,
+        "v01_pairs": 480,
+        "old_source_members": 960,
+        "duplicate_idx_rows": 4,
+        "metadata_anomalies": [],
+        "identical_inputs": {
+          "baseline": 164,
+          "localizer": 165,
+          "oracle": 164
+        },
+        "visible_lines": 43430,
+        "visible_modified_lines": 2665,
+        "modified_lines": 5401,
+        "no_visible_line_functions": 0
+      },
+      "test": {
+        "pairs": 564,
+        "functions": 1128,
+        "positive": 564,
+        "negative": 564,
+        "v01_pairs": 435,
+        "old_source_members": 868,
+        "duplicate_idx_rows": 2,
+        "metadata_anomalies": [],
+        "identical_inputs": {
+          "baseline": 163,
+          "localizer": 163,
+          "oracle": 163
+        },
+        "visible_lines": 45003,
+        "visible_modified_lines": 2684,
+        "modified_lines": 5162,
+        "no_visible_line_functions": 0
+      }
+    },
+    "overlap": {
+      "train:valid": {
+        "exact_sources": 0,
+        "encoded_inputs": {
+          "baseline": 18,
+          "localizer": 18,
+          "oracle": 18
+        }
+      },
+      "train:test": {
+        "exact_sources": 0,
+        "encoded_inputs": {
+          "baseline": 13,
+          "localizer": 13,
+          "oracle": 13
+        }
+      },
+      "valid:test": {
+        "exact_sources": 0,
+        "encoded_inputs": {
+          "baseline": 2,
+          "localizer": 2,
+          "oracle": 2
+        }
+      }
+    },
+    "protocol": "All official adjacent members retained; no resampling, no extra duplicate exclusions. Oracle Diff labels are separate from normal inputs.",
+    "identical_inputs_definition": "Token-ID equality per encoding protocol, not complete Oracle weighted-input equality. No pairs excluded."
+  },
+  "results": [
+    {
+      "method": "unixcoder",
+      "split": "valid",
+      "oracle": false,
+      "epoch": 16,
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 85,
+        "p_v": 204,
+        "p_b": 240,
+        "p_r": 33
+      },
+      "p_c": 0.1512455516014235,
+      "p_v": 0.36298932384341637,
+      "p_b": 0.42704626334519574,
+      "p_r": 0.05871886120996441,
+      "accuracy": 0.5462633451957295,
+      "precision": 0.5494296577946768,
+      "recall": 0.5142348754448398,
+      "f1": 0.53125,
+      "loss": 1.2925396922790835,
+      "paper_p_c": null,
+      "delta_paper_p_c": null
+    },
+    {
+      "method": "unixcoder",
+      "split": "test",
+      "oracle": false,
+      "epoch": 16,
+      "samples": 1128,
+      "pairs": 564,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 60,
+        "p_v": 220,
+        "p_b": 259,
+        "p_r": 25
+      },
+      "p_c": 0.10638297872340426,
+      "p_v": 0.3900709219858156,
+      "p_b": 0.4592198581560284,
+      "p_r": 0.044326241134751775,
+      "accuracy": 0.5310283687943262,
+      "precision": 0.5333333333333333,
+      "recall": 0.49645390070921985,
+      "f1": 0.5142332415059688,
+      "loss": 1.2828547542399549,
+      "paper_p_c": 0.1011,
+      "delta_paper_p_c": 0.005282978723404261
+    },
+    {
+      "method": "losver",
+      "split": "valid",
+      "oracle": false,
+      "epoch": 8,
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 90,
+        "p_v": 244,
+        "p_b": 194,
+        "p_r": 34
+      },
+      "p_c": 0.1601423487544484,
+      "p_v": 0.43416370106761565,
+      "p_b": 0.34519572953736655,
+      "p_r": 0.060498220640569395,
+      "accuracy": 0.5498220640569395,
+      "precision": 0.545751633986928,
+      "recall": 0.594306049822064,
+      "f1": 0.5689948892674617,
+      "loss": 1.6887768228729882,
+      "paper_p_c": null,
+      "delta_paper_p_c": null
+    },
+    {
+      "method": "losver",
+      "split": "test",
+      "oracle": false,
+      "epoch": 8,
+      "samples": 1128,
+      "pairs": 564,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 81,
+        "p_v": 265,
+        "p_b": 196,
+        "p_r": 22
+      },
+      "p_c": 0.14361702127659576,
+      "p_v": 0.4698581560283688,
+      "p_b": 0.3475177304964539,
+      "p_r": 0.03900709219858156,
+      "accuracy": 0.5523049645390071,
+      "precision": 0.5466034755134281,
+      "recall": 0.6134751773049646,
+      "f1": 0.5781119465329991,
+      "loss": 1.6196882498602496,
+      "paper_p_c": 0.1401,
+      "delta_paper_p_c": 0.0035170212765957554
+    },
+    {
+      "method": "losver_oracle",
+      "split": "valid",
+      "oracle": true,
+      "epoch": 11,
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 197,
+        "p_v": 265,
+        "p_b": 75,
+        "p_r": 25
+      },
+      "p_c": 0.3505338078291815,
+      "p_v": 0.47153024911032027,
+      "p_b": 0.13345195729537365,
+      "p_r": 0.04448398576512456,
+      "accuracy": 0.6530249110320284,
+      "precision": 0.6143617021276596,
+      "recall": 0.8220640569395018,
+      "f1": 0.7031963470319634,
+      "loss": 1.3036636680575973,
+      "paper_p_c": null,
+      "delta_paper_p_c": null
+    },
+    {
+      "method": "losver_oracle",
+      "split": "test",
+      "oracle": true,
+      "epoch": 11,
+      "samples": 1128,
+      "pairs": 564,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 180,
+        "p_v": 285,
+        "p_b": 86,
+        "p_r": 13
+      },
+      "p_c": 0.3191489361702128,
+      "p_v": 0.5053191489361702,
+      "p_b": 0.1524822695035461,
+      "p_r": 0.02304964539007092,
+      "accuracy": 0.6480496453900709,
+      "precision": 0.6094364351245085,
+      "recall": 0.824468085106383,
+      "f1": 0.7008289374529013,
+      "loss": 1.258574098639243,
+      "paper_p_c": 0.3316,
+      "delta_paper_p_c": -0.012451063829787223
+    }
+  ]
+}

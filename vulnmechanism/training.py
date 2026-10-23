@@ -1,4 +1,4 @@
-"""One CodeBERT training loop for BCE, source views, LP-FT/SWA and paired MIL."""
+"""CodeBERT BCE, dynamic source augmentation and VAT training."""
 
 from __future__ import annotations
 
@@ -10,13 +10,12 @@ import random
 import time
 
 import torch
-from torch.optim.swa_utils import AveragedModel
 import transformers
 
 from .artifacts import write_json
 from .augmentation import search_surface_views, surface_seed
-from .data import DATASETS, balanced_subset, paired_groups, paired_subset, read_jsonl, validation_rows
-from .metrics import metrics, paired_metrics, select_threshold
+from .data import DATASETS, balanced_subset, read_jsonl, validation_rows, write_jsonl
+from .metrics import metrics, select_threshold
 from .model import (
     AutoTokenizer,
     CodeBERT,
@@ -28,13 +27,16 @@ from .model import (
 )
 from .progress import TrainingProgress, training_bar
 from .syntax import surface_materials
-from .prsc import MASK_METHODS, RSC_REFERENCE, training_masks, masked_bce
 from .vat import VAT_CONFIG, VAT_DIRECTIONS, vat_loss
-from .pair_representation import METHODS as MIL_METHODS, RANK_WEIGHT, region_pair_ranking, representation_data, save_members
 
-METHODS = ("bce", "vat", "random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
-GENERALIZATION_METHODS = ("bce", "lp_ft", "swa")
-PAIRED_METHODS = ("bce", "pair_ranking", "pair_boundary", "pair_joint")
+METHODS = (
+    "bce",
+    "vat",
+    "random_aug_bce",
+    "hard_aug_bce",
+    "random_aug_vat",
+    "hard_aug_vat",
+)
 TRAINING = dict(
     seed=42,
     epochs=3,
@@ -47,20 +49,6 @@ TRAINING = dict(
 )
 
 
-def pair_regularizer(logits, method, *, margin=0.2, gap=0.6):
-    """One stable constraint value per [vulnerable, patched] pair."""
-    if (logits.ndim != 2 or logits.shape[1] != 2 or method not in PAIRED_METHODS
-            or not math.isfinite(margin) or not math.isfinite(gap) or margin < 0 or gap <= 2 * margin):
-        raise ValueError("paired loss requires [N,2] logits and gap > 2 * margin >= 0")
-    zv, zp = logits.unbind(dim=1)
-    terms = [torch.zeros_like(zv)]
-    if method in ("pair_boundary", "pair_joint"):
-        terms.extend((margin - zv, margin + zp))
-    if method in ("pair_ranking", "pair_joint"):
-        terms.append(gap - zv + zp)
-    return torch.logsumexp(torch.stack(terms, dim=1), dim=1)
-
-
 def function_view_batches(records, views, micro_size):
     """Every original function has total BCE weight one, with or without a view."""
     expanded, coefficients = [], []
@@ -69,7 +57,9 @@ def function_view_batches(records, views, micro_size):
         expanded.extend(dict(row, raw_source=source) for source in sources)
         coefficients.extend([1.0 / len(sources)] * len(sources))
     for start in range(0, len(expanded), micro_size):
-        yield expanded[start : start + micro_size], coefficients[start : start + micro_size]
+        yield expanded[start : start + micro_size], coefficients[
+            start : start + micro_size
+        ]
 
 
 def prepare_materials(data_dir, output_dir, dataset):
@@ -95,53 +85,37 @@ def train(
     vat_direction="finite_difference",
     train_limit=None,
     valid_limit=None,
-    representation_mask="none",
-    mask_fraction=0.05,
-    mask_weight=0.2,
-    relation_mode="none",
-    train_pair_limit=None,
-    pair_margin=0.2,
-    pair_gap=0.6,
-    pair_weight=0.2,
-    full_source=False,
-    pair_raw_root=None,
 ):
-    paired = dataset == "primevul_paired"
-    full_pairs = paired and full_source
-    if dataset not in (*DATASETS, "devign", "reveal", "primevul_paired"):
+    if method in LOSVER_METHODS:
+        if (
+            dataset != "primevul_paired"
+            or train_limit is not None
+            or valid_limit is not None
+            or config is not None
+            or hard_selection != "hardest"
+            or vat_direction != "finite_difference"
+        ):
+            raise ValueError(
+                "LOSVER requires whole official paired data and the unchanged official protocol"
+            )
+        return train_losver(data_dir, output_dir, model_path, method, device=device)
+    if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
-    from .relations import MODES, RANK, PER_TYPE
-    if relation_mode not in MODES or (relation_mode != "none" and (method != "bce" or representation_mask != "none")):
-        raise ValueError("static in-encoder program relations currently require plain BCE")
-    if method not in (*METHODS, "lp_ft", "swa", *PAIRED_METHODS[1:], *MIL_METHODS[1:]):
+    if method not in METHODS:
         raise ValueError(f"unknown method: {method}")
-    if paired:
-        allowed = MIL_METHODS if full_pairs else PAIRED_METHODS
-        if (method not in allowed or relation_mode != "none" or representation_mask != "none"
-                or train_limit is not None or valid_limit is not None
-                or not math.isfinite(pair_weight) or pair_weight < 0):
-            raise ValueError("official pairs require BCE/pair ablations, whole pairs and no extra modules")
-        if full_pairs:
-            if pair_raw_root is None:
-                raise ValueError("full-source paired MIL protocol requires the official raw root")
-        else:
-            pair_regularizer(torch.zeros(1, 2), method, margin=pair_margin, gap=pair_gap)
-    elif method in (*PAIRED_METHODS[1:], *MIL_METHODS[1:]) or train_pair_limit is not None or full_source:
-        raise ValueError("pair loss/limit requires the official primevul_paired dataset")
-    if hard_selection not in ("hardest", "boundary") or vat_direction not in VAT_DIRECTIONS:
+    if (
+        hard_selection not in ("hardest", "boundary")
+        or vat_direction not in VAT_DIRECTIONS
+    ):
         raise ValueError("unknown hard selection or VAT direction")
     if hard_selection != "hardest" and method not in ("hard_aug_bce", "hard_aug_vat"):
         raise ValueError("boundary selection requires a hard augmentation method")
-    if vat_direction != "finite_difference" and method not in ("vat", "random_aug_vat", "hard_aug_vat"):
-        raise ValueError("logit direction requires a VAT method")
-    if representation_mask not in MASK_METHODS:
-        raise ValueError("unknown representation mask")
-    if representation_mask != "none" and (
-        method != "hard_aug_bce" or hard_selection != "hardest"
-        or not math.isfinite(mask_fraction) or not 0 < mask_fraction < 1
-        or not math.isfinite(mask_weight) or mask_weight <= 0
+    if vat_direction != "finite_difference" and method not in (
+        "vat",
+        "random_aug_vat",
+        "hard_aug_vat",
     ):
-        raise ValueError("representation masks require Hardest Aug BCE and a positive mask budget")
+        raise ValueError("logit direction requires a VAT method")
     config = dict(TRAINING if config is None else config)
     if (
         config["batch_size"] <= 0
@@ -150,8 +124,6 @@ def train(
         or config["learning_rate"] <= 0
     ):
         raise ValueError("invalid training budget")
-    if method in ("lp_ft", "swa") and config["epochs"] < 3:
-        raise ValueError("LP-FT and SWA require at least three total epochs")
     run = Path(output_dir) / dataset / method
     run.mkdir(parents=True, exist_ok=True)
     target = run / "best.pt"
@@ -160,33 +132,34 @@ def train(
             f"{run}: training already started; refusing to reuse fitted weights"
         )
     builder = InputBuilder(
-        AutoTokenizer.from_pretrained(model_path, trim_offsets=not full_source), source_max_length=config["source_max_length"],
-        relation_mode=relation_mode, full_source=full_source,
+        AutoTokenizer.from_pretrained(model_path),
+        source_max_length=config["source_max_length"],
     )
-    if full_pairs:
-        train_rows, valid_rows, paired_valid, members, coverage = representation_data(
-            pair_raw_root, builder, limit=train_pair_limit, seed=42, context=2,
-            overfit=config.get("overfit_train_replay", False))
-        save_members(run, members, coverage)
-    else:
-        train_rows = read_jsonl(Path(data_dir) / dataset / "train.jsonl")
-        train_rows = (paired_subset(train_rows, train_pair_limit, config["seed"]) if paired else
-                      balanced_subset(train_rows, train_limit, config["seed"]))
-        valid_rows = balanced_subset(validation_rows(Path(data_dir) / dataset), valid_limit, config["seed"])
-    if paired and config["batch_size"] % 2:
-        raise ValueError("paired micro batch must contain a whole number of pairs")
-    units = paired_groups(train_rows) if paired else train_rows
-    unit_batch_size = config["batch_size"] // 2 if paired else config["batch_size"]
-    steps_per_epoch = math.ceil(len(train_rows) / (config["batch_size"] * config["gradient_accumulation"]))
-    if method == "swa" and steps_per_epoch < 2:
-        raise ValueError("SWA requires two distinct weight samples per averaging epoch")
+    train_rows = balanced_subset(
+        read_jsonl(Path(data_dir) / dataset / "train.jsonl"),
+        train_limit,
+        config["seed"],
+    )
+    valid_rows = balanced_subset(
+        validation_rows(Path(data_dir) / dataset), valid_limit, config["seed"]
+    )
+    units = train_rows
+    unit_batch_size = config["batch_size"]
+    steps_per_epoch = math.ceil(
+        len(train_rows) / (config["batch_size"] * config["gradient_accumulation"])
+    )
     for split, rows in (("train", train_rows), ("valid", valid_rows)):
         if not rows or {r["label"] for r in rows} != {0, 1}:
             raise ValueError(f"{split}: both classes required")
-        expected_dataset = "primevul" if full_pairs and split == "valid" else dataset
+        expected_dataset = dataset
         if any(r["dataset"] != expected_dataset or r["split"] != split for r in rows):
             raise ValueError(f"training and selection require {dataset} {split}")
-    source_views = method in ("random_aug_bce", "hard_aug_bce", "random_aug_vat", "hard_aug_vat")
+    source_views = method in (
+        "random_aug_bce",
+        "hard_aug_bce",
+        "random_aug_vat",
+        "hard_aug_vat",
+    )
     use_vat = method in ("vat", "random_aug_vat", "hard_aug_vat")
     search = method in ("hard_aug_bce", "hard_aug_vat")
     if source_views and materials is None:
@@ -198,13 +171,8 @@ def train(
     device = resolve_device(device)
     seed = config["seed"]
     seed_everything(seed)
-    line_mil = full_pairs and method != "bce"
-    rank_regions = method in ("mil_patch_rank", "mil_random_rank")
-    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda" and not full_source,
-                     relation_mode=relation_mode, readout="line_mil" if line_mil else "mean")
+    model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda")
     seed_everything(seed)
-    averaged = AveragedModel(model) if method == "swa" else None
-    averaged_steps = []
     history = TrainingProgress(target)
     metadata = dict(
         dataset=dataset,
@@ -218,55 +186,23 @@ def train(
             torch=torch.__version__,
             transformers=transformers.__version__,
             cuda=torch.version.cuda,
-            device=torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
+            device=(
+                torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu"
+            ),
         ),
         selection=f"{dataset} clean Valid: threshold MCC/F1/Accuracy/closest to 0.5; "
         "epoch MCC/F1/Accuracy/AUC",
         precision="FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
         parameter_count=sum(p.numel() for p in model.parameters()),
-        readout=model.readout,
-        static_relations=(dict(
-            mode=relation_mode, rank=RANK, per_type=PER_TYPE,
-            injection="sparse relation attention after selected CodeBERT layers",
-            layers=list(model.task_modules["relations"].layer_indices),
-            relation_budget=192,
-            window_scope="only endpoints sharing a native 512-token window",
-            extra_parameters=sum(p.numel() for p in model.task_modules["relations"].parameters()),
-        ) if relation_mode != "none" else None),
         input_protocol=dict(
-            full_source=full_source,
-            token_offsets="untrimmed source offsets" if full_source else "tokenizer default",
             logical_budget=config["source_max_length"],
             prefix_tokens=len(builder.source_prefix),
-            source_budget=None if full_source else config["source_max_length"] - len(builder.source_prefix) - 2,
+            source_budget=config["source_max_length"] - len(builder.source_prefix) - 2,
             window=512,
             stride=(512 - len(builder.source_prefix) - 2) // 2,
             pooling="mean over unique source positions; prefix/BOS/EOS averaged across windows",
         ),
         vat=dict(VAT_CONFIG, direction=vat_direction) if use_vat else None,
-        representation_mask=(dict(
-            method=representation_mask, fraction=mask_fraction, weight=mask_weight,
-            count=math.ceil(model.task_modules["classifier"].in_features * mask_fraction),
-            eligibility="selected strict semantic view with changed truncated encoder input",
-            reference_dropout=False, mask_detached=True,
-            reference_source="current Hardest scoring; no additional encoder queries" if representation_mask == "prsc" else "linear-head closed form / independent RNG",
-            loss="original two-view BCE + weight * masked two-view BCE; each pair averaged",
-            masked_representations="reuse differentiable main-forward representations with training dropout",
-            rsc_reference=RSC_REFERENCE if representation_mask == "rsc" else None,
-            rsc_protocol="original signed Top-Gradient mask; shared additive two-view objective; no CNN batch/spatial curriculum"
-            if representation_mask == "rsc" else None,
-        ) if representation_mask != "none" else None),
-        lp_ft=(dict(linear_probe_epochs=1, linear_probe_learning_rate=1e-3,
-                    fine_tune_epochs=config["epochs"] - 1, encoder_dropout_during_probe=False,
-                    reset_optimizer_at_fine_tune=True,
-                    selection="fine-tuning epochs only",
-                    reference="https://openreview.net/forum?id=UYneFzXSJWh")
-               if method == "lp_ft" else None),
-        swa=(dict(start_epoch=2, samples_per_epoch=2, averaging="equal parameter weights",
-                  sample_steps_per_epoch=[math.ceil(steps_per_epoch / 2), steps_per_epoch],
-                  learning_rate="unchanged constant BCE learning rate",
-                  selection="averaged models only, at epoch ends with at least two weight samples",
-                  reference="https://arxiv.org/abs/1803.05407") if method == "swa" else None),
         augmentation=(
             dict(
                 search=search,
@@ -281,36 +217,6 @@ def train(
             else None
         ),
     )
-    if paired and not full_pairs:
-        metadata.update(
-            selection="fixed sigmoid threshold 0.5; Clean Valid epoch Strict Pairwise Accuracy/MCC/AUC/F1; earlier epoch wins ties",
-            paired=dict(margin=pair_margin, gap=pair_gap, weight=pair_weight, train_pair_limit=train_pair_limit,
-                        train_pairs=len(units), valid_pairs=len(paired_valid)//2 if full_pairs else len(paired_groups(valid_rows)),
-                        eligible_train_pairs=sum(p[0]["pair_distinguishable"] for p in units),
-                        loss="mean over pairs of mean two-function BCE + weight * logsumexp constraints; indistinguishable pairs have BCE only",
-                        boundary="logsumexp(0,m-z_v,m+z_p)", ranking="logsumexp(0,gap-z_v+z_p)",
-                        joint="logsumexp(0,m-z_v,m+z_p,gap-z_v+z_p)",
-                        selection_keys=["strict_pairwise_accuracy", "mcc", "auc", "f1"]))
-    if full_pairs:
-        metadata.update(
-            selection="fixed sigmoid threshold 0.5; official ordinary single-function Valid PR-AUC/MCC; earlier epoch wins ties",
-            pair_raw_root=str(pair_raw_root),
-            line_mil=dict(enabled=line_mil, rank_regions=rank_regions, method=method,
-                          weight=RANK_WEIGHT if rank_regions else 0.0, context_lines=2,
-                          top_k=3, attention_hidden=128 if line_mil else None,
-                          window_batch_size=8,
-                          extra_parameters=sum(p.numel() for k,m in model.task_modules.items()
-                                               if k.startswith("attention_") for p in m.parameters()),
-                          loss="two-function BCE mean + 0.1 * mean effective-pair softplus(U_p-U_v); no other auxiliary losses"),
-            paired=dict(train_pairs=len(units), valid_pairs=len(paired_groups(paired_valid)),
-                        train_pair_limit=train_pair_limit,
-                        eligible_train_pairs=coverage["coverage"]["eligible_pairs"],
-                        selection_keys=["auprc", "mcc"]),
-        )
-        if line_mil:
-            metadata["input_protocol"]["pooling"] = "overlap-averaged source tokens -> nonempty source-line means -> gated attention; prefix/special/pad excluded"
-        if config.get("overfit_train_replay"):
-            metadata["selection"] = "diagnostic Train replay only; not a Valid or Test experiment"
     write_json(run / "config.json", metadata)
     best_key = (float("-inf"),) * 4
     global_step = 0
@@ -319,19 +225,15 @@ def train(
     accumulation = config["gradient_accumulation"]
     for epoch in range(1, config["epochs"] + 1):
         started = time.monotonic()
-        linear_probe = method == "lp_ft" and epoch == 1
-        if epoch == 1 or (method == "lp_ft" and epoch == 2):
-            model.encoder.requires_grad_(not linear_probe)
+        if epoch == 1:
             optimizer = torch.optim.AdamW(
-                (p for p in model.parameters() if p.requires_grad),
-                lr=1e-3 if linear_probe else config["learning_rate"],
+                model.parameters(),
+                lr=config["learning_rate"],
                 weight_decay=config["weight_decay"],
             )
         order = list(range(len(units)))
         random.Random(seed + epoch - 1).shuffle(order)
         model.train()
-        if linear_probe:
-            model.encoder.eval()
         optimizer.zero_grad(set_to_none=True)
         running, vat_total, transformed, queries, original_queries = 0.0, 0.0, 0, 0, 0
         vat_eligible, vat_zero, vat_norm_min, vat_norm_max = 0, 0, None, None
@@ -340,9 +242,6 @@ def train(
         search_costs = Counter()
         bce_costs = Counter()
         vat_costs = Counter()
-        mask_total, mask_seconds = 0.0, 0.0
-        pair_total = 0.0
-        mask_reasons, mask_costs = Counter(), Counter()
         steps = 0
         num_batches = math.ceil(len(order) / unit_batch_size)
         bar = training_bar(
@@ -350,15 +249,15 @@ def train(
             desc=f'{dataset}/{method} epoch {epoch}/{config["epochs"]}',
         )
         for batch_index, start in enumerate(bar):
-            selected_units = [units[i] for i in order[start:start + unit_batch_size]]
-            batch = [r for pair in selected_units for r in pair] if paired else selected_units
+            selected_units = [units[i] for i in order[start : start + unit_batch_size]]
+            batch = selected_units
             group_start = batch_index // accumulation * accumulation
             group_end = min(group_start + accumulation, num_batches)
-            group_samples = (min(group_end * unit_batch_size, len(order)) - group_start * unit_batch_size) * (2 if paired else 1)
-            group_pairs = ([units[order[i]] for i in range(group_start*unit_batch_size,
-                           min(group_end*unit_batch_size, len(order)))] if rank_regions else [])
-            group_eligible = sum(pair[0]["patch_eligible"] for pair in group_pairs)
-            selections, views, masks, references = [], {}, {}, {}
+            group_samples = (
+                min(group_end * unit_batch_size, len(order))
+                - group_start * unit_batch_size
+            )
+            selections, views = [], {}
             if source_views:
                 search_started = time.monotonic()
 
@@ -369,17 +268,11 @@ def train(
                             inputs = builder.codebert_batch(
                                 rows[at : at + batch_size], device=device
                             )
-                            if representation_mask == "prsc":
-                                logits, h = model(*inputs, return_representation=True)
-                                references.update({
-                                    (row["sample_key"], row["raw_source"]): value.detach()
-                                    for row, value in zip(rows[at:at + batch_size], h)
-                                })
-                            else:
-                                logits = model(*inputs)
+                            logits = model(*inputs)
                             values.extend(logits.detach().cpu().tolist())
                             search_costs.update(
-                                function_forwards=inputs[-1], encoder_sequences=len(inputs[0]),
+                                function_forwards=inputs[-1],
+                                encoder_sequences=len(inputs[0]),
                                 encoder_token_slots=inputs[0].numel(),
                                 encoder_active_tokens=int(inputs[1].sum()),
                             )
@@ -399,24 +292,18 @@ def train(
                 )
                 search_seconds += time.monotonic() - search_started
                 views = {
-                    r["sample_key"]: [s["selected"]["raw_source"]] if s["selected"] else []
+                    r["sample_key"]: (
+                        [s["selected"]["raw_source"]] if s["selected"] else []
+                    )
                     for r, s in zip(batch, selections)
                 }
                 transformed += sum(s["selected"] is not None for s in selections)
                 queries += sum(s["candidate_queries"] for s in selections)
                 original_queries += sum(s["original_queries"] for s in selections)
                 selection_reasons.update(s["selection_reason"] for s in selections)
-                if representation_mask != "none":
-                    mask_started = time.monotonic()
-                    masks, reasons, costs = training_masks(
-                        model, batch, selections, builder, device=device,
-                        method=representation_mask, fraction=mask_fraction, seed=seed, epoch=epoch,
-                        references=references,
-                    )
-                    mask_seconds += time.monotonic() - mask_started
-                    mask_reasons.update(reasons)
-                    mask_costs.update(costs)
-                with (run / "training.candidates.jsonl").open("a", encoding="utf-8") as handle:
+                with (run / "training.candidates.jsonl").open(
+                    "a", encoding="utf-8"
+                ) as handle:
                     for entry in selections:
                         chosen = entry["selected"]
                         handle.write(
@@ -441,26 +328,19 @@ def train(
                                     loss_delta=entry["loss_delta"],
                                     visibility_encodings=entry["visibility_encodings"],
                                     reasons=entry["reasons"],
-                                    **(dict(mask_eligible=entry["sample_key"] in masks)
-                                       if representation_mask != "none" else {}),
                                 )
                             )
                             + "\n"
                         )
             batch_loss = 0.0
             for forwarded, weights in function_view_batches(batch, views, batch_size):
-                inputs = builder.codebert_batch(forwarded, device=device, return_source_positions=line_mil)
-                active = [i for i, row in enumerate(forwarded) if row["sample_key"] in masks]
-                if line_mil:
-                    line_info = builder.line_mapping(forwarded, inputs)
-                    logits, risks, attention = model(*inputs, **line_info, return_line_scores=True, window_batch_size=8)
-                elif active:
-                    logits, representations = model(*inputs, return_representation=True)
-                else:
-                    logits = model(*inputs, window_batch_size=8 if full_source else None)
+                inputs = builder.codebert_batch(forwarded, device=device)
+                logits = model(*inputs)
                 bce_costs.update(
-                    function_forwards=inputs[4], encoder_sequences=len(inputs[0]),
-                    encoder_token_slots=inputs[0].numel(), encoder_active_tokens=int(inputs[1].sum()),
+                    function_forwards=inputs[4],
+                    encoder_sequences=len(inputs[0]),
+                    encoder_token_slots=inputs[0].numel(),
+                    encoder_active_tokens=int(inputs[1].sum()),
                 )
                 labels = logits.new_tensor([r["label"] for r in forwarded])
                 terms = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -468,27 +348,6 @@ def train(
                 )
                 loss = (terms * terms.new_tensor(weights)).sum()
                 total_loss = loss
-                if rank_regions:
-                    ranks = region_pair_ranking(risks, line_info["line_owners"], forwarded,
-                                                field="random_lines" if method == "mil_random_rank" else "candidate_lines")
-                    if len(ranks):
-                        total_loss = total_loss + RANK_WEIGHT * ranks.sum() * group_samples / group_eligible
-                        pair_total += float(ranks.detach().sum())
-                elif paired and not full_pairs:
-                    pair_logits = logits.reshape(-1, 2)
-                    eligibility = logits.new_tensor([r["pair_distinguishable"] for r in forwarded[::2]])
-                    extra = 2 * (pair_regularizer(pair_logits, method, margin=pair_margin, gap=pair_gap) * eligibility).sum()
-                    total_loss = total_loss + pair_weight * extra
-                    pair_total += float(extra.detach())
-                if active:
-                    extra = masked_bce(
-                        model.task_modules["classifier"], representations[active], labels[active],
-                        torch.stack([masks[forwarded[i]["sample_key"]] for i in active]),
-                        terms.new_tensor([weights[i] for i in active]),
-                    )
-                    total_loss = loss + mask_weight * extra
-                    mask_total += float(extra.detach())
-                    mask_costs.update(masked_head_views=len(active))
                 if not torch.isfinite(total_loss):
                     raise ValueError(
                         f"nonfinite classification loss: {method} epoch {epoch}, batch {batch_index}"
@@ -521,10 +380,19 @@ def train(
                 vat_total += float(terms.detach().sum())
                 vat_eligible += info["eligible"]
                 vat_zero += info["zero_direction"]
-                vat_costs.update({k: info[k] for k in (
-                    "function_forwards", "encoder_sequences", "encoder_token_slots",
-                    "encoder_active_tokens", "zero_initial_projection",
-                ) if info[k] is not None})
+                vat_costs.update(
+                    {
+                        k: info[k]
+                        for k in (
+                            "function_forwards",
+                            "encoder_sequences",
+                            "encoder_token_slots",
+                            "encoder_active_tokens",
+                            "zero_initial_projection",
+                        )
+                        if info[k] is not None
+                    }
+                )
                 if info["norm_min"] is not None:
                     vat_norm_min = (
                         min(vat_norm_min, info["norm_min"])
@@ -538,25 +406,25 @@ def train(
                     )
             running += batch_loss
             if (batch_index + 1) % accumulation == 0 or batch_index + 1 == num_batches:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config["gradient_clip"], error_if_nonfinite=True)
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), config["gradient_clip"], error_if_nonfinite=True
+                )
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 steps += 1
                 global_step += 1
-                if (averaged is not None and epoch >= 2
-                        and steps in metadata["swa"]["sample_steps_per_epoch"]):
-                    averaged.update_parameters(model)
-                    averaged_steps.append(global_step)
-                    history.add(dict(event="swa_sample", epoch=epoch, step=global_step,
-                                     averaged_models=len(averaged_steps)))
-                if global_step == 1 or global_step % 25 == 0 or batch_index + 1 == num_batches:
+                if (
+                    global_step == 1
+                    or global_step % 25 == 0
+                    or batch_index + 1 == num_batches
+                ):
                     history.add(
                         dict(
                             event="step",
                             epoch=epoch,
                             step=global_step,
                             loss=batch_loss / len(batch),
-                            samples_seen=min(start + unit_batch_size, len(order)) * (2 if paired else 1),
+                            samples_seen=min(start + unit_batch_size, len(order)),
                         )
                     )
                     print(
@@ -565,27 +433,14 @@ def train(
                     )
         training_seconds = time.monotonic() - started
         validation_started = time.monotonic()
-        candidate = averaged.module if averaged_steps else model
-        eligible = not linear_probe and (averaged is None or len(averaged_steps) >= 2)
         valid_logits = predict_logits(
-            candidate, valid_rows, builder, device=device, batch_size=batch_size
+            model, valid_rows, builder, device=device, batch_size=batch_size
         )
         probabilities = valid_logits.sigmoid()
-        if paired:
-            threshold = 0.5
-            validation = metrics([r["label"] for r in valid_rows], probabilities.tolist(), threshold)
-            if not full_pairs:
-                validation.update(paired_metrics(valid_rows, valid_logits.tolist(), margin=pair_margin, gap=pair_gap))
-        else:
-            threshold, validation = select_threshold([r["label"] for r in valid_rows], probabilities.tolist())
-        if full_pairs:
-            auxiliary_logits = predict_logits(candidate, paired_valid, builder, device=device, batch_size=batch_size)
-            auxiliary_metrics = metrics([r["label"] for r in paired_valid], auxiliary_logits.sigmoid().tolist(), .5)
-            auxiliary_metrics.update(paired_metrics(paired_valid, auxiliary_logits.tolist()))
-        pair_mean = (pair_total / max(1, coverage["coverage"]["eligible_pairs"])
-                     if full_pairs else pair_total / len(train_rows))
-        epoch_loss = ((running + vat_total + mask_weight * mask_total) / len(train_rows)
-                      + (RANK_WEIGHT if full_pairs else pair_weight) * pair_mean)
+        threshold, validation = select_threshold(
+            [r["label"] for r in valid_rows], probabilities.tolist()
+        )
+        epoch_loss = (running + vat_total) / len(train_rows)
         history.add(
             dict(
                 event="epoch",
@@ -593,12 +448,9 @@ def train(
                 epoch=epoch,
                 train_loss=running / len(train_rows),
                 total_loss=epoch_loss,
-                **(dict(pair_regularizer=pair_mean) if paired else {}),
-                **(dict(ranking_pairs=coverage["coverage"]["eligible_pairs"] if rank_regions else 0) if full_pairs else {}),
                 optimizer_steps=steps,
                 validation_threshold=threshold,
                 validation=validation,
-                **(dict(paired_validation=auxiliary_metrics) if full_pairs else {}),
                 augmented_functions=transformed,
                 candidate_queries=queries,
                 original_search_queries=original_queries,
@@ -612,57 +464,319 @@ def train(
                 vat_zero_direction_functions=vat_zero,
                 vat_norm_min=vat_norm_min,
                 vat_norm_max=vat_norm_max,
-                **(dict(masked_bce=mask_total / len(train_rows), mask_seconds=mask_seconds,
-                        mask_reasons=dict(mask_reasons), mask_costs=dict(mask_costs))
-                   if representation_mask != "none" else {}),
                 epoch_seconds=time.monotonic() - started,
                 training_seconds=training_seconds,
                 validation_seconds=time.monotonic() - validation_started,
-                stage="linear_probe" if linear_probe else "fine_tune",
                 learning_rate=optimizer.param_groups[0]["lr"],
-                encoder_trainable=not linear_probe,
-                validation_model="swa" if averaged_steps else "online",
-                selection_eligible=eligible,
-                averaged_steps=list(averaged_steps),
             )
         )
         key = tuple(
             validation[k] if validation[k] is not None else float("-inf")
-            for k in (("auprc", "mcc") if full_pairs else
-                      ("strict_pairwise_accuracy", "mcc", "auc", "f1") if paired else ("mcc", "f1", "accuracy", "auc"))
+            for k in ("mcc", "f1", "accuracy", "auc")
         )
-        if eligible and key > best_key:
+        if key > best_key:
             best_key = key
             selected_epoch = epoch
             checkpoint = dict(
                 metadata,
                 state_dict={
-                    k: v.detach().cpu().clone() for k, v in candidate.state_dict().items()
+                    k: v.detach().cpu().clone() for k, v in model.state_dict().items()
                 },
                 source_max_length=config["source_max_length"],
                 decision_threshold=threshold,
                 selected_epoch=epoch,
                 validation=validation,
-                averaged_steps=list(averaged_steps),
             )
             temporary = target.with_suffix(".pt.tmp")
             torch.save(checkpoint, temporary)
             temporary.replace(target)
-            if full_pairs:
-                from .evaluation import _evaluate_clean
-                # Persist the predictions already used for selection. This avoids
-                # a second costly full-Valid encoding and retains exact selection scores.
-                _evaluate_clean(valid_rows, run, "valid", checkpoint, None, logits=valid_logits)
-                _evaluate_clean(paired_valid, run, "paired.valid", checkpoint, None, logits=auxiliary_logits)
             del checkpoint
     summary = dict(
         metadata,
         selected_epoch=selected_epoch,
         completed_epochs=config["epochs"],
         optimizer_steps=global_step,
-        averaged_steps=averaged_steps,
     )
-    if relation_mode != "none":
-        write_json(run / "relation.coverage.json", {key: info for key, (_, info) in builder.relation_cache.items()})
     write_json(run / "training.metrics.json", summary)
+    return summary
+
+
+LOSVER_METHODS = ("unixcoder", "losver_localizer", "losver", "losver_oracle")
+LOSVER_VARIANTS = dict(
+    zip(LOSVER_METHODS, ("baseline", "localizer", "predicted", "oracle"))
+)
+LOSVER_CONFIG = dict(
+    seed=123456,
+    batch_size=8,
+    eval_batch_size=8,
+    learning_rate=2e-5,
+    adam_epsilon=1e-8,
+    weight_decay=0.0,
+    gradient_clip=1.0,
+    warmup_fraction=0.1,
+    block_size=512,
+    epochs=dict(baseline=16, localizer=40, predicted=16, oracle=16),
+    fp16=False,
+    dropout_probability=0.0,
+    class_weight=1.0,
+    early_stopping=None,
+)
+
+
+class LOSVERAdamW(torch.optim.Optimizer):
+    """The Transformers 4.19 AdamW rule, including epsilon before bias correction."""
+
+    def __init__(self, params, lr=2e-5, eps=1e-8):
+        super().__init__(params, dict(lr=lr, eps=eps, betas=(0.9, 0.999)))
+
+    @torch.no_grad()
+    def step(self):
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                if p.grad.is_sparse:
+                    raise RuntimeError("sparse gradients are not supported")
+                state = self.state[p]
+                if not state:
+                    state.update(
+                        step=0,
+                        exp_avg=torch.zeros_like(p),
+                        exp_avg_sq=torch.zeros_like(p),
+                    )
+                state["step"] += 1
+                b1, b2 = group["betas"]
+                g = p.grad
+                avg, sq = state["exp_avg"], state["exp_avg_sq"]
+                avg.mul_(b1).add_(g, alpha=1 - b1)
+                sq.mul_(b2).addcmul_(g, g, value=1 - b2)
+                denom = sq.sqrt().add_(group["eps"])
+                step_size = (
+                    group["lr"]
+                    * math.sqrt(1 - b2 ** state["step"])
+                    / (1 - b1 ** state["step"])
+                )
+                p.addcdiv_(avg, denom, value=-step_size)
+
+
+def paired_loader(rows, tokenizer, variant, *, train=False, batch_size=8):
+    from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+    from .data import paired_features
+
+    features = [paired_features(r, tokenizer, variant) for r in rows]
+    dataset = [
+        (
+            torch.tensor(f["input_ids"]),
+            torch.tensor(f["labels"]),
+            torch.tensor(f.get("attention_mask", [0] * 512)),
+            torch.tensor((f.get("line_indices", [])[:512] + [-1] * 512)[:512]),
+        )
+        for f in features
+    ]
+    sampler = RandomSampler(dataset) if train else SequentialSampler(dataset)
+    return DataLoader(
+        dataset, sampler=sampler, batch_size=batch_size, num_workers=4, pin_memory=True
+    )
+
+
+def paired_forward(model, batch, variant, device, *, with_labels=True):
+    ids, y, mask, lines = batch
+    kwargs = dict(input_ids=ids.to(device))
+    if with_labels:
+        kwargs["labels"] = y.to(device)
+    if variant in ("predicted", "oracle"):
+        kwargs.update(
+            attention_mask=mask.to(device),
+            line_indices=[[x for x in r if x >= 0] for r in lines.tolist()],
+        )
+    return model(**kwargs)
+
+
+def paired_rows(data_dir, output_dir, variant, split):
+    """A predicted detector never opens the test oracle annotations."""
+    root = Path(data_dir) / "primevul_paired"
+    name = (
+        (f"{split}.lines.jsonl" if split != "test" else "test.oracle.jsonl")
+        if variant in ("localizer", "oracle")
+        else f"{split}.jsonl"
+    )
+    if variant == "predicted":
+        root = Path(output_dir) / "primevul_paired/losver_localizer"
+        name = f"{split}.predicted.jsonl"
+    return read_jsonl(root / name)
+
+
+def train_losver(
+    data_dir, output_dir, model_path, method, *, device="auto", config=None
+):
+    """Run the original training and Valid selection on all official paired members."""
+    from .model import losver_model
+    from .evaluation import validate_paired, localize_paired
+    import platform
+
+    variant = LOSVER_VARIANTS[method]
+    settings = dict(LOSVER_CONFIG if config is None else config)
+    root = Path(output_dir) / "primevul_paired"
+    run = root / method
+    run.mkdir(parents=True, exist_ok=True)
+    if (run / "best.training.jsonl").exists():
+        raise FileExistsError(f"{run}: training already started")
+    train_rows = paired_rows(data_dir, output_dir, variant, "train")
+    valid_rows = paired_rows(data_dir, output_dir, variant, "valid")
+    import numpy as np
+
+    device = resolve_device(device)
+    seed_everything(settings["seed"])
+    np.random.seed(settings["seed"])
+    torch.backends.cudnn.deterministic = True
+    model, tokenizer = losver_model(model_path, variant)
+    model.to(device)
+    loader = paired_loader(
+        train_rows, tokenizer, variant, train=True, batch_size=settings["batch_size"]
+    )
+    valid_loader = paired_loader(
+        valid_rows, tokenizer, variant, batch_size=settings["eval_batch_size"]
+    )
+    epochs = settings["epochs"][variant]
+    optimizer = LOSVERAdamW(
+        model.parameters(), lr=settings["learning_rate"], eps=settings["adam_epsilon"]
+    )
+    scheduler = transformers.get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=epochs * len(loader) * settings["warmup_fraction"],
+        num_training_steps=epochs * len(loader),
+    )
+    metadata = dict(
+        protocol="losver",
+        dataset="primevul_paired",
+        method=method,
+        variant=variant,
+        model_path=str(model_path),
+        training_config=settings,
+        epochs=epochs,
+        train_samples=len(train_rows),
+        valid_samples=len(valid_rows),
+        decision_threshold=0.5,
+        comparison=">",
+        upstream_commit="a158905cb45b4400f481f18eeb1cb4473ccfccdc",
+        selection=(
+            "Valid weighted line F1 rounded to 4 decimals"
+            if variant == "localizer"
+            else "Valid P-C rounded to 4 decimals"
+        ),
+        selection_ties="earlier epoch; strict improvement",
+        precision="FP32 eager attention; no AMP/checkpointing",
+        localizer_attention="same 8-head cross-attention, queries batched per function; dropout=0",
+        localizer_path=(
+            str(root / "losver_localizer/best-f1.pt")
+            if variant == "predicted"
+            else None
+        ),
+        parameters=sum(p.numel() for p in model.parameters()),
+        environment=dict(
+            python=platform.python_version(),
+            torch=torch.__version__,
+            transformers=transformers.__version__,
+            cuda=torch.version.cuda,
+            device=(
+                torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu"
+            ),
+        ),
+    )
+    write_json(run / "config.json", metadata)
+    history = TrainingProgress(run / "best.pt")
+    best = (
+        {"f1": 0.0}
+        if variant == "localizer"
+        else {"accuracy": 0.0, "f1": 0.0, "p_c": 0.0}
+    )
+    chosen = {}
+    global_step = 0
+    model.zero_grad()
+    for epoch in range(1, epochs + 1):
+        started = time.monotonic()
+        running = 0.0
+        model.train()
+        for step, batch in enumerate(
+            training_bar(loader, desc=f"{method} {epoch}/{epochs}")
+        ):
+            loss, _ = paired_forward(model, batch, variant, device)
+            if not torch.isfinite(loss):
+                raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
+            )
+            optimizer.step()
+            optimizer.zero_grad()
+            scheduler.step()
+            global_step += 1
+            running += float(loss.detach())
+            if global_step == 1 or global_step % 100 == 0:
+                item = dict(
+                    event="step",
+                    epoch=epoch,
+                    step=global_step,
+                    batch=step + 1,
+                    loss=float(loss.detach()),
+                    learning_rate=optimizer.param_groups[0]["lr"],
+                )
+                history.add(item)
+                print(json.dumps(item), flush=True)
+        train_seconds = time.monotonic() - started
+        validation, predictions = validate_paired(
+            model, valid_rows, tokenizer, variant, device, loader=valid_loader
+        )
+        event = dict(
+            event="epoch",
+            variant=method,
+            epoch=epoch,
+            train_loss=running / len(loader),
+            optimizer_steps=len(loader),
+            global_step=global_step,
+            validation_threshold=0.5,
+            validation=validation,
+            training_seconds=train_seconds,
+            epoch_seconds=time.monotonic() - started,
+        )
+        history.add(event)
+        print(json.dumps(event), flush=True)
+        for key in best:
+            score = round(validation[key], 4)
+            if score > best[key]:
+                best[key] = score
+                chosen[key] = epoch
+                cp = dict(
+                    metadata,
+                    state_dict={
+                        k: v.detach().cpu() for k, v in model.state_dict().items()
+                    },
+                    selection_metric=key,
+                    selected_epoch=epoch,
+                    validation=validation,
+                )
+                torch.save(cp, run / f"best-{key}.pt")
+                write_json(
+                    run / f"best-{key}.json", dict(epoch=epoch, validation=validation)
+                )
+                write_jsonl(run / f"valid.best-{key}.predictions.jsonl", predictions)
+                del cp
+    required = "f1" if variant == "localizer" else "p_c"
+    if required not in chosen:
+        raise RuntimeError(
+            f"{method}: no checkpoint improved above the official zero initialization"
+        )
+    summary = dict(
+        metadata,
+        completed_epochs=epochs,
+        optimizer_steps=global_step,
+        selected_epochs=chosen,
+    )
+    write_json(run / "training.metrics.json", summary)
+    if variant == "localizer":
+        del model, optimizer
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+        for split in ("test", "valid", "train"):
+            localize_paired(data_dir, output_dir, split, device=device)
     return summary

@@ -10,7 +10,7 @@ import random
 
 from .artifacts import write_json
 
-DATASETS = ("primevul", "megavul", "bigvul", "secvuleval")
+DATASETS = ("primevul", "megavul")
 SPLITS = ("train", "valid", "test")
 
 
@@ -85,7 +85,11 @@ def split_projects(rows, seed=42):
     targets = dict(
         zip(
             SPLITS,
-            (int(total * 0.8), int(total * 0.1), total - int(total * 0.8) - int(total * 0.1)),
+            (
+                int(total * 0.8),
+                int(total * 0.1),
+                total - int(total * 0.8) - int(total * 0.1),
+            ),
         )
     )
     assigned = Counter()
@@ -106,10 +110,10 @@ def load_native(raw_root, dataset, seed=42):
     raw_root = Path(raw_root)
     rows = []
     paths = {
-        "primevul": [raw_root / "PrimeVul_v0.1" / f"primevul_{s}.jsonl" for s in SPLITS],
+        "primevul": [
+            raw_root / "PrimeVul_v0.1" / f"primevul_{s}.jsonl" for s in SPLITS
+        ],
         "megavul": [raw_root / "megavul" / "megavul.json"],
-        "bigvul": [raw_root / "bigvul" / "MSR_data_cleaned.csv"],
-        "secvuleval": [raw_root / "SecVulEval" / "data" / "train-00000-of-00001.parquet"],
     }[dataset]
     for path in paths:
         if dataset == "primevul":
@@ -119,18 +123,6 @@ def load_native(raw_root, dataset, seed=42):
                 )
         elif dataset == "megavul":
             _append_native(rows, json_array(path), dataset, path, raw_root)
-        elif dataset == "bigvul":
-            csv.field_size_limit(2**31 - 1)
-            with path.open(encoding="utf-8", newline="") as handle:
-                _append_native(rows, csv.DictReader(handle), dataset, path, raw_root)
-        else:
-            import pyarrow.parquet as pq
-
-            records = (
-                row for batch in pq.ParquetFile(path).iter_batches()
-                for row in batch.to_pylist()
-            )
-            _append_native(rows, records, dataset, path, raw_root)
     if len({r["sample_key"] for r in rows}) != len(rows):
         raise ValueError(f"{dataset}: duplicate native sample IDs")
     return rows, split_projects(rows, seed) if dataset != "primevul" else None
@@ -140,23 +132,21 @@ def _append_native(rows, iterator, dataset, path, raw_root):
     for number, raw in enumerate(iterator, 1):
         if dataset == "primevul":
             label, source, filename, project, key = (
-                raw["target"], raw["func"], raw.get("file_name"), raw.get("project"), raw["idx"]
+                raw["target"],
+                raw["func"],
+                raw.get("file_name"),
+                raw.get("project"),
+                raw["idx"],
             )
         elif dataset == "megavul":
             label = raw["is_vul"]
             source, filename, project, key = (
-                raw["func_before"] if label else raw["func"], raw.get("file_path"), raw["repo_name"], number
+                raw["func_before"] if label else raw["func"],
+                raw.get("file_path"),
+                raw["repo_name"],
+                number,
             )
-        elif dataset == "bigvul":
-            label, source, filename, project, key = (
-                int(raw["vul"]), raw["func_before"], raw.get("file_name"), raw["project"], raw[""]
-            )
-        else:
-            label, source, filename, project, key = (
-                raw["is_vulnerable"], raw["func_body"], raw["filepath"],
-                raw["project_url"].strip().rstrip("/"), raw["idx"],
-            )
-        expected_type = bool if dataset in ("megavul", "secvuleval") else int
+        expected_type = bool if dataset == "megavul" else int
         if type(label) is not expected_type or label not in (0, 1):
             raise ValueError(f"{path}:{number}: invalid native label")
         if not isinstance(source, str) or not source.strip():
@@ -172,7 +162,11 @@ def _append_native(rows, iterator, dataset, path, raw_root):
             dict(
                 sample_key=f"{dataset}:{key}",
                 dataset=dataset,
-                split=path.stem.removeprefix("primevul_") if dataset == "primevul" else None,
+                split=(
+                    path.stem.removeprefix("primevul_")
+                    if dataset == "primevul"
+                    else None
+                ),
                 label=int(label),
                 raw_source=source,
                 file_name=filename,
@@ -199,8 +193,12 @@ def balanced(rows, seed=42):
     """Retain every positive; sample only the negatives, independently per Split."""
     selected = set()
     for split in SPLITS:
-        positive = [i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 1]
-        negative = [i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 0]
+        positive = [
+            i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 1
+        ]
+        negative = [
+            i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 0
+        ]
         if not positive or len(negative) < len(positive):
             raise ValueError(f"{split}: need positives and at least as many negatives")
         selected.update(positive)
@@ -224,7 +222,9 @@ def balanced_subset(rows, limit=None, seed=42):
     for label in (0, 1):
         candidates = [i for i, row in enumerate(rows) if row["label"] == label]
         if len(candidates) < limit // 2:
-            raise ValueError("not enough members for the requested balanced diagnostic subset")
+            raise ValueError(
+                "not enough members for the requested balanced diagnostic subset"
+            )
         selected.update(rng.sample(candidates, limit // 2))
     return [row for i, row in enumerate(rows) if i in selected]
 
@@ -236,133 +236,27 @@ def counts(rows):
 def test_rows(data_dir):
     """Read the established Test cohort, excluding its recorded exact overlaps."""
     return [
-        r for r in read_jsonl(Path(data_dir) / "test.jsonl")
+        r
+        for r in read_jsonl(Path(data_dir) / "test.jsonl")
         if not r["train_overlap"] and not r.get("valid_overlap", False)
     ]
 
 
 def validation_rows(data_dir):
     return [
-        r for r in read_jsonl(Path(data_dir) / "valid.jsonl")
+        r
+        for r in read_jsonl(Path(data_dir) / "valid.jsonl")
         if not r.get("train_overlap", [])
     ]
-
-
-def paired_groups(rows):
-    """Official pair order, with vulnerable/patch roles checked rather than inferred."""
-    groups = {}
-    for row in rows:
-        groups.setdefault(row["pair_key"], []).append(row)
-    result = []
-    for key, members in groups.items():
-        if len(members) != 2 or {r["label"] for r in members} != {0, 1}:
-            raise ValueError(f"{key}: a pair needs exactly one vulnerable and one patched function")
-        result.append(tuple(sorted(members, key=lambda r: -r["label"])))
-    return result
-
-
-def paired_subset(rows, limit=None, seed=42):
-    pairs = paired_groups(rows)
-    if limit is not None:
-        if limit <= 0 or limit > len(pairs):
-            raise ValueError("pair limit exceeds available training pairs")
-        selected = set(random.Random(seed).sample(range(len(pairs)), limit))
-        pairs = [p for i, p in enumerate(pairs) if i in selected]
-    return [r for pair in pairs for r in pair]
-
-
-def official_paired_rows(raw_root, split):
-    """Official adjacency defines a pair; upstream idx is not unique."""
-    path = Path(raw_root) / "PrimeVul_v0.1" / f"primevul_{split}_paired.jsonl"
-    native = read_jsonl(path)
-    if len(native) % 2:
-        raise ValueError(f"{path}: incomplete adjacent pair")
-    rows, anomalies = [], []
-    for at in range(0, len(native), 2):
-        a, b = native[at:at + 2]
-        if {a["target"], b["target"]} != {0, 1}:
-            raise ValueError(f"{path}:{at + 1}: noncomplementary official labels")
-        pair_key = f"primevul_paired:{split}:{at // 2}"
-        mismatch = [k for k in ("project", "commit_id", "cve") if a.get(k) != b.get(k)]
-        if mismatch:
-            anomalies.append(dict(pair_key=pair_key, fields=mismatch,
-                                  vulnerable_idx=a["idx"] if a["target"] else b["idx"],
-                                  patched_idx=b["idx"] if a["target"] else a["idx"]))
-        for offset, r in enumerate((a, b)):
-            if type(r["target"]) is not int or not isinstance(r["func"], str) or not r["func"].strip():
-                raise ValueError(f"{path}:{at + offset + 1}: invalid official function/label")
-            rows.append(dict(sample_key=f"primevul_paired:{split}:{at + offset + 1}",
-                             pair_key=pair_key, dataset="primevul_paired", split=split,
-                             label=r["target"], raw_source=r["func"], project=r["project"],
-                             commit_id=r["commit_id"], cve=r.get("cve"),
-                             source_file=str(path.relative_to(raw_root)), source_row=at + offset + 1,
-                             upstream_idx=r["idx"], language="c_cpp", train_overlap=False,
-                             valid_overlap=False))
-    return rows, anomalies
-
-
-def prepare_paired(raw_root, output, model_path):
-    """Keep official held-out members; remove only Train-to-held-out input leakage."""
-    from itertools import combinations
-    from .model import AutoTokenizer, InputBuilder
-
-    dest = Path(output) / "primevul_paired"
-    if any((dest / f"{s}.jsonl").exists() for s in SPLITS):
-        raise FileExistsError(f"paired data already prepared: {dest}")
-    builder = InputBuilder(AutoTokenizer.from_pretrained(model_path))
-    budget = builder.source_max_length - len(builder.source_prefix) - 2
-    splits, tokens, signatures, anomalies, duplicates = {}, {}, {}, [], {}
-    for split in SPLITS:
-        rows, mismatches = official_paired_rows(raw_root, split)
-        anomalies.extend(mismatches)
-        for a, b in zip(rows[::2], rows[1::2]):
-            encoded = [tuple(builder._encode(r["raw_source"], budget)) for r in (a, b)]
-            distinguishable = encoded[0] != encoded[1]
-            for r, ids in zip((a, b), encoded):
-                tokens[r["sample_key"]] = ids
-                r["pair_distinguishable"] = distinguishable
-        splits[split] = rows
-        signatures[split] = {tokens[r["sample_key"]] for r in rows}
-        duplicates[split] = dict(repeated_upstream_idx_rows=len(rows) - len({r["upstream_idx"] for r in rows}),
-                                 repeated_source_rows=len(rows) - len({r["raw_source"] for r in rows}))
-    overlaps = {}
-    for a, b in combinations(SPLITS, 2):
-        overlaps[f"{a}:{b}"] = dict(
-            exact_sources=len({r["raw_source"] for r in splits[a]} & {r["raw_source"] for r in splits[b]}),
-            encoded_inputs=len(signatures[a] & signatures[b]))
-    heldout = signatures["valid"] | signatures["test"]
-    removed = {r["pair_key"] for r in splits["train"] if tokens[r["sample_key"]] in heldout}
-    original = splits["train"]
-    splits["train"] = [r for r in original if r["pair_key"] not in removed]
-    pilot = {r["sample_key"] for r in paired_subset(splits["train"], min(512, len(splits["train"]) // 2))}
-    dest.mkdir(parents=True, exist_ok=True)
-    members = []
-    for split in SPLITS:
-        write_jsonl(dest / f"{split}.jsonl", splits[split])
-        for row in (original if split == "train" else splits[split]):
-            members.append({k: row[k] for k in ("sample_key", "pair_key", "split", "label", "source_file", "source_row", "upstream_idx", "pair_distinguishable")})
-            members[-1].update(excluded_train_overlap=row["pair_key"] in removed,
-                               pilot_train=row["sample_key"] in pilot)
-    with (dest / "members.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(members[0]), lineterminator="\n")
-        writer.writeheader(); writer.writerows(members)
-    write_json(dest / "statistics.json", dict(
-        seed=42, model_path=str(model_path), source_budget=budget,
-        native_pairs={s: (len(original) if s == "train" else len(splits[s])) // 2 for s in SPLITS},
-        final={s: dict(**class_counts(rows), pairs=len(rows) // 2,
-                       indistinguishable_pairs=sum(not r[0]["pair_distinguishable"] for r in paired_groups(rows)))
-               for s, rows in splits.items()},
-        cross_split_overlap=overlaps, removed_training_pairs=sorted(removed),
-        within_split_duplicates=duplicates,
-        metadata_anomalies=anomalies,
-        protocol="official adjacent complementary labels; metadata anomalies retained; identical encoded Train pairs keep BCE but no pair constraint; exclude whole Train pairs with held-out identical inputs; Valid/Test untouched; no near/project/CVE filtering"))
 
 
 def prepare(raw_root, output, seed=42, datasets=DATASETS):
     output = Path(output)
     for dataset in datasets:
         if any((output / dataset).glob("*.jsonl")):
-            raise FileExistsError(f"{output / dataset}: prepared source lists already exist")
+            raise FileExistsError(
+                f"{output / dataset}: prepared source lists already exist"
+            )
     native, selected, assignments = {}, {}, {}
     for dataset in datasets:
         native[dataset], assignments[dataset] = load_native(raw_root, dataset, seed)
@@ -379,13 +273,19 @@ def prepare(raw_root, output, seed=42, datasets=DATASETS):
         valid = [r for r in rows if r["split"] == "valid"]
         validation_sources = {r["raw_source"] for r in valid}
         for row in valid + tests:
-            row["train_overlap"] = [dataset] if row["raw_source"] in training_sources[dataset] else []
+            row["train_overlap"] = (
+                [dataset] if row["raw_source"] in training_sources[dataset] else []
+            )
             if row["split"] == "test":
                 row["valid_overlap"] = row["raw_source"] in validation_sources
         excluded = [r for r in tests if r["train_overlap"] or r["valid_overlap"]]
-        evaluated = [r for r in tests if not r["train_overlap"] and not r["valid_overlap"]]
+        evaluated = [
+            r for r in tests if not r["train_overlap"] and not r["valid_overlap"]
+        ]
         for split in SPLITS:
-            write_jsonl(root / f"{split}.jsonl", (r for r in rows if r["split"] == split))
+            write_jsonl(
+                root / f"{split}.jsonl", (r for r in rows if r["split"] == split)
+            )
         with (root / "members.csv").open("w", newline="", encoding="utf-8") as handle:
             fields = [
                 "sample_key",
@@ -402,7 +302,11 @@ def prepare(raw_root, output, seed=42, datasets=DATASETS):
             for row in rows:
                 writer.writerow(
                     {
-                        **{k: row[k] for k in fields if k not in ("train_overlap", "valid_overlap")},
+                        **{
+                            k: row[k]
+                            for k in fields
+                            if k not in ("train_overlap", "valid_overlap")
+                        },
                         "train_overlap": ";".join(row.get("train_overlap", [])),
                         "valid_overlap": row.get("valid_overlap", False),
                     }
@@ -431,8 +335,185 @@ def prepare(raw_root, output, seed=42, datasets=DATASETS):
         )
         if assignments[dataset] is not None:
             write_json(root / "projects.json", assignments[dataset])
-            stats["projects"] = {s: len(names) for s, names in assignments[dataset].items()}
+            stats["projects"] = {
+                s: len(names) for s, names in assignments[dataset].items()
+            }
         write_json(root / "statistics.json", stats)
         statistics[dataset] = stats
         print(json.dumps(stats, indent=2), flush=True)
     return statistics
+
+
+def modified_lines(source, counterpart):
+    """Exact LOSVER Differ rule: nonblank deleted lines, separately on each side."""
+    import difflib
+
+    result, position = [], 0
+    for line in difflib.Differ().compare(
+        source.splitlines(keepends=True), counterpart.splitlines(keepends=True)
+    ):
+        if line.startswith("- "):
+            if line[2:].strip():
+                result.append(position)
+            position += 1
+        elif line.startswith("  "):
+            position += 1
+    return result
+
+
+def paired_features(row, tokenizer, variant):
+    """Upstream's distinct localizer, baseline and weighted 512-token encodings."""
+    code = row["func"]
+    if variant == "localizer":
+        lines = code.splitlines()
+        gt = row.get("lines_ground_truth", [])
+        labels = [int(i in gt) for i in range(len(lines))][:512] + [-1] * max(
+            0, 512 - len(lines)
+        )
+        tokens = []
+        for i, line in enumerate(lines):
+            part = tokenizer.tokenize(line + "\n")
+            if len(tokens) + len(part) <= 510:
+                tokens.extend(part)
+            else:
+                labels[i:] = [-1] * len(labels[i:])
+                break
+        ids = tokenizer.convert_tokens_to_ids(
+            [tokenizer.cls_token] + tokens + [tokenizer.sep_token]
+        )
+        ids += [tokenizer.pad_token_id] * (512 - len(ids))
+        return dict(input_ids=ids, labels=labels)
+    tokens = tokenizer.tokenize(code)
+    if variant == "baseline":
+        tokens = tokens[:510]
+    ids = tokenizer.convert_tokens_to_ids(
+        [tokenizer.cls_token] + tokens + [tokenizer.sep_token]
+    )
+    ids += [tokenizer.pad_token_id] * (512 - len(ids))
+    ids = ids[:512]
+    if variant == "oracle":
+        lines = row["lines_ground_truth"]
+    elif variant == "predicted":
+        lines = row["lines_predicted"]
+    else:
+        lines = []
+    return dict(
+        input_ids=ids,
+        attention_mask=[int(i != tokenizer.pad_token_id) for i in ids],
+        labels=row["target"],
+        line_indices=lines,
+    )
+
+
+def prepare_paired(raw_root, output_dir, model_path):
+    """Official original PrimeVul members; Diff supervision is stored separately."""
+    from itertools import combinations
+    from transformers import RobertaTokenizer
+
+    tokenizer = RobertaTokenizer.from_pretrained(model_path)
+    root = Path(raw_root) / "PrimeVul_original"
+    dest = Path(output_dir) / "primevul_paired"
+    if any((dest / f"{s}.jsonl").exists() for s in SPLITS):
+        raise FileExistsError(f"{dest}: paired data already prepared")
+    sources, encoded = {}, {}
+    stats = dict(
+        raw_root=str(root),
+        model_path=str(model_path),
+        release="PrimeVul original",
+        upstream_commit="a158905cb45b4400f481f18eeb1cb4473ccfccdc",
+        splits={},
+        overlap={},
+        protocol="All official adjacent members retained; no resampling, no extra duplicate exclusions. Oracle Diff labels are separate from normal inputs.",
+        identical_inputs_definition="These are token-ID equality counts per encoder protocol. Oracle line weights can still differ; no pair is removed.",
+    )
+    members = []
+    for split in SPLITS:
+        raw = read_jsonl(root / f"primevul_{split}_paired.jsonl")
+        if len(raw) % 2 or [r["target"] for r in raw] != [1, 0] * (len(raw) // 2):
+            raise ValueError(f"{split}: official vulnerable/patched adjacency required")
+        rows = []
+        annotations = []
+        anomalies = []
+        for i in range(0, len(raw), 2):
+            a, b = raw[i : i + 2]
+            mismatch = [k for k in ("project", "commit_id") if a.get(k) != b.get(k)]
+            if mismatch:
+                anomalies.append(
+                    dict(pair=i // 2, fields=mismatch, idx=[a["idx"], b["idx"]])
+                )
+            for offset, (r, other) in enumerate(((a, b), (b, a))):
+                if not isinstance(r["func"], str) or not r["func"].strip():
+                    raise ValueError(f"{split}:{i+offset+1}: empty source")
+                row = dict(
+                    func=r["func"],
+                    target=r["target"],
+                    idx=r["idx"],
+                    sample_key=f"primevul_paired:{split}:{i+offset+1}",
+                    pair_key=f"primevul_paired:{split}:{i//2}",
+                    source_row=i + offset + 1,
+                    project=r.get("project"),
+                    commit_id=r.get("commit_id"),
+                )
+                rows.append(row)
+                annotations.append(
+                    dict(
+                        row, lines_ground_truth=modified_lines(r["func"], other["func"])
+                    )
+                )
+                members.append({k: v for k, v in row.items() if k != "func"})
+        print(f"{split}: encoding {len(rows)} official functions", flush=True)
+        ff = {
+            v: [paired_features(r, tokenizer, v) for r in annotations]
+            for v in ("baseline", "localizer", "oracle")
+        }
+        encoded[split] = {
+            v: {tuple(f["input_ids"]) for f in batch} for v, batch in ff.items()
+        }
+        sources[split] = {r["func"] for r in rows}
+        v01 = Path(raw_root) / "PrimeVul_v0.1" / f"primevul_{split}_paired.jsonl"
+        old = read_jsonl(v01) if v01.exists() else []
+        old_sources = {r["func"] for r in old}
+        stats["splits"][split] = dict(
+            pairs=len(rows) // 2,
+            functions=len(rows),
+            positive=len(rows) // 2,
+            negative=len(rows) // 2,
+            v01_pairs=len(old) // 2,
+            old_source_members=sum(r["func"] in old_sources for r in rows),
+            duplicate_idx_rows=len(rows) - len({r["idx"] for r in rows}),
+            metadata_anomalies=anomalies,
+            identical_inputs={
+                v: sum(
+                    fs[i]["input_ids"] == fs[i + 1]["input_ids"]
+                    for i in range(0, len(rows), 2)
+                )
+                for v, fs in ff.items()
+            },
+            visible_lines=sum(
+                sum(x >= 0 for x in f["labels"]) for f in ff["localizer"]
+            ),
+            visible_modified_lines=sum(
+                sum(x == 1 for x in f["labels"]) for f in ff["localizer"]
+            ),
+            modified_lines=sum(len(r["lines_ground_truth"]) for r in annotations),
+            no_visible_line_functions=sum(
+                all(x < 0 for x in f["labels"]) for f in ff["localizer"]
+            ),
+        )
+        write_jsonl(dest / f"{split}.jsonl", rows)
+        write_jsonl(
+            dest / (f"{split}.lines.jsonl" if split != "test" else "test.oracle.jsonl"),
+            annotations,
+        )
+        print(split, stats["splits"][split], flush=True)
+    for a, b in combinations(SPLITS, 2):
+        stats["overlap"][f"{a}:{b}"] = dict(
+            exact_sources=len(sources[a] & sources[b]),
+            encoded_inputs={v: len(encoded[a][v] & encoded[b][v]) for v in encoded[a]},
+        )
+    write_json(dest / "statistics.json", stats)
+    with (dest / "members.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, list(members[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(members)
+    return stats

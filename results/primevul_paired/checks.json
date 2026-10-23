@@ -1,0 +1,309 @@
+{
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "checks": {
+    "baseline": {
+      "official_feature_ids_exact": true,
+      "official_forward_loss_exact": true,
+      "official_encoder_gradient_exact": true,
+      "gradient_norm": 0.027568046003580093,
+      "training_step_losses": [
+        0.7499054074287415,
+        0.67887282371521,
+        0.6892695426940918
+      ],
+      "seconds_per_four_function_step": 0.33127814329539734,
+      "save_reload_exact": true,
+      "parameters": 125930497
+    },
+    "localizer": {
+      "official_feature_ids_exact": true,
+      "official_forward_loss_exact": true,
+      "official_encoder_gradient_exact": false,
+      "gradient_norm": 0.03720811381936073,
+      "training_step_losses": [
+        0.11372178047895432,
+        0.07805818319320679,
+        0.05207161605358124
+      ],
+      "seconds_per_four_function_step": 0.42038929532282054,
+      "save_reload_exact": true,
+      "parameters": 130066945,
+      "official_encoder_gradient_close": true,
+      "max_probability_difference": 1.1920928955078125e-07,
+      "max_query_gradient_difference": 2.546585164964199e-10,
+      "implementation": "same original attention/classifier, independent queries and line classification batched per function"
+    },
+    "predicted": {
+      "official_feature_ids_exact": true,
+      "official_forward_loss_exact": true,
+      "official_encoder_gradient_exact": true,
+      "gradient_norm": 0.4171454608440399,
+      "training_step_losses": [
+        1.2041654586791992,
+        0.6711938381195068,
+        0.7531790733337402
+      ],
+      "seconds_per_four_function_step": 0.12380221004908283,
+      "save_reload_exact": true,
+      "parameters": 125929728
+    }
+  },
+  "diagnostic_only": true,
+  "attention_batching": {
+    "max_probability_difference": 1.1920928955078125e-07,
+    "loss_difference": 0.0,
+    "max_query_gradient_difference": 2.546585164964199e-10,
+    "seconds_per_eight_function_step": {
+      "official_per_line": 1.0658113280078396,
+      "batched_queries": 0.2927745632478036
+    },
+    "batching_changes_no_parameters": true,
+    "attention_dropout": 0.0,
+    "training_budget_unchanged": true
+  },
+  "unit_tests": {
+    "command": "python -m unittest discover -s tests",
+    "passed": 34,
+    "failures": 0
+  },
+  "reference_environment": "Official model classes executed under the same Torch2.9.1/Transformers4.57.3 environment; not a cross-version bitwise verification.",
+  "official_code_archive": {
+    "source": "https://doi.org/10.6084/m9.figshare.29192708",
+    "primevul_scripts_match_github": true,
+    "localizer_epochs": 40,
+    "detector_epochs": 16
+  },
+  "tokenizer_alignment": {
+    "newline_id": 317,
+    "merged_newline_examples": {
+      "space_newline": {
+        "token": "ĠĊ",
+        "id": 1022
+      },
+      "two_spaces_newline": {
+        "token": "ĠĠĊ",
+        "id": 3425
+      },
+      "four_spaces_newline": {
+        "token": "ĠĠĠĠĊ",
+        "id": 2094
+      },
+      "tab_newline": {
+        "token": "ĉĊ",
+        "id": 2357
+      }
+    },
+    "valid_physical_visible_lines": 43430,
+    "valid_localizer_output_lines": 43266,
+    "valid_visible_positive_labels": 2665,
+    "valid_original_alignment_positive_labels_consumed": 2663,
+    "policy": "Retain exact upstream newline matching. These counts do not quantify all shifted labels. No Test data used to change rules."
+  },
+  "paper_access": {
+    "author_report_url": "https://cs.kaist.ac.kr/fileDownload?kind=tech&sn=358",
+    "report_date": "2025-06-13",
+    "pages": 12,
+    "contains_primevul": false,
+    "formal_doi": "10.1109/ASE63991.2025.00092",
+    "formal_pdf_available": true,
+    "table3_references": "Verified from the formal ASE 2025 PDF, Table 3; not fitted targets.",
+    "formal_pdf": "LOSVER_Line-Level_Modifiability_Signal-Guided_Vulnerability_Detection_and_Classification.pdf",
+    "formal_pages": 13
+  },
+  "paper_source_protocol_difference": {
+    "paper_section": "IV-E",
+    "paper_detector_epochs": 8,
+    "paper_detector_selection": "Valid Accuracy",
+    "official_primevul_script_epochs": 16,
+    "official_primevul_script_test_checkpoint": "best Valid P-C",
+    "protocol_used": "Official PrimeVul-specific source defaults, chosen before any Test evaluation. No change based on Test results."
+  },
+  "paper_table3": {
+    "unixcoder": {
+      "p_c": 0.1011,
+      "p_v": 0.2695,
+      "p_b": 0.6152,
+      "p_r": 0.0142,
+      "accuracy": 0.5434,
+      "precision": 0.5664,
+      "recall": 0.3706,
+      "f1": 0.448
+    },
+    "losver": {
+      "p_c": 0.1401,
+      "p_v": 0.4539,
+      "p_b": 0.3741,
+      "p_r": 0.0319,
+      "accuracy": 0.5541,
+      "precision": 0.5501,
+      "recall": 0.594,
+      "f1": 0.5712
+    },
+    "losver_oracle": {
+      "p_c": 0.3316,
+      "p_v": 0.4415,
+      "p_b": 0.2021,
+      "p_r": 0.0248,
+      "accuracy": 0.6534,
+      "precision": 0.6237,
+      "recall": 0.773,
+      "f1": 0.6904
+    }
+  },
+  "completed_evaluation": {
+    "unixcoder": {
+      "valid": {
+        "functions": 1124,
+        "pairs": 562,
+        "cohort_exact": true,
+        "sklearn_metrics_match": true,
+        "pair_counts": {
+          "p_c": 85,
+          "p_v": 204,
+          "p_b": 240,
+          "p_r": 33
+        },
+        "selected_epoch": 16
+      },
+      "test": {
+        "functions": 1128,
+        "pairs": 564,
+        "cohort_exact": true,
+        "sklearn_metrics_match": true,
+        "pair_counts": {
+          "p_c": 60,
+          "p_v": 220,
+          "p_b": 259,
+          "p_r": 25
+        },
+        "selected_epoch": 16
+      }
+    },
+    "losver_oracle": {
+      "valid": {
+        "functions": 1124,
+        "pairs": 562,
+        "cohort_exact": true,
+        "sklearn_metrics_match": true,
+        "pair_counts": {
+          "p_c": 197,
+          "p_v": 265,
+          "p_b": 75,
+          "p_r": 25
+        },
+        "selected_epoch": 11
+      },
+      "test": {
+        "functions": 1128,
+        "pairs": 564,
+        "cohort_exact": true,
+        "sklearn_metrics_match": true,
+        "pair_counts": {
+          "p_c": 180,
+          "p_v": 285,
+          "p_b": 86,
+          "p_r": 13
+        },
+        "selected_epoch": 11
+      }
+    },
+    "losver": {
+      "valid": {
+        "functions": 1124,
+        "pairs": 562,
+        "cohort_exact": true,
+        "sklearn_metrics_match": true,
+        "pair_counts": {
+          "p_c": 90,
+          "p_v": 244,
+          "p_b": 194,
+          "p_r": 34
+        },
+        "selected_epoch": 8
+      },
+      "test": {
+        "functions": 1128,
+        "pairs": 564,
+        "cohort_exact": true,
+        "sklearn_metrics_match": true,
+        "pair_counts": {
+          "p_c": 81,
+          "p_v": 265,
+          "p_b": 196,
+          "p_r": 22
+        },
+        "selected_epoch": 8
+      }
+    }
+  },
+  "selected_baseline_single_function_inference": {
+    "source_split": "Valid",
+    "functions": 4,
+    "max_probability_difference_vs_saved_batch": 2.086162567138672e-07,
+    "uses_pair_or_diff": false,
+    "finite": true
+  },
+  "localizer_training_and_exports": {
+    "completed_epochs": 40,
+    "optimizer_steps": 43560,
+    "source_valid_selected_epoch": 32,
+    "source_valid": {
+      "f1": 0.9159578281512257,
+      "precision": 0.3155963302752294,
+      "recall": 0.19376642883965453,
+      "lines": 43266,
+      "modified_lines": 2663,
+      "confusion_matrix": [
+        [
+          39484,
+          1119
+        ],
+        [
+          2147,
+          516
+        ]
+      ],
+      "loss": 1.27162160507258
+    },
+    "exports": {
+      "train": {
+        "functions": 8708,
+        "cohort_and_source_exact": true,
+        "no_ground_truth_lines": true,
+        "with_predicted_lines": 5158,
+        "predicted_lines": 21842
+      },
+      "valid": {
+        "functions": 1124,
+        "cohort_and_source_exact": true,
+        "no_ground_truth_lines": true,
+        "with_predicted_lines": 529,
+        "predicted_lines": 1635
+      },
+      "test": {
+        "functions": 1128,
+        "cohort_and_source_exact": true,
+        "no_ground_truth_lines": true,
+        "with_predicted_lines": 511,
+        "predicted_lines": 1801
+      }
+    }
+  },
+  "selected_losver_single_function_inference": {
+    "source_split": "Valid",
+    "functions": 4,
+    "max_probability_difference_vs_saved_batch": 6.752088665962219e-09,
+    "inputs_contain_only_raw_function": true,
+    "uses_pair_or_diff": false,
+    "finite": true
+  },
+  "classifier_budget_checks": {
+    "completed_epochs": 16,
+    "optimizer_steps_each": 17424,
+    "train_functions_each": 8708,
+    "valid_functions_each": 1124,
+    "same_pretrained_path": true,
+    "same_training_configuration": true,
+    "predicted_oracle_parameter_count_equal": true
+  }
+}
