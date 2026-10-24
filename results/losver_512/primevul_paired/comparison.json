@@ -1,0 +1,310 @@
+{
+  "config": {
+    "seed": 123456,
+    "batch_size": 8,
+    "eval_batch_size": 8,
+    "learning_rate": 2e-05,
+    "adam_epsilon": 1e-08,
+    "weight_decay": 0.0,
+    "gradient_clip": 1.0,
+    "warmup_fraction": 0.1,
+    "block_size": 512,
+    "epochs": {
+      "baseline": 16,
+      "localizer": 40,
+      "predicted": 16,
+      "oracle": 16
+    },
+    "fp16": false,
+    "dropout_probability": 0.0,
+    "class_weight": 1.0,
+    "early_stopping": null
+  },
+  "input_mode": "512",
+  "data_preparation": {
+    "raw_root": "/home/PublicData/PHY-data/vul_detect/data/PrimeVul_original",
+    "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+    "release": "PrimeVul original",
+    "upstream_commit": "a158905cb45b4400f481f18eeb1cb4473ccfccdc",
+    "splits": {
+      "train": {
+        "pairs": 4354,
+        "functions": 8708,
+        "positive": 4354,
+        "negative": 4354,
+        "v01_pairs": 3789,
+        "old_source_members": 7561,
+        "duplicate_idx_rows": 5,
+        "metadata_anomalies": [],
+        "identical_inputs": {
+          "baseline": 1254,
+          "localizer": 1268,
+          "oracle": 1249
+        },
+        "visible_lines": 360188,
+        "visible_modified_lines": 22320,
+        "modified_lines": 49771,
+        "no_visible_line_functions": 0
+      },
+      "valid": {
+        "pairs": 562,
+        "functions": 1124,
+        "positive": 562,
+        "negative": 562,
+        "v01_pairs": 480,
+        "old_source_members": 960,
+        "duplicate_idx_rows": 4,
+        "metadata_anomalies": [],
+        "identical_inputs": {
+          "baseline": 164,
+          "localizer": 165,
+          "oracle": 164
+        },
+        "visible_lines": 43430,
+        "visible_modified_lines": 2665,
+        "modified_lines": 5401,
+        "no_visible_line_functions": 0
+      },
+      "test": {
+        "pairs": 564,
+        "functions": 1128,
+        "positive": 564,
+        "negative": 564,
+        "v01_pairs": 435,
+        "old_source_members": 868,
+        "duplicate_idx_rows": 2,
+        "metadata_anomalies": [],
+        "identical_inputs": {
+          "baseline": 163,
+          "localizer": 163,
+          "oracle": 163
+        },
+        "visible_lines": 45003,
+        "visible_modified_lines": 2684,
+        "modified_lines": 5162,
+        "no_visible_line_functions": 0
+      }
+    },
+    "overlap": {
+      "train:valid": {
+        "exact_sources": 0,
+        "encoded_inputs": {
+          "baseline": 18,
+          "localizer": 18,
+          "oracle": 18
+        }
+      },
+      "train:test": {
+        "exact_sources": 0,
+        "encoded_inputs": {
+          "baseline": 13,
+          "localizer": 13,
+          "oracle": 13
+        }
+      },
+      "valid:test": {
+        "exact_sources": 0,
+        "encoded_inputs": {
+          "baseline": 2,
+          "localizer": 2,
+          "oracle": 2
+        }
+      }
+    },
+    "protocol": "All official adjacent members retained; no resampling, no extra duplicate exclusions. Oracle Diff labels are separate from normal inputs.",
+    "identical_inputs_definition": "Token-ID equality per encoding protocol, not complete Oracle weighted-input equality. No pairs excluded."
+  },
+  "input_coverage": {
+    "unixcoder": null,
+    "losver": null,
+    "losver_oracle": null
+  },
+  "results": [
+    {
+      "method": "unixcoder",
+      "input_mode": "512",
+      "split": "valid",
+      "oracle": false,
+      "epoch": 14,
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 91,
+        "p_v": 262,
+        "p_b": 188,
+        "p_r": 21
+      },
+      "p_c": 0.1619217081850534,
+      "p_v": 0.46619217081850534,
+      "p_b": 0.33451957295373663,
+      "p_r": 0.037366548042704624,
+      "accuracy": 0.5622775800711743,
+      "precision": 0.5550314465408805,
+      "recall": 0.6281138790035588,
+      "f1": 0.5893155258764607,
+      "mcc": 0.1256491546855904,
+      "auc": 0.5861991996048683,
+      "auprc": 0.5774459183053153,
+      "loss": 0.9918609085023826,
+      "paper_p_c": null,
+      "delta_paper_p_c": null
+    },
+    {
+      "method": "unixcoder",
+      "input_mode": "512",
+      "split": "test",
+      "oracle": false,
+      "epoch": 14,
+      "samples": 1128,
+      "pairs": 564,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 82,
+        "p_v": 266,
+        "p_b": 197,
+        "p_r": 19
+      },
+      "p_c": 0.1453900709219858,
+      "p_v": 0.4716312056737589,
+      "p_b": 0.34929078014184395,
+      "p_r": 0.03368794326241135,
+      "accuracy": 0.5558510638297872,
+      "precision": 0.5497630331753555,
+      "recall": 0.6170212765957447,
+      "f1": 0.581453634085213,
+      "mcc": 0.11254756283092668,
+      "auc": 0.5729245259292792,
+      "auprc": 0.5664497019125444,
+      "loss": 0.978252686507313,
+      "paper_p_c": 0.1011,
+      "delta_paper_p_c": 0.04429007092198581
+    },
+    {
+      "method": "losver",
+      "input_mode": "512",
+      "split": "valid",
+      "oracle": false,
+      "epoch": 14,
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 80,
+        "p_v": 206,
+        "p_b": 245,
+        "p_r": 31
+      },
+      "p_c": 0.1423487544483986,
+      "p_v": 0.3665480427046263,
+      "p_b": 0.4359430604982206,
+      "p_r": 0.05516014234875445,
+      "accuracy": 0.5435943060498221,
+      "precision": 0.5468451242829828,
+      "recall": 0.5088967971530249,
+      "f1": 0.5271889400921659,
+      "mcc": 0.0873993091171983,
+      "auc": 0.5636880865237269,
+      "auprc": 0.5612114420230693,
+      "loss": 2.951853554951174,
+      "paper_p_c": null,
+      "delta_paper_p_c": null
+    },
+    {
+      "method": "losver",
+      "input_mode": "512",
+      "split": "test",
+      "oracle": false,
+      "epoch": 14,
+      "samples": 1128,
+      "pairs": 564,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 79,
+        "p_v": 207,
+        "p_b": 249,
+        "p_r": 29
+      },
+      "p_c": 0.1400709219858156,
+      "p_v": 0.3670212765957447,
+      "p_b": 0.44148936170212766,
+      "p_r": 0.051418439716312055,
+      "accuracy": 0.5443262411347518,
+      "precision": 0.5478927203065134,
+      "recall": 0.5070921985815603,
+      "f1": 0.5267034990791897,
+      "mcc": 0.08889932035449238,
+      "auc": 0.567864732659323,
+      "auprc": 0.5668556062331087,
+      "loss": 2.6012340067020543,
+      "paper_p_c": 0.1401,
+      "delta_paper_p_c": -2.90780141843916e-05
+    },
+    {
+      "method": "losver_oracle",
+      "input_mode": "512",
+      "split": "valid",
+      "oracle": true,
+      "epoch": 5,
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 190,
+        "p_v": 226,
+        "p_b": 128,
+        "p_r": 18
+      },
+      "p_c": 0.33807829181494664,
+      "p_v": 0.40213523131672596,
+      "p_b": 0.2277580071174377,
+      "p_r": 0.03202846975088968,
+      "accuracy": 0.6530249110320284,
+      "precision": 0.6303030303030303,
+      "recall": 0.7402135231316725,
+      "f1": 0.6808510638297872,
+      "mcc": 0.3108117931190864,
+      "auc": 0.7166385937361482,
+      "auprc": 0.6864694489076547,
+      "loss": 0.7108952372420764,
+      "paper_p_c": null,
+      "delta_paper_p_c": null
+    },
+    {
+      "method": "losver_oracle",
+      "input_mode": "512",
+      "split": "test",
+      "oracle": true,
+      "epoch": 5,
+      "samples": 1128,
+      "pairs": 564,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 169,
+        "p_v": 236,
+        "p_b": 138,
+        "p_r": 21
+      },
+      "p_c": 0.299645390070922,
+      "p_v": 0.41843971631205673,
+      "p_b": 0.24468085106382978,
+      "p_r": 0.03723404255319149,
+      "accuracy": 0.6312056737588653,
+      "precision": 0.6117824773413897,
+      "recall": 0.7180851063829787,
+      "f1": 0.6606851549755302,
+      "mcc": 0.2664647481417685,
+      "auc": 0.7027894094864443,
+      "auprc": 0.6764546376543603,
+      "loss": 0.7169540526596367,
+      "paper_p_c": 0.3316,
+      "delta_paper_p_c": -0.031954609929078004
+    }
+  ]
+}

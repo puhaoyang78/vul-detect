@@ -98,4 +98,6 @@ python -m vulnmechanism.cli report --dataset primevul_paired --output-dir result
 | LOSVER：预测修改行 | 14.36% | 55.23% | 57.81% |
 | Oracle：真实修改行 | 31.91% | 64.80% | 70.08% |
 
-上述指标及历史权重原样保留，属于旧映射、旧分类头和旧选模协议。当前实现拒绝将旧 checkpoint 或缺少物理行号的预测文件用于修正后的实验；没有保留旧模型实现或自动兼容分支。修正后的分类性能须正式重训后评价，当前不预设提升。
+上述指标及历史权重原样保留，属于旧映射、旧分类头和旧选模协议。当前实现拒绝将旧 checkpoint 或缺少物理行号的预测文件用于修正后的实验；没有保留旧模型实现或自动兼容分支。
+
+修正版512的四组训练及检测器Valid/Test评价已完成，完整结果见 [512正式结果](results/losver_512/primevul_paired/report.md)。Test P-C：UniXcoder **14.54%**、预测修改行LOSVER **14.01%**、真实修改行Oracle **29.96%**；预测修改行LOSVER未超过Baseline。结果目录保存配置、逐Epoch日志、选模记录、指标及逐样本预测，权重保留在本地。L1仍在训练，尚无正式Test结论。
