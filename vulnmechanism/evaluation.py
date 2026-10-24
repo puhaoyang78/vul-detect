@@ -837,14 +837,20 @@ def localize_paired(data_dir, output_dir, split, *, device="auto"):
         dict(r, line_numbers=ns, lines_predicted=[n for n, p in zip(ns, v) if p > 0.5])
         for r, ns, v in zip(rows, line_numbers, probabilities)
     ]
-    write_jsonl(root / f"{split}.predicted.jsonl", predicted)
+    target = root / f"{split}.predicted.jsonl"
+    temporary = target.with_suffix(".jsonl.tmp")
+    write_jsonl(temporary, predicted)
+    temporary.replace(target)
+    target = root / f"{split}.line_scores.jsonl"
+    temporary = target.with_suffix(".jsonl.tmp")
     write_jsonl(
-        root / f"{split}.line_scores.jsonl",
+        temporary,
         [
             dict(sample_key=r["sample_key"], line_numbers=ns, line_scores=v)
             for r, ns, v in zip(rows, line_numbers, probabilities)
         ],
     )
+    temporary.replace(target)
     del model, cp
     if device.type == "cuda":
         torch.cuda.empty_cache()

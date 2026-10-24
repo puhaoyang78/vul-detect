@@ -45,6 +45,14 @@ def build_parser():
             )
             p.add_argument("--device", default="auto")
         if command == "train":
+            p.add_argument(
+                "--resume", action="store_true",
+                help="resume last.pt, skip completed methods, start unstarted methods",
+            )
+            p.add_argument(
+                "--save-every", type=int, default=100,
+                help="save training state every N optimizer steps (also at epoch boundaries)",
+            )
             p.add_argument("--paired-input", choices=("512", "l1"), default="512")
             p.add_argument("--window-micro-batch", type=int)
             p.add_argument("--function-micro-batch", type=int)
@@ -148,6 +156,8 @@ def main():
                     paired_input=args.paired_input,
                     window_micro_batch=args.window_micro_batch,
                     function_micro_batch=args.function_micro_batch,
+                    resume=args.resume,
+                    save_every=args.save_every,
                 )
     elif args.command == "check-paired":
         from .evaluation import check_paired

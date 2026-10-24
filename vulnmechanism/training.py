@@ -9,6 +9,7 @@ from pathlib import Path
 import random
 import time
 
+import numpy as np
 import torch
 import transformers
 
@@ -47,6 +48,73 @@ TRAINING = dict(
     source_max_length=2048,
     gradient_clip=1.0,
 )
+
+
+def rng_state():
+    return dict(
+        python=random.getstate(),
+        numpy=np.random.get_state(),
+        torch=torch.get_rng_state(),
+        cuda=torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+    )
+
+
+def restore_rng(state):
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"])
+    if state["cuda"] and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(state["cuda"])
+
+
+def save_training_state(run, model, optimizer, metadata, loop, *, scheduler=None):
+    """Only called at optimizer boundaries; an interrupted write keeps last.pt intact."""
+    run = Path(run)
+    checkpoint = dict(
+        config={
+            k: v for k, v in metadata.items()
+            if k not in ("environment", "checkpoint_interval")
+        },
+        model=model.state_dict(),
+        optimizer=optimizer.state_dict(),
+        scheduler=scheduler.state_dict() if scheduler is not None else None,
+        loop=loop,
+        rng=rng_state(),
+        log_positions={
+            name: (run / name).stat().st_size
+            for name in ("best.training.jsonl", "training.candidates.jsonl")
+            if (run / name).exists()
+        },
+    )
+    temporary = run / "last.pt.tmp"
+    torch.save(checkpoint, temporary)
+    temporary.replace(run / "last.pt")
+
+
+def load_training_state(run, model, optimizer, metadata, *, scheduler=None):
+    run = Path(run)
+    cp = torch.load(run / "last.pt", map_location="cpu", weights_only=False)
+    expected = {
+        k: v for k, v in metadata.items()
+        if k not in ("environment", "checkpoint_interval")
+    }
+    if cp["config"] != expected:
+        raise ValueError(f"{run}: resume configuration or data members differ")
+    model.load_state_dict(cp["model"])
+    optimizer.load_state_dict(cp["optimizer"])
+    if scheduler is not None:
+        scheduler.load_state_dict(cp["scheduler"])
+    # Work after the last committed optimizer step will be replayed, including
+    # validation and candidate selection. Discard its incomplete/duplicate logs.
+    for name in ("best.training.jsonl", "training.candidates.jsonl"):
+        path = run / name
+        position = cp["log_positions"].get(name, 0)
+        if position and (not path.exists() or path.stat().st_size < position):
+            raise ValueError(f"{path}: training history is shorter than the checkpoint")
+        if path.exists():
+            with path.open("r+b") as handle:
+                handle.truncate(position)
+    return cp["loop"], cp["rng"]
 
 
 def function_view_batches(records, views, micro_size):
@@ -88,7 +156,11 @@ def train(
     paired_input="512",
     window_micro_batch=None,
     function_micro_batch=None,
+    resume=False,
+    save_every=100,
 ):
+    if save_every < 1:
+        raise ValueError("save_every must be positive")
     if method in LOSVER_METHODS:
         if (
             dataset != "primevul_paired"
@@ -110,6 +182,8 @@ def train(
             input_mode=paired_input,
             window_micro_batch=window_micro_batch,
             function_micro_batch=function_micro_batch,
+            resume=resume,
+            save_every=save_every,
         )
     if (
         paired_input != "512"
@@ -145,9 +219,16 @@ def train(
     run = Path(output_dir) / dataset / method
     run.mkdir(parents=True, exist_ok=True)
     target = run / "best.pt"
-    if target.exists() or target.with_suffix(".training.jsonl").exists():
+    if resume and (run / "training.metrics.json").exists():
+        print(f"{run}: training complete; skipping", flush=True)
+        return json.loads((run / "training.metrics.json").read_text())
+    continuing = resume and (run / "last.pt").exists()
+    if not continuing and (
+        target.exists() or target.with_suffix(".training.jsonl").exists()
+        or (run / "last.pt").exists()
+    ):
         raise FileExistsError(
-            f"{run}: training already started; refusing to reuse fitted weights"
+            f"{run}: training already started; use --resume with last.pt"
         )
     builder = InputBuilder(
         AutoTokenizer.from_pretrained(model_path),
@@ -191,7 +272,6 @@ def train(
     seed_everything(seed)
     model = CodeBERT(model_path, device, gradient_checkpointing=device.type == "cuda")
     seed_everything(seed)
-    history = TrainingProgress(target)
     metadata = dict(
         dataset=dataset,
         method=method,
@@ -212,6 +292,9 @@ def train(
         "epoch MCC/F1/Accuracy/AUC",
         precision="FP32 parameters/optimizer; BF16 CUDA main forward; FP32 auxiliary VAT",
         parameter_count=sum(p.numel() for p in model.parameters()),
+        checkpoint_interval=save_every,
+        training_members=[r["sample_key"] for r in train_rows],
+        validation_members=[r["sample_key"] for r in valid_rows],
         input_protocol=dict(
             logical_budget=config["source_max_length"],
             prefix_tokens=len(builder.source_prefix),
@@ -235,38 +318,58 @@ def train(
             else None
         ),
     )
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=config["learning_rate"],
+        weight_decay=config["weight_decay"],
+    )
+    state = dict(
+        epoch=1, next_batch=0, global_step=0, best_key=(float("-inf"),) * 4,
+        selected_epoch=None, totals={}, training_seconds=0.0,
+    )
+    if continuing:
+        state, saved_rng = load_training_state(run, model, optimizer, metadata)
+        restore_rng(saved_rng)
+        print(
+            f"{run}: resuming epoch {state['epoch']}, batch {state['next_batch']}, "
+            f"step {state['global_step']}", flush=True,
+        )
+    if not continuing:
+        save_training_state(run, model, optimizer, metadata, state)
+    history = TrainingProgress(target, resume=continuing)
     write_json(run / "config.json", metadata)
-    best_key = (float("-inf"),) * 4
-    global_step = 0
-    selected_epoch = None
+    best_key = state["best_key"]
+    global_step = state["global_step"]
+    selected_epoch = state["selected_epoch"]
     batch_size = config["batch_size"]
     accumulation = config["gradient_accumulation"]
-    for epoch in range(1, config["epochs"] + 1):
+    for epoch in range(state["epoch"], config["epochs"] + 1):
         started = time.monotonic()
-        if epoch == 1:
-            optimizer = torch.optim.AdamW(
-                model.parameters(),
-                lr=config["learning_rate"],
-                weight_decay=config["weight_decay"],
-            )
+        previous_seconds = state["training_seconds"]
+        totals = state["totals"]
         order = list(range(len(units)))
         random.Random(seed + epoch - 1).shuffle(order)
         model.train()
         optimizer.zero_grad(set_to_none=True)
-        running, vat_total, transformed, queries, original_queries = 0.0, 0.0, 0, 0, 0
-        vat_eligible, vat_zero, vat_norm_min, vat_norm_max = 0, 0, None, None
-        search_seconds = 0.0
-        selection_reasons = Counter()
-        search_costs = Counter()
-        bce_costs = Counter()
-        vat_costs = Counter()
-        steps = 0
+        running = totals.get("running", 0.0)
+        vat_total = totals.get("vat_total", 0.0)
+        transformed = totals.get("transformed", 0)
+        queries = totals.get("queries", 0)
+        original_queries = totals.get("original_queries", 0)
+        vat_eligible, vat_zero = totals.get("vat_eligible", 0), totals.get("vat_zero", 0)
+        vat_norm_min, vat_norm_max = totals.get("vat_norm_min"), totals.get("vat_norm_max")
+        search_seconds = totals.get("search_seconds", 0.0)
+        selection_reasons = Counter(totals.get("selection_reasons", {}))
+        search_costs = Counter(totals.get("search_costs", {}))
+        bce_costs = Counter(totals.get("bce_costs", {}))
+        vat_costs = Counter(totals.get("vat_costs", {}))
+        steps = totals.get("steps", 0)
         num_batches = math.ceil(len(order) / unit_batch_size)
         bar = training_bar(
-            range(0, len(order), unit_batch_size),
+            range(state["next_batch"] * unit_batch_size, len(order), unit_batch_size),
             desc=f'{dataset}/{method} epoch {epoch}/{config["epochs"]}',
         )
-        for batch_index, start in enumerate(bar):
+        for batch_index, start in enumerate(bar, start=state["next_batch"]):
             selected_units = [units[i] for i in order[start : start + unit_batch_size]]
             batch = selected_units
             group_start = batch_index // accumulation * accumulation
@@ -449,7 +552,20 @@ def train(
                         f"{dataset}/{method} epoch {epoch} step {steps}/{steps_per_epoch}",
                         flush=True,
                     )
-        training_seconds = time.monotonic() - started
+                if global_step == 1 or global_step % save_every == 0 or batch_index + 1 == num_batches:
+                    state.update(
+                        next_batch=batch_index + 1, global_step=global_step,
+                        training_seconds=previous_seconds + time.monotonic() - started,
+                        totals=dict(running=running, vat_total=vat_total,
+                                    transformed=transformed, queries=queries,
+                                    original_queries=original_queries, vat_eligible=vat_eligible,
+                                    vat_zero=vat_zero, vat_norm_min=vat_norm_min,
+                                    vat_norm_max=vat_norm_max, search_seconds=search_seconds,
+                                    selection_reasons=dict(selection_reasons), search_costs=dict(search_costs),
+                                    bce_costs=dict(bce_costs), vat_costs=dict(vat_costs), steps=steps),
+                    )
+                    save_training_state(run, model, optimizer, metadata, state)
+        training_seconds = previous_seconds + time.monotonic() - started
         validation_started = time.monotonic()
         valid_logits = predict_logits(
             model, valid_rows, builder, device=device, batch_size=batch_size
@@ -482,7 +598,7 @@ def train(
                 vat_zero_direction_functions=vat_zero,
                 vat_norm_min=vat_norm_min,
                 vat_norm_max=vat_norm_max,
-                epoch_seconds=time.monotonic() - started,
+                epoch_seconds=previous_seconds + time.monotonic() - started,
                 training_seconds=training_seconds,
                 validation_seconds=time.monotonic() - validation_started,
                 learning_rate=optimizer.param_groups[0]["lr"],
@@ -509,6 +625,9 @@ def train(
             torch.save(checkpoint, temporary)
             temporary.replace(target)
             del checkpoint
+        state.update(epoch=epoch + 1, next_batch=0, global_step=global_step,
+                     best_key=best_key, selected_epoch=selected_epoch, totals={}, training_seconds=0.0)
+        save_training_state(run, model, optimizer, metadata, state)
     summary = dict(
         metadata,
         selected_epoch=selected_epoch,
@@ -709,6 +828,8 @@ def train_losver(
     input_mode="512",
     window_micro_batch=None,
     function_micro_batch=None,
+    resume=False,
+    save_every=100,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -717,6 +838,8 @@ def train_losver(
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    if save_every < 1:
+        raise ValueError("save_every must be positive")
     if input_mode not in ("512", "l1"):
         raise ValueError("paired input must be 512 or l1")
     window_micro_batch = (
@@ -735,12 +858,16 @@ def train_losver(
     root = Path(output_dir) / "primevul_paired"
     run = root / method
     run.mkdir(parents=True, exist_ok=True)
-    if (run / "best.training.jsonl").exists():
-        raise FileExistsError(f"{run}: training already started")
+    if resume and (run / "training.metrics.json").exists():
+        print(f"{run}: training complete; skipping", flush=True)
+        return json.loads((run / "training.metrics.json").read_text())
+    continuing = resume and (run / "last.pt").exists()
+    if not continuing and (
+        (run / "best.training.jsonl").exists() or (run / "last.pt").exists()
+    ):
+        raise FileExistsError(f"{run}: training already started; use --resume with last.pt")
     train_rows = paired_rows(data_dir, output_dir, variant, "train")
     valid_rows = paired_rows(data_dir, output_dir, variant, "valid")
-    import numpy as np
-
     device = resolve_device(device)
     seed_everything(settings["seed"])
     np.random.seed(settings["seed"])
@@ -824,7 +951,10 @@ def train_losver(
             else "Valid P-C rounded to 4 decimals"
         ),
         selection_ties="earlier epoch; strict improvement",
-        precision="FP32 eager attention; no AMP/checkpointing",
+        precision=(
+            "FP32 eager attention; window activation checkpointing; no AMP"
+            if input_mode == "l1" else "FP32 eager attention; no AMP/checkpointing"
+        ),
         localizer_attention="same 8-head attention within each window; core-token sums merged by physical line before classification; dropout=0",
         localizer_path=(
             str(root / "losver_localizer/best-f1.pt")
@@ -832,6 +962,9 @@ def train_losver(
             else None
         ),
         parameters=sum(p.numel() for p in model.parameters()),
+        checkpoint_interval=save_every,
+        training_members=[r["sample_key"] for r in train_rows],
+        validation_members=[r["sample_key"] for r in valid_rows],
         environment=dict(
             python=platform.python_version(),
             torch=torch.__version__,
@@ -842,8 +975,6 @@ def train_losver(
             ),
         ),
     )
-    write_json(run / "config.json", metadata)
-    history = TrainingProgress(run / "best.pt")
     best = (
         {"f1": -1.0}
         if variant == "localizer"
@@ -851,16 +982,46 @@ def train_losver(
     )
     chosen = {}
     global_step = 0
+    state = dict(
+        epoch=1, next_batch=0, global_step=0, best=best, chosen=chosen,
+        running=0.0, training_seconds=0.0, epoch_rng=None,
+    )
+    if continuing:
+        state, saved_rng = load_training_state(
+            run, model, optimizer, metadata, scheduler=scheduler,
+        )
+        best, chosen, global_step = state["best"], state["chosen"], state["global_step"]
+        restore_rng(saved_rng)
+        print(
+            f"{run}: resuming epoch {state['epoch']}, optimizer batch "
+            f"{state['next_batch']}, step {global_step}", flush=True,
+        )
+    if not continuing:
+        save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
+    history = TrainingProgress(run / "best.pt", resume=continuing)
+    write_json(run / "config.json", metadata)
     model.zero_grad()
-    for epoch in range(1, epochs + 1):
+    for epoch in range(state["epoch"], epochs + 1):
         started = time.monotonic()
-        running = 0.0
+        previous_seconds = state["training_seconds"]
+        running = state["running"]
         model.train()
         from itertools import islice
 
+        if state["next_batch"]:
+            # Recreate the original RandomSampler/worker seeds without querying
+            # the model. Features and collation are deterministic. Restore the
+            # saved model RNG after advancing to the next unprocessed function.
+            restore_rng(state["epoch_rng"])
+        else:
+            state["epoch_rng"] = rng_state()
         iterator = iter(loader)
+        if state["next_batch"]:
+            for _ in range(min(state["next_batch"] * accumulation, len(loader))):
+                next(iterator)
+            restore_rng(saved_rng)
         for step in training_bar(
-            range(steps_per_epoch), desc=f"{method} {epoch}/{epochs}"
+            range(state["next_batch"], steps_per_epoch), desc=f"{method} {epoch}/{epochs}"
         ):
             group = list(islice(iterator, accumulation))
             if not group:
@@ -902,7 +1063,13 @@ def train_losver(
                 )
                 history.add(item)
                 print(json.dumps(item), flush=True)
-        train_seconds = time.monotonic() - started
+            if global_step == 1 or global_step % save_every == 0 or step + 1 == steps_per_epoch:
+                state.update(
+                    next_batch=step + 1, global_step=global_step, running=running,
+                    training_seconds=previous_seconds + time.monotonic() - started,
+                )
+                save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
+        train_seconds = previous_seconds + time.monotonic() - started
         validation, predictions = validate_paired(
             model, valid_rows, tokenizer, variant, device, loader=valid_loader
         )
@@ -916,7 +1083,7 @@ def train_losver(
             validation_threshold=0.5,
             validation=validation,
             training_seconds=train_seconds,
-            epoch_seconds=time.monotonic() - started,
+            epoch_seconds=previous_seconds + time.monotonic() - started,
         )
         history.add(event)
         print(json.dumps(event), flush=True)
@@ -934,12 +1101,20 @@ def train_losver(
                     selected_epoch=epoch,
                     validation=validation,
                 )
-                torch.save(cp, run / f"best-{key}.pt")
+                temporary = run / f"best-{key}.pt.tmp"
+                torch.save(cp, temporary)
+                temporary.replace(run / f"best-{key}.pt")
                 write_json(
                     run / f"best-{key}.json", dict(epoch=epoch, validation=validation)
                 )
                 write_jsonl(run / f"valid.best-{key}.predictions.jsonl", predictions)
                 del cp
+        state.update(
+            epoch=epoch + 1, next_batch=0, global_step=global_step,
+            best=best, chosen=chosen, running=0.0, training_seconds=0.0,
+            epoch_rng=None,
+        )
+        save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
     required = "f1" if variant == "localizer" else "p_c"
     if required not in chosen:
         raise RuntimeError(f"{method}: no finite validation checkpoint was selected")
@@ -949,11 +1124,11 @@ def train_losver(
         optimizer_steps=global_step,
         selected_epochs=chosen,
     )
-    write_json(run / "training.metrics.json", summary)
     if variant == "localizer":
         del model, optimizer
         if device.type == "cuda":
             torch.cuda.empty_cache()
         for split in ("test", "valid", "train"):
             localize_paired(data_dir, output_dir, split, device=device)
+    write_json(run / "training.metrics.json", summary)
     return summary

@@ -33,10 +33,11 @@ def print_table(title: str, columns: list[str], rows: list[list[object]]) -> Non
 
 
 class TrainingProgress:
-    def __init__(self, checkpoint: str | Path):
+    def __init__(self, checkpoint: str | Path, *, resume: bool = False):
         self.path = Path(checkpoint).with_suffix(".training.jsonl")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text("", encoding="utf-8")
+        if not resume:
+            self.path.write_text("", encoding="utf-8")
 
     def add(self, row: dict) -> None:
         with self.path.open("a", encoding="utf-8") as handle:

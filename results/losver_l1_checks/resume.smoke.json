@@ -1,0 +1,144 @@
+{
+  "purpose": "resume correctness only, not a classification experiment",
+  "device": "NVIDIA GeForce RTX 4090",
+  "torch": "2.9.1+cu128",
+  "train_samples": 16,
+  "valid_samples": 4,
+  "formal_test_used": false,
+  "deterministic_algorithms": true,
+  "cublas_workspace_config": ":4096:8",
+  "results": [
+    {
+      "method": "bce",
+      "input_mode": "codebert",
+      "optimizer_steps": 2,
+      "resume_step": 1,
+      "max_model_abs_difference": 0.0,
+      "max_optimizer_abs_difference": 0.0,
+      "model_rng_matches": true,
+      "selected_epoch": 1,
+      "peak_gpu_allocated_bytes": 4108797952,
+      "seconds": 112.97611736296676,
+      "training_config": {
+        "seed": 42,
+        "epochs": 1,
+        "batch_size": 4,
+        "gradient_accumulation": 2,
+        "learning_rate": 1e-05,
+        "weight_decay": 0.01,
+        "source_max_length": 2048,
+        "gradient_clip": 1.0
+      },
+      "model_path": "/home/PublicData/PHY-data/resource/codebert-base"
+    },
+    {
+      "method": "unixcoder",
+      "input_mode": "l1",
+      "optimizer_steps": 2,
+      "resume_step": 1,
+      "max_model_abs_difference": 0.0,
+      "max_optimizer_abs_difference": 0.0,
+      "model_rng_matches": true,
+      "selected_epoch": 1,
+      "peak_gpu_allocated_bytes": 4890260480,
+      "seconds": 164.02726737689227,
+      "training_config": {
+        "seed": 123456,
+        "batch_size": 8,
+        "eval_batch_size": 8,
+        "learning_rate": 2e-05,
+        "adam_epsilon": 1e-08,
+        "weight_decay": 0.0,
+        "gradient_clip": 1.0,
+        "warmup_fraction": 0.1,
+        "block_size": 512,
+        "epochs": {
+          "baseline": 1,
+          "localizer": 1,
+          "predicted": 1,
+          "oracle": 1
+        },
+        "fp16": false,
+        "dropout_probability": 0.0,
+        "class_weight": 1.0,
+        "early_stopping": null
+      },
+      "function_micro_batch": 1,
+      "window_micro_batch": 1,
+      "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine"
+    },
+    {
+      "method": "losver_localizer",
+      "input_mode": "l1",
+      "optimizer_steps": 2,
+      "resume_step": 1,
+      "max_model_abs_difference": 0.0,
+      "max_optimizer_abs_difference": 0.0,
+      "model_rng_matches": true,
+      "selected_epoch": 1,
+      "peak_gpu_allocated_bytes": 5453034496,
+      "seconds": 236.26967589603737,
+      "training_config": {
+        "seed": 123456,
+        "batch_size": 8,
+        "eval_batch_size": 8,
+        "learning_rate": 2e-05,
+        "adam_epsilon": 1e-08,
+        "weight_decay": 0.0,
+        "gradient_clip": 1.0,
+        "warmup_fraction": 0.1,
+        "block_size": 512,
+        "epochs": {
+          "baseline": 1,
+          "localizer": 1,
+          "predicted": 1,
+          "oracle": 1
+        },
+        "fp16": false,
+        "dropout_probability": 0.0,
+        "class_weight": 1.0,
+        "early_stopping": null
+      },
+      "function_micro_batch": 1,
+      "window_micro_batch": 1,
+      "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine"
+    }
+  ],
+  "default_cuda_probe": {
+    "initial_weights_identical": true,
+    "starting_rng_identical": true,
+    "checkpoint_not_involved": true,
+    "repeated_forward_max_logit_difference": 4.470348358154297e-08,
+    "repeated_backward_max_gradient_difference": 0.000244140625,
+    "default_cuda_interrupted_vs_continuous_max_model_difference": 2.3243483155965805e-05
+  },
+  "completed": true,
+  "unit_tests_passed": 50,
+  "member_selection": "first 16 official paired Train functions and first 4 Valid functions; source-only export smoke uses Valid functions as a fixture, not official Test",
+  "members": {
+    "train": [
+      "primevul_paired:train:1",
+      "primevul_paired:train:2",
+      "primevul_paired:train:3",
+      "primevul_paired:train:4",
+      "primevul_paired:train:5",
+      "primevul_paired:train:6",
+      "primevul_paired:train:7",
+      "primevul_paired:train:8",
+      "primevul_paired:train:9",
+      "primevul_paired:train:10",
+      "primevul_paired:train:11",
+      "primevul_paired:train:12",
+      "primevul_paired:train:13",
+      "primevul_paired:train:14",
+      "primevul_paired:train:15",
+      "primevul_paired:train:16"
+    ],
+    "valid": [
+      "primevul_paired:valid:1",
+      "primevul_paired:valid:2",
+      "primevul_paired:valid:3",
+      "primevul_paired:valid:4"
+    ]
+  }
+}

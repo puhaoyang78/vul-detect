@@ -54,6 +54,12 @@ Localizer保留原8头MHA、MLP和Focal Loss（pos_weight=5、alpha=0.8、gamma=
 
 L1默认函数Micro-batch1、窗口Micro-batch1、累积至8个函数再更新。Localizer保留原行平均Focal目标，检测器保留函数平均BCE；末组不足8个函数按实际成员归一化。窗口内编码和上下文计算使用保留Dropout RNG的梯度重计算。没有超长函数/窗口丢弃或自动缩短输入；资源错误直接报告。可用 `--window-micro-batch`、`--function-micro-batch` 调整显存，两者不改变函数级预算。
 
+所有正式训练（CodeBERT六方法、LOSVER的512/L1四组）都会原子保存 `last.pt`：包括模型、优化器、学习率调度器（适用时）、Python/NumPy/PyTorch/CUDA随机状态、当前Epoch和批次、累计统计及Valid选模记录。初始化、首个优化器步、之后每100步、每轮训练结束和Valid选模结束保存；可用 `--save-every N` 调整间隔。只在梯度累积完成后保存，恢复到最近成功保存的更新，尚未保存的步骤会重算。
+
+在原训练命令追加 `--resume`，保持数据、模型、训练参数、运行环境和GPU编号一致即可续训。已完成的方法直接跳过，尚未开始的方法正常从预训练初始化，因此同一串行命令可以重复运行。恢复时截去断点之后的候选/指标日志，重建同一Epoch的采样顺序，再恢复模型随机状态；不会从选模用的 `best*.pt` 猜测优化器状态。旧实验缺少 `last.pt` 时不能精确续训。定位器完成训练及源码预测导出后才标记完成；`best*.pt` 继续只用于选模、评价和推理。
+
+续训测试见 `tests/test_resume.py`，真实预训练模型GPU检查见 [resume.smoke.json](results/losver_l1_checks/resume.smoke.json)。GPU检查使用确定性算子验证恢复状态；正式训练保留原CUDA设置。默认CUDA算子在相同权重和随机状态下重复前后向也存在数值差异，保存随机状态不代表默认GPU计算可逐位重现。
+
 ```bash
 # 从原始文件准备成员及Diff标注；已有data/primevul_paired时无需重建。
 python -m vulnmechanism.cli prepare --paired --datasets primevul \
@@ -72,7 +78,7 @@ python -m vulnmechanism.cli train --dataset primevul_paired --paired-input 512 \
 python -m vulnmechanism.cli train --dataset primevul_paired --paired-input l1 \
   --window-micro-batch 1 --function-micro-batch 1 \
   --methods losver_localizer unixcoder losver losver_oracle \
-  --output-dir results/losver_l1 --device cuda:0
+  --output-dir results/losver_l1 --device cuda:0 --resume
 
 # 对两种输入各自运行；只使用各自源Valid选定的checkpoint。
 python -m vulnmechanism.cli evaluate --dataset primevul_paired \
