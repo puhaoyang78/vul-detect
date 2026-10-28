@@ -20,6 +20,17 @@
       "batch_prediction": 0.5234314799308777,
       "absolute_difference": 0.0,
       "prediction": 1
+    },
+    {
+      "method": "repair_region_robust_fusion",
+      "run": "full",
+      "selected_beta": 0.25,
+      "sample_key": "primevul_paired:valid:5",
+      "source_only_input": true,
+      "probability": 0.6913536190986633,
+      "batch_prediction": 0.6913536190986633,
+      "absolute_difference": 0.0,
+      "prediction": 1
     }
   ]
 }

@@ -138,3 +138,16 @@ Pilot统一增加 `--train-limit 1024 --valid-limit 256 --paired-epochs 4`（单
 定位器阶段只训练行级Focal，检测器阶段保留全部函数并训练BCE。区域的“可靠关联”指有界语法绑定及控制关系候选，不是漏洞位置真值或完整数据流证明。弱背景主要为结构分隔符，自己的弱标签F1不能替代真实定位质量。β=0表示融合训练模型在推理时使用全局路径，不等同于独立训练的Baseline。
 
 多β验证会重放相同RNG状态，并仅保留一次Valid遍历的RNG推进，保证下一轮训练采样与单遍验证对照一致。[Pilot协议检查](results/repair_region_512/pilot/protocol-checks.json)记录相同步数、成员、参数量和RNG核验。早期受验证采样影响的三个Pilot检测器已移至`pilot/sampler_mismatch/`保留记录，排除在正式对比之外；当前表使用修正后重跑结果。
+
+完整512实验已完成：两组Localizer各40轮、43,560步，四组新Detector各16轮、17,424步；保留4354/562/564对原始划分，阈值固定0.5。下表均使用564对Test，各模型只通过源Valid选模；完整[报告](results/repair_region_512/report.md)、[Valid/Test对比表](results/repair_region_512/comparison.csv)及[协议核对](results/repair_region_512/protocol-checks.json)已保存。
+
+| 方法 | Test P-C | AUC | MCC | F1 |
+|---|---:|---:|---:|---:|
+| Global Mean + Linear | 14.54% | 0.5729 | 0.1125 | 0.5815 |
+| 原LOSVER参照 | 14.01% | 0.5679 | 0.0889 | 0.5267 |
+| Diff-only + Hard Weight（匹配弱损失） | 10.99% | 0.5666 | 0.0826 | 0.4480 |
+| Repair-Relation + Hard Weight | 11.88% | 0.5527 | 0.0656 | 0.5357 |
+| Diff-only + Robust Fusion | 13.30% | 0.5645 | 0.0922 | 0.5477 |
+| Repair-Relation + Robust Fusion | 12.59% | 0.5672 | 0.0946 | 0.5184 |
+
+完整方法未超过Global Mean；其Valid/Test P-C分别为15.12%/12.59%，Valid选择β=0.25。Repair-Relation Localizer的可见Unknown比例为Train 74.53%、Valid 73.62%；33.14%/36.48%的函数没有可见区域正监督，但全部保留函数BCE。自身弱标签F1为0.9724，同时预测了79.11%的Valid行，不能据高F1认定修复定位准确。当前没有证据支持稳定分类收益，未继续增加变体、全覆盖输入或额外模块。权重与含源码的缓存留在本地，不含源码的行概率及检测预测随结果发布。

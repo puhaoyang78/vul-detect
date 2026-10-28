@@ -12,6 +12,8 @@ Same UniXcoder pretrained initialization, 512 token offsets/code mask, Linear(76
 
 The localizer stage optimizes only its line objective; the detector stage retains all original functions and optimizes function BCE. The reported syntactic relations are repair-related candidates, not proven vulnerability locations or a complete data-flow analysis. The existing corrected 512 global/LOSVER results are full-data references; the pilot trains its references on the same subset and budget.
 
+Sampling/RNG checks are in [protocol-checks.json](protocol-checks.json). The matched pilot compares saved RNG states against its freshly trained global baseline. Historical full-data references retain selected weights and recorded configuration, but no last optimizer/RNG checkpoint; an exact historical RNG-state comparison is unavailable. Full new detectors are compared against one another without retraining the historical baseline.
+
 | Model | Split | Epoch | Beta | P-C | AUC | MCC | F1 | Recall | Patched FPR | Pair ranking |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | global_mean | valid | 2 | None | 0.0625 | 0.5409 | 0.1222 | 0.6721 | 0.9609 | 0.8984 | 0.5078 |
@@ -29,6 +31,7 @@ The localizer stage optimizes only its line objective; the detector stage retain
 - valid: full method versus diff_robust_fusion: delta P-C=+0.0000, AUC=+0.0001, MCC=+0.0000, F1=+0.0000.
 - valid: full method versus repair_region_hard_weight: delta P-C=+0.0156, AUC=+0.0045, MCC=-0.0011, F1=+0.4421.
 - valid: the table shows metric-specific differences from one seed; it does not establish stable or causal classification gains.
+- valid: strict correct pairs=6/128 versus global 8/128; delta vulnerable Recall=-0.0703, patched FPR=-0.0312. Pair ranking correct=65, ties=30; global ranking correct=65, ties=30. These are observed decision/ranking changes, not causal attribution.
 
 Beta=0 disables the local branch at inference; this is the global path of a model trained with beta=.25, not the independently trained global baseline. [fusion_usage.json](fusion_usage.json) records score-gate fallback and effective beta. No module is added in response to these results.
 
@@ -48,6 +51,8 @@ The neighbour-region pilot control matches added label counts and confidence wei
 Train caches are in-sample predictions, Valid uses unseen functions. This mismatch remains; the experiment does not establish a causal effect from any association between localization and detection. Own weak-label metrics use different positive regions across supervision types and must not be compared as localization ground truth.
 
 The negative labels here are weak structural background, not a representative set of unrelated executable statements. High supervised F1 can therefore reflect easy code-versus-structure separation; it is insufficient evidence of precise repair localization. A high score on an Unknown line cannot by itself be called a false positive. The broad predicted-region coverage below is evidence of weak selectivity, with semantic accuracy still unmeasured on most executable lines.
+
+This supports a supervision-selectivity explanation, but the experiment does not isolate its causal effect. The small Train/Valid gap on these weak labels also does not establish that in-sample localization is the primary cause of failure. No OOF or additional loss/background variant was run.
 
 Repair-type metrics and denominators: [repair_types.json](repair_types.json). Aligned detector predictions, selected beta, epoch histories, optimizer steps and input/Unknown coverage are in each method directory. Historical checkpoints/results are referenced without modification.
 
@@ -69,7 +74,7 @@ The pre-existing Train development review in ../train_region_review.csv (or trai
 | train | 1024 | 642 | 2685/7126 | 134 |
 | valid | 256 | 148 | 706/1204 | 30 |
 
-Input coverage is common to all compared methods; identical encoded pairs and invisible repair changes remain in function BCE and evaluation. Region labels cannot recover code outside the fixed 512 input. No member or input rule was changed to improve these counts.
+Input coverage is common to all compared methods; identical encoded pairs and invisible repair changes remain in function BCE and evaluation. Region labels cannot recover code outside the fixed 512 input. This is a shared limitation and cannot alone explain differences between the methods. No member or input rule was changed to improve these counts.
 
 ## Addition-only repair pairs
 
@@ -84,3 +89,20 @@ Input coverage is common to all compared methods; identical encoded pairs and in
 | neighbour_region_robust_fusion | valid | 24 | 0.0417 | 0.5530 | 0.9167 | 0.8750 |
 
 Pure addition is defined from the original nonempty Diff deletion labels, before any new supervision. It includes checks, initialization, state/cleanup and comments; these are not all new checks. The group is descriptive and does not select hyperparameters.
+
+## Logged computational cost
+
+| Stage | Completed epochs | Optimizer steps | Train seconds | Logged epoch seconds |
+| --- | --- | --- | --- | --- |
+| global_mean | 4 | 512 | 134.7 | 143.0 |
+| original_losver | 4 | 512 | 242.7 | 251.3 |
+| diff_hard_weight | 4 | 512 | 161.6 | 170.6 |
+| repair_region_hard_weight | 4 | 512 | 103.3 | 112.4 |
+| diff_robust_fusion | 4 | 512 | 161.9 | 192.4 |
+| repair_region_robust_fusion | 4 | 512 | 130.8 | 163.6 |
+| neighbour_region_robust_fusion | 4 | 512 | 181.2 | 216.3 |
+| diff_localizer | 4 | 512 | 199.4 | 210.6 |
+| repair_region_localizer | 4 | 512 | 208.6 | 219.6 |
+| neighbour_region_localizer | 4 | 512 | 165.2 | 177.1 |
+
+Times are logged wall times, including loader/CPU/IO effects and concurrent GPU jobs, not isolated kernel benchmarks. Logged epoch time includes validation before end-of-epoch checkpoint serialization; startup, localization export and final evaluation are excluded. Robust methods use three Valid beta passes per epoch versus one in other detectors; training optimizer steps remain equal. Localizer cost is a separate stage shared by detectors using its scores.

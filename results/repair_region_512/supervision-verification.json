@@ -69,5 +69,36 @@
   },
   "seconds": 213.26038003200665,
   "test_supervision_generated": false,
-  "unknown_is_line_label_only": true
+  "unknown_is_line_label_only": true,
+  "prediction_cache_alignment": {
+    "diff_hard_weight": {
+      "train": {
+        "functions": 8708,
+        "visible_lines": 318058,
+        "member_order_and_binary_labels_preserved": true,
+        "line_numbers_and_threshold_agree": true
+      },
+      "valid": {
+        "functions": 1124,
+        "visible_lines": 38745,
+        "member_order_and_binary_labels_preserved": true,
+        "line_numbers_and_threshold_agree": true
+      }
+    },
+    "repair_region_hard_weight": {
+      "train": {
+        "functions": 8708,
+        "visible_lines": 318058,
+        "member_order_and_binary_labels_preserved": true,
+        "line_numbers_and_threshold_agree": true
+      },
+      "valid": {
+        "functions": 1124,
+        "visible_lines": 38745,
+        "member_order_and_binary_labels_preserved": true,
+        "line_numbers_and_threshold_agree": true
+      }
+    }
+  },
+  "review_source_and_one_based_physical_line_agreement": 86
 }

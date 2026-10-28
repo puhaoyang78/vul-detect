@@ -23,7 +23,12 @@
     "learning_rate": 2e-05,
     "source_valid_selection": "localizer masked positive F1; detector P-C rounded4, earlier epoch on ties",
     "threshold": 0.5,
-    "threshold_comparison": ">"
+    "threshold_comparison": ">",
+    "completed": true,
+    "localizer_optimizer_steps": 43560,
+    "detector_optimizer_steps": 17424,
+    "test_functions": 1128,
+    "test_pairs": 564
   },
   "unknown": {
     "meaning": "line-level repair-relation supervision only, never a function class or a prediction outcome",
@@ -74,5 +79,7 @@
     "neighbour_region_robust_fusion (pilot area-size control)"
   ],
   "note": "Diff-only matched control shares bounded direct-statement mapping, sparse background/Unknown handling and focal definition with repair_region; original raw-Diff LOSVER is an additional historical/full or matched/pilot reference. No Test tuning, OOF, pair loss or new encoder/head.",
-  "validation_rng": "Exactly one validation-loader RNG advance per epoch; beta repeats replay the same RNG state."
+  "validation_rng": "Exactly one validation-loader RNG advance per epoch; beta repeats replay the same RNG state.",
+  "implementation_commit": "cfc2ae3df2d460ab0f87e5fc84df8abbdb014ee4",
+  "historical_full_reference": "results/losver_512/primevul_paired"
 }

@@ -1205,7 +1205,7 @@ def repair_region_report(output_dir, data_dir):
                     selected_beta=beta,
                     no_above_gate_fraction=float((strength == 0).mean()),
                     local_branch_disabled_by_valid=beta == 0,
-                    nonzero_residual_fraction=float((effective > 0).mean()),
+                    nonzero_coefficient_fraction=float((effective > 0).mean()),
                     effective_beta_quantiles=np.quantile(
                         effective, [0, 0.5, 0.9, 1]
                     ).tolist(),
@@ -1250,6 +1250,8 @@ def repair_region_report(output_dir, data_dir):
         "",
         "The localizer stage optimizes only its line objective; the detector stage retains all original functions and optimizes function BCE. The reported syntactic relations are repair-related candidates, not proven vulnerability locations or a complete data-flow analysis. The existing corrected 512 global/LOSVER results are full-data references; the pilot trains its references on the same subset and budget.",
         "",
+        "Sampling/RNG checks are in [protocol-checks.json](protocol-checks.json). The matched pilot compares saved RNG states against its freshly trained global baseline. Historical full-data references retain selected weights and recorded configuration, but no last optimizer/RNG checkpoint; an exact historical RNG-state comparison is unavailable. Full new detectors are compared against one another without retraining the historical baseline.",
+        "",
         "| Model | Split | Epoch | Beta | P-C | AUC | MCC | F1 | Recall | Patched FPR | Pair ranking |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
@@ -1291,6 +1293,16 @@ def repair_region_report(output_dir, data_dir):
             lines += [
                 f"- {split}: the table shows metric-specific differences from one seed; it does not establish stable or causal classification gains."
             ]
+        baseline = next(
+            r for r in table if r["split"] == split and r["method"] == "global_mean"
+        )
+        lines.append(
+            f"- {split}: strict correct pairs={round(full['p_c']*full['pairs'])}/{full['pairs']} versus global {round(baseline['p_c']*baseline['pairs'])}/{baseline['pairs']}; delta vulnerable Recall={full['recall']-baseline['recall']:+.4f}, patched FPR={full['patched_fpr']-baseline['patched_fpr']:+.4f}. Pair ranking correct={round(full['pair_ranking_accuracy']*full['pairs'])}, ties={full['pair_ranking_ties']}; global ranking correct={round(baseline['pair_ranking_accuracy']*baseline['pairs'])}, ties={baseline['pair_ranking_ties']}. These are observed decision/ranking changes, not causal attribution."
+        )
+        if full["selected_beta"]:
+            lines.append(
+                f"- {split}: source Valid selected beta={full['selected_beta']}; the full-data result is not explained by beta=0 disabling the local branch. A positive coefficient does not establish a large or useful representation residual."
+            )
     lines += [
         "",
         "Beta=0 disables the local branch at inference; this is the global path of a model trained with beta=.25, not the independently trained global baseline. [fusion_usage.json](fusion_usage.json) records score-gate fallback and effective beta. No module is added in response to these results.",
@@ -1313,6 +1325,8 @@ def repair_region_report(output_dir, data_dir):
         "Train caches are in-sample predictions, Valid uses unseen functions. This mismatch remains; the experiment does not establish a causal effect from any association between localization and detection. Own weak-label metrics use different positive regions across supervision types and must not be compared as localization ground truth.",
         "",
         "The negative labels here are weak structural background, not a representative set of unrelated executable statements. High supervised F1 can therefore reflect easy code-versus-structure separation; it is insufficient evidence of precise repair localization. A high score on an Unknown line cannot by itself be called a false positive. The broad predicted-region coverage below is evidence of weak selectivity, with semantic accuracy still unmeasured on most executable lines.",
+        "",
+        "This supports a supervision-selectivity explanation, but the experiment does not isolate its causal effect. The small Train/Valid gap on these weak labels also does not establish that in-sample localization is the primary cause of failure. No OOF or additional loss/background variant was run.",
         "",
         "Repair-type metrics and denominators: [repair_types.json](repair_types.json). Aligned detector predictions, selected beta, epoch histories, optimizer steps and input/Unknown coverage are in each method directory. Historical checkpoints/results are referenced without modification.",
         "",
@@ -1355,7 +1369,7 @@ def repair_region_report(output_dir, data_dir):
             )
         lines += [
             "",
-            "Input coverage is common to all compared methods; identical encoded pairs and invisible repair changes remain in function BCE and evaluation. Region labels cannot recover code outside the fixed 512 input. No member or input rule was changed to improve these counts.",
+            "Input coverage is common to all compared methods; identical encoded pairs and invisible repair changes remain in function BCE and evaluation. Region labels cannot recover code outside the fixed 512 input. This is a shared limitation and cannot alone explain differences between the methods. No member or input rule was changed to improve these counts.",
         ]
     lines += [
         "",
@@ -1372,6 +1386,28 @@ def repair_region_report(output_dir, data_dir):
     lines += [
         "",
         "Pure addition is defined from the original nonempty Diff deletion labels, before any new supervision. It includes checks, initialization, state/cleanup and comments; these are not all new checks. The group is descriptive and does not select hyperparameters.",
+        "",
+    ]
+    lines += [
+        "## Logged computational cost",
+        "",
+        "| Stage | Completed epochs | Optimizer steps | Train seconds | Logged epoch seconds |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for name, run in specs + [
+        (s + "_localizer", runs / (s + "_localizer"))
+        for s in ("diff", "repair_region", "neighbour_region")
+    ]:
+        history_path = run / "best.training.jsonl"
+        if not (run / "training.metrics.json").exists() or not history_path.exists():
+            continue
+        epochs = [e for e in read_jsonl(history_path) if e["event"] == "epoch"]
+        lines.append(
+            f"| {name} | {len(epochs)} | {sum(e['optimizer_steps'] for e in epochs)} | {sum(e['training_seconds'] for e in epochs):.1f} | {sum(e['epoch_seconds'] for e in epochs):.1f} |"
+        )
+    lines += [
+        "",
+        "Times are logged wall times, including loader/CPU/IO effects and concurrent GPU jobs, not isolated kernel benchmarks. Logged epoch time includes validation before end-of-epoch checkpoint serialization; startup, localization export and final evaluation are excluded. Robust methods use three Valid beta passes per epoch versus one in other detectors; training optimizer steps remain equal. Localizer cost is a separate stage shared by detectors using its scores.",
         "",
     ]
     (root / "report.md").write_text("\n".join(lines))

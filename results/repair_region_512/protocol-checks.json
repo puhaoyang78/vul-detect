@@ -1,0 +1,87 @@
+{
+  "completed_detectors": [
+    "diff_hard_weight",
+    "repair_region_hard_weight",
+    "diff_robust_fusion",
+    "repair_region_robust_fusion"
+  ],
+  "optimizer_steps": 17424,
+  "complete_rng_states_equal": true,
+  "rng_keys": [
+    "python",
+    "numpy",
+    "torch",
+    "cuda"
+  ],
+  "historical_global_last_checkpoint_retained": false,
+  "historical_global_comparison": "same recorded training/input configuration; historical RNG trajectory unavailable",
+  "pilot_comparison": "pilot/protocol-checks.json",
+  "pending_detectors": [],
+  "checks": [
+    {
+      "method": "diff_hard_weight",
+      "steps": 17424,
+      "epochs": 16,
+      "same_full_rng": true,
+      "same_members_config_parameters": true,
+      "linear_head": [
+        768,
+        1
+      ],
+      "valid_functions": 1124,
+      "test_functions": 1128,
+      "recomputed_metrics_equal": true,
+      "selected_epoch": 11,
+      "selected_beta": null
+    },
+    {
+      "method": "repair_region_hard_weight",
+      "steps": 17424,
+      "epochs": 16,
+      "same_full_rng": true,
+      "same_members_config_parameters": true,
+      "linear_head": [
+        768,
+        1
+      ],
+      "valid_functions": 1124,
+      "test_functions": 1128,
+      "recomputed_metrics_equal": true,
+      "selected_epoch": 15,
+      "selected_beta": null
+    },
+    {
+      "method": "diff_robust_fusion",
+      "steps": 17424,
+      "epochs": 16,
+      "same_full_rng": true,
+      "same_members_config_parameters": true,
+      "linear_head": [
+        768,
+        1
+      ],
+      "valid_functions": 1124,
+      "test_functions": 1128,
+      "recomputed_metrics_equal": true,
+      "selected_epoch": 12,
+      "selected_beta": 0.1
+    },
+    {
+      "method": "repair_region_robust_fusion",
+      "steps": 17424,
+      "epochs": 16,
+      "same_full_rng": true,
+      "same_members_config_parameters": true,
+      "linear_head": [
+        768,
+        1
+      ],
+      "valid_functions": 1124,
+      "test_functions": 1128,
+      "recomputed_metrics_equal": true,
+      "selected_epoch": 11,
+      "selected_beta": 0.25
+    }
+  ],
+  "all_training_and_formal_test_complete": true
+}

@@ -1,0 +1,92 @@
+[
+  {
+    "method": "diff_robust_fusion",
+    "split": "train",
+    "functions": 8708,
+    "selected_beta": 0.1,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": false,
+    "nonzero_coefficient_fraction": 1.0,
+    "effective_beta_quantiles": [
+      0.025577962398529053,
+      0.09797750711441042,
+      0.09873818635940552,
+      0.09947313070297242
+    ]
+  },
+  {
+    "method": "diff_robust_fusion",
+    "split": "valid",
+    "functions": 1124,
+    "selected_beta": 0.1,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": false,
+    "nonzero_coefficient_fraction": 1.0,
+    "effective_beta_quantiles": [
+      0.07649980783462525,
+      0.09803747534751892,
+      0.09873327016830445,
+      0.0992508888244629
+    ]
+  },
+  {
+    "method": "diff_robust_fusion",
+    "split": "test",
+    "functions": 1128,
+    "selected_beta": 0.1,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": false,
+    "nonzero_coefficient_fraction": 1.0,
+    "effective_beta_quantiles": [
+      0.0935600519180298,
+      0.09803199768066406,
+      0.09873165130615234,
+      0.09943943023681641
+    ]
+  },
+  {
+    "method": "repair_region_robust_fusion",
+    "split": "train",
+    "functions": 8708,
+    "selected_beta": 0.25,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": false,
+    "nonzero_coefficient_fraction": 1.0,
+    "effective_beta_quantiles": [
+      0.08864173293113708,
+      0.24742287397384644,
+      0.24832075834274292,
+      0.24917256832122803
+    ]
+  },
+  {
+    "method": "repair_region_robust_fusion",
+    "split": "valid",
+    "functions": 1124,
+    "selected_beta": 0.25,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": false,
+    "nonzero_coefficient_fraction": 1.0,
+    "effective_beta_quantiles": [
+      0.1990174651145935,
+      0.24743464589118958,
+      0.24836841225624084,
+      0.24906137585639954
+    ]
+  },
+  {
+    "method": "repair_region_robust_fusion",
+    "split": "test",
+    "functions": 1128,
+    "selected_beta": 0.25,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": false,
+    "nonzero_coefficient_fraction": 1.0,
+    "effective_beta_quantiles": [
+      0.23758843541145325,
+      0.2474765181541443,
+      0.2484033524990082,
+      0.24903562664985657
+    ]
+  }
+]

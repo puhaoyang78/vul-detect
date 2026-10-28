@@ -114,3 +114,4 @@ __pycache__/
 !/results/repair_region_512/**/primevul_paired/*/valid*.predictions.jsonl
 !/results/repair_region_512/**/primevul_paired/*/test.predictions.jsonl
 !/results/repair_region_512/**/primevul_paired/*/best.training.jsonl
+!/results/repair_region_512/**/primevul_paired/*/*.line_scores.jsonl
