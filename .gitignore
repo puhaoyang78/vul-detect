@@ -80,3 +80,9 @@ __pycache__/
 !/results/losver_diagnosis/figures/
 !/results/losver_diagnosis/figures/*.png
 !/results/losver_diagnosis/figures/*.pdf
+!/results/losver_patch_audit/
+!/results/losver_patch_audit/*.json
+!/results/losver_patch_audit/*.jsonl
+!/results/losver_patch_audit/*.csv
+!/results/losver_patch_audit/*.md
+!/results/losver_patch_audit/*.log

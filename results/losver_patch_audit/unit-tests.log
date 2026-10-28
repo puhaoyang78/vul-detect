@@ -1,0 +1,41 @@
+test_actual_byte_bpe_offsets (test_losver.LOSVERTests.test_actual_byte_bpe_offsets) ...
+
+
+ok
+test_all_variants_share_truncation_and_partial_final_line (test_losver.LOSVERTests.test_all_variants_share_truncation_and_partial_final_line) ... ok
+test_cross_line_token_has_shared_memberships (test_losver.LOSVERTests.test_cross_line_token_has_shared_memberships) ... ok
+test_diff_rule_unchanged (test_losver.LOSVERTests.test_diff_rule_unchanged) ... ok
+test_encoder_padding_invariance_for_both_heads (test_losver.LOSVERTests.test_encoder_padding_invariance_for_both_heads) ... ok
+test_l1_boundaries_and_unique_source_cores (test_losver.LOSVERTests.test_l1_boundaries_and_unique_source_cores) ... ok
+test_l1_global_softmax_does_not_recount_context (test_losver.LOSVERTests.test_l1_global_softmax_does_not_recount_context) ... ok
+test_localizer_positive_f1_and_physical_output_ids (test_losver.LOSVERTests.test_localizer_positive_f1_and_physical_output_ids) ... ok
+test_long_physical_line_is_classified_once_after_core_mean (test_losver.LOSVERTests.test_long_physical_line_is_classified_once_after_core_mean) ... ok
+test_original_focal_and_adamw_are_preserved (test_losver.LOSVERTests.test_original_focal_and_adamw_are_preserved) ... ok
+test_overlapping_byte_offsets_still_mark_incomplete_line (test_losver.LOSVERTests.test_overlapping_byte_offsets_still_mark_incomplete_line) ... ok
+test_pair_metrics_and_oracle_isolation (test_losver.LOSVERTests.test_pair_metrics_and_oracle_isolation) ... ok
+test_paired_report_preserves_input_budget_and_rejects_mixing (test_losver.LOSVERTests.test_paired_report_preserves_input_budget_and_rejects_mixing) ... ok
+test_physical_lines_merged_whitespace_crlf_and_eof (test_losver.LOSVERTests.test_physical_lines_merged_whitespace_crlf_and_eof) ... ok
+test_ragged_batch_preserves_sparse_physical_ids (test_losver.LOSVERTests.test_ragged_batch_preserves_sparse_physical_ids) ... ok
+test_real_encoder_backward_and_strict_reload (test_losver.LOSVERTests.test_real_encoder_backward_and_strict_reload) ... ok
+test_same_factory_and_linear_head_for_three_detectors (test_losver.LOSVERTests.test_same_factory_and_linear_head_for_three_detectors) ... ok
+test_short_l1_is_identical_to_512_for_all_variants (test_losver.LOSVERTests.test_short_l1_is_identical_to_512_for_all_variants) ... ok
+test_softmax_excludes_padding_and_specials_and_trains_all_dimensions (test_losver.LOSVERTests.test_softmax_excludes_padding_and_specials_and_trains_all_dimensions) ... ok
+test_source_only_inference_uses_one_tokenization (test_losver.LOSVERTests.test_source_only_inference_uses_one_tokenization) ... ok
+test_window_checkpoint_preserves_dropout_and_parameter_gradients (test_losver.LOSVERTests.test_window_checkpoint_preserves_dropout_and_parameter_gradients) ... ok
+test_interventions_reproduce_all_canonical_pools_and_isolate_diff (test_losver_diagnosis.DiagnosisTests.test_interventions_reproduce_all_canonical_pools_and_isolate_diff) ... ok
+test_softmax_amplifies_by_exp_four_not_five (test_losver_diagnosis.DiagnosisTests.test_softmax_amplifies_by_exp_four_not_five) ... ok
+test_strict_boundary_and_pair_denominators (test_losver_diagnosis.DiagnosisTests.test_strict_boundary_and_pair_denominators) ... ok
+test_addition_has_no_vulnerable_diff_label (test_losver_patch_audit.PatchAuditTests.test_addition_has_no_vulnerable_diff_label) ... ok
+test_ambiguous_hunk_is_not_applied (test_losver_patch_audit.PatchAuditTests.test_ambiguous_hunk_is_not_applied) ... ok
+test_binding_scope_does_not_link_shadowed_definition (test_losver_patch_audit.PatchAuditTests.test_binding_scope_does_not_link_shadowed_definition) ... ok
+test_comment_lines_and_crlf_are_not_executable_changes (test_losver_patch_audit.PatchAuditTests.test_comment_lines_and_crlf_are_not_executable_changes) ... ok
+test_enclosing_condition_is_header_not_entire_branch (test_losver_patch_audit.PatchAuditTests.test_enclosing_condition_is_header_not_entire_branch) ... ok
+test_qualified_class_and_preprocessor_identity (test_losver_patch_audit.PatchAuditTests.test_qualified_class_and_preprocessor_identity) ... ok
+test_semantic_categories_separate_check_cleanup_and_state (test_losver_patch_audit.PatchAuditTests.test_semantic_categories_separate_check_cleanup_and_state) ... ok
+test_unknown_parsing_and_correspondence_are_not_success (test_losver_patch_audit.PatchAuditTests.test_unknown_parsing_and_correspondence_are_not_success) ... ok
+test_whole_function_patch_replay_and_rename (test_losver_patch_audit.PatchAuditTests.test_whole_function_patch_replay_and_rename) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 3.408s
+
+OK

@@ -1,0 +1,20 @@
+{
+  "pairs": 4354,
+  "seconds": 240.06550862593576,
+  "per_pair_seconds": {
+    "min": 0.0004837997257709503,
+    "q25": 0.009472794714383781,
+    "median": 0.018783148378133774,
+    "q75": 0.040121503290720284,
+    "q90": 0.09496846487745658,
+    "max": 42.97521663410589
+  },
+  "status": {
+    "ok": 3139,
+    "parse_or_function_boundary_failure": 1106,
+    "no_resolved_statement": 38,
+    "function_correspondence_unknown": 71
+  },
+  "definition": "Tree-sitter syntactic/binding candidates; nearest lexical definitions are NOT sound reaching definitions or dependence proofs",
+  "unavailable": "no alias analysis, interprocedural analysis, CFG dominance/postdominance, or missing caller context"
+}

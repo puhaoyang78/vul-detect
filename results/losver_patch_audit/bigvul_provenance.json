@@ -1,0 +1,3797 @@
+{
+  "source": "/home/PublicData/PHY-data/vul_detect/data/bigvul/MSR_data_cleaned.csv",
+  "inspected_rows": 188184,
+  "seconds": 456.9586217729375,
+  "records": [
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?h=poppler-0.22&id=a9b8ab4657dec65b8b86c225d12c533ad7e984e2",
+      "commit_id": "a9b8ab4657dec65b8b86c225d12c533ad7e984e2",
+      "parentID": "7266a634e01e20648cc877371edc95651d30d4fc",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "0",
+      "CVE ID": "CVE-2013-1789",
+      "CWE ID": "",
+      "big_vul_idx": 4087,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:106",
+          "pair_key": "primevul_paired:train:52",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.php.net/?p=php-src.git;a=commit;h=270a406ac94b5fc5cc9ef59fc61e3b4b95648a3e",
+      "commit_id": "270a406ac94b5fc5cc9ef59fc61e3b4b95648a3e",
+      "parentID": "8d748e5de519867d9b6ce40e3ea28a209b07768f",
+      "file_name": "",
+      "project": "php",
+      "vul": "0",
+      "CVE ID": "CVE-2012-6113",
+      "CWE ID": "CWE-200",
+      "big_vul_idx": 6181,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3938",
+          "pair_key": "primevul_paired:train:1968",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/b5e2f339865fb443107e5b10603e53bbc92dc054",
+      "commit_id": "b5e2f339865fb443107e5b10603e53bbc92dc054",
+      "parentID": "",
+      "file_name": "drivers/staging/wlags49_h2/wl_priv.c",
+      "project": "linux",
+      "vul": "0",
+      "CVE ID": "CVE-2013-4514",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 29471,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:620",
+          "pair_key": "primevul_paired:train:309",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/b9e146d8eb3b9ecae5086d373b50fa0c1f3e7f0f",
+      "commit_id": "b9e146d8eb3b9ecae5086d373b50fa0c1f3e7f0f",
+      "parentID": "",
+      "file_name": "kernel/signal.c",
+      "project": "linux",
+      "vul": "0",
+      "CVE ID": "CVE-2013-2141",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 31708,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:678",
+          "pair_key": "primevul_paired:train:338",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/864745d291b5ba80ea0bd0edcbe67273de368836",
+      "commit_id": "864745d291b5ba80ea0bd0edcbe67273de368836",
+      "parentID": "",
+      "file_name": "net/xfrm/xfrm_user.c",
+      "project": "linux",
+      "vul": "0",
+      "CVE ID": "CVE-2013-1826",
+      "CWE ID": "",
+      "big_vul_idx": 33167,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:702",
+          "pair_key": "primevul_paired:train:350",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/erikd/libsndfile/commit/725c7dbb95bfaf8b4bb7b04820e3a00cceea9ce6",
+      "commit_id": "725c7dbb95bfaf8b4bb7b04820e3a00cceea9ce6",
+      "parentID": "",
+      "file_name": "src/file_io.c",
+      "project": "libsndfile",
+      "vul": "0",
+      "CVE ID": "CVE-2014-9756",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 45233,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3580",
+          "pair_key": "primevul_paired:train:1789",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/8d0207652cbe27d1f962050737848e5ad4671958",
+      "commit_id": "8d0207652cbe27d1f962050737848e5ad4671958",
+      "parentID": "",
+      "file_name": "fs/xfs/xfs_file.c",
+      "project": "linux",
+      "vul": "0",
+      "CVE ID": "CVE-2014-7822",
+      "CWE ID": "CWE-264",
+      "big_vul_idx": 46443,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1026",
+          "pair_key": "primevul_paired:train:512",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/libgd/libgd/commit/40bec0f38f50e8510f5bb71a82f516d46facde03",
+      "commit_id": "40bec0f38f50e8510f5bb71a82f516d46facde03",
+      "parentID": "",
+      "file_name": "src/gd_webp.c",
+      "project": "libgd",
+      "vul": "0",
+      "CVE ID": "CVE-2016-7568",
+      "CWE ID": "CWE-190",
+      "big_vul_idx": 49725,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1082",
+          "pair_key": "primevul_paired:train:540",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/uclouvain/openjpeg/commit/c16bc057ba3f125051c9966cf1f5b68a05681de4",
+      "commit_id": "c16bc057ba3f125051c9966cf1f5b68a05681de4",
+      "parentID": "",
+      "file_name": "src/lib/openjp2/pi.c",
+      "project": "openjpeg",
+      "vul": "0",
+      "CVE ID": "CVE-2016-7163",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 50049,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1088",
+          "pair_key": "primevul_paired:train:543",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/b6f13a5ef9d6280cf984826a5de012a32c396cd4?w=1",
+      "commit_id": "b6f13a5ef9d6280cf984826a5de012a32c396cd4?w=1",
+      "parentID": "",
+      "file_name": "ext/gd/gd.c",
+      "project": "php-src",
+      "vul": "0",
+      "CVE ID": "CVE-2016-7126",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 50214,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1092",
+          "pair_key": "primevul_paired:train:545",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/fc27fe7e8deef2f37cba3f2be2d52b6ca5eb9d57",
+      "commit_id": "fc27fe7e8deef2f37cba3f2be2d52b6ca5eb9d57",
+      "parentID": "",
+      "file_name": "sound/core/seq_device.c",
+      "project": "linux",
+      "vul": "0",
+      "CVE ID": "CVE-2017-16528",
+      "CWE ID": "CWE-416",
+      "big_vul_idx": 59950,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1336",
+          "pair_key": "primevul_paired:train:667",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/netblue30/firejail/commit/6b8dba29d73257311564ee7f27b9b14758cc693e",
+      "commit_id": "6b8dba29d73257311564ee7f27b9b14758cc693e",
+      "parentID": "",
+      "file_name": "src/firejail/main.c",
+      "project": "firejail",
+      "vul": "0",
+      "CVE ID": "CVE-2017-5206",
+      "CWE ID": "",
+      "big_vul_idx": 69266,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1726",
+          "pair_key": "primevul_paired:train:862",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/neomutt/neomutt/commit/9bfab35522301794483f8f9ed60820bdec9be59e",
+      "commit_id": "9bfab35522301794483f8f9ed60820bdec9be59e",
+      "parentID": "",
+      "file_name": "pop.c",
+      "project": "neomutt",
+      "vul": "0",
+      "CVE ID": "CVE-2018-14363",
+      "CWE ID": "CWE-22",
+      "big_vul_idx": 79483,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2052",
+          "pair_key": "primevul_paired:train:1025",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/9d348bcc2c4bbd3805e7eec97b594be9febbdf9a",
+      "commit_id": "9d348bcc2c4bbd3805e7eec97b594be9febbdf9a",
+      "parentID": "",
+      "file_name": "libr/anal/p/anal_avr.c",
+      "project": "radare2",
+      "vul": "0",
+      "CVE ID": "CVE-2018-11383",
+      "CWE ID": "CWE-416",
+      "big_vul_idx": 82760,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4302",
+          "pair_key": "primevul_paired:train:2150",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/25a3703ef2e015bbe1d1f16f6b2f63bb10dd34f4",
+      "commit_id": "25a3703ef2e015bbe1d1f16f6b2f63bb10dd34f4",
+      "parentID": "",
+      "file_name": "libr/anal/p/anal_avr.c",
+      "project": "radare2",
+      "vul": "0",
+      "CVE ID": "CVE-2018-11377",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 82912,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2116",
+          "pair_key": "primevul_paired:train:1057",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/vadz/libtiff/commit/3c5eb8b1be544e41d2c336191bc4936300ad7543",
+      "commit_id": "3c5eb8b1be544e41d2c336191bc4936300ad7543",
+      "parentID": "",
+      "file_name": "libtiff/tif_unix.c",
+      "project": "libtiff",
+      "vul": "0",
+      "CVE ID": "CVE-2014-8130",
+      "CWE ID": "CWE-369",
+      "big_vul_idx": 86765,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2242",
+          "pair_key": "primevul_paired:train:1120",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        },
+        {
+          "sample_key": "primevul_paired:train:2244",
+          "pair_key": "primevul_paired:train:1121",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/libgd/libgd/commit/77f619d48259383628c3ec4654b1ad578e9eb40e",
+      "commit_id": "77f619d48259383628c3ec4654b1ad578e9eb40e",
+      "parentID": "",
+      "file_name": "src/gd.c",
+      "project": "php-src",
+      "vul": "0",
+      "CVE ID": "CVE-2016-9933",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 96146,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2610",
+          "pair_key": "primevul_paired:train:1304",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/019c7acc36b8893d060684fb3b5deb6156c92b9e",
+      "commit_id": "019c7acc36b8893d060684fb3b5deb6156c92b9e",
+      "parentID": "",
+      "file_name": "chrome/common/notification_service.cc",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "",
+      "CWE ID": "",
+      "big_vul_idx": 100035,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2670",
+          "pair_key": "primevul_paired:train:1334",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/b7a161633fd7ecb59093c2c56ed908416292d778",
+      "commit_id": "b7a161633fd7ecb59093c2c56ed908416292d778",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Tools/WebKitTestRunner/InjectedBundle/atk/AccessibilityUIElementAtk.cpp",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2012-2867",
+      "CWE ID": "",
+      "big_vul_idx": 113633,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2748",
+          "pair_key": "primevul_paired:train:1373",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/3511b6ec1e955578ddb6e90f0cc99f824e36026e",
+      "commit_id": "3511b6ec1e955578ddb6e90f0cc99f824e36026e",
+      "parentID": "",
+      "file_name": "chrome/test/gpu/gpu_feature_browsertest.cc",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2012-2823",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 114725,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2758",
+          "pair_key": "primevul_paired:train:1378",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/90fb08ed0146c9beacfd4dde98a20fc45419fff3",
+      "commit_id": "90fb08ed0146c9beacfd4dde98a20fc45419fff3",
+      "parentID": "",
+      "file_name": "content/browser/web_contents/web_contents_impl.cc",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2013-6626",
+      "CWE ID": "",
+      "big_vul_idx": 118843,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2792",
+          "pair_key": "primevul_paired:train:1395",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/faceb51d5058e1159835a4b0cd65081bb0a9de1e",
+      "commit_id": "faceb51d5058e1159835a4b0cd65081bb0a9de1e",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Source/web/WebRuntimeFeatures.cpp",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2013-0912",
+      "CWE ID": "CWE-94",
+      "big_vul_idx": 124427,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2864",
+          "pair_key": "primevul_paired:train:1431",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/f592cf6a66b63decc7e7093b36501229a5de1f1d",
+      "commit_id": "f592cf6a66b63decc7e7093b36501229a5de1f1d",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Source/core/svg/SVGDocumentExtensions.cpp",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2014-3168",
+      "CWE ID": "",
+      "big_vul_idx": 128871,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2894",
+          "pair_key": "primevul_paired:train:1446",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/2386a6a49ea992a1e859eb0296c1cc53e5772cdb",
+      "commit_id": "2386a6a49ea992a1e859eb0296c1cc53e5772cdb",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Source/core/html/forms/ImageInputType.cpp",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2016-1643",
+      "CWE ID": "CWE-361",
+      "big_vul_idx": 145685,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3026",
+          "pair_key": "primevul_paired:train:1512",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/2ad6b02cbf13d8f9dce50340e966ba413cb66b1c",
+      "commit_id": "2ad6b02cbf13d8f9dce50340e966ba413cb66b1c",
+      "parentID": "",
+      "file_name": "chromeos/services/ime/input_engine.cc",
+      "project": "Chrome",
+      "vul": "0",
+      "CVE ID": "CVE-2017-5056",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 150268,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3046",
+          "pair_key": "primevul_paired:train:1522",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://android.googlesource.com/platform/packages/apps/Bluetooth/+/122feb9a0b04290f55183ff2f0384c6c53756bd8",
+      "commit_id": "122feb9a0b04290f55183ff2f0384c6c53756bd8",
+      "parentID": "",
+      "file_name": "jni/com_android_bluetooth_btservice_AdapterService.cpp",
+      "project": "Android",
+      "vul": "0",
+      "CVE ID": "CVE-2016-3760",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 176839,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3460",
+          "pair_key": "primevul_paired:train:1729",
+          "target": 0,
+          "exact_before": true,
+          "exact_after": true,
+          "stripped_before": true,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.samba.org/?p=samba.git;a=commit;h=b000da128b5fb519d2d3f2e7fd20e4a25b7dae7d",
+      "commit_id": "b000da128b5fb519d2d3f2e7fd20e4a25b7dae7d",
+      "parentID": "a819d2b440aafa3138d95ff6e8b824da885a70e9",
+      "file_name": "",
+      "project": "samba",
+      "vul": "1",
+      "CVE ID": "CVE-2015-8467",
+      "CWE ID": "CWE-264",
+      "big_vul_idx": 177736,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4252",
+          "pair_key": "primevul_paired:train:2125",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.haproxy.org/?p=haproxy.git;a=commit;h=efbbdf72992cd20458259962346044cafd9331c0",
+      "commit_id": "efbbdf72992cd20458259962346044cafd9331c0",
+      "parentID": "2d19fbcab21356f5aee1f2a52591a38665360bb6",
+      "file_name": "",
+      "project": "haproxy",
+      "vul": "1",
+      "CVE ID": "CVE-2018-20102",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 177772,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4202",
+          "pair_key": "primevul_paired:train:2100",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?id=9cf2325fb22f812b31858e519411f57747d39bd8",
+      "commit_id": "9cf2325fb22f812b31858e519411f57747d39bd8",
+      "parentID": "c399b2d512aa073b0d7cd8eb5413a4b43f0d6aef",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2009-3605",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 177792,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4230",
+          "pair_key": "primevul_paired:train:2114",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?id=9cf2325fb22f812b31858e519411f57747d39bd8",
+      "commit_id": "9cf2325fb22f812b31858e519411f57747d39bd8",
+      "parentID": "c399b2d512aa073b0d7cd8eb5413a4b43f0d6aef",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2009-3605",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 177793,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4232",
+          "pair_key": "primevul_paired:train:2115",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/systemd/systemd/commit/?id=505b6a61c22d5565e9308045c7b9bf79f7d0517e",
+      "commit_id": "505b6a61c22d5565e9308045c7b9bf79f7d0517e",
+      "parentID": "7d5e9c0f60cddf01ec803012cbdc02d2f55b78c1",
+      "file_name": "",
+      "project": "systemd",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4391",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 177830,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4186",
+          "pair_key": "primevul_paired:train:2092",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/spice/spice/commit/?id=8af619009660b24e0b41ad26b30289eea288fcc2",
+      "commit_id": "8af619009660b24e0b41ad26b30289eea288fcc2",
+      "parentID": "ef9a8bf05328d290f82613037f5419f0d5e87eb5",
+      "file_name": "",
+      "project": "spice",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4282",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 177833,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4254",
+          "pair_key": "primevul_paired:train:2126",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?id=da63c35549e8852a410946ab016a3f25ac701bdf",
+      "commit_id": "da63c35549e8852a410946ab016a3f25ac701bdf",
+      "parentID": "504b3590182175390f474657a372e78fb1508262",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2017-14976",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 177837,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4206",
+          "pair_key": "primevul_paired:train:2102",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?h=poppler-0.22&id=b1026b5978c385328f2a15a2185c599a563edf91",
+      "commit_id": "b1026b5978c385328f2a15a2185c599a563edf91",
+      "parentID": "bef2c42f381c74fdb8bbb43babe1a93a0e229fb0",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2013-1790",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 177902,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4262",
+          "pair_key": "primevul_paired:train:2130",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?h=poppler-0.22&id=a9b8ab4657dec65b8b86c225d12c533ad7e984e2",
+      "commit_id": "a9b8ab4657dec65b8b86c225d12c533ad7e984e2",
+      "parentID": "7266a634e01e20648cc877371edc95651d30d4fc",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2013-1789",
+      "CWE ID": "",
+      "big_vul_idx": 177903,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:105",
+          "pair_key": "primevul_paired:train:52",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?h=poppler-0.22&id=8b6dc55e530b2f5ede6b9dfb64aafdd1d5836492",
+      "commit_id": "8b6dc55e530b2f5ede6b9dfb64aafdd1d5836492",
+      "parentID": "e14b6e9c13d35c9bd1e0c50906ace8e707816888",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2013-1788",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 177906,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4274",
+          "pair_key": "primevul_paired:train:2136",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?h=poppler-0.22&id=957aa252912cde85d76c41e9710b33425a82b696",
+      "commit_id": "957aa252912cde85d76c41e9710b33425a82b696",
+      "parentID": "bbc2d8918fe234b7ef2c480eb148943922cc0959",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2013-1788",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 177909,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4296",
+          "pair_key": "primevul_paired:train:2147",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/xorg/lib/libX11/commit/?id=b469da1430cdcee06e31c6251b83aede072a1ff0",
+      "commit_id": "b469da1430cdcee06e31c6251b83aede072a1ff0",
+      "parentID": "d81da209fd4d0c2c9ad0596a8078e58864479d0d",
+      "file_name": "",
+      "project": "libx11",
+      "vul": "1",
+      "CVE ID": "CVE-2018-14599",
+      "CWE ID": "CWE-682",
+      "big_vul_idx": 177921,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4218",
+          "pair_key": "primevul_paired:train:2108",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/gstreamer/gst-plugins-base/commit/?id=566583e87147f774e7fc4c78b5f7e61d427e40a9",
+      "commit_id": "566583e87147f774e7fc4c78b5f7e61d427e40a9",
+      "parentID": "02339d2d4c50a5a4cc81614cf05ef6dd17252d65",
+      "file_name": "",
+      "project": "gstreamer",
+      "vul": "1",
+      "CVE ID": "CVE-2009-0586",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 177926,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4326",
+          "pair_key": "primevul_paired:train:2162",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.php.net/?p=php-src.git;a=commit;h=270a406ac94b5fc5cc9ef59fc61e3b4b95648a3e",
+      "commit_id": "270a406ac94b5fc5cc9ef59fc61e3b4b95648a3e",
+      "parentID": "8d748e5de519867d9b6ce40e3ea28a209b07768f",
+      "file_name": "",
+      "project": "php",
+      "vul": "1",
+      "CVE ID": "CVE-2012-6113",
+      "CWE ID": "CWE-200",
+      "big_vul_idx": 177977,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3937",
+          "pair_key": "primevul_paired:train:1968",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=dd248ed7e204ee8a1873914e02b8b526e8f1b80d",
+      "commit_id": "dd248ed7e204ee8a1873914e02b8b526e8f1b80d",
+      "parentID": "33d076ebd05491d9f7cace682b4ed70c33263f12",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2017-9060",
+      "CWE ID": "CWE-772",
+      "big_vul_idx": 177985,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4240",
+          "pair_key": "primevul_paired:train:2119",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=4ffcdef4277a91af15a3c09f7d16af072c29f3f2",
+      "commit_id": "4ffcdef4277a91af15a3c09f7d16af072c29f3f2",
+      "parentID": "5daf9b3025baef10ee7b77daa003d5696b58d5dc",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2017-8086",
+      "CWE ID": "CWE-772",
+      "big_vul_idx": 178057,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4320",
+          "pair_key": "primevul_paired:train:2159",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=bf25983345ca44aec3dd92c57142be45452bd38a",
+      "commit_id": "bf25983345ca44aec3dd92c57142be45452bd38a",
+      "parentID": "d3532a0db02296e687711b8cdc7791924efccea0",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2014-8106",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178066,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4294",
+          "pair_key": "primevul_paired:train:2146",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=0be839a2701369f669532ea5884c15bead1c6e08",
+      "commit_id": "0be839a2701369f669532ea5884c15bead1c6e08",
+      "parentID": "d6be29e3fb5659102ac0e48e295d177cb67e32c5",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2014-7840",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178072,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4282",
+          "pair_key": "primevul_paired:train:2140",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?id=39d140bfc0b8239bdd96d6a55842034ae5c05473",
+      "commit_id": "39d140bfc0b8239bdd96d6a55842034ae5c05473",
+      "parentID": "c6a091512745771894b54a71613fd6b5ca1adcb3",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2010-3704",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178075,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4292",
+          "pair_key": "primevul_paired:train:2145",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=3592fe0c919cf27a81d8e9f9b4f269553418bb01",
+      "commit_id": "3592fe0c919cf27a81d8e9f9b4f269553418bb01",
+      "parentID": "0a752eeea810a1c37f5de4edba355c35cfa42524",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-8669",
+      "CWE ID": "CWE-369",
+      "big_vul_idx": 178082,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4200",
+          "pair_key": "primevul_paired:train:2099",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=e95c9a493a5a8d6f969e86c9f19f80ffe6587e19",
+      "commit_id": "e95c9a493a5a8d6f969e86c9f19f80ffe6587e19",
+      "parentID": "ba42ebb863ab7d40adc79298422ed9596df8f73a",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-8577",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178083,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4306",
+          "pair_key": "primevul_paired:train:2152",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=b16c129daf0fed91febbb88de23dae8271c8898a",
+      "commit_id": "b16c129daf0fed91febbb88de23dae8271c8898a",
+      "parentID": "a43edcf20a14aab81373fe64a6ed8cf84eb2a7f3",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7995",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178084,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4190",
+          "pair_key": "primevul_paired:train:2094",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=070c4b92b8cd5390889716677a0b92444d6e087a",
+      "commit_id": "070c4b92b8cd5390889716677a0b92444d6e087a",
+      "parentID": "b38636b83727d611a354217fa9d17de5872d7da4",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7908",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178097,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4328",
+          "pair_key": "primevul_paired:train:2163",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=b53dd4495ced2432a0b652ea895e651d07336f7e",
+      "commit_id": "b53dd4495ced2432a0b652ea895e651d07336f7e",
+      "parentID": "6a71123469e0c9286354c6655440da51566c1763",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7466",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178098,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4316",
+          "pair_key": "primevul_paired:train:2157",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/gstreamer/gst-plugins-bad/commit/?id=bc2cdd57d549ab3ba59782e9b395d0cd683fd3ac",
+      "commit_id": "bc2cdd57d549ab3ba59782e9b395d0cd683fd3ac",
+      "parentID": "22f148e7b8b9f18779154ad666f715aac2b34d97",
+      "file_name": "",
+      "project": "gstreamer",
+      "vul": "1",
+      "CVE ID": "CVE-2006-4192",
+      "CWE ID": "",
+      "big_vul_idx": 178102,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4368",
+          "pair_key": "primevul_paired:train:2183",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=167d97a3def77ee2dbf6e908b0ecbfe2103977db",
+      "commit_id": "167d97a3def77ee2dbf6e908b0ecbfe2103977db",
+      "parentID": "7263da78045dc91cc207f350911efe4259e99b3c",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7170",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 178104,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4236",
+          "pair_key": "primevul_paired:train:2117",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=93060258ae748573ca7197204125a2670047896d",
+      "commit_id": "93060258ae748573ca7197204125a2670047896d",
+      "parentID": "f216833ac0fcd85f62d73387f529f141f8f4abfd",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-6835",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178122,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4234",
+          "pair_key": "primevul_paired:train:2116",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/virglrenderer/commit/?id=6eb13f7a2dcf391ec9e19b4c2a79e68305f63c22",
+      "commit_id": "6eb13f7a2dcf391ec9e19b4c2a79e68305f63c22",
+      "parentID": "926b9b3460a48f6454d8bbe9e44313d86a65447f",
+      "file_name": "",
+      "project": "virglrenderer",
+      "vul": "1",
+      "CVE ID": "CVE-2017-5993",
+      "CWE ID": "CWE-772",
+      "big_vul_idx": 178127,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4280",
+          "pair_key": "primevul_paired:train:2139",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=1e7aed70144b4673fc26e73062064b6724795e5f",
+      "commit_id": "1e7aed70144b4673fc26e73062064b6724795e5f",
+      "parentID": "9a4c0e220d8a4f82b5665d0ee95ef94d8e1509d5",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-6490",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178128,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4336",
+          "pair_key": "primevul_paired:train:2167",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=844864fbae66935951529408831c2f22367a57b6",
+      "commit_id": "844864fbae66935951529408831c2f22367a57b6",
+      "parentID": "6214a11ac167b1e866c04a81360286d186f04d82",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-5337",
+      "CWE ID": "CWE-200",
+      "big_vul_idx": 178185,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4212",
+          "pair_key": "primevul_paired:train:2105",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=a6b3167fa0e825aebb5a7cd8b437b6d41584a196",
+      "commit_id": "a6b3167fa0e825aebb5a7cd8b437b6d41584a196",
+      "parentID": "b60bdd1f1ee1616b7a9aeeffb4088e1ce2710fb2",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-5126",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178186,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4248",
+          "pair_key": "primevul_paired:train:2123",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.gnupg.org/cgi-bin/gitweb.cgi?p=gnupg.git;a=commit;h=014b2103fcb12f261135e3954f26e9e07b39e342",
+      "commit_id": "014b2103fcb12f261135e3954f26e9e07b39e342",
+      "parentID": "52b96ef6b81951ddacf146a74e88e5512efd03a0",
+      "file_name": "",
+      "project": "gnupg",
+      "vul": "1",
+      "CVE ID": "CVE-2014-4617",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178225,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4340",
+          "pair_key": "primevul_paired:train:2169",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.samba.org/?p=samba.git;a=commit;h=25452a2268ac7013da28125f3df22085139af12d",
+      "commit_id": "25452a2268ac7013da28125f3df22085139af12d",
+      "parentID": "c05d13d3c2c5d516c55cec133ba635f528034862",
+      "file_name": "",
+      "project": "samba",
+      "vul": "1",
+      "CVE ID": "CVE-2010-1635",
+      "CWE ID": "",
+      "big_vul_idx": 178227,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4366",
+          "pair_key": "primevul_paired:train:2182",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=3a15cc0e1ee7168db0782133d2607a6bfa422d66",
+      "commit_id": "3a15cc0e1ee7168db0782133d2607a6bfa422d66",
+      "parentID": "5144fe36056d3a94b0d8da9e10adc555c057baa8",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-4001",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178250,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4246",
+          "pair_key": "primevul_paired:train:2122",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.libav.org/?p=libav.git;a=commit;h=58b2e0f0f2fc96c1158e04f8aba95cbe6157a1a3",
+      "commit_id": "58b2e0f0f2fc96c1158e04f8aba95cbe6157a1a3",
+      "parentID": "e5356ebf2216918ad6351d4caa8b58c881c4b0ea",
+      "file_name": "",
+      "project": "libav",
+      "vul": "1",
+      "CVE ID": "CVE-2012-0947",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178320,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4266",
+          "pair_key": "primevul_paired:train:2132",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commitdiff;h=362786f14a753d8a5256ef97d7c10ed576d6572b",
+      "commit_id": "362786f14a753d8a5256ef97d7c10ed576d6572b",
+      "parentID": "f1b2bc601af5037f0af6d55575e619b912e348b5",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2016-2857",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178354,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4284",
+          "pair_key": "primevul_paired:train:2141",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.exim.org/exim.git/commitdiff/5b7a7c051c9ab9ee7c924a611f90ef2be03e0ad0",
+      "commit_id": "5b7a7c051c9ab9ee7c924a611f90ef2be03e0ad0",
+      "parentID": "6e516525fd6b123625e496f718346a72b566af18",
+      "file_name": "",
+      "project": "exim",
+      "vul": "1",
+      "CVE ID": "CVE-2014-2957",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178365,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4304",
+          "pair_key": "primevul_paired:train:2151",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/virglrenderer/commit/?id=747a293ff6055203e529f083896b823e22523fe7",
+      "commit_id": "747a293ff6055203e529f083896b823e22523fe7",
+      "parentID": "40b0e7813325b08077b6f541b3989edb2d86d837",
+      "file_name": "",
+      "project": "virglrenderer",
+      "vul": "1",
+      "CVE ID": "CVE-2016-10163",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178411,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4358",
+          "pair_key": "primevul_paired:train:2178",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.libav.org/?p=libav.git;a=commit;h=ce7aee9b733134649a6ce2fa743e51733f33e67e",
+      "commit_id": "ce7aee9b733134649a6ce2fa743e51733f33e67e",
+      "parentID": "3e13005cac6e076053276b515f5fcf59a3f4b65d",
+      "file_name": "",
+      "project": "libav",
+      "vul": "1",
+      "CVE ID": "CVE-2011-3951",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178413,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4322",
+          "pair_key": "primevul_paired:train:2160",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/xorg/xserver/commit/render/render.c?id=5725849a1b427cd4a72b84e57f211edb35838718",
+      "commit_id": "5725849a1b427cd4a72b84e57f211edb35838718",
+      "parentID": "fc091936e2bddbbab9c9a501edc5a5f08388617e",
+      "file_name": "",
+      "project": "xserver",
+      "vul": "1",
+      "CVE ID": "CVE-2010-4819",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178440,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4330",
+          "pair_key": "primevul_paired:train:2164",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.libav.org/?p=libav.git;a=commitdiff;h=0a49a62f998747cfa564d98d36a459fe70d3299b",
+      "commit_id": "0a49a62f998747cfa564d98d36a459fe70d3299b",
+      "parentID": "6f4cd33efb5a9ec75db1677d5f7846c60337129f",
+      "file_name": "",
+      "project": "libav",
+      "vul": "1",
+      "CVE ID": "CVE-2015-5479",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 178470,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4244",
+          "pair_key": "primevul_paired:train:2121",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://cgit.freedesktop.org/poppler/poppler/commit/?id=58e04a08afee39370283c494ee2e4e392fd3b684",
+      "commit_id": "58e04a08afee39370283c494ee2e4e392fd3b684",
+      "parentID": "0af3e009a702d0c6ca716565ab87b386baa0a1ed",
+      "file_name": "",
+      "project": "poppler",
+      "vul": "1",
+      "CVE ID": "CVE-2013-7296",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178471,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4360",
+          "pair_key": "primevul_paired:train:2179",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=9878d173f574df74bde0ff50b2f81009fbee81bb",
+      "commit_id": "9878d173f574df74bde0ff50b2f81009fbee81bb",
+      "parentID": "8c6c0478996e8f77374e69b6df68655b0b4ba689",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4544",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 178527,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4380",
+          "pair_key": "primevul_paired:train:2189",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=5193be3be35f29a35bc465036cd64ad60d43385f",
+      "commit_id": "5193be3be35f29a35bc465036cd64ad60d43385f",
+      "parentID": "ead7a57df37d2187813a121308213f41591bd811",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4539",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178528,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4170",
+          "pair_key": "primevul_paired:train:2084",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=eea750a5623ddac7a61982eec8f1c93481857578",
+      "commit_id": "eea750a5623ddac7a61982eec8f1c93481857578",
+      "parentID": "71f7fe48e10a8437c9d42d859389f37157f59980",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4150",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178534,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4256",
+          "pair_key": "primevul_paired:train:2127",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=98f93ddd84800f207889491e0b5d851386b459cf",
+      "commit_id": "98f93ddd84800f207889491e0b5d851386b459cf",
+      "parentID": "73d963c0a75cb99c6aaa3f6f25e427aa0b35a02e",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4149",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 178535,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4348",
+          "pair_key": "primevul_paired:train:2173",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://git.qemu.org/?p=qemu.git;a=commit;h=afbcc40bee4ef51731102d7d4b499ee12fc182e1",
+      "commit_id": "afbcc40bee4ef51731102d7d4b499ee12fc182e1",
+      "parentID": "5dae6e30c531feb31eed99f9039b52bf70832ce3",
+      "file_name": "",
+      "project": "qemu",
+      "vul": "1",
+      "CVE ID": "CVE-2014-0143",
+      "CWE ID": "CWE-190",
+      "big_vul_idx": 178582,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4180",
+          "pair_key": "primevul_paired:train:2089",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/ed6fe9d614fc1bca95eb8c0ccd0e92db00ef9d5d",
+      "commit_id": "ed6fe9d614fc1bca95eb8c0ccd0e92db00ef9d5d",
+      "parentID": "",
+      "file_name": "net/socket.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2012-4467",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178708,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:493",
+          "pair_key": "primevul_paired:train:246",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/ed6fe9d614fc1bca95eb8c0ccd0e92db00ef9d5d",
+      "commit_id": "ed6fe9d614fc1bca95eb8c0ccd0e92db00ef9d5d",
+      "parentID": "",
+      "file_name": "net/socket.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2012-4467",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 178709,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:494",
+          "pair_key": "primevul_paired:train:246",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        },
+        {
+          "sample_key": "primevul_paired:train:495",
+          "pair_key": "primevul_paired:train:247",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        },
+        {
+          "sample_key": "primevul_paired:train:496",
+          "pair_key": "primevul_paired:train:247",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/0449641130f5652b344ef6fa39fa019d7e94660a",
+      "commit_id": "0449641130f5652b344ef6fa39fa019d7e94660a",
+      "parentID": "",
+      "file_name": "fs/ext4/super.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2011-2493",
+      "CWE ID": "",
+      "big_vul_idx": 179033,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4210",
+          "pair_key": "primevul_paired:train:2104",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/29ffeef5e73b8f41ff3a3f2242d356759c66f91f",
+      "commit_id": "29ffeef5e73b8f41ff3a3f2242d356759c66f91f",
+      "parentID": "",
+      "file_name": "libavcodec/h264.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2013-7008",
+      "CWE ID": "",
+      "big_vul_idx": 179104,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4346",
+          "pair_key": "primevul_paired:train:2172",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/b4789b8e6be3151a955ade74872822f30e8cd914",
+      "commit_id": "b4789b8e6be3151a955ade74872822f30e8cd914",
+      "parentID": "",
+      "file_name": "drivers/scsi/aacraid/commctrl.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2013-6380",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 179113,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4364",
+          "pair_key": "primevul_paired:train:2181",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/b5e2f339865fb443107e5b10603e53bbc92dc054",
+      "commit_id": "b5e2f339865fb443107e5b10603e53bbc92dc054",
+      "parentID": "",
+      "file_name": "drivers/staging/wlags49_h2/wl_priv.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4514",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 179135,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:619",
+          "pair_key": "primevul_paired:train:309",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/2960576378d17d71cc8dccc926352ce568b5eec1",
+      "commit_id": "2960576378d17d71cc8dccc926352ce568b5eec1",
+      "parentID": "",
+      "file_name": "libavcodec/g2meet.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2013-4264",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 179168,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4354",
+          "pair_key": "primevul_paired:train:2176",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/b9e146d8eb3b9ecae5086d373b50fa0c1f3e7f0f",
+      "commit_id": "b9e146d8eb3b9ecae5086d373b50fa0c1f3e7f0f",
+      "parentID": "",
+      "file_name": "kernel/signal.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2013-2141",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 179254,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:677",
+          "pair_key": "primevul_paired:train:338",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/864745d291b5ba80ea0bd0edcbe67273de368836",
+      "commit_id": "864745d291b5ba80ea0bd0edcbe67273de368836",
+      "parentID": "",
+      "file_name": "net/xfrm/xfrm_user.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2013-1826",
+      "CWE ID": "",
+      "big_vul_idx": 179284,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:701",
+          "pair_key": "primevul_paired:train:350",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/file/file/commit/6f737ddfadb596d7d4a993f7ed2141ffd664a81c",
+      "commit_id": "6f737ddfadb596d7d4a993f7ed2141ffd664a81c",
+      "parentID": "",
+      "file_name": "src/softmagic.c",
+      "project": "file",
+      "vul": "1",
+      "CVE ID": "CVE-2014-8117",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 179420,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4298",
+          "pair_key": "primevul_paired:train:2148",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/file/file/commit/d7cdad007c507e6c79f51f058dd77fab70ceb9f6",
+      "commit_id": "d7cdad007c507e6c79f51f058dd77fab70ceb9f6",
+      "parentID": "",
+      "file_name": "src/readelf.c",
+      "project": "file",
+      "vul": "1",
+      "CVE ID": "CVE-2014-8116",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 179421,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4166",
+          "pair_key": "primevul_paired:train:2082",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/file/file/commit/27a14bc7ba285a0a5ebfdb55e54001aa11932b08",
+      "commit_id": "27a14bc7ba285a0a5ebfdb55e54001aa11932b08",
+      "parentID": "",
+      "file_name": "src/softmagic.c",
+      "project": "file",
+      "vul": "1",
+      "CVE ID": "CVE-2014-3478",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 179539,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4184",
+          "pair_key": "primevul_paired:train:2091",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/file/file/commit/447558595a3650db2886cd2f416ad0beba965801",
+      "commit_id": "447558595a3650db2886cd2f416ad0beba965801",
+      "parentID": "",
+      "file_name": "src/softmagic.c",
+      "project": "file",
+      "vul": "1",
+      "CVE ID": "CVE-2014-2270",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 179595,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4194",
+          "pair_key": "primevul_paired:train:2096",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/35ceea928b12373a3b1e3eecdc32ed323223a40d",
+      "commit_id": "35ceea928b12373a3b1e3eecdc32ed323223a40d",
+      "parentID": "",
+      "file_name": "sapi/fpm/fpm/fpm_unix.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2014-0185",
+      "CWE ID": "CWE-264",
+      "big_vul_idx": 179629,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4220",
+          "pair_key": "primevul_paired:train:2109",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/erikd/libsndfile/commit/725c7dbb95bfaf8b4bb7b04820e3a00cceea9ce6",
+      "commit_id": "725c7dbb95bfaf8b4bb7b04820e3a00cceea9ce6",
+      "parentID": "",
+      "file_name": "src/file_io.c",
+      "project": "libsndfile",
+      "vul": "1",
+      "CVE ID": "CVE-2014-9756",
+      "CWE ID": "CWE-189",
+      "big_vul_idx": 179926,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3579",
+          "pair_key": "primevul_paired:train:1789",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/8d0207652cbe27d1f962050737848e5ad4671958",
+      "commit_id": "8d0207652cbe27d1f962050737848e5ad4671958",
+      "parentID": "",
+      "file_name": "fs/xfs/xfs_file.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2014-7822",
+      "CWE ID": "CWE-264",
+      "big_vul_idx": 179982,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1025",
+          "pair_key": "primevul_paired:train:512",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/libgd/libgd/commit/40bec0f38f50e8510f5bb71a82f516d46facde03",
+      "commit_id": "40bec0f38f50e8510f5bb71a82f516d46facde03",
+      "parentID": "",
+      "file_name": "src/gd_webp.c",
+      "project": "libgd",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7568",
+      "CWE ID": "CWE-190",
+      "big_vul_idx": 180099,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1081",
+          "pair_key": "primevul_paired:train:540",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/uclouvain/openjpeg/commit/c16bc057ba3f125051c9966cf1f5b68a05681de4",
+      "commit_id": "c16bc057ba3f125051c9966cf1f5b68a05681de4",
+      "parentID": "",
+      "file_name": "src/lib/openjp2/pi.c",
+      "project": "openjpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7163",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 180115,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1087",
+          "pair_key": "primevul_paired:train:543",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/b6f13a5ef9d6280cf984826a5de012a32c396cd4?w=1",
+      "commit_id": "b6f13a5ef9d6280cf984826a5de012a32c396cd4?w=1",
+      "parentID": "",
+      "file_name": "ext/gd/gd.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7126",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 180125,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1091",
+          "pair_key": "primevul_paired:train:545",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/a0ad220c96692eda76b2e3fd7279f3dcd1d8a8ff",
+      "commit_id": "a0ad220c96692eda76b2e3fd7279f3dcd1d8a8ff",
+      "parentID": "",
+      "file_name": "drivers/input/misc/ims-pcu.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2016-3689",
+      "CWE ID": "",
+      "big_vul_idx": 180523,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4310",
+          "pair_key": "primevul_paired:train:2154",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/b101a6bbd4f2181c360bd38e7683df4a03cba83e",
+      "commit_id": "b101a6bbd4f2181c360bd38e7683df4a03cba83e",
+      "parentID": "",
+      "file_name": "Zend/zend_execute_API.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2015-8617",
+      "CWE ID": "CWE-134",
+      "big_vul_idx": 180703,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4338",
+          "pair_key": "primevul_paired:train:2168",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/820f9f147dcce2602eefd9b575bbbd9ea14f0953",
+      "commit_id": "820f9f147dcce2602eefd9b575bbbd9ea14f0953",
+      "parentID": "",
+      "file_name": "fs/fs_pin.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2015-4178",
+      "CWE ID": "",
+      "big_vul_idx": 180734,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4168",
+          "pair_key": "primevul_paired:train:2083",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/ea04efee7635c9120d015dcdeeeb6988130cb67a",
+      "commit_id": "ea04efee7635c9120d015dcdeeeb6988130cb67a",
+      "parentID": "",
+      "file_name": "drivers/input/misc/ims-pcu.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2017-16645",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 180844,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4324",
+          "pair_key": "primevul_paired:train:2161",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/fc27fe7e8deef2f37cba3f2be2d52b6ca5eb9d57",
+      "commit_id": "fc27fe7e8deef2f37cba3f2be2d52b6ca5eb9d57",
+      "parentID": "",
+      "file_name": "sound/core/seq_device.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2017-16528",
+      "CWE ID": "CWE-416",
+      "big_vul_idx": 180854,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1335",
+          "pair_key": "primevul_paired:train:667",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/52b1526443c1f433087928291d1c3d37a5600515",
+      "commit_id": "52b1526443c1f433087928291d1c3d37a5600515",
+      "parentID": "",
+      "file_name": "libr/asm/arch/wasm/wasm.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2017-15368",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 180894,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4260",
+          "pair_key": "primevul_paired:train:2129",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/94f1bb15bed84ad6c893916b7e7b9db6f1d7eec6",
+      "commit_id": "94f1bb15bed84ad6c893916b7e7b9db6f1d7eec6",
+      "parentID": "",
+      "file_name": "crypto/rng.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2017-15116",
+      "CWE ID": "CWE-476",
+      "big_vul_idx": 180904,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1364",
+          "pair_key": "primevul_paired:train:681",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/94f1bb15bed84ad6c893916b7e7b9db6f1d7eec6",
+      "commit_id": "94f1bb15bed84ad6c893916b7e7b9db6f1d7eec6",
+      "parentID": "",
+      "file_name": "crypto/rng.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2017-15116",
+      "CWE ID": "CWE-476",
+      "big_vul_idx": 180906,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1363",
+          "pair_key": "primevul_paired:train:681",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/afc9c683ed9db01edb357bc8c19edad4282b3a97",
+      "commit_id": "afc9c683ed9db01edb357bc8c19edad4282b3a97",
+      "parentID": "",
+      "file_name": "libavformat/asfdec_f.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2017-14223",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 180930,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4158",
+          "pair_key": "primevul_paired:train:2078",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/c24bcb553650b91e9eff15ef6e54ca73de2453b7",
+      "commit_id": "c24bcb553650b91e9eff15ef6e54ca73de2453b7",
+      "parentID": "",
+      "file_name": "libavformat/nsvdec.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2017-14171",
+      "CWE ID": "CWE-834",
+      "big_vul_idx": 180936,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4214",
+          "pair_key": "primevul_paired:train:2106",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/296debd213bd6dce7647cedd34eb64e5b94cdc92",
+      "commit_id": "296debd213bd6dce7647cedd34eb64e5b94cdc92",
+      "parentID": "",
+      "file_name": "libavcodec/dnxhddec.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2017-11719",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181172,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4342",
+          "pair_key": "primevul_paired:train:2170",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/VirusTotal/yara/commit/992480c30f75943e9cd6245bb2015c7737f9b661",
+      "commit_id": "992480c30f75943e9cd6245bb2015c7737f9b661",
+      "parentID": "",
+      "file_name": "libyara/re.c",
+      "project": "yara",
+      "vul": "1",
+      "CVE ID": "CVE-2017-9465",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181270,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4226",
+          "pair_key": "primevul_paired:train:2112",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/VirusTotal/yara/commit/992480c30f75943e9cd6245bb2015c7737f9b661",
+      "commit_id": "992480c30f75943e9cd6245bb2015c7737f9b661",
+      "parentID": "",
+      "file_name": "libyara/scan.c",
+      "project": "yara",
+      "vul": "1",
+      "CVE ID": "CVE-2017-9465",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181271,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4228",
+          "pair_key": "primevul_paired:train:2113",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/varnishcache/varnish-cache/commit/176f8a075a963ffbfa56f1c460c15f6a1a6af5a7",
+      "commit_id": "176f8a075a963ffbfa56f1c460c15f6a1a6af5a7",
+      "parentID": "",
+      "file_name": "bin/varnishd/cache/cache_fetch.c",
+      "project": "varnish-cache",
+      "vul": "1",
+      "CVE ID": "CVE-2017-8807",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 181365,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4350",
+          "pair_key": "primevul_paired:train:2174",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/2080bc33717955a0e4268e738acf8c1eeddbf8cb",
+      "commit_id": "2080bc33717955a0e4268e738acf8c1eeddbf8cb",
+      "parentID": "",
+      "file_name": "libavcodec/utils.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2017-7865",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 181418,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4332",
+          "pair_key": "primevul_paired:train:2165",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/8c2ea3030af7b40a3c4275696fb5c76cdb80950a",
+      "commit_id": "8c2ea3030af7b40a3c4275696fb5c76cdb80950a",
+      "parentID": "",
+      "file_name": "libavcodec/pictordec.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2017-7862",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 181421,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4370",
+          "pair_key": "primevul_paired:train:2184",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/torvalds/linux/commit/8605330aac5a5785630aec8f64378a54891937cc",
+      "commit_id": "8605330aac5a5785630aec8f64378a54891937cc",
+      "parentID": "",
+      "file_name": "net/core/skbuff.c",
+      "project": "linux",
+      "vul": "1",
+      "CVE ID": "CVE-2017-7277",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181457,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4300",
+          "pair_key": "primevul_paired:train:2149",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/aquynh/capstone/commit/6fe86eef621b9849f51a5e1e5d73258a93440403",
+      "commit_id": "6fe86eef621b9849f51a5e1e5d73258a93440403",
+      "parentID": "",
+      "file_name": "windows/winkernel_mm.c",
+      "project": "capstone",
+      "vul": "1",
+      "CVE ID": "CVE-2017-6952",
+      "CWE ID": "CWE-190",
+      "big_vul_idx": 181483,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4286",
+          "pair_key": "primevul_paired:train:2142",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/f41e941341e44aa86edd4483c4487ec09a074257",
+      "commit_id": "f41e941341e44aa86edd4483c4487ec09a074257",
+      "parentID": "",
+      "file_name": "libr/asm/p/asm_dalvik.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2017-6448",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 181505,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4372",
+          "pair_key": "primevul_paired:train:2185",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/ead645853a63bf83d8386702cad0cf23b31d7eeb",
+      "commit_id": "ead645853a63bf83d8386702cad0cf23b31d7eeb",
+      "parentID": "",
+      "file_name": "libr/bin/p/bin_dex.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2017-6387",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181513,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4192",
+          "pair_key": "primevul_paired:train:2095",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/libimobiledevice/libplist/commit/7391a506352c009fe044dead7baad9e22dd279ee",
+      "commit_id": "7391a506352c009fe044dead7baad9e22dd279ee",
+      "parentID": "",
+      "file_name": "tools/plistutil.c",
+      "project": "libplist",
+      "vul": "1",
+      "CVE ID": "CVE-2017-5545",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181570,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4198",
+          "pair_key": "primevul_paired:train:2098",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/netblue30/firejail/commit/6b8dba29d73257311564ee7f27b9b14758cc693e",
+      "commit_id": "6b8dba29d73257311564ee7f27b9b14758cc693e",
+      "parentID": "",
+      "file_name": "src/firejail/main.c",
+      "project": "firejail",
+      "vul": "1",
+      "CVE ID": "CVE-2017-5206",
+      "CWE ID": "",
+      "big_vul_idx": 181591,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:1725",
+          "pair_key": "primevul_paired:train:862",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/7d57ca4d9a75562fa32e40766211de150f8b3ee7",
+      "commit_id": "7d57ca4d9a75562fa32e40766211de150f8b3ee7",
+      "parentID": "",
+      "file_name": "libavformat/rtmppkt.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2016-10191",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 181667,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4172",
+          "pair_key": "primevul_paired:train:2085",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/4bc05fc490b66ef2d45b1de26abf1455b486b0dc",
+      "commit_id": "4bc05fc490b66ef2d45b1de26abf1455b486b0dc",
+      "parentID": "",
+      "file_name": "src/open_utils.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2016-10172",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181679,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4312",
+          "pair_key": "primevul_paired:train:2155",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/4bc05fc490b66ef2d45b1de26abf1455b486b0dc",
+      "commit_id": "4bc05fc490b66ef2d45b1de26abf1455b486b0dc",
+      "parentID": "",
+      "file_name": "src/read_words.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2016-10172",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181680,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4314",
+          "pair_key": "primevul_paired:train:2156",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/mm2/Little-CMS/commit/5ca71a7bc18b6897ab21d815d15e218e204581e2",
+      "commit_id": "5ca71a7bc18b6897ab21d815d15e218e204581e2",
+      "parentID": "",
+      "file_name": "src/cmstypes.c",
+      "project": "Little-CMS",
+      "vul": "1",
+      "CVE ID": "CVE-2016-10165",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 181684,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4382",
+          "pair_key": "primevul_paired:train:2190",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/8d2539fa0faf3f63e1d1e7635347c5b9e777d47b",
+      "commit_id": "8d2539fa0faf3f63e1d1e7635347c5b9e777d47b",
+      "parentID": "",
+      "file_name": "ext/wddx/wddx.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2016-10162",
+      "CWE ID": "CWE-476",
+      "big_vul_idx": 181685,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4216",
+          "pair_key": "primevul_paired:train:2107",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/61cdd1255d5b9c8453be71aacbbf682796ac77d4",
+      "commit_id": "61cdd1255d5b9c8453be71aacbbf682796ac77d4",
+      "parentID": "",
+      "file_name": "ext/spl/spl_observer.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7480",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 181984,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4376",
+          "pair_key": "primevul_paired:train:2187",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/pornel/pngquant/commit/b7c217680cda02dddced245d237ebe8c383be285",
+      "commit_id": "b7c217680cda02dddced245d237ebe8c383be285",
+      "parentID": "",
+      "file_name": "rwpng.c",
+      "project": "pngquant",
+      "vul": "1",
+      "CVE ID": "CVE-2016-5735",
+      "CWE ID": "CWE-190",
+      "big_vul_idx": 182007,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4242",
+          "pair_key": "primevul_paired:train:2120",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/9b46d38dd3c4de6048a488b655c7319f845af185",
+      "commit_id": "9b46d38dd3c4de6048a488b655c7319f845af185",
+      "parentID": "",
+      "file_name": "libr/asm/p/asm_x86_nz.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2018-20456",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182128,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4334",
+          "pair_key": "primevul_paired:train:2166",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/f17bfd9f1da05f30f23a4dd05e9d2363e1406948",
+      "commit_id": "f17bfd9f1da05f30f23a4dd05e9d2363e1406948",
+      "parentID": "",
+      "file_name": "libr/asm/p/asm_x86_nz.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2018-19843",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182141,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4374",
+          "pair_key": "primevul_paired:train:2186",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/070ef6f138956d9ea9612e69586152339dbefe51",
+      "commit_id": "070ef6f138956d9ea9612e69586152339dbefe51",
+      "parentID": "",
+      "file_name": "src/pack_utils.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-19840",
+      "CWE ID": "CWE-835",
+      "big_vul_idx": 182144,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4268",
+          "pair_key": "primevul_paired:train:2133",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/6b67d7f05918f7a1ee8fc6ff21355d7e8736aa10",
+      "commit_id": "6b67d7f05918f7a1ee8fc6ff21355d7e8736aa10",
+      "parentID": "",
+      "file_name": "libavformat/flvenc.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2018-15822",
+      "CWE ID": "CWE-617",
+      "big_vul_idx": 182270,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4344",
+          "pair_key": "primevul_paired:train:2171",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/neomutt/neomutt/commit/9bfab35522301794483f8f9ed60820bdec9be59e",
+      "commit_id": "9bfab35522301794483f8f9ed60820bdec9be59e",
+      "parentID": "",
+      "file_name": "newsrc.c",
+      "project": "neomutt",
+      "vul": "1",
+      "CVE ID": "CVE-2018-14363",
+      "CWE ID": "CWE-22",
+      "big_vul_idx": 182291,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2051",
+          "pair_key": "primevul_paired:train:1025",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/bd27a9364ca274ca97f1df6d984e88a0700fb235",
+      "commit_id": "bd27a9364ca274ca97f1df6d984e88a0700fb235",
+      "parentID": "",
+      "file_name": "libavcodec/error_resilience.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2018-13304",
+      "CWE ID": "CWE-617",
+      "big_vul_idx": 182326,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4182",
+          "pair_key": "primevul_paired:train:2090",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/ed22dc22216f74c75ee7901f82649e1ff725ba50",
+      "commit_id": "ed22dc22216f74c75ee7901f82649e1ff725ba50",
+      "parentID": "",
+      "file_name": "libavformat/movenc.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2018-13302",
+      "CWE ID": "CWE-129",
+      "big_vul_idx": 182331,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4278",
+          "pair_key": "primevul_paired:train:2138",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/95556e27e2c1d56d9e18f5db34d6f756f3011148",
+      "commit_id": "95556e27e2c1d56d9e18f5db34d6f756f3011148",
+      "parentID": "",
+      "file_name": "libavformat/movenc.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2018-13300",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182334,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4388",
+          "pair_key": "primevul_paired:train:2193",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/bbb4af56003c1afdad67af0c4339267ca38b1017",
+      "commit_id": "bbb4af56003c1afdad67af0c4339267ca38b1017",
+      "parentID": "",
+      "file_name": "libr/anal/p/anal_6502.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2018-12322",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182369,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4224",
+          "pair_key": "primevul_paired:train:2111",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/224e6bc13fa353dd3b7f7a2334588f1c4229e58d",
+      "commit_id": "224e6bc13fa353dd3b7f7a2334588f1c4229e58d",
+      "parentID": "",
+      "file_name": "libr/anal/p/anal_java.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2018-12321",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182370,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4264",
+          "pair_key": "primevul_paired:train:2131",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/espruino/Espruino/commit/c36d30529118aa049797db43f111ddad468aad29",
+      "commit_id": "c36d30529118aa049797db43f111ddad468aad29",
+      "parentID": "",
+      "file_name": "src/jsparse.c",
+      "project": "Espruino",
+      "vul": "1",
+      "CVE ID": "CVE-2018-11594",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182386,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4290",
+          "pair_key": "primevul_paired:train:2144",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/espruino/Espruino/commit/bed844f109b6c222816740555068de2e101e8018",
+      "commit_id": "bed844f109b6c222816740555068de2e101e8018",
+      "parentID": "",
+      "file_name": "src/jslex.c",
+      "project": "Espruino",
+      "vul": "1",
+      "CVE ID": "CVE-2018-11593",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 182387,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4258",
+          "pair_key": "primevul_paired:train:2128",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/espruino/Espruino/commit/a0d7f432abee692402c00e8b615ff5982dde9780",
+      "commit_id": "a0d7f432abee692402c00e8b615ff5982dde9780",
+      "parentID": "",
+      "file_name": "src/jsutils.c",
+      "project": "Espruino",
+      "vul": "1",
+      "CVE ID": "CVE-2018-11590",
+      "CWE ID": "CWE-190",
+      "big_vul_idx": 182390,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4174",
+          "pair_key": "primevul_paired:train:2086",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/bd276ef2fd8ac3401e65be7c126a43175ccfbcd7",
+      "commit_id": "bd276ef2fd8ac3401e65be7c126a43175ccfbcd7",
+      "parentID": "",
+      "file_name": "libr/asm/arch/wasm/wasm.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2018-11378",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182402,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4356",
+          "pair_key": "primevul_paired:train:2177",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/radare/radare2/commit/25a3703ef2e015bbe1d1f16f6b2f63bb10dd34f4",
+      "commit_id": "25a3703ef2e015bbe1d1f16f6b2f63bb10dd34f4",
+      "parentID": "",
+      "file_name": "libr/anal/p/anal_avr.c",
+      "project": "radare2",
+      "vul": "1",
+      "CVE ID": "CVE-2018-11377",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182403,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2115",
+          "pair_key": "primevul_paired:train:1057",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d",
+      "commit_id": "6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d",
+      "parentID": "",
+      "file_name": "cli/dsdiff.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-10540",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 182421,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4162",
+          "pair_key": "primevul_paired:train:2080",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d",
+      "commit_id": "6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d",
+      "parentID": "",
+      "file_name": "cli/riff.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-10540",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 182422,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4160",
+          "pair_key": "primevul_paired:train:2079",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d",
+      "commit_id": "6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d",
+      "parentID": "",
+      "file_name": "cli/wave64.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-10540",
+      "CWE ID": "CWE-787",
+      "big_vul_idx": 182423,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4164",
+          "pair_key": "primevul_paired:train:2081",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/26cb47f99d481ad9b93eeff80d26e6b63bbd7e15",
+      "commit_id": "26cb47f99d481ad9b93eeff80d26e6b63bbd7e15",
+      "parentID": "",
+      "file_name": "cli/riff.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-10537",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182424,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4386",
+          "pair_key": "primevul_paired:train:2192",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/26cb47f99d481ad9b93eeff80d26e6b63bbd7e15",
+      "commit_id": "26cb47f99d481ad9b93eeff80d26e6b63bbd7e15",
+      "parentID": "",
+      "file_name": "cli/wave64.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-10537",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182425,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4384",
+          "pair_key": "primevul_paired:train:2191",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/gpac/gpac/commit/90dc7f853d31b0a4e9441cba97feccf36d8b69a4",
+      "commit_id": "90dc7f853d31b0a4e9441cba97feccf36d8b69a4",
+      "parentID": "",
+      "file_name": "src/isomedia/avc_ext.c",
+      "project": "gpac",
+      "vul": "1",
+      "CVE ID": "CVE-2018-7752",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182478,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4352",
+          "pair_key": "primevul_paired:train:2175",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/php/php-src/commit/523f230c831d7b33353203fa34aee4e92ac12bba",
+      "commit_id": "523f230c831d7b33353203fa34aee4e92ac12bba",
+      "parentID": "",
+      "file_name": "ext/standard/http_fopen_wrapper.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2018-7584",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182480,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4238",
+          "pair_key": "primevul_paired:train:2118",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/8e3fe45a7bac31d9a3b558ae0079e2d92a04799e",
+      "commit_id": "8e3fe45a7bac31d9a3b558ae0079e2d92a04799e",
+      "parentID": "",
+      "file_name": "cli/caff.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-7254",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182491,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4188",
+          "pair_key": "primevul_paired:train:2093",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/36a24c7881427d2e1e4dc1cef58f19eee0d13aec",
+      "commit_id": "36a24c7881427d2e1e4dc1cef58f19eee0d13aec",
+      "parentID": "",
+      "file_name": "cli/dsdiff.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2018-7253",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 182492,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4208",
+          "pair_key": "primevul_paired:train:2103",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/vadz/libtiff/commit/3c5eb8b1be544e41d2c336191bc4936300ad7543",
+      "commit_id": "3c5eb8b1be544e41d2c336191bc4936300ad7543",
+      "parentID": "",
+      "file_name": "libtiff/tif_unix.c",
+      "project": "libtiff",
+      "vul": "1",
+      "CVE ID": "CVE-2014-8130",
+      "CWE ID": "CWE-369",
+      "big_vul_idx": 182631,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2241",
+          "pair_key": "primevul_paired:train:1120",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/vadz/libtiff/commit/3c5eb8b1be544e41d2c336191bc4936300ad7543",
+      "commit_id": "3c5eb8b1be544e41d2c336191bc4936300ad7543",
+      "parentID": "",
+      "file_name": "libtiff/tif_vms.c",
+      "project": "libtiff",
+      "vul": "1",
+      "CVE ID": "CVE-2014-8130",
+      "CWE ID": "CWE-369",
+      "big_vul_idx": 182632,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2243",
+          "pair_key": "primevul_paired:train:1121",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/33a0025d1d63ccd05d9dbaa6923d52b1446a62fe",
+      "commit_id": "33a0025d1d63ccd05d9dbaa6923d52b1446a62fe",
+      "parentID": "",
+      "file_name": "cli/wave64.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2019-1010319",
+      "CWE ID": "CWE-665",
+      "big_vul_idx": 182633,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4222",
+          "pair_key": "primevul_paired:train:2110",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/dbry/WavPack/commit/f68a9555b548306c5b1ee45199ccdc4a16a6101b",
+      "commit_id": "f68a9555b548306c5b1ee45199ccdc4a16a6101b",
+      "parentID": "",
+      "file_name": "cli/caff.c",
+      "project": "WavPack",
+      "vul": "1",
+      "CVE ID": "CVE-2019-1010317",
+      "CWE ID": "CWE-665",
+      "big_vul_idx": 182634,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4308",
+          "pair_key": "primevul_paired:train:2153",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/OISF/suricata/pull/3590/commits/11f3659f64a4e42e90cb3c09fcef66894205aefe",
+      "commit_id": "11f3659f64a4e42e90cb3c09fcef66894205aefe",
+      "parentID": "",
+      "file_name": "src/decode-ipv6.c",
+      "project": "suricata",
+      "vul": "1",
+      "CVE ID": "CVE-2019-1010251",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 182648,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4178",
+          "pair_key": "primevul_paired:train:2088",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/OISF/suricata/pull/3590/commits/11f3659f64a4e42e90cb3c09fcef66894205aefe",
+      "commit_id": "11f3659f64a4e42e90cb3c09fcef66894205aefe",
+      "parentID": "",
+      "file_name": "src/decode-teredo.c",
+      "project": "suricata",
+      "vul": "1",
+      "CVE ID": "CVE-2019-1010251",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 182649,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4176",
+          "pair_key": "primevul_paired:train:2087",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/8df6884832ec413cf032dfaa45c23b1c7876670c",
+      "commit_id": "8df6884832ec413cf032dfaa45c23b1c7876670c",
+      "parentID": "",
+      "file_name": "libavcodec/utils.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2019-17539",
+      "CWE ID": "",
+      "big_vul_idx": 182661,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4270",
+          "pair_key": "primevul_paired:train:2134",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/knik0/faad2/commit/942c3e0aee748ea6fe97cb2c1aa5893225316174",
+      "commit_id": "942c3e0aee748ea6fe97cb2c1aa5893225316174",
+      "parentID": "",
+      "file_name": "libfaad/bits.c",
+      "project": "faad2",
+      "vul": "1",
+      "CVE ID": "CVE-2019-15296",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 182707,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4272",
+          "pair_key": "primevul_paired:train:2135",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/the-tcpdump-group/libpcap/commit/33834cb2a4d035b52aa2a26742f832a112e90a0a",
+      "commit_id": "33834cb2a4d035b52aa2a26742f832a112e90a0a",
+      "parentID": "",
+      "file_name": "rpcapd/daemon.c",
+      "project": "libpcap",
+      "vul": "1",
+      "CVE ID": "CVE-2019-15164",
+      "CWE ID": "CWE-918",
+      "big_vul_idx": 182712,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4196",
+          "pair_key": "primevul_paired:train:2097",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/the-tcpdump-group/libpcap/commit/437b273761adedcbd880f714bfa44afeec186a31",
+      "commit_id": "437b273761adedcbd880f714bfa44afeec186a31",
+      "parentID": "",
+      "file_name": "rpcapd/daemon.c",
+      "project": "libpcap",
+      "vul": "1",
+      "CVE ID": "CVE-2019-15163",
+      "CWE ID": "CWE-476",
+      "big_vul_idx": 182713,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4204",
+          "pair_key": "primevul_paired:train:2101",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/the-tcpdump-group/libpcap/commit/484d60cbf7ca4ec758c3cbb8a82d68b244a78d58",
+      "commit_id": "484d60cbf7ca4ec758c3cbb8a82d68b244a78d58",
+      "parentID": "",
+      "file_name": "rpcapd/daemon.c",
+      "project": "libpcap",
+      "vul": "1",
+      "CVE ID": "CVE-2019-15162",
+      "CWE ID": "CWE-345",
+      "big_vul_idx": 182714,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4378",
+          "pair_key": "primevul_paired:train:2188",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/the-tcpdump-group/libpcap/commit/617b12c0339db4891d117b661982126c495439ea",
+      "commit_id": "617b12c0339db4891d117b661982126c495439ea",
+      "parentID": "",
+      "file_name": "rpcapd/daemon.c",
+      "project": "libpcap",
+      "vul": "1",
+      "CVE ID": "CVE-2019-15161",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 182715,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4318",
+          "pair_key": "primevul_paired:train:2158",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/FFmpeg/FFmpeg/commit/ed188f6dcdf0935c939ed813cf8745d50742014b",
+      "commit_id": "ed188f6dcdf0935c939ed813cf8745d50742014b",
+      "parentID": "",
+      "file_name": "libavformat/aadec.c",
+      "project": "FFmpeg",
+      "vul": "1",
+      "CVE ID": "CVE-2019-12730",
+      "CWE ID": "CWE-665",
+      "big_vul_idx": 182828,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4250",
+          "pair_key": "primevul_paired:train:2124",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/netdata/netdata/commit/92327c9ec211bd1616315abcb255861b130b97ca",
+      "commit_id": "92327c9ec211bd1616315abcb255861b130b97ca",
+      "parentID": "",
+      "file_name": "web/api/web_api_v1.c",
+      "project": "netdata",
+      "vul": "1",
+      "CVE ID": "CVE-2018-18839",
+      "CWE ID": "CWE-200",
+      "big_vul_idx": 182985,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4288",
+          "pair_key": "primevul_paired:train:2143",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/nmap/nmap/commit/350bbe0597d37ad67abe5fef8fba984707b4e9ad",
+      "commit_id": "350bbe0597d37ad67abe5fef8fba984707b4e9ad",
+      "parentID": "",
+      "file_name": "nse_libssh2.cc",
+      "project": "nmap",
+      "vul": "1",
+      "CVE ID": "CVE-2017-18594",
+      "CWE ID": "CWE-415",
+      "big_vul_idx": 183028,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4362",
+          "pair_key": "primevul_paired:train:2180",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/aquynh/capstone/commit/87a25bb543c8e4c09b48d4b4a6c7db31ce58df06",
+      "commit_id": "87a25bb543c8e4c09b48d4b4a6c7db31ce58df06",
+      "parentID": "",
+      "file_name": "arch/X86/X86Mapping.c",
+      "project": "capstone",
+      "vul": "1",
+      "CVE ID": "CVE-2016-7151",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 183038,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:4276",
+          "pair_key": "primevul_paired:train:2137",
+          "target": 0,
+          "exact_before": false,
+          "exact_after": true,
+          "stripped_before": false,
+          "stripped_after": true
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/libgd/libgd/commit/77f619d48259383628c3ec4654b1ad578e9eb40e",
+      "commit_id": "77f619d48259383628c3ec4654b1ad578e9eb40e",
+      "parentID": "",
+      "file_name": "src/gd.c",
+      "project": "php-src",
+      "vul": "1",
+      "CVE ID": "CVE-2016-9933",
+      "CWE ID": "CWE-119",
+      "big_vul_idx": 183283,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2609",
+          "pair_key": "primevul_paired:train:1304",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/019c7acc36b8893d060684fb3b5deb6156c92b9e",
+      "commit_id": "019c7acc36b8893d060684fb3b5deb6156c92b9e",
+      "parentID": "",
+      "file_name": "chrome/common/notification_service.cc",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "",
+      "CWE ID": "",
+      "big_vul_idx": 183605,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2669",
+          "pair_key": "primevul_paired:train:1334",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/b7a161633fd7ecb59093c2c56ed908416292d778",
+      "commit_id": "b7a161633fd7ecb59093c2c56ed908416292d778",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Tools/WebKitTestRunner/InjectedBundle/atk/AccessibilityUIElementAtk.cpp",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2012-2867",
+      "CWE ID": "",
+      "big_vul_idx": 184487,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2747",
+          "pair_key": "primevul_paired:train:1373",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/3511b6ec1e955578ddb6e90f0cc99f824e36026e",
+      "commit_id": "3511b6ec1e955578ddb6e90f0cc99f824e36026e",
+      "parentID": "",
+      "file_name": "chrome/test/gpu/gpu_feature_browsertest.cc",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2012-2823",
+      "CWE ID": "CWE-399",
+      "big_vul_idx": 184586,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2757",
+          "pair_key": "primevul_paired:train:1378",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/90fb08ed0146c9beacfd4dde98a20fc45419fff3",
+      "commit_id": "90fb08ed0146c9beacfd4dde98a20fc45419fff3",
+      "parentID": "",
+      "file_name": "content/browser/web_contents/web_contents_impl.cc",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2013-6626",
+      "CWE ID": "",
+      "big_vul_idx": 184852,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2791",
+          "pair_key": "primevul_paired:train:1395",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/faceb51d5058e1159835a4b0cd65081bb0a9de1e",
+      "commit_id": "faceb51d5058e1159835a4b0cd65081bb0a9de1e",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Source/web/WebRuntimeFeatures.cpp",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2013-0912",
+      "CWE ID": "CWE-94",
+      "big_vul_idx": 185156,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2863",
+          "pair_key": "primevul_paired:train:1431",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/f592cf6a66b63decc7e7093b36501229a5de1f1d",
+      "commit_id": "f592cf6a66b63decc7e7093b36501229a5de1f1d",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Source/core/svg/SVGDocumentExtensions.cpp",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2014-3168",
+      "CWE ID": "",
+      "big_vul_idx": 185353,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:2893",
+          "pair_key": "primevul_paired:train:1446",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/2386a6a49ea992a1e859eb0296c1cc53e5772cdb",
+      "commit_id": "2386a6a49ea992a1e859eb0296c1cc53e5772cdb",
+      "parentID": "",
+      "file_name": "third_party/WebKit/Source/core/html/forms/ImageInputType.cpp",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2016-1643",
+      "CWE ID": "CWE-361",
+      "big_vul_idx": 186253,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3025",
+          "pair_key": "primevul_paired:train:1512",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://github.com/chromium/chromium/commit/2ad6b02cbf13d8f9dce50340e966ba413cb66b1c",
+      "commit_id": "2ad6b02cbf13d8f9dce50340e966ba413cb66b1c",
+      "parentID": "",
+      "file_name": "chromeos/services/ime/input_engine.cc",
+      "project": "Chrome",
+      "vul": "1",
+      "CVE ID": "CVE-2017-5056",
+      "CWE ID": "CWE-125",
+      "big_vul_idx": 186374,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3045",
+          "pair_key": "primevul_paired:train:1522",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    },
+    {
+      "codeLink": "https://android.googlesource.com/platform/packages/apps/Bluetooth/+/122feb9a0b04290f55183ff2f0384c6c53756bd8",
+      "commit_id": "122feb9a0b04290f55183ff2f0384c6c53756bd8",
+      "parentID": "",
+      "file_name": "jni/com_android_bluetooth_btservice_AdapterService.cpp",
+      "project": "Android",
+      "vul": "1",
+      "CVE ID": "CVE-2016-3760",
+      "CWE ID": "CWE-20",
+      "big_vul_idx": 188183,
+      "local_members": [
+        {
+          "sample_key": "primevul_paired:train:3459",
+          "pair_key": "primevul_paired:train:1729",
+          "target": 1,
+          "exact_before": true,
+          "exact_after": false,
+          "stripped_before": true,
+          "stripped_after": false
+        }
+      ]
+    }
+  ],
+  "scope": "only existing metadata and exact source comparisons; no raw source copied or modified"
+}

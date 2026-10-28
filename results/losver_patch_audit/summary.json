@@ -1,0 +1,728 @@
+{
+  "splits": {
+    "train": {
+      "pairs": 4354,
+      "quality": {
+        "uncertain": 4202,
+        "legal": 109,
+        "verified_error": 29,
+        "suspicious": 14
+      },
+      "first_round_candidates": 161,
+      "candidate_quality": {
+        "verified_error": 28,
+        "suspicious": 13,
+        "legal": 67,
+        "uncertain": 53
+      },
+      "index_mismatch_quality": {
+        "verified_error": 26,
+        "suspicious": 2,
+        "legal": 63,
+        "uncertain": 53
+      },
+      "index_missing_quality": {
+        "legal": 63,
+        "uncertain": 53
+      },
+      "index_values_conflict_quality": {
+        "verified_error": 26,
+        "suspicious": 2
+      },
+      "shapes": {
+        "replacement_only": 1671,
+        "mixed": 1377,
+        "addition_only": 1232,
+        "deletion_only": 74
+      },
+      "semantic_families": {
+        "replacement": 1671,
+        "mixed": 1377,
+        "addition_other": 423,
+        "addition_check_candidate": 528,
+        "addition_unknown_parse": 281,
+        "deletion_operation_candidate": 52,
+        "deletion_other": 17,
+        "deletion_assertion_candidate": 5
+      },
+      "zero_v_diff": 1232,
+      "zero_p_diff": 74,
+      "code_token_identical_pairs": 2,
+      "strict_both_parse": 3248,
+      "deleted_lines": {
+        "min": 0.0,
+        "q25": 0.0,
+        "median": 1.0,
+        "q75": 3.0,
+        "q90": 9.0,
+        "max": 952.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 2.0,
+        "median": 4.0,
+        "q75": 8.0,
+        "q90": 15.0,
+        "max": 1137.0
+      },
+      "known_error_diff_v": 416,
+      "known_error_diff_p": 504,
+      "noncode_diff_v": 1430,
+      "noncode_diff_p": 3446,
+      "total_diff_v": 18004,
+      "total_diff_p": 31767
+    },
+    "valid": {
+      "pairs": 562,
+      "quality": {
+        "uncertain": 521,
+        "legal": 28,
+        "suspicious": 7,
+        "verified_error": 6
+      },
+      "first_round_candidates": 13,
+      "candidate_quality": {
+        "suspicious": 7,
+        "verified_error": 6
+      },
+      "index_mismatch_quality": {},
+      "index_missing_quality": {},
+      "index_values_conflict_quality": {},
+      "shapes": {
+        "addition_only": 163,
+        "mixed": 165,
+        "replacement_only": 231,
+        "deletion_only": 3
+      },
+      "semantic_families": {
+        "addition_unknown_parse": 32,
+        "mixed": 165,
+        "replacement": 231,
+        "addition_other": 57,
+        "addition_check_candidate": 74,
+        "deletion_operation_candidate": 3
+      },
+      "zero_v_diff": 163,
+      "zero_p_diff": 3,
+      "code_token_identical_pairs": 0,
+      "strict_both_parse": 440,
+      "deleted_lines": {
+        "min": 0.0,
+        "q25": 0.0,
+        "median": 1.0,
+        "q75": 3.0,
+        "q90": 7.0,
+        "max": 97.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 2.0,
+        "median": 3.0,
+        "q75": 7.0,
+        "q90": 15.0,
+        "max": 111.0
+      },
+      "known_error_diff_v": 10,
+      "known_error_diff_p": 15,
+      "noncode_diff_v": 73,
+      "noncode_diff_p": 377,
+      "total_diff_v": 1830,
+      "total_diff_p": 3571
+    },
+    "test": {
+      "pairs": 564,
+      "quality": {
+        "uncertain": 528,
+        "legal": 32,
+        "verified_error": 4
+      },
+      "first_round_candidates": 5,
+      "candidate_quality": {
+        "verified_error": 4,
+        "legal": 1
+      },
+      "index_mismatch_quality": {},
+      "index_missing_quality": {},
+      "index_values_conflict_quality": {},
+      "shapes": {
+        "mixed": 147,
+        "addition_only": 189,
+        "replacement_only": 218,
+        "deletion_only": 10
+      },
+      "semantic_families": {
+        "mixed": 147,
+        "addition_unknown_parse": 46,
+        "replacement": 218,
+        "deletion_operation_candidate": 9,
+        "addition_other": 62,
+        "addition_check_candidate": 81,
+        "deletion_other": 1
+      },
+      "zero_v_diff": 189,
+      "zero_p_diff": 10,
+      "code_token_identical_pairs": 1,
+      "strict_both_parse": 429,
+      "deleted_lines": {
+        "min": 0.0,
+        "q25": 0.0,
+        "median": 1.0,
+        "q75": 2.0,
+        "q90": 6.0,
+        "max": 76.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 1.0,
+        "median": 4.0,
+        "q75": 7.0,
+        "q90": 14.0,
+        "max": 64.0
+      },
+      "known_error_diff_v": 33,
+      "known_error_diff_p": 32,
+      "noncode_diff_v": 91,
+      "noncode_diff_p": 342,
+      "total_diff_v": 1680,
+      "total_diff_p": 3482
+    }
+  },
+  "metadata": {
+    "train": {
+      "index_both_present_different": 28,
+      "index_one_missing": 116,
+      "cwe_raw_mismatch": 116,
+      "cwe_nonempty_conflict": 0
+    },
+    "valid": {
+      "index_both_present_different": 0,
+      "index_one_missing": 0,
+      "cwe_raw_mismatch": 0,
+      "cwe_nonempty_conflict": 0
+    },
+    "test": {
+      "index_both_present_different": 0,
+      "index_one_missing": 0,
+      "cwe_raw_mismatch": 0,
+      "cwe_nonempty_conflict": 0
+    }
+  },
+  "random_sample": {
+    "train": {
+      "pairs": 32,
+      "quality": {
+        "legal": 24,
+        "verified_error": 2,
+        "uncertain": 6
+      },
+      "errors": [
+        "primevul_paired:train:1522",
+        "primevul_paired:train:2322"
+      ],
+      "uncertain_security": []
+    },
+    "valid": {
+      "pairs": 27,
+      "quality": {
+        "legal": 25,
+        "uncertain": 2
+      },
+      "errors": [],
+      "uncertain_security": [
+        "primevul_paired:valid:80",
+        "primevul_paired:valid:142",
+        "primevul_paired:valid:181"
+      ]
+    },
+    "test": {
+      "pairs": 32,
+      "quality": {
+        "legal": 30,
+        "uncertain": 2
+      },
+      "errors": [],
+      "uncertain_security": [
+        "primevul_paired:test:6"
+      ]
+    }
+  },
+  "train_region": {
+    "all_train": {
+      "pairs": 4354,
+      "status": {
+        "ok": 3139,
+        "parse_or_function_boundary_failure": 1106,
+        "no_resolved_statement": 38,
+        "function_correspondence_unknown": 71
+      },
+      "nonempty_regions": 3139,
+      "with_insert_variable_match": 1389,
+      "neighbour_without_variable_match": 118,
+      "region_lines": {
+        "min": 1.0,
+        "q25": 3.0,
+        "median": 6.0,
+        "q75": 10.0,
+        "q90": 17.200000000000273,
+        "max": 752.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 2.0,
+        "median": 4.0,
+        "q75": 8.0,
+        "q90": 12.0,
+        "max": 117.0
+      },
+      "limit_reached": 105,
+      "unknown_insert_symbols": 424
+    },
+    "addition_only": {
+      "pairs": 1232,
+      "status": {
+        "ok": 929,
+        "parse_or_function_boundary_failure": 281,
+        "function_correspondence_unknown": 11,
+        "no_resolved_statement": 11
+      },
+      "nonempty_regions": 929,
+      "with_insert_variable_match": 811,
+      "neighbour_without_variable_match": 118,
+      "region_lines": {
+        "min": 1.0,
+        "q25": 3.0,
+        "median": 5.0,
+        "q75": 8.0,
+        "q90": 13.0,
+        "max": 117.0
+      },
+      "added_lines": {
+        "min": 1.0,
+        "q25": 3.0,
+        "median": 5.0,
+        "q75": 8.0,
+        "q90": 13.0,
+        "max": 117.0
+      },
+      "limit_reached": 19,
+      "unknown_insert_symbols": 125
+    },
+    "replacement_only": {
+      "pairs": 1671,
+      "status": {
+        "ok": 1204,
+        "no_resolved_statement": 26,
+        "parse_or_function_boundary_failure": 403,
+        "function_correspondence_unknown": 38
+      },
+      "nonempty_regions": 1204,
+      "with_insert_variable_match": 0,
+      "neighbour_without_variable_match": 0,
+      "region_lines": {
+        "min": 1.0,
+        "q25": 3.0,
+        "median": 4.0,
+        "q75": 7.0,
+        "q90": 12.0,
+        "max": 99.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 1.0,
+        "median": 2.0,
+        "q75": 5.0,
+        "q90": 8.0,
+        "max": 34.0
+      },
+      "limit_reached": 21,
+      "unknown_insert_symbols": 0
+    },
+    "deletion_only": {
+      "pairs": 74,
+      "status": {
+        "ok": 54,
+        "parse_or_function_boundary_failure": 19,
+        "no_resolved_statement": 1
+      },
+      "nonempty_regions": 54,
+      "with_insert_variable_match": 0,
+      "neighbour_without_variable_match": 0,
+      "region_lines": {
+        "min": 1.0,
+        "q25": 2.0,
+        "median": 3.5,
+        "q75": 5.0,
+        "q90": 8.700000000000003,
+        "max": 33.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 0.25,
+        "median": 1.0,
+        "q75": 2.0,
+        "q90": 3.0,
+        "max": 12.0
+      },
+      "limit_reached": 0,
+      "unknown_insert_symbols": 0
+    },
+    "mixed": {
+      "pairs": 1377,
+      "status": {
+        "ok": 952,
+        "parse_or_function_boundary_failure": 403,
+        "function_correspondence_unknown": 22
+      },
+      "nonempty_regions": 952,
+      "with_insert_variable_match": 578,
+      "neighbour_without_variable_match": 0,
+      "region_lines": {
+        "min": 1.0,
+        "q25": 6.0,
+        "median": 10.0,
+        "q75": 16.0,
+        "q90": 26.0,
+        "max": 752.0
+      },
+      "added_lines": {
+        "min": 0.0,
+        "q25": 3.0,
+        "median": 6.0,
+        "q75": 11.0,
+        "q90": 15.899999999999977,
+        "max": 70.0
+      },
+      "limit_reached": 65,
+      "unknown_insert_symbols": 299
+    }
+  },
+  "manual_semantics": {
+    "train": {
+      "pairs": 32,
+      "nonexclusive_tags": {
+        "guard": 14,
+        "control_flow": 9,
+        "memory_operation": 2,
+        "null_check": 5,
+        "arithmetic": 2,
+        "operation_missing_from_old_diff": 8,
+        "resource_state": 6,
+        "assertion_removal": 4,
+        "boundary": 7,
+        "non_repair_diff": 1,
+        "pair_error": 2,
+        "configuration": 2,
+        "preprocessor": 1,
+        "operation_removal": 2,
+        "multi_change": 1,
+        "definition": 6,
+        "state_update_removal": 2,
+        "call_arguments": 3,
+        "type_check": 1,
+        "invalid_free_removal": 2,
+        "unqualified_name_collision": 1,
+        "state_update": 1,
+        "cleanup": 1,
+        "interprocedural": 1
+      },
+      "addition_sample": [
+        {
+          "pair_key": "primevul_paired:train:641",
+          "tags": [
+            "guard",
+            "arithmetic",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:1190",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:1595",
+          "tags": [
+            "configuration",
+            "preprocessor",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:1651",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:1830",
+          "tags": [
+            "guard",
+            "null_check",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:2426",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:2548",
+          "tags": [
+            "resource_state",
+            "cleanup",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:train:2752",
+          "tags": [
+            "guard",
+            "null_check",
+            "operation_missing_from_old_diff"
+          ]
+        }
+      ]
+    },
+    "valid": {
+      "pairs": 27,
+      "nonexclusive_tags": {
+        "memory_operation": 5,
+        "guard": 9,
+        "null_check": 1,
+        "definition": 9,
+        "sentinel": 1,
+        "operation_missing_from_old_diff": 8,
+        "resource_state": 7,
+        "cleanup": 2,
+        "refactor": 2,
+        "security_relevance_uncertain": 3,
+        "boundary": 7,
+        "interprocedural": 2,
+        "invalid_free_removal": 2,
+        "authorization": 2,
+        "control_flow": 5,
+        "macro_context": 1,
+        "concurrency": 1,
+        "type_conversion": 1,
+        "arithmetic": 2,
+        "allocation": 1,
+        "recursion": 1,
+        "call_arguments": 1,
+        "documentation": 1,
+        "safe_api": 1
+      },
+      "addition_sample": [
+        {
+          "pair_key": "primevul_paired:valid:31",
+          "tags": [
+            "definition",
+            "sentinel",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:54",
+          "tags": [
+            "resource_state",
+            "cleanup",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:107",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:175",
+          "tags": [
+            "resource_state",
+            "definition",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:178",
+          "tags": [
+            "definition",
+            "control_flow",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:203",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:298",
+          "tags": [
+            "guard",
+            "arithmetic",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:valid:333",
+          "tags": [
+            "resource_state",
+            "cleanup",
+            "operation_missing_from_old_diff"
+          ]
+        }
+      ]
+    },
+    "test": {
+      "pairs": 32,
+      "nonexclusive_tags": {
+        "interprocedural": 3,
+        "operation_removal": 3,
+        "security_relevance_uncertain": 1,
+        "assertion_replacement": 2,
+        "guard": 14,
+        "control_flow": 6,
+        "authorization": 3,
+        "resource_state": 12,
+        "definition": 9,
+        "invalid_free_removal": 4,
+        "configuration": 1,
+        "recursion": 1,
+        "refactor": 1,
+        "boundary": 8,
+        "operation_missing_from_old_diff": 8,
+        "allocation": 1,
+        "memory_operation": 2,
+        "cleanup": 1,
+        "null_check": 2,
+        "signedness": 1,
+        "call_arguments": 1,
+        "reentrancy": 1,
+        "arithmetic": 2,
+        "state_update_removal": 1,
+        "safe_api": 1
+      },
+      "addition_sample": [
+        {
+          "pair_key": "primevul_paired:test:98",
+          "tags": [
+            "definition",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:116",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:181",
+          "tags": [
+            "definition",
+            "resource_state",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:202",
+          "tags": [
+            "resource_state",
+            "cleanup",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:256",
+          "tags": [
+            "guard",
+            "boundary",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:270",
+          "tags": [
+            "guard",
+            "reentrancy",
+            "definition",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:294",
+          "tags": [
+            "guard",
+            "arithmetic",
+            "operation_missing_from_old_diff"
+          ]
+        },
+        {
+          "pair_key": "primevul_paired:test:537",
+          "tags": [
+            "guard",
+            "null_check",
+            "operation_missing_from_old_diff"
+          ]
+        }
+      ]
+    }
+  },
+  "warnings": [
+    "No population error-rate estimate from targeted candidates or disproportionate stratified samples.",
+    "Legal means supported function lineage/source correspondence, not verified vulnerable/secure labels.",
+    "Uncertain means not adjudicated, absent/incomplete provenance, or ambiguous function evolution.",
+    "Semantic/manual region labels are this assistant's source review, not independent dual-human gold labels."
+  ],
+  "region_review": {
+    "pairs": 32,
+    "status": {
+      "ok": 22,
+      "parse_or_function_boundary_failure": 9,
+      "function_correspondence_unknown": 1
+    },
+    "pairs_with_added_lines": 18,
+    "lines": 86,
+    "judgments": {
+      "related": 55,
+      "unknown": 10,
+      "unrelated": 21
+    },
+    "pairs_with_unrelated": 6,
+    "definition": "Related/unrelated/unknown concern the repair relation visible in reviewed source, not a vulnerability-location gold standard."
+  },
+  "within_split_duplicates": {
+    "train": {
+      "groups": 5,
+      "extra_members": 5,
+      "opposite_labels": 0
+    },
+    "valid": {
+      "groups": 1,
+      "extra_members": 4,
+      "opposite_labels": 0
+    },
+    "test": {
+      "groups": 2,
+      "extra_members": 2,
+      "opposite_labels": 0
+    }
+  }
+}

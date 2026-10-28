@@ -1,0 +1,11 @@
+{
+  "files": 68,
+  "pairs": 36,
+  "seconds": 16.666907398961484,
+  "statuses": {
+    "uncertain": 5,
+    "verified_error": 29,
+    "legal": 2
+  },
+  "matching": "whole function code tokens, omitting comments/whitespace; at most 8 omitted leading return-type/qualifier tokens; all matched source locations retained"
+}

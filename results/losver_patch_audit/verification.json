@@ -1,0 +1,32 @@
+{
+  "date_utc": "2026-10-28",
+  "pairs": 5480,
+  "functions": 10960,
+  "functions_by_split": {
+    "train": 8708,
+    "valid": 1124,
+    "test": 1128
+  },
+  "all_raw_source_label_idx_project_commit_equal": true,
+  "all_stored_diff_annotations_equal": true,
+  "diff_recomputed_review_pairs": 105,
+  "sample_seed42_reproduced": true,
+  "cross_split_exact_source_groups": 0,
+  "random_review_pairs": 91,
+  "targeted_review_pairs": 14,
+  "candidate_regions_train_only": 4354,
+  "region_lines_in_original_bounds": true,
+  "oracle_feature_members": 10960,
+  "oracle_auc_rows": 63,
+  "original_commits": 253,
+  "total_seconds": 4.617531757801771,
+  "python": "3.11.14",
+  "packages": {
+    "tree-sitter": "0.25.2",
+    "tree-sitter-c": "0.24.1",
+    "tree-sitter-cpp": "0.23.4",
+    "scikit-learn": "1.8.0",
+    "numpy": "2.4.0"
+  },
+  "no_model_loading_or_training": true
+}

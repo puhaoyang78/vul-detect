@@ -1,0 +1,81 @@
+{
+  "source_commit": "032b05e7b78134f023a74a4aeb1156849374d82b",
+  "seed": 42,
+  "official_pairs": {
+    "train": 4354,
+    "valid": 562,
+    "test": 564
+  },
+  "raw_root": "/home/PublicData/PHY-data/vul_detect/data/PrimeVul_original",
+  "original_diff": "data.modified_lines: difflib.Differ, separately in each direction; nonblank deletions",
+  "audit_alignment": "SequenceMatcher(autojunk=False), structural alignment only; original labels unchanged",
+  "sample": "8 pairs per split x structural edit type, without replacement, same Seed42, independent of flags/model scores",
+  "review_strata": [
+    "addition_only",
+    "replacement_only",
+    "deletion_only",
+    "mixed"
+  ],
+  "train_region_evaluation": [
+    "primevul_paired:train:1651",
+    "primevul_paired:train:1190",
+    "primevul_paired:train:2752",
+    "primevul_paired:train:2548",
+    "primevul_paired:train:2426",
+    "primevul_paired:train:1830",
+    "primevul_paired:train:1595",
+    "primevul_paired:train:641",
+    "primevul_paired:train:3967",
+    "primevul_paired:train:1522",
+    "primevul_paired:train:111",
+    "primevul_paired:train:596",
+    "primevul_paired:train:2322",
+    "primevul_paired:train:2194",
+    "primevul_paired:train:2073",
+    "primevul_paired:train:1653",
+    "primevul_paired:train:1693",
+    "primevul_paired:train:1166",
+    "primevul_paired:train:2763",
+    "primevul_paired:train:2505",
+    "primevul_paired:train:2197",
+    "primevul_paired:train:1883",
+    "primevul_paired:train:1684",
+    "primevul_paired:train:1583",
+    "primevul_paired:train:797",
+    "primevul_paired:train:1728",
+    "primevul_paired:train:1123",
+    "primevul_paired:train:2661",
+    "primevul_paired:train:2459",
+    "primevul_paired:train:2343",
+    "primevul_paired:train:1871",
+    "primevul_paired:train:1682"
+  ],
+  "region_rule_scope": "Train only; no Valid/Test region extraction or rule selection",
+  "no_training": true,
+  "no_model_loading": true,
+  "no_member_changes": true,
+  "region_rules": {
+    "language": "existing Tree-sitter C/C++; no source rewriting",
+    "steps": [
+      "nonempty deleted lines -> complete atomic statement/control header",
+      "pure insertion -> next statement + nearest use of uniquely named local bindings across versions",
+      "one lexical definition/use hop and enclosing control headers",
+      "at most 12 additional dependency units; Diff/insertion seed units are retained"
+    ],
+    "max_added_dependency_units": 12,
+    "dependency_certainty": "AST containment and scope binding are syntactic; def/use links are heuristic candidates, not proven reaching definitions",
+    "rules_developed_from": "Train examples; Valid/Test source review only after Train rules fixed; region extraction Train only"
+  },
+  "semantic_check_macros": [
+    "ASSERT",
+    "BUG_ON",
+    "CHECK",
+    "DCHECK",
+    "OP_REQUIRES",
+    "OP_REQUIRES_OK",
+    "WARN_ON",
+    "assert"
+  ],
+  "original_source_requests": "source_requests.json",
+  "manual_review": "91 fixed stratified source/Diff reviews plus targeted original-commit reviews; not independent human annotations"
+}
