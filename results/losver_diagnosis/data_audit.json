@@ -1,0 +1,71 @@
+{
+  "members": {
+    "train": {
+      "functions": 8708,
+      "pairs": 4354,
+      "duplicate_idx": 5
+    },
+    "valid": {
+      "functions": 1124,
+      "pairs": 562,
+      "duplicate_idx": 4
+    },
+    "test": {
+      "functions": 1128,
+      "pairs": 564,
+      "duplicate_idx": 2
+    }
+  },
+  "overlap": {
+    "train:valid": {
+      "exact_sources": 0,
+      "512": {
+        "unique_encoded_inputs": 18,
+        "first_members": 42,
+        "second_members": 33,
+        "opposite_label_inputs": 16
+      },
+      "l1": {
+        "unique_encoded_inputs": 0,
+        "first_members": 0,
+        "second_members": 0,
+        "opposite_label_inputs": 0
+      }
+    },
+    "train:test": {
+      "exact_sources": 0,
+      "512": {
+        "unique_encoded_inputs": 13,
+        "first_members": 29,
+        "second_members": 29,
+        "opposite_label_inputs": 13
+      },
+      "l1": {
+        "unique_encoded_inputs": 0,
+        "first_members": 0,
+        "second_members": 0,
+        "opposite_label_inputs": 0
+      }
+    },
+    "valid:test": {
+      "exact_sources": 0,
+      "512": {
+        "unique_encoded_inputs": 2,
+        "first_members": 4,
+        "second_members": 3,
+        "opposite_label_inputs": 2
+      },
+      "l1": {
+        "unique_encoded_inputs": 0,
+        "first_members": 0,
+        "second_members": 0,
+        "opposite_label_inputs": 0
+      }
+    }
+  },
+  "metadata_anomalies": [],
+  "annotation_range_errors": 0,
+  "token_mapping_errors": 0,
+  "unique_core_errors": 0,
+  "prediction_alignment_errors": 0
+}

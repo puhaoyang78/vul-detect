@@ -1,0 +1,1730 @@
+{
+  "512/train": {
+    "top_by_visible_lines": {
+      "1": {
+        "share_visible_lines": 0.0002515264511504191,
+        "share_gt_lines": 0.0,
+        "share_predicted_lines": 0.0,
+        "remaining": {
+          "functions": 8707,
+          "lines": 317978.0,
+          "modified_lines": 22627.0,
+          "positive_rate": 0.07115901100076105,
+          "tp": 22465.0,
+          "fp": 5563.0,
+          "fn": 162.0,
+          "tn": 289788.0,
+          "precision": 0.8015199086627658,
+          "recall": 0.9928404118972909,
+          "f1": 0.8869805547329978,
+          "macro_f1_with_visible_gt": 0.9109826522905844,
+          "no_prediction": 3107,
+          "no_visible_gt": 3515,
+          "missed_all_gt": 5,
+          "any_gt_hit": 5187,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 1.0,
+            "q75": 4.0,
+            "q90": 9.0,
+            "max": 51.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.04,
+            "q75": 0.1388888888888889,
+            "q90": 0.3076923076923077,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.04784688995215311,
+            "q75": 0.16345290090759843,
+            "q90": 0.3559835644581408,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7328792729598455,
+            "q75": 0.9142949866522768,
+            "q90": 0.9679275635474736,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.0,
+            "q75": 0.0,
+            "q90": 0.4293829378165129,
+            "max": 1.0
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.5170369936974032,
+            "q75": 0.8369102466818025,
+            "q90": 0.9391645232017873,
+            "max": 1.0
+          },
+          "false_mass_above_half": 681,
+          "false_mass_above_80pct": 183,
+          "effective_token_fraction": {
+            "min": 0.07065087799574135,
+            "q25": 0.1205484562841425,
+            "median": 0.30446087263446864,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0000000000000002
+          }
+        }
+      },
+      "10": {
+        "share_visible_lines": 0.002515264511504191,
+        "share_gt_lines": 0.0,
+        "share_predicted_lines": 0.0,
+        "remaining": {
+          "functions": 8698,
+          "lines": 317258.0,
+          "modified_lines": 22627.0,
+          "positive_rate": 0.07132050255627911,
+          "tp": 22465.0,
+          "fp": 5563.0,
+          "fn": 162.0,
+          "tn": 289068.0,
+          "precision": 0.8015199086627658,
+          "recall": 0.9928404118972909,
+          "f1": 0.8869805547329978,
+          "macro_f1_with_visible_gt": 0.9109826522905844,
+          "no_prediction": 3098,
+          "no_visible_gt": 3506,
+          "missed_all_gt": 5,
+          "any_gt_hit": 5187,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 1.0,
+            "q75": 4.0,
+            "q90": 9.0,
+            "max": 51.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.04,
+            "q75": 0.1388888888888889,
+            "q90": 0.3076923076923077,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.047961630695443645,
+            "q75": 0.16370506068239066,
+            "q90": 0.35617311731173124,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7333714808069401,
+            "q75": 0.914439296961675,
+            "q90": 0.9679532085260213,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.0,
+            "q75": 0.0,
+            "q90": 0.4295224334826001,
+            "max": 1.0
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.5177359900469636,
+            "q75": 0.8372801248674333,
+            "q90": 0.939187056637224,
+            "max": 1.0
+          },
+          "false_mass_above_half": 681,
+          "false_mass_above_80pct": 183,
+          "effective_token_fraction": {
+            "min": 0.07065087799574135,
+            "q25": 0.12045965418939002,
+            "median": 0.3034516317899612,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0000000000000002
+          }
+        }
+      },
+      "88": {
+        "share_visible_lines": 0.020307616849756963,
+        "share_gt_lines": 0.002253944402704733,
+        "share_predicted_lines": 0.002354788069073783,
+        "remaining": {
+          "functions": 8620,
+          "lines": 311599.0,
+          "modified_lines": 22576.0,
+          "positive_rate": 0.07245209387706636,
+          "tp": 22423.0,
+          "fp": 5539.0,
+          "fn": 153.0,
+          "tn": 283484.0,
+          "precision": 0.8019097346398684,
+          "recall": 0.9932228915662651,
+          "f1": 0.8873718785864102,
+          "macro_f1_with_visible_gt": 0.911149702119902,
+          "no_prediction": 3039,
+          "no_visible_gt": 3445,
+          "missed_all_gt": 4,
+          "any_gt_hit": 5171,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 1.0,
+            "q75": 4.0,
+            "q90": 9.0,
+            "max": 51.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.041666666666666664,
+            "q75": 0.13953488372093023,
+            "q90": 0.3076923076923077,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.049019607843137254,
+            "q75": 0.1647376234543208,
+            "q90": 0.3600189573459716,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7378312837373554,
+            "q75": 0.9150260772319612,
+            "q90": 0.9684681697564013,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.0,
+            "q75": 0.0,
+            "q90": 0.4296744846261683,
+            "max": 1.0
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.5245349816735043,
+            "q75": 0.8390200395849876,
+            "q90": 0.9398506137032692,
+            "max": 1.0
+          },
+          "false_mass_above_half": 676,
+          "false_mass_above_80pct": 182,
+          "effective_token_fraction": {
+            "min": 0.07065087799574135,
+            "q25": 0.12015361851596608,
+            "median": 0.29829425080083327,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0000000000000002
+          }
+        }
+      }
+    },
+    "max_predicted_lines_function": {
+      "mode": "512",
+      "split": "train",
+      "sample_key": "primevul_paired:train:2609",
+      "pair_key": "primevul_paired:train:1304",
+      "project": "php-src",
+      "target": 1.0,
+      "source_row": 2609.0,
+      "physical_lines": 83.0,
+      "nonempty_lines": 78.0,
+      "source_tokens": 781.0,
+      "windows": 1.0,
+      "length_group": "511-2048",
+      "window_group": "1",
+      "truncated": 1.0,
+      "visible_lines": 52.0,
+      "gt_total": 72.0,
+      "gt_visible": 47.0,
+      "gt_complete": 46.0,
+      "predicted_lines": 51.0,
+      "line_tp": 47.0,
+      "line_fp": 4.0,
+      "line_fn": 0.0,
+      "line_precision": 0.9215686274509803,
+      "line_recall": 1.0,
+      "line_f1": 0.9591836734693877,
+      "code_tokens": 376.0,
+      "predicted_tokens": 375.0,
+      "gt_tokens": 371.0,
+      "selected_token_fraction": 0.9973404255319149,
+      "selected_mass": 0.9999511606816922,
+      "false_mass": 0.010666145713938051,
+      "true_mass": 0.9892850149677543,
+      "effective_token_fraction": 0.9974369592479962,
+      "new_code_tokens": 0.0,
+      "new_predicted_tokens": 0.0,
+      "new_true_tokens": 0.0,
+      "unmapped_lines": 0.0,
+      "encoded_pair_identical": 0.0,
+      "old512_pair_identical": 0.0
+    }
+  },
+  "512/valid": {
+    "top_by_visible_lines": {
+      "1": {
+        "share_visible_lines": 0.0019357336430507162,
+        "share_gt_lines": 0.0,
+        "share_predicted_lines": 0.0,
+        "remaining": {
+          "functions": 1123,
+          "lines": 38670.0,
+          "modified_lines": 2698.0,
+          "positive_rate": 0.06976984742694595,
+          "tp": 864.0,
+          "fp": 2598.0,
+          "fn": 1834.0,
+          "tn": 33374.0,
+          "precision": 0.24956672443674177,
+          "recall": 0.3202372127501853,
+          "f1": 0.2805194805194805,
+          "macro_f1_with_visible_gt": 0.27286005300513344,
+          "no_prediction": 365,
+          "no_visible_gt": 463,
+          "missed_all_gt": 319,
+          "any_gt_hit": 341,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 2.0,
+            "q75": 5.0,
+            "q90": 8.0,
+            "max": 34.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.05405405405405406,
+            "q75": 0.19399641577060933,
+            "q90": 0.3333333333333333,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.06358381502890173,
+            "q75": 0.20526680526680527,
+            "q90": 0.39724483889639206,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7875631746499551,
+            "q75": 0.9337828016612183,
+            "q90": 0.9729604210399522,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.44852472609926836,
+            "q75": 0.79112399778662,
+            "q90": 0.927151375753124,
+            "max": 0.9992822551790674
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.011636123009647448,
+            "q75": 0.28428329549447895,
+            "q90": 0.7271863889974635,
+            "max": 1.0
+          },
+          "false_mass_above_half": 536,
+          "false_mass_above_80pct": 270,
+          "effective_token_fraction": {
+            "min": 0.07065087799574135,
+            "q25": 0.12463122908408644,
+            "median": 0.31127942936101843,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0
+          }
+        }
+      },
+      "10": {
+        "share_visible_lines": 0.017860369079881276,
+        "share_gt_lines": 0.005930318754633061,
+        "share_predicted_lines": 0.005777007510109763,
+        "remaining": {
+          "functions": 1114,
+          "lines": 38053.0,
+          "modified_lines": 2682.0,
+          "positive_rate": 0.07048064541560455,
+          "tp": 859.0,
+          "fp": 2583.0,
+          "fn": 1823.0,
+          "tn": 32788.0,
+          "precision": 0.2495642068564788,
+          "recall": 0.3202833706189411,
+          "f1": 0.2805355976485957,
+          "macro_f1_with_visible_gt": 0.27256806019516416,
+          "no_prediction": 362,
+          "no_visible_gt": 459,
+          "missed_all_gt": 316,
+          "any_gt_hit": 339,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 2.0,
+            "q75": 5.0,
+            "q90": 8.0,
+            "max": 34.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.05405405405405406,
+            "q75": 0.19535024154589373,
+            "q90": 0.3333333333333333,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.0639634703196347,
+            "q75": 0.20682527854659002,
+            "q90": 0.39788178589548456,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.788625042634851,
+            "q75": 0.9343691630609793,
+            "q90": 0.9730302547736058,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.4490757379736645,
+            "q75": 0.7920725469428255,
+            "q90": 0.9275755187435871,
+            "max": 0.9992822551790674
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.011636879645888446,
+            "q75": 0.2849987906043823,
+            "q90": 0.7296291185743533,
+            "max": 1.0
+          },
+          "false_mass_above_half": 532,
+          "false_mass_above_80pct": 269,
+          "effective_token_fraction": {
+            "min": 0.07065087799574135,
+            "q25": 0.1261870360376204,
+            "median": 0.3122166819622168,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0
+          }
+        }
+      },
+      "12": {
+        "share_visible_lines": 0.021060782036391792,
+        "share_gt_lines": 0.006300963676797628,
+        "share_predicted_lines": 0.005777007510109763,
+        "remaining": {
+          "functions": 1112,
+          "lines": 37929.0,
+          "modified_lines": 2681.0,
+          "positive_rate": 0.0706847003612012,
+          "tp": 859.0,
+          "fp": 2583.0,
+          "fn": 1822.0,
+          "tn": 32665.0,
+          "precision": 0.2495642068564788,
+          "recall": 0.32040283476314807,
+          "f1": 0.2805814143393761,
+          "macro_f1_with_visible_gt": 0.2729848309294075,
+          "no_prediction": 360,
+          "no_visible_gt": 458,
+          "missed_all_gt": 315,
+          "any_gt_hit": 339,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 2.0,
+            "q75": 5.0,
+            "q90": 8.0,
+            "max": 34.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.05405405405405406,
+            "q75": 0.1967391304347826,
+            "q90": 0.3333333333333333,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.06414285714285714,
+            "q75": 0.2071048321048321,
+            "q90": 0.39805936073059356,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7891227696789425,
+            "q75": 0.9344738283294464,
+            "q90": 0.9730497226671772,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.4505572281980395,
+            "q75": 0.7923587924965695,
+            "q90": 0.9276479099022686,
+            "max": 0.9992822551790674
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.011636879645888446,
+            "q75": 0.2857955489964037,
+            "q90": 0.7301416683888077,
+            "max": 1.0
+          },
+          "false_mass_above_half": 532,
+          "false_mass_above_80pct": 269,
+          "effective_token_fraction": {
+            "min": 0.07065087799574135,
+            "q25": 0.1260561937756216,
+            "median": 0.3117480556616176,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0
+          }
+        }
+      }
+    },
+    "max_predicted_lines_function": {
+      "mode": "512",
+      "split": "valid",
+      "sample_key": "primevul_paired:valid:1019",
+      "pair_key": "primevul_paired:valid:509",
+      "project": "php-src",
+      "target": 1.0,
+      "source_row": 1019.0,
+      "physical_lines": 56.0,
+      "nonempty_lines": 51.0,
+      "source_tokens": 599.0,
+      "windows": 1.0,
+      "length_group": "511-2048",
+      "window_group": "1",
+      "truncated": 1.0,
+      "visible_lines": 44.0,
+      "gt_total": 7.0,
+      "gt_visible": 7.0,
+      "gt_complete": 7.0,
+      "predicted_lines": 34.0,
+      "line_tp": 6.0,
+      "line_fp": 28.0,
+      "line_fn": 1.0,
+      "line_precision": 0.17647058823529413,
+      "line_recall": 0.8571428571428571,
+      "line_f1": 0.2926829268292683,
+      "code_tokens": 407.0,
+      "predicted_tokens": 287.0,
+      "gt_tokens": 34.0,
+      "selected_token_fraction": 0.7051597051597052,
+      "selected_mass": 0.9924000940394817,
+      "false_mass": 0.8782913724251858,
+      "true_mass": 0.1141720541639668,
+      "effective_token_fraction": 0.7159010226087389,
+      "new_code_tokens": 0.0,
+      "new_predicted_tokens": 0.0,
+      "new_true_tokens": 0.0,
+      "unmapped_lines": 0.0,
+      "encoded_pair_identical": 0.0,
+      "old512_pair_identical": 0.0
+    }
+  },
+  "512/test": {
+    "top_by_visible_lines": {
+      "1": {
+        "share_visible_lines": 0.0017831492396849769,
+        "share_gt_lines": 0.0,
+        "share_predicted_lines": 0.0,
+        "remaining": {
+          "functions": 1127,
+          "lines": 40306.0,
+          "modified_lines": 2719.0,
+          "positive_rate": 0.06745893911576441,
+          "tp": 844.0,
+          "fp": 2925.0,
+          "fn": 1875.0,
+          "tn": 34662.0,
+          "precision": 0.22393207747413107,
+          "recall": 0.3104082383229128,
+          "f1": 0.2601726263871763,
+          "macro_f1_with_visible_gt": 0.24150713875022306,
+          "no_prediction": 372,
+          "no_visible_gt": 468,
+          "missed_all_gt": 351,
+          "any_gt_hit": 308,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 2.0,
+            "q75": 5.0,
+            "q90": 8.0,
+            "max": 44.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.058823529411764705,
+            "q75": 0.17316341829085458,
+            "q90": 0.3333333333333333,
+            "max": 0.9714285714285714
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.0673076923076923,
+            "q75": 0.2,
+            "q90": 0.38674821610601423,
+            "max": 0.9976689976689976
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7975738285226298,
+            "q75": 0.9317384593585715,
+            "q90": 0.9717763818581591,
+            "max": 0.999957208282404
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.4869190087463017,
+            "q75": 0.8333710263330679,
+            "q90": 0.9318200181034749,
+            "max": 0.9995305886840876
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.008130081300813009,
+            "q75": 0.21016101918062113,
+            "q90": 0.6551949110876628,
+            "max": 0.9923039938976826
+          },
+          "false_mass_above_half": 561,
+          "false_mass_above_80pct": 326,
+          "effective_token_fraction": {
+            "min": 0.07066770771828977,
+            "q25": 0.13504460429727902,
+            "median": 0.30514769725977764,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0
+          }
+        }
+      },
+      "10": {
+        "share_visible_lines": 0.017435237010253107,
+        "share_gt_lines": 0.0,
+        "share_predicted_lines": 0.0,
+        "remaining": {
+          "functions": 1118,
+          "lines": 39674.0,
+          "modified_lines": 2719.0,
+          "positive_rate": 0.06853354841961991,
+          "tp": 844.0,
+          "fp": 2925.0,
+          "fn": 1875.0,
+          "tn": 34030.0,
+          "precision": 0.22393207747413107,
+          "recall": 0.3104082383229128,
+          "f1": 0.2601726263871763,
+          "macro_f1_with_visible_gt": 0.24150713875022306,
+          "no_prediction": 363,
+          "no_visible_gt": 459,
+          "missed_all_gt": 351,
+          "any_gt_hit": 308,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 2.0,
+            "q75": 5.0,
+            "q90": 8.0,
+            "max": 44.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.058823529411764705,
+            "q75": 0.17647058823529413,
+            "q90": 0.33560606060606113,
+            "max": 0.9714285714285714
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.06779700764504479,
+            "q75": 0.20127649388804364,
+            "q90": 0.3891053391053392,
+            "max": 0.9976689976689976
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7988243268368298,
+            "q75": 0.9322425888916659,
+            "q90": 0.9720482174210642,
+            "max": 0.999957208282404
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.5098863846743852,
+            "q75": 0.837213501313534,
+            "q90": 0.9320624492891644,
+            "max": 0.9995305886840876
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.008512117747869656,
+            "q75": 0.2155592237617907,
+            "q90": 0.6575138293782564,
+            "max": 0.9923039938976826
+          },
+          "false_mass_above_half": 561,
+          "false_mass_above_80pct": 326,
+          "effective_token_fraction": {
+            "min": 0.07066770771828977,
+            "q25": 0.13461490610166482,
+            "median": 0.2996300107634586,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0
+          }
+        }
+      },
+      "12": {
+        "share_visible_lines": 0.02080340779632473,
+        "share_gt_lines": 0.0,
+        "share_predicted_lines": 0.0,
+        "remaining": {
+          "functions": 1116,
+          "lines": 39538.0,
+          "modified_lines": 2719.0,
+          "positive_rate": 0.06876928524457485,
+          "tp": 844.0,
+          "fp": 2925.0,
+          "fn": 1875.0,
+          "tn": 33894.0,
+          "precision": 0.22393207747413107,
+          "recall": 0.3104082383229128,
+          "f1": 0.2601726263871763,
+          "macro_f1_with_visible_gt": 0.24150713875022306,
+          "no_prediction": 361,
+          "no_visible_gt": 457,
+          "missed_all_gt": 351,
+          "any_gt_hit": 308,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 2.0,
+            "q75": 5.0,
+            "q90": 8.0,
+            "max": 44.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.059262510974539065,
+            "q75": 0.17647058823529413,
+            "q90": 0.3371212121212121,
+            "max": 0.9714285714285714
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.06797491680189224,
+            "q75": 0.20165300968872396,
+            "q90": 0.3892496392496393,
+            "max": 0.9976689976689976
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.7992765641962791,
+            "q75": 0.9323905403592422,
+            "q90": 0.9720646999222995,
+            "max": 0.999957208282404
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.5109969053550822,
+            "q75": 0.8378368643652649,
+            "q90": 0.9321425113347206,
+            "max": 0.9995305886840876
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.008769161056657948,
+            "q75": 0.2167457882013672,
+            "q90": 0.6575687427341212,
+            "max": 0.9923039938976826
+          },
+          "false_mass_above_half": 561,
+          "false_mass_above_80pct": 326,
+          "effective_token_fraction": {
+            "min": 0.07066770771828977,
+            "q25": 0.13456580143144087,
+            "median": 0.2973092329224566,
+            "q75": 1.0,
+            "q90": 1.0,
+            "max": 1.0
+          }
+        }
+      }
+    },
+    "max_predicted_lines_function": {
+      "mode": "512",
+      "split": "test",
+      "sample_key": "primevul_paired:test:701",
+      "pair_key": "primevul_paired:test:350",
+      "project": "php-src",
+      "target": 1.0,
+      "source_row": 701.0,
+      "physical_lines": 84.0,
+      "nonempty_lines": 84.0,
+      "source_tokens": 621.0,
+      "windows": 1.0,
+      "length_group": "511-2048",
+      "window_group": "1",
+      "truncated": 1.0,
+      "visible_lines": 68.0,
+      "gt_total": 76.0,
+      "gt_visible": 63.0,
+      "gt_complete": 62.0,
+      "predicted_lines": 44.0,
+      "line_tp": 42.0,
+      "line_fp": 2.0,
+      "line_fn": 21.0,
+      "line_precision": 0.9545454545454546,
+      "line_recall": 0.6666666666666666,
+      "line_f1": 0.7850467289719626,
+      "code_tokens": 375.0,
+      "predicted_tokens": 265.0,
+      "gt_tokens": 370.0,
+      "selected_token_fraction": 0.7066666666666667,
+      "selected_mass": 0.9924546471607821,
+      "false_mass": 0.007490223752156846,
+      "true_mass": 0.9923039938976826,
+      "effective_token_fraction": 0.7173527973485422,
+      "new_code_tokens": 0.0,
+      "new_predicted_tokens": 0.0,
+      "new_true_tokens": 0.0,
+      "unmapped_lines": 0.0,
+      "encoded_pair_identical": 0.0,
+      "old512_pair_identical": 0.0
+    }
+  },
+  "l1/train": {
+    "top_by_visible_lines": {
+      "1": {
+        "share_visible_lines": 0.01830834464560804,
+        "share_gt_lines": 0.02284462839806313,
+        "share_predicted_lines": 0.08154738355543119,
+        "remaining": {
+          "functions": 8707,
+          "lines": 1287253.0,
+          "modified_lines": 48634.0,
+          "positive_rate": 0.037781228709507765,
+          "tp": 48358.0,
+          "fp": 46824.0,
+          "fn": 276.0,
+          "tn": 1191795.0,
+          "precision": 0.5080582463070749,
+          "recall": 0.9943249578484188,
+          "f1": 0.672498192134394,
+          "macro_f1_with_visible_gt": 0.7459086016645697,
+          "no_prediction": 677,
+          "no_visible_gt": 1306,
+          "missed_all_gt": 22,
+          "any_gt_hit": 7379,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 2.0,
+            "median": 5.0,
+            "q75": 11.0,
+            "q90": 23.0,
+            "max": 8314.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.022988505747126436,
+            "median": 0.07142857142857142,
+            "q75": 0.2,
+            "q90": 0.42857142857142855,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.027205232415049033,
+            "median": 0.08496732026143791,
+            "q75": 0.22778051522103998,
+            "q90": 0.4902226364295331,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.6042571088941999,
+            "median": 0.835250691751145,
+            "q75": 0.9415366724100995,
+            "q90": 0.9813097351611567,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.1701007266810108,
+            "q75": 0.5035037738286754,
+            "q90": 0.7279258116374562,
+            "max": 1.0
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.16234156890116672,
+            "median": 0.4467906017358464,
+            "q75": 0.7432078791864167,
+            "q90": 0.8983222030080964,
+            "max": 1.0
+          },
+          "false_mass_above_half": 2201,
+          "false_mass_above_80pct": 538,
+          "effective_token_fraction": {
+            "min": 0.07065082505439224,
+            "q25": 0.08737446175671892,
+            "median": 0.1537106240742556,
+            "q75": 0.3579613034097904,
+            "q90": 0.9260768889028558,
+            "max": 1.0000000000000002
+          }
+        }
+      },
+      "10": {
+        "share_visible_lines": 0.06407119869438556,
+        "share_gt_lines": 0.04225352112676056,
+        "share_predicted_lines": 0.16209122576785387,
+        "remaining": {
+          "functions": 8698,
+          "lines": 1227246.0,
+          "modified_lines": 47668.0,
+          "positive_rate": 0.03884143847280822,
+          "tp": 47395.0,
+          "fp": 39440.0,
+          "fn": 273.0,
+          "tn": 1140138.0,
+          "precision": 0.5458052628548397,
+          "recall": 0.9942728874716791,
+          "f1": 0.7047426451454615,
+          "macro_f1_with_visible_gt": 0.7461857795548459,
+          "no_prediction": 677,
+          "no_visible_gt": 1303,
+          "missed_all_gt": 20,
+          "any_gt_hit": 7375,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 2.0,
+            "median": 5.0,
+            "q75": 11.0,
+            "q90": 23.0,
+            "max": 403.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.023080338844104386,
+            "median": 0.07142857142857142,
+            "q75": 0.2,
+            "q90": 0.42857142857142855,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.02735595444251276,
+            "median": 0.0851063829787234,
+            "q75": 0.22794402049976228,
+            "q90": 0.49042420575995893,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.6056147944041546,
+            "median": 0.8354964908027595,
+            "q75": 0.9415878056087563,
+            "q90": 0.9813245266382796,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.1703767694714884,
+            "q75": 0.5040032681685257,
+            "q90": 0.7278980014887944,
+            "max": 1.0
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.16394300017619734,
+            "median": 0.44763828389779164,
+            "q75": 0.7434207789790357,
+            "q90": 0.898517825587753,
+            "max": 1.0
+          },
+          "false_mass_above_half": 2200,
+          "false_mass_above_80pct": 537,
+          "effective_token_fraction": {
+            "min": 0.07065082505439224,
+            "q25": 0.0873418131183198,
+            "median": 0.1536591864330592,
+            "q75": 0.3573327580706537,
+            "q90": 0.9272690961347384,
+            "max": 1.0000000000000002
+          }
+        }
+      },
+      "88": {
+        "share_visible_lines": 0.17278342967832466,
+        "share_gt_lines": 0.06764983625002512,
+        "share_predicted_lines": 0.18126465508091053,
+        "remaining": {
+          "functions": 8620,
+          "lines": 1084696.0,
+          "modified_lines": 46404.0,
+          "positive_rate": 0.04278065006232161,
+          "tp": 46184.0,
+          "fp": 38664.0,
+          "fn": 220.0,
+          "tn": 999628.0,
+          "precision": 0.5443145389402225,
+          "recall": 0.9952590293940178,
+          "f1": 0.703745466735745,
+          "macro_f1_with_visible_gt": 0.7480126438723835,
+          "no_prediction": 677,
+          "no_visible_gt": 1297,
+          "missed_all_gt": 18,
+          "any_gt_hit": 7305,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 2.0,
+            "median": 5.0,
+            "q75": 11.0,
+            "q90": 22.0,
+            "max": 403.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.023809523809523808,
+            "median": 0.07317073170731707,
+            "q75": 0.2,
+            "q90": 0.42857142857142855,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.028129029880991856,
+            "median": 0.08653234747668415,
+            "q75": 0.23076923076923078,
+            "q90": 0.49413445378151266,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.6124396941606052,
+            "median": 0.8379794363707458,
+            "q75": 0.9424607633081566,
+            "q90": 0.9815946438403287,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0,
+            "median": 0.17010186097219093,
+            "q75": 0.5074282930166077,
+            "q90": 0.7293691899772393,
+            "max": 1.0
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.1680019705396637,
+            "median": 0.45065418256027573,
+            "q75": 0.7448281685250356,
+            "q90": 0.8998071323740928,
+            "max": 1.0
+          },
+          "false_mass_above_half": 2198,
+          "false_mass_above_80pct": 537,
+          "effective_token_fraction": {
+            "min": 0.07065082505439224,
+            "q25": 0.08777601490529535,
+            "median": 0.1549758108951529,
+            "q75": 0.36088434849163614,
+            "q90": 0.9357545937670759,
+            "max": 1.0000000000000002
+          }
+        }
+      }
+    },
+    "max_predicted_lines_function": {
+      "mode": "l1",
+      "split": "train",
+      "sample_key": "primevul_paired:train:6574",
+      "pair_key": "primevul_paired:train:3286",
+      "project": "php-src",
+      "target": 0.0,
+      "source_row": 6574.0,
+      "physical_lines": 24047.0,
+      "nonempty_lines": 24007.0,
+      "source_tokens": 232766.0,
+      "windows": 607.0,
+      "length_group": ">8192",
+      "window_group": "17+",
+      "truncated": 0.0,
+      "visible_lines": 24007.0,
+      "gt_total": 1137.0,
+      "gt_visible": 1137.0,
+      "gt_complete": 1137.0,
+      "predicted_lines": 8451.0,
+      "line_tp": 1126.0,
+      "line_fp": 7325.0,
+      "line_fn": 11.0,
+      "line_precision": 0.13323866997988404,
+      "line_recall": 0.990325417766051,
+      "line_f1": 0.23487692949520234,
+      "code_tokens": 171505.0,
+      "predicted_tokens": 65277.0,
+      "gt_tokens": 9975.0,
+      "selected_token_fraction": 0.38061281012215387,
+      "selected_mass": 0.9710568661009861,
+      "false_mass": 0.8239040478116813,
+      "true_mass": 0.1471754326669983,
+      "effective_token_fraction": 0.40341965368338006,
+      "new_code_tokens": 171156.0,
+      "new_predicted_tokens": 65189.0,
+      "new_true_tokens": 9975.0,
+      "unmapped_lines": 0.0,
+      "encoded_pair_identical": 0.0,
+      "old512_pair_identical": 1.0
+    }
+  },
+  "l1/valid": {
+    "top_by_visible_lines": {
+      "1": {
+        "share_visible_lines": 0.018638761667343035,
+        "share_gt_lines": 0.0033327161636733937,
+        "share_predicted_lines": 0.0007731294562322824,
+        "remaining": {
+          "functions": 1123,
+          "lines": 135420.0,
+          "modified_lines": 5383.0,
+          "positive_rate": 0.03975040614384877,
+          "tp": 1871.0,
+          "fp": 9761.0,
+          "fn": 3512.0,
+          "tn": 120276.0,
+          "precision": 0.1608493810178817,
+          "recall": 0.34757570128181314,
+          "f1": 0.2199235968263297,
+          "macro_f1_with_visible_gt": 0.25044630911314,
+          "no_prediction": 104,
+          "no_visible_gt": 166,
+          "missed_all_gt": 411,
+          "any_gt_hit": 546,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 3.0,
+            "median": 7.0,
+            "q75": 14.0,
+            "q90": 23.0,
+            "max": 117.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.037037037037037035,
+            "median": 0.125,
+            "q75": 0.3333333333333333,
+            "q90": 0.5699186991869921,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.04014840608547859,
+            "median": 0.13957934990439771,
+            "q75": 0.38348416289592757,
+            "q90": 0.6341851331038161,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.6954669494875338,
+            "median": 0.898549596322748,
+            "q75": 0.9713963670308485,
+            "q90": 0.9895455031141852,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.31750288123220527,
+            "median": 0.6781130762143618,
+            "q75": 0.8630382271585706,
+            "q90": 0.9524248220210436,
+            "max": 0.9998247614422718
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0035683934702703196,
+            "median": 0.05469570149314006,
+            "q75": 0.3087565091358845,
+            "q90": 0.6517307249711097,
+            "max": 1.0
+          },
+          "false_mass_above_half": 742,
+          "false_mass_above_80pct": 388,
+          "effective_token_fraction": {
+            "min": 0.07065100682319532,
+            "q25": 0.10639518660021342,
+            "median": 0.22586853736389814,
+            "q75": 0.5592998091484059,
+            "q90": 0.9865793429591617,
+            "max": 1.0
+          }
+        }
+      },
+      "10": {
+        "share_visible_lines": 0.12325352194330107,
+        "share_gt_lines": 0.0248102203295686,
+        "share_predicted_lines": 0.013572717120522292,
+        "remaining": {
+          "functions": 1114,
+          "lines": 120984.0,
+          "modified_lines": 5267.0,
+          "positive_rate": 0.04353468227203597,
+          "tp": 1863.0,
+          "fp": 9620.0,
+          "fn": 3404.0,
+          "tn": 106097.0,
+          "precision": 0.16223983279630758,
+          "recall": 0.3537117903930131,
+          "f1": 0.22244776119402984,
+          "macro_f1_with_visible_gt": 0.2517339498817949,
+          "no_prediction": 104,
+          "no_visible_gt": 166,
+          "missed_all_gt": 404,
+          "any_gt_hit": 544,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 3.0,
+            "median": 7.0,
+            "q75": 14.0,
+            "q90": 23.0,
+            "max": 117.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.03938834791822716,
+            "median": 0.125,
+            "q75": 0.3333333333333333,
+            "q90": 0.5712195121951219,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.04253964237516869,
+            "median": 0.1409459891339086,
+            "q75": 0.3851281183411925,
+            "q90": 0.6353671449563489,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.7080952435291406,
+            "median": 0.8995780456137055,
+            "q75": 0.9715891479175135,
+            "q90": 0.9895980766494104,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.3223597931011254,
+            "median": 0.6816843850286749,
+            "q75": 0.8648087739419207,
+            "q90": 0.9525646197276849,
+            "max": 0.9998247614422718
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0035625289676426584,
+            "median": 0.05896057779830796,
+            "q75": 0.31365943353075176,
+            "q90": 0.6532490063996124,
+            "max": 1.0
+          },
+          "false_mass_above_half": 740,
+          "false_mass_above_80pct": 388,
+          "effective_token_fraction": {
+            "min": 0.07065100682319532,
+            "q25": 0.10931116751674669,
+            "median": 0.23403455022655617,
+            "q75": 0.5607032009914693,
+            "q90": 0.9875651618206643,
+            "max": 1.0
+          }
+        }
+      },
+      "12": {
+        "share_visible_lines": 0.13782683054090092,
+        "share_gt_lines": 0.025365673023514165,
+        "share_predicted_lines": 0.013744523666351687,
+        "remaining": {
+          "functions": 1112,
+          "lines": 118973.0,
+          "modified_lines": 5264.0,
+          "positive_rate": 0.04424533297470855,
+          "tp": 1863.0,
+          "fp": 9618.0,
+          "fn": 3401.0,
+          "tn": 104091.0,
+          "precision": 0.16226809511366605,
+          "recall": 0.35391337386018235,
+          "f1": 0.22251418333830994,
+          "macro_f1_with_visible_gt": 0.25226615696399746,
+          "no_prediction": 104,
+          "no_visible_gt": 166,
+          "missed_all_gt": 402,
+          "any_gt_hit": 544,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 3.0,
+            "median": 7.0,
+            "q75": 14.0,
+            "q90": 23.0,
+            "max": 117.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.03952180581226159,
+            "median": 0.125,
+            "q75": 0.33433734939759036,
+            "q90": 0.5713588850174216,
+            "max": 1.0
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.042772312067627584,
+            "median": 0.14110055076278208,
+            "q75": 0.3853369385871185,
+            "q90": 0.6357020917970438,
+            "max": 1.0
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.7092711692055411,
+            "median": 0.8996931496162233,
+            "q75": 0.9716134740003827,
+            "q90": 0.9896129740957581,
+            "max": 1.0
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.32779733550736145,
+            "median": 0.6832239896499936,
+            "q75": 0.8653382126661535,
+            "q90": 0.9525888538187032,
+            "max": 0.9998247614422718
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0035833434253695,
+            "median": 0.05975107676766232,
+            "q75": 0.31457503377188734,
+            "q90": 0.6536694364622628,
+            "max": 1.0
+          },
+          "false_mass_above_half": 740,
+          "false_mass_above_80pct": 388,
+          "effective_token_fraction": {
+            "min": 0.07065100682319532,
+            "q25": 0.10917470913947021,
+            "median": 0.2345576058741174,
+            "q75": 0.5608072742671415,
+            "q90": 0.9875651618206643,
+            "max": 1.0
+          }
+        }
+      }
+    },
+    "max_predicted_lines_function": {
+      "mode": "l1",
+      "split": "valid",
+      "sample_key": "primevul_paired:valid:1111",
+      "pair_key": "primevul_paired:valid:555",
+      "project": "phosphor-host-ipmid",
+      "target": 1.0,
+      "source_row": 1111.0,
+      "physical_lines": 229.0,
+      "nonempty_lines": 205.0,
+      "source_tokens": 2160.0,
+      "windows": 6.0,
+      "length_group": "2049-8192",
+      "window_group": "5-16",
+      "truncated": 0.0,
+      "visible_lines": 205.0,
+      "gt_total": 2.0,
+      "gt_visible": 2.0,
+      "gt_complete": 2.0,
+      "predicted_lines": 117.0,
+      "line_tp": 2.0,
+      "line_fp": 115.0,
+      "line_fn": 0.0,
+      "line_precision": 0.017094017094017096,
+      "line_recall": 1.0,
+      "line_f1": 0.03361344537815126,
+      "code_tokens": 1729.0,
+      "predicted_tokens": 1091.0,
+      "gt_tokens": 32.0,
+      "selected_token_fraction": 0.6310005783689995,
+      "selected_mass": 0.9894027998844702,
+      "false_mass": 0.9603827360931751,
+      "true_mass": 0.029020063791295188,
+      "effective_token_fraction": 0.644463459971267,
+      "new_code_tokens": 1319.0,
+      "new_predicted_tokens": 705.0,
+      "new_true_tokens": 32.0,
+      "unmapped_lines": 0.0,
+      "encoded_pair_identical": 0.0,
+      "old512_pair_identical": 1.0
+    }
+  },
+  "l1/test": {
+    "top_by_visible_lines": {
+      "1": {
+        "share_visible_lines": 0.0192377453661851,
+        "share_gt_lines": 0.00019372336303758234,
+        "share_predicted_lines": 0.004331434988369295,
+        "remaining": {
+          "functions": 1127,
+          "lines": 170328.0,
+          "modified_lines": 5161.0,
+          "positive_rate": 0.030300361655159456,
+          "tp": 1754.0,
+          "fp": 10659.0,
+          "fn": 3407.0,
+          "tn": 154508.0,
+          "precision": 0.14130347216627728,
+          "recall": 0.3398566169347026,
+          "f1": 0.19961306475475132,
+          "macro_f1_with_visible_gt": 0.20272787348985388,
+          "no_prediction": 105,
+          "no_visible_gt": 199,
+          "missed_all_gt": 436,
+          "any_gt_hit": 492,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 3.0,
+            "median": 8.0,
+            "q75": 14.0,
+            "q90": 24.0,
+            "max": 136.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.029850746268656716,
+            "median": 0.11764705882352941,
+            "q75": 0.28846153846153844,
+            "q90": 0.5227272727272727,
+            "max": 0.984375
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.03620888198312493,
+            "median": 0.12570781426953567,
+            "q75": 0.3281105061504336,
+            "q90": 0.6104395604395603,
+            "max": 0.998533724340176
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.6722605598293521,
+            "median": 0.8870088689059692,
+            "q75": 0.963849746801358,
+            "q90": 0.9884454205253325,
+            "max": 0.9999731055120425
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.3888044420847138,
+            "median": 0.7110988881928774,
+            "q75": 0.8763476841318403,
+            "q90": 0.9511258806938789,
+            "max": 0.999961603908512
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.00197313317156413,
+            "median": 0.027241014389561655,
+            "q75": 0.236215829104356,
+            "q90": 0.5144981347381279,
+            "max": 0.9908697489442021
+          },
+          "false_mass_above_half": 781,
+          "false_mass_above_80pct": 428,
+          "effective_token_fraction": {
+            "min": 0.07065082882100575,
+            "q25": 0.10884034153362968,
+            "median": 0.2145726357987446,
+            "q75": 0.4841276856448036,
+            "q90": 0.9821213314748949,
+            "max": 1.0
+          }
+        }
+      },
+      "10": {
+        "share_visible_lines": 0.12066632502058514,
+        "share_gt_lines": 0.011235955056179775,
+        "share_predicted_lines": 0.016042351808775165,
+        "remaining": {
+          "functions": 1118,
+          "lines": 152713.0,
+          "modified_lines": 5104.0,
+          "positive_rate": 0.033422171000504215,
+          "tp": 1754.0,
+          "fp": 10513.0,
+          "fn": 3350.0,
+          "tn": 137096.0,
+          "precision": 0.1429852449661694,
+          "recall": 0.34365203761755486,
+          "f1": 0.20194577168844627,
+          "macro_f1_with_visible_gt": 0.2042686933752274,
+          "no_prediction": 101,
+          "no_visible_gt": 197,
+          "missed_all_gt": 429,
+          "any_gt_hit": 492,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 3.0,
+            "median": 8.0,
+            "q75": 14.0,
+            "q90": 24.0,
+            "max": 136.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.031788247213779125,
+            "median": 0.11904761904761904,
+            "q75": 0.29108170310701953,
+            "q90": 0.5230519480519481,
+            "max": 0.984375
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.03883519898499984,
+            "median": 0.1282286911325863,
+            "q75": 0.3296854942233633,
+            "q90": 0.6155443172744212,
+            "max": 0.998533724340176
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.688082371170458,
+            "median": 0.8892668309470056,
+            "q75": 0.9640977036812406,
+            "q90": 0.9886898264692169,
+            "max": 0.9999731055120425
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.3938074183765099,
+            "median": 0.7133683519881155,
+            "q75": 0.8772491160048885,
+            "q90": 0.9511850682101514,
+            "max": 0.999961603908512
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.0020348661127966043,
+            "median": 0.02928458174207148,
+            "q75": 0.23732204999088125,
+            "q90": 0.5174546657633319,
+            "max": 0.9908697489442021
+          },
+          "false_mass_above_half": 778,
+          "false_mass_above_80pct": 428,
+          "effective_token_fraction": {
+            "min": 0.07065082882100575,
+            "q25": 0.1094733393575041,
+            "median": 0.2146134405354126,
+            "q75": 0.4816553908415744,
+            "q90": 0.9791176451265041,
+            "max": 1.0
+          }
+        }
+      },
+      "12": {
+        "share_visible_lines": 0.13741657981562627,
+        "share_gt_lines": 0.01743510267338241,
+        "share_predicted_lines": 0.029918986123365684,
+        "remaining": {
+          "functions": 1116,
+          "lines": 149804.0,
+          "modified_lines": 5072.0,
+          "positive_rate": 0.03385757389655817,
+          "tp": 1733.0,
+          "fp": 10361.0,
+          "fn": 3339.0,
+          "tn": 134371.0,
+          "precision": 0.14329419546882752,
+          "recall": 0.34167981072555204,
+          "f1": 0.20191075381568216,
+          "macro_f1_with_visible_gt": 0.2040257192573357,
+          "no_prediction": 101,
+          "no_visible_gt": 197,
+          "missed_all_gt": 429,
+          "any_gt_hit": 490,
+          "predicted_lines": {
+            "min": 0.0,
+            "q25": 3.0,
+            "median": 8.0,
+            "q75": 14.0,
+            "q90": 24.0,
+            "max": 135.0
+          },
+          "predicted_line_fraction": {
+            "min": 0.0,
+            "q25": 0.03187267814927389,
+            "median": 0.11904761904761904,
+            "q75": 0.2912710970464135,
+            "q90": 0.5232683982683983,
+            "max": 0.984375
+          },
+          "selected_token_fraction": {
+            "min": 0.0,
+            "q25": 0.039018685960235125,
+            "median": 0.12901160805735745,
+            "q75": 0.3298245614035088,
+            "q90": 0.6156507852009583,
+            "max": 0.998533724340176
+          },
+          "selected_attention_mass": {
+            "min": 0.0,
+            "q25": 0.6891340418157509,
+            "median": 0.8899537102692258,
+            "q75": 0.9641195026662098,
+            "q90": 0.9886948556427722,
+            "max": 0.9999731055120425
+          },
+          "false_attention_mass": {
+            "min": 0.0,
+            "q25": 0.394081370468353,
+            "median": 0.7133683519881155,
+            "q75": 0.8774437492280746,
+            "q90": 0.9512245265543329,
+            "max": 0.999961603908512
+          },
+          "true_attention_mass": {
+            "min": 0.0,
+            "q25": 0.002033965234020411,
+            "median": 0.02928458174207148,
+            "q75": 0.2369999750257324,
+            "q90": 0.5177570744034654,
+            "max": 0.9908697489442021
+          },
+          "false_mass_above_half": 777,
+          "false_mass_above_80pct": 427,
+          "effective_token_fraction": {
+            "min": 0.07065082882100575,
+            "q25": 0.10959177949528376,
+            "median": 0.21692156802279594,
+            "q75": 0.48207206558730825,
+            "q90": 0.9791626984101771,
+            "max": 1.0
+          }
+        }
+      }
+    },
+    "max_predicted_lines_function": {
+      "mode": "l1",
+      "split": "test",
+      "sample_key": "primevul_paired:test:1028",
+      "pair_key": "primevul_paired:test:513",
+      "project": "liblouis",
+      "target": 0.0,
+      "source_row": 1028.0,
+      "physical_lines": 1464.0,
+      "nonempty_lines": 1446.0,
+      "source_tokens": 17070.0,
+      "windows": 45.0,
+      "length_group": ">8192",
+      "window_group": "17+",
+      "truncated": 0.0,
+      "visible_lines": 1446.0,
+      "gt_total": 8.0,
+      "gt_visible": 8.0,
+      "gt_complete": 8.0,
+      "predicted_lines": 136.0,
+      "line_tp": 3.0,
+      "line_fp": 133.0,
+      "line_fn": 5.0,
+      "line_precision": 0.022058823529411766,
+      "line_recall": 0.375,
+      "line_f1": 0.041666666666666664,
+      "code_tokens": 12791.0,
+      "predicted_tokens": 1246.0,
+      "gt_tokens": 96.0,
+      "selected_token_fraction": 0.09741224298334766,
+      "selected_mass": 0.8549154597157689,
+      "false_mass": 0.8315871084875697,
+      "true_mass": 0.024107497308547558,
+      "effective_token_fraction": 0.13286769079714844,
+      "new_code_tokens": 12401.0,
+      "new_predicted_tokens": 1220.0,
+      "new_true_tokens": 96.0,
+      "unmapped_lines": 0.0,
+      "encoded_pair_identical": 0.0,
+      "old512_pair_identical": 1.0
+    }
+  }
+}

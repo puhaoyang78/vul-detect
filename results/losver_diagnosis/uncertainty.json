@@ -1,0 +1,146 @@
+{
+  "512/baseline_to_losver": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      -0.040780141843971635,
+      0.030141843971631194
+    ],
+    "auc_95pct": [
+      -0.03017218072531573,
+      0.020170090161460662
+    ],
+    "pair_gained": 51,
+    "pair_lost": 54,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "l1/baseline_to_losver": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      -0.05673758865248228,
+      0.015957446808510647
+    ],
+    "auc_95pct": [
+      -0.01754611815301045,
+      0.030948675871435044
+    ],
+    "pair_gained": 52,
+    "pair_lost": 63,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "512_to_l1/unixcoder": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      -0.021276595744680826,
+      0.049645390070922
+    ],
+    "auc_95pct": [
+      -0.033683542075348266,
+      0.012266029752024586
+    ],
+    "pair_gained": 58,
+    "pair_lost": 50,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "512_to_l1/losver": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      -0.03550531914893619,
+      0.033687943262411355
+    ],
+    "auc_95pct": [
+      -0.020940219304863956,
+      0.02663201517780802
+    ],
+    "pair_gained": 56,
+    "pair_lost": 56,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "512_to_l1/losver_oracle": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      0.07624113475177308,
+      0.16312056737588654
+    ],
+    "auc_95pct": [
+      0.017264363588350738,
+      0.06129152048438193
+    ],
+    "pair_gained": 122,
+    "pair_lost": 54,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "512/frozen_predicted5_to_equal_1": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      -0.06382978723404256,
+      4.4326241134711525e-05
+    ],
+    "auc_95pct": [
+      -0.027633245938333058,
+      0.015368552260952559
+    ],
+    "pair_gained": 37,
+    "pair_lost": 55,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "512/frozen_predicted5_to_true_5": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      0.0975177304964539,
+      0.17025709219858154
+    ],
+    "auc_95pct": [
+      0.07364899275690348,
+      0.12314505683818723
+    ],
+    "pair_gained": 98,
+    "pair_lost": 22,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "l1/frozen_predicted5_to_equal_1": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      -0.13652482269503546,
+      -0.07446808510638298
+    ],
+    "auc_95pct": [
+      -0.02886699298325033,
+      0.0028529123283537183
+    ],
+    "pair_gained": 11,
+    "pair_lost": 70,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  },
+  "l1/frozen_predicted5_to_true_5": {
+    "repetitions": 1000,
+    "seed": 42,
+    "pairs": 564,
+    "pc_95pct": [
+      0.15602836879432624,
+      0.24113475177304963
+    ],
+    "auc_95pct": [
+      0.10882359413510397,
+      0.15658637643981702
+    ],
+    "pair_gained": 138,
+    "pair_lost": 25,
+    "limitation": "pair bootstrap does not adjust for project or shared-commit clusters"
+  }
+}

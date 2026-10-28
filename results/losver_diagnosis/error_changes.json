@@ -1,0 +1,74 @@
+{
+  "512/valid": {
+    "0": {
+      "n": 562,
+      "baseline_correct": 279,
+      "losver_correct": 325,
+      "lost": 76,
+      "gained": 122,
+      "shared_wrong": 161
+    },
+    "1": {
+      "n": 562,
+      "baseline_correct": 353,
+      "losver_correct": 286,
+      "lost": 130,
+      "gained": 63,
+      "shared_wrong": 146
+    }
+  },
+  "512/test": {
+    "0": {
+      "n": 564,
+      "baseline_correct": 279,
+      "losver_correct": 328,
+      "lost": 82,
+      "gained": 131,
+      "shared_wrong": 154
+    },
+    "1": {
+      "n": 564,
+      "baseline_correct": 348,
+      "losver_correct": 286,
+      "lost": 139,
+      "gained": 77,
+      "shared_wrong": 139
+    }
+  },
+  "l1/valid": {
+    "0": {
+      "n": 562,
+      "baseline_correct": 377,
+      "losver_correct": 261,
+      "lost": 173,
+      "gained": 57,
+      "shared_wrong": 128
+    },
+    "1": {
+      "n": 562,
+      "baseline_correct": 258,
+      "losver_correct": 381,
+      "lost": 60,
+      "gained": 183,
+      "shared_wrong": 121
+    }
+  },
+  "l1/test": {
+    "0": {
+      "n": 564,
+      "baseline_correct": 357,
+      "losver_correct": 264,
+      "lost": 153,
+      "gained": 60,
+      "shared_wrong": 147
+    },
+    "1": {
+      "n": 564,
+      "baseline_correct": 257,
+      "losver_correct": 354,
+      "lost": 56,
+      "gained": 153,
+      "shared_wrong": 154
+    }
+  }
+}

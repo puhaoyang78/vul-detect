@@ -1,0 +1,402 @@
+{
+  "512/valid/label0/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 464,
+      "spearman": 0.11221287511646853
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 562,
+      "spearman": 0.06210490646111586
+    }
+  },
+  "512/valid/label0/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 221,
+      "spearman": 0.1813565851975314
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 221,
+      "spearman": -0.036063665965969785
+    }
+  },
+  "512/valid/label0/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 193,
+      "spearman": 0.11159577050520832
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 232,
+      "spearman": 0.19239288121445888
+    }
+  },
+  "512/valid/label0/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 46,
+      "spearman": 0.3105320375008875
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 94,
+      "spearman": 0.024440042803405306
+    }
+  },
+  "512/valid/label0/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 4,
+      "spearman": -0.2581988897471611
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 15,
+      "spearman": 0.47209972596952876
+    }
+  },
+  "512/valid/label1/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 429,
+      "spearman": 0.08251674130442749
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 562,
+      "spearman": -0.16966916963026876
+    }
+  },
+  "512/valid/label1/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 220,
+      "spearman": 0.026909898281280254
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 232,
+      "spearman": -0.17511296030041498
+    }
+  },
+  "512/valid/label1/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 166,
+      "spearman": 0.10590438794736641
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 224,
+      "spearman": -0.2796471412483911
+    }
+  },
+  "512/valid/label1/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 39,
+      "spearman": 0.23064336986485554
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 91,
+      "spearman": -0.05937514160236044
+    }
+  },
+  "512/valid/label1/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 4,
+      "spearman": null
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 15,
+      "spearman": -0.4629327409992466
+    }
+  },
+  "512/test/label0/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 464,
+      "spearman": 0.09815310615390267
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 564,
+      "spearman": 0.11854067445562234
+    }
+  },
+  "512/test/label0/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 191,
+      "spearman": 0.16595847200148384
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 192,
+      "spearman": 0.022172056167260114
+    }
+  },
+  "512/test/label0/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 204,
+      "spearman": 0.09982090492274086
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 243,
+      "spearman": 0.16575313774573083
+    }
+  },
+  "512/test/label0/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 59,
+      "spearman": 0.14826569476915613
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 103,
+      "spearman": 0.15909136137531124
+    }
+  },
+  "512/test/label0/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 10,
+      "spearman": null
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 26,
+      "spearman": 0.5870772617820911
+    }
+  },
+  "512/test/label1/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 434,
+      "spearman": 0.10120685023931034
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 564,
+      "spearman": -0.12066943874649641
+    }
+  },
+  "512/test/label1/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 194,
+      "spearman": -0.024328270278347573
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 204,
+      "spearman": -0.10343198640105676
+    }
+  },
+  "512/test/label1/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 185,
+      "spearman": 0.20806698117905886
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 237,
+      "spearman": -0.21682980615628636
+    }
+  },
+  "512/test/label1/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 47,
+      "spearman": 0.13043855343544392
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 97,
+      "spearman": -0.08256292471024884
+    }
+  },
+  "512/test/label1/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 8,
+      "spearman": null
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 26,
+      "spearman": -0.5870772617820911
+    }
+  },
+  "l1/valid/label0/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 562,
+      "spearman": 0.20541921826900897
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 562,
+      "spearman": -0.0057082660271972644
+    }
+  },
+  "l1/valid/label0/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 221,
+      "spearman": 0.236546223743352
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 221,
+      "spearman": -0.282905549420745
+    }
+  },
+  "l1/valid/label0/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 232,
+      "spearman": 0.14820013018754874
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 232,
+      "spearman": 0.19697909930194363
+    }
+  },
+  "l1/valid/label0/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 94,
+      "spearman": 0.31849015419696675
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 94,
+      "spearman": 0.1518808028400869
+    }
+  },
+  "l1/valid/label0/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 15,
+      "spearman": 0.5271016357912214
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 15,
+      "spearman": 0.3928571428571428
+    }
+  },
+  "l1/valid/label1/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 541,
+      "spearman": -0.06661471030054103
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 562,
+      "spearman": -0.10930457702934672
+    }
+  },
+  "l1/valid/label1/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 225,
+      "spearman": -0.10019129481898324
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 232,
+      "spearman": 0.10539863974144499
+    }
+  },
+  "l1/valid/label1/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 216,
+      "spearman": -0.04911463390107573
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 224,
+      "spearman": -0.20989302123557183
+    }
+  },
+  "l1/valid/label1/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 85,
+      "spearman": -0.02028146335641889
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 91,
+      "spearman": -0.37477802042902153
+    }
+  },
+  "l1/valid/label1/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 15,
+      "spearman": -0.14040849832721167
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 15,
+      "spearman": -0.2714285714285714
+    }
+  },
+  "l1/test/label0/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 563,
+      "spearman": 0.09417164854467124
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 564,
+      "spearman": 0.09951791140666633
+    }
+  },
+  "l1/test/label0/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 191,
+      "spearman": 0.11330485022678626
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 192,
+      "spearman": -0.07429350874573493
+    }
+  },
+  "l1/test/label0/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 243,
+      "spearman": 0.14045735338726154
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 243,
+      "spearman": 0.17466024473354713
+    }
+  },
+  "l1/test/label0/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 103,
+      "spearman": 0.1312774096492468
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 103,
+      "spearman": 0.2632070463639171
+    }
+  },
+  "l1/test/label0/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 26,
+      "spearman": 0.12472767145898403
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 26,
+      "spearman": 0.4724599121692063
+    }
+  },
+  "l1/test/label1/all": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 548,
+      "spearman": 0.005979928013428018
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 564,
+      "spearman": -0.1918173593082611
+    }
+  },
+  "l1/test/label1/<=510": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 199,
+      "spearman": 0.12153863820801626
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 204,
+      "spearman": -0.08328036883480247
+    }
+  },
+  "l1/test/label1/511-2048": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 228,
+      "spearman": -0.07628058853732678
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 237,
+      "spearman": -0.30691734172970886
+    }
+  },
+  "l1/test/label1/2049-8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 96,
+      "spearman": -0.17437506914708356
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 97,
+      "spearman": -0.3272127132335917
+    }
+  },
+  "l1/test/label1/>8192": {
+    "line_f1_vs_correct_probability_gain": {
+      "n": 25,
+      "spearman": -0.13492996624546175
+    },
+    "false_mass_vs_correct_probability_gain": {
+      "n": 26,
+      "spearman": -0.5243158371590317
+    }
+  }
+}

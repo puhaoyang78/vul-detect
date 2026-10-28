@@ -72,3 +72,11 @@ __pycache__/
 !/results/losver_l1/primevul_paired/comparison.json
 !/results/losver_l1/primevul_paired/comparison.csv
 !/results/losver_l1/primevul_paired/report.md
+!/results/losver_diagnosis/
+!/results/losver_diagnosis/*.json
+!/results/losver_diagnosis/*.csv
+!/results/losver_diagnosis/*.md
+!/results/losver_diagnosis/*.log
+!/results/losver_diagnosis/figures/
+!/results/losver_diagnosis/figures/*.png
+!/results/losver_diagnosis/figures/*.pdf

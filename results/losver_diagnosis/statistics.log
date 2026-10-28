@@ -1,0 +1,25 @@
+statistics train: 500/8708, elapsed 15.7s
+statistics train: 1000/8708, elapsed 24.7s
+statistics train: 1500/8708, elapsed 38.0s
+statistics train: 2000/8708, elapsed 59.5s
+statistics train: 2500/8708, elapsed 74.5s
+statistics train: 3000/8708, elapsed 82.9s
+statistics train: 3500/8708, elapsed 93.6s
+statistics train: 4000/8708, elapsed 107.3s
+statistics train: 4500/8708, elapsed 124.7s
+statistics train: 5000/8708, elapsed 141.8s
+statistics train: 5500/8708, elapsed 158.1s
+statistics train: 6000/8708, elapsed 175.1s
+statistics train: 6500/8708, elapsed 193.4s
+statistics train: 7000/8708, elapsed 218.6s
+statistics train: 7500/8708, elapsed 237.9s
+statistics train: 8000/8708, elapsed 262.6s
+statistics train: 8500/8708, elapsed 275.4s
+completed split train
+statistics valid: 500/1124, elapsed 300.2s
+statistics valid: 1000/1124, elapsed 315.0s
+completed split valid
+statistics test: 500/1128, elapsed 335.7s
+statistics test: 1000/1128, elapsed 352.5s
+completed split test
+STATISTICS_COMPLETE 21920 function-mode rows

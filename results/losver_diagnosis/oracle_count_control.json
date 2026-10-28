@@ -1,0 +1,29 @@
+{
+  "policies": [
+    "equal_1",
+    "true_5",
+    "random_lines_42",
+    "random_lines_43",
+    "random_lines_44",
+    "random_tokens_42",
+    "random_tokens_43",
+    "random_tokens_44"
+  ],
+  "inference_only": true,
+  "optimizer_steps": 0,
+  "modes": {
+    "512": {
+      "max_probability_error": 0.0,
+      "decision_disagreements": 0,
+      "seconds": 56.46854765713215,
+      "parameters_unchanged": true
+    },
+    "l1": {
+      "max_probability_error": 1.1920928955078125e-07,
+      "decision_disagreements": 0,
+      "seconds": 303.002134191338,
+      "parameters_unchanged": true
+    }
+  },
+  "complete": true
+}

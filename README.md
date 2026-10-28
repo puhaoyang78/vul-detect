@@ -112,3 +112,5 @@ python -m vulnmechanism.cli report --dataset primevul_paired --output-dir result
 | L1 | Oracle：真实修改行 | 42.02% | 69.15% | 72.12% | 0.7423 |
 
 L1消除了函数截断并提高Oracle的P-C，但预测修改行LOSVER的Test P-C未超过L1 Baseline，且与512 LOSVER相同，不能认定全覆盖带来稳定的实际检测收益。L1定位器选中第8轮，Valid修改行正类F1为21.96%；512为28.05%，两者可见行范围不同。结果目录保存配置、逐Epoch日志、选模记录、指标及逐样本预测，权重和含原始源码的定位缓存保留在本地。
+
+LOSVER 512/L1的完整[失败原因诊断](results/losver_diagnosis/report.md)包含原始配对核验、定位器泛化、冻结checkpoint加权干预、逐样本案例与证据等级。复现统计和推理使用 `python -m vulnmechanism.losver_diagnosis`，具体命令、固定成员和结果表见报告。

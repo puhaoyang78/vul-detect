@@ -1,0 +1,129 @@
+{
+  "512": {
+    "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+    "parameters": 125339905,
+    "classifier": "code-only pooling + shared Linear(hidden_size, 1)",
+    "training_config": {
+      "seed": 123456,
+      "batch_size": 8,
+      "eval_batch_size": 8,
+      "learning_rate": 2e-05,
+      "adam_epsilon": 1e-08,
+      "weight_decay": 0.0,
+      "gradient_clip": 1.0,
+      "warmup_fraction": 0.1,
+      "block_size": 512,
+      "epochs": {
+        "baseline": 16,
+        "localizer": 40,
+        "predicted": 16,
+        "oracle": 16
+      },
+      "fp16": false,
+      "dropout_probability": 0.0,
+      "class_weight": 1.0,
+      "early_stopping": null
+    },
+    "recorded_micro_batch": {},
+    "environment": {
+      "python": "3.11.14",
+      "torch": "2.9.1+cu128",
+      "transformers": "4.57.3",
+      "cuda": "12.8",
+      "device": "NVIDIA GeForce RTX 4090"
+    },
+    "final_optimizer": {
+      "unixcoder": {
+        "available": false,
+        "evidence": "completed historical run did not retain last.pt; inspect epoch and LR logs"
+      },
+      "losver": {
+        "available": false,
+        "evidence": "completed historical run did not retain last.pt; inspect epoch and LR logs"
+      },
+      "losver_oracle": {
+        "available": false,
+        "evidence": "completed historical run did not retain last.pt; inspect epoch and LR logs"
+      },
+      "losver_localizer": {
+        "available": false,
+        "evidence": "completed historical run did not retain last.pt; inspect epoch and LR logs"
+      }
+    }
+  },
+  "l1": {
+    "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+    "parameters": 125339905,
+    "classifier": "code-only pooling + shared Linear(hidden_size, 1)",
+    "training_config": {
+      "seed": 123456,
+      "batch_size": 8,
+      "eval_batch_size": 8,
+      "learning_rate": 2e-05,
+      "adam_epsilon": 1e-08,
+      "weight_decay": 0.0,
+      "gradient_clip": 1.0,
+      "warmup_fraction": 0.1,
+      "block_size": 512,
+      "epochs": {
+        "baseline": 16,
+        "localizer": 40,
+        "predicted": 16,
+        "oracle": 16
+      },
+      "fp16": false,
+      "dropout_probability": 0.0,
+      "class_weight": 1.0,
+      "early_stopping": null
+    },
+    "recorded_micro_batch": {
+      "window_micro_batch": 1,
+      "function_micro_batch": 1
+    },
+    "environment": {
+      "python": "3.11.14",
+      "torch": "2.9.1+cu128",
+      "transformers": "4.57.3",
+      "cuda": "12.8",
+      "device": "NVIDIA GeForce RTX 4090"
+    },
+    "final_optimizer": {
+      "unixcoder": {
+        "global_step": 17424,
+        "next_epoch": 17,
+        "lr": [
+          0.0
+        ],
+        "scheduler_last_epoch": 17424,
+        "optimizer_parameter_states": 199
+      },
+      "losver": {
+        "global_step": 17424,
+        "next_epoch": 17,
+        "lr": [
+          0.0
+        ],
+        "scheduler_last_epoch": 17424,
+        "optimizer_parameter_states": 199
+      },
+      "losver_oracle": {
+        "global_step": 17424,
+        "next_epoch": 17,
+        "lr": [
+          0.0
+        ],
+        "scheduler_last_epoch": 17424,
+        "optimizer_parameter_states": 199
+      },
+      "losver_localizer": {
+        "global_step": 43560,
+        "next_epoch": 41,
+        "lr": [
+          0.0
+        ],
+        "scheduler_last_epoch": 43560,
+        "optimizer_parameter_states": 211
+      }
+    }
+  }
+}

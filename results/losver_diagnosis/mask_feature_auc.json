@@ -1,0 +1,242 @@
+{
+  "512/predicted_lines": {
+    "train_raw_auc": 0.38595571757098945,
+    "direction_selected_on_train": -1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.6140442824290103
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5384366965970542
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5273926739097631
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "512/selected_token_fraction": {
+    "train_raw_auc": 0.4009007129490271,
+    "direction_selected_on_train": -1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.5990992870509728
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5215153683463989
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5180700165987626
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "512/selected_mass": {
+    "train_raw_auc": 0.40090118769977773,
+    "direction_selected_on_train": -1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.5990988123002223
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5215169514063905
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5180684447462401
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "512/no_prediction": {
+    "train_raw_auc": 0.5769407441433165,
+    "direction_selected_on_train": 1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.5769407441433165
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5177935943060499
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5115248226950355
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "512/gt_visible": {
+    "train_raw_auc": 0.366375651489905,
+    "direction_selected_on_train": -1,
+    "uses_diff": true,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.633624348510095
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.6579197325261839
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.6614009607162618
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "512/no_visible_gt": {
+    "train_raw_auc": 0.5953146531924668,
+    "direction_selected_on_train": 1,
+    "uses_diff": true,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.5953146531924668
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.6120996441281139
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.6125886524822696
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "l1/predicted_lines": {
+    "train_raw_auc": 0.37288300727803453,
+    "direction_selected_on_train": -1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.6271169927219654
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5547469636909359
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5390621070368693
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "l1/selected_token_fraction": {
+    "train_raw_auc": 0.3984838623779864,
+    "direction_selected_on_train": -1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.6015161376220135
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5299673256417725
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5197770484382074
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "l1/selected_mass": {
+    "train_raw_auc": 0.39848357225252773,
+    "direction_selected_on_train": -1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.6015164277474723
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5299673256417725
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5197801921432523
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "l1/no_prediction": {
+    "train_raw_auc": 0.5674092788240698,
+    "direction_selected_on_train": 1,
+    "uses_diff": false,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.5674092788240698
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.5142348754448399
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.5115248226950355
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "l1/gt_visible": {
+    "train_raw_auc": 0.2823730163067388,
+    "direction_selected_on_train": -1,
+    "uses_diff": true,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.7176269836932612
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.7426989273185497
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.7508157914591822
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  },
+  "l1/no_visible_gt": {
+    "train_raw_auc": 0.6329811667432246,
+    "direction_selected_on_train": 1,
+    "uses_diff": true,
+    "splits": {
+      "train": {
+        "n": 8708,
+        "auc": 0.6329811667432246
+      },
+      "valid": {
+        "n": 1124,
+        "auc": 0.6423487544483985
+      },
+      "test": {
+        "n": 1128,
+        "auc": 0.6586879432624114
+      }
+    },
+    "scope": "single-feature association only; no classifier was fitted; direction fixed using Train"
+  }
+}

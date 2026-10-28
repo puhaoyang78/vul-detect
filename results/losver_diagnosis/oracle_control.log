@@ -1,0 +1,27 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+oracle count control 512 valid 8 1124
+oracle count control 512 valid 264 1124
+oracle count control 512 valid 520 1124
+oracle count control 512 valid 776 1124
+oracle count control 512 valid 1032 1124
+oracle count control 512 test 8 1128
+oracle count control 512 test 264 1128
+oracle count control 512 test 520 1128
+oracle count control 512 test 776 1128
+oracle count control 512 test 1032 1128
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+oracle count control l1 valid 8 1124
+oracle count control l1 valid 264 1124
+oracle count control l1 valid 520 1124
+oracle count control l1 valid 776 1124
+oracle count control l1 valid 1032 1124
+oracle count control l1 test 8 1128
+oracle count control l1 test 264 1128
+oracle count control l1 test 520 1128
+oracle count control l1 test 776 1128
+oracle count control l1 test 1032 1128
+ORACLE_COUNT_CONTROL_COMPLETE

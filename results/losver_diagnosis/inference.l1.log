@@ -1,0 +1,61 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/losver_diagnosis.py:486: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  classifier_weight_norm=float(model.classifier.weight.norm()),
+inference l1 unixcoder train: 8/1024
+inference l1 unixcoder train: 264/1024
+inference l1 unixcoder train: 520/1024
+inference l1 unixcoder train: 776/1024
+inference l1 unixcoder valid: 8/1124
+inference l1 unixcoder valid: 264/1124
+inference l1 unixcoder valid: 520/1124
+inference l1 unixcoder valid: 776/1124
+inference l1 unixcoder valid: 1032/1124
+inference l1 unixcoder test: 8/1128
+inference l1 unixcoder test: 264/1128
+inference l1 unixcoder test: 520/1128
+inference l1 unixcoder test: 776/1128
+inference l1 unixcoder test: 1032/1128
+completed checkpoint l1 unixcoder
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+inference l1 losver train: 8/1024
+inference l1 losver train: 264/1024
+inference l1 losver train: 520/1024
+inference l1 losver train: 776/1024
+inference l1 losver valid: 8/1124
+inference l1 losver valid: 264/1124
+inference l1 losver valid: 520/1124
+inference l1 losver valid: 776/1124
+inference l1 losver valid: 1032/1124
+inference l1 losver test: 8/1128
+inference l1 losver test: 264/1128
+inference l1 losver test: 520/1128
+inference l1 losver test: 776/1128
+inference l1 losver test: 1032/1128
+completed checkpoint l1 losver
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+inference l1 losver_oracle train: 8/1024
+inference l1 losver_oracle train: 264/1024
+inference l1 losver_oracle train: 520/1024
+inference l1 losver_oracle train: 776/1024
+inference l1 losver_oracle valid: 8/1124
+inference l1 losver_oracle valid: 264/1124
+inference l1 losver_oracle valid: 520/1124
+inference l1 losver_oracle valid: 776/1124
+inference l1 losver_oracle valid: 1032/1124
+inference l1 losver_oracle test: 8/1128
+inference l1 losver_oracle test: 264/1128
+inference l1 losver_oracle test: 520/1128
+inference l1 losver_oracle test: 776/1128
+inference l1 losver_oracle test: 1032/1128
+completed checkpoint l1 losver_oracle
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+INFERENCE_COMPLETE l1

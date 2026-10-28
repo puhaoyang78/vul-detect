@@ -1,0 +1,1997 @@
+[
+  {
+    "category": "baseline_correct_losver_wrong",
+    "matching_pairs": 63,
+    "pair_key": "primevul_paired:test:444",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:889",
+        "target": 1,
+        "project": "php-src",
+        "commit_id": "b6fe458ef9ac1372b60c3d3810b0358e2e20840d",
+        "source_header": "utf32be_mbc_to_code(const UChar* p, const UChar* end ARG_UNUSED)",
+        "total_physical_lines": 4,
+        "diff_modified_lines": [],
+        "predicted_lines": [
+          1,
+          3
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:889",
+          "pair_key": "primevul_paired:test:444",
+          "project": "php-src",
+          "target": 1.0,
+          "source_row": 889.0,
+          "physical_lines": 4.0,
+          "nonempty_lines": 4.0,
+          "source_tokens": 62.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 4.0,
+          "gt_total": 0.0,
+          "gt_visible": 0.0,
+          "gt_complete": 0.0,
+          "predicted_lines": 2.0,
+          "line_tp": 0.0,
+          "line_fp": 2.0,
+          "line_fn": 0.0,
+          "line_precision": 0.0,
+          "line_recall": null,
+          "line_f1": 0.0,
+          "code_tokens": 58.0,
+          "predicted_tokens": 56.0,
+          "gt_tokens": 0.0,
+          "selected_token_fraction": 0.9655172413793104,
+          "selected_mass": 0.9993462976459829,
+          "false_mass": 0.9993462976459829,
+          "true_mass": 0.0,
+          "effective_token_fraction": 0.9667692193436612,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.9998780488967896,
+          "512/losver": 0.9999998807907104,
+          "512/losver_oracle": 0.9328529238700867,
+          "l1/unixcoder": 0.9999862909317017,
+          "l1/losver": 0.9653510451316833,
+          "l1/losver_oracle": 0.9998342990875244
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9776042699813843,
+          "predicted_2": 0.9704211950302124,
+          "predicted_3": 0.9671497344970703,
+          "predicted_5": 0.9653510451316833,
+          "predicted_10": 0.965061604976654,
+          "random_42": 0.9974036812782288,
+          "random_43": 0.9974036812782288,
+          "random_44": 0.9653510451316833,
+          "true_5": 0.9776042699813843,
+          "predicted_tp_5": 0.9776042699813843,
+          "predicted_fp_5": 0.9653510451316833
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6474226117134094,
+            "source": "utf32be_mbc_to_code(const UChar* p, const UChar* end ARG_UNUSED)"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.05462336540222168,
+            "source": "{"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.9373524785041809,
+            "source": "  return (OnigCodePoint )(((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]);"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.10353442281484604,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:890",
+        "target": 0,
+        "project": "php-src",
+        "commit_id": "b6fe458ef9ac1372b60c3d3810b0358e2e20840d",
+        "source_header": "utf32be_mbc_to_code(const UChar* p, const UChar* end ARG_UNUSED)",
+        "total_physical_lines": 5,
+        "diff_modified_lines": [
+          3
+        ],
+        "predicted_lines": [
+          1,
+          3,
+          4
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:890",
+          "pair_key": "primevul_paired:test:444",
+          "project": "php-src",
+          "target": 0.0,
+          "source_row": 890.0,
+          "physical_lines": 5.0,
+          "nonempty_lines": 5.0,
+          "source_tokens": 75.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 5.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 3.0,
+          "line_tp": 1.0,
+          "line_fp": 2.0,
+          "line_fn": 0.0,
+          "line_precision": 0.3333333333333333,
+          "line_recall": 1.0,
+          "line_f1": 0.5,
+          "code_tokens": 69.0,
+          "predicted_tokens": 67.0,
+          "gt_tokens": 11.0,
+          "selected_token_fraction": 0.9710144927536232,
+          "selected_mass": 0.9994535632671385,
+          "false_mass": 0.8353641722829814,
+          "true_mass": 0.16408939098415706,
+          "effective_token_fraction": 0.9720668250841545,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.034385308623313904,
+          "512/losver": 0.9939795732498169,
+          "512/losver_oracle": 0.010266761295497417,
+          "l1/unixcoder": 5.109381717716133e-08,
+          "l1/losver": 0.5927817821502686,
+          "l1/losver_oracle": 4.338536655268399e-06
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.6081596612930298,
+          "predicted_2": 0.5983825922012329,
+          "predicted_3": 0.594672441482544,
+          "predicted_5": 0.5927817821502686,
+          "predicted_10": 0.5924864411354065,
+          "random_42": 0.9621419906616211,
+          "random_43": 0.9621419906616211,
+          "random_44": 0.9986687898635864,
+          "true_5": 4.91593198148621e-07,
+          "predicted_tp_5": 4.91593198148621e-07,
+          "predicted_fp_5": 0.972694993019104
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5984038710594177,
+            "source": "utf32be_mbc_to_code(const UChar* p, const UChar* end ARG_UNUSED)"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.07524818927049637,
+            "source": "{"
+          },
+          {
+            "line": 3,
+            "diff_modified": true,
+            "predicted": true,
+            "score": 0.9087265133857727,
+            "source": "  if (end - p < 4) return 0;"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.9160065054893494,
+            "source": "  return (OnigCodePoint )(((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]);"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.09025496244430542,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  },
+  {
+    "category": "baseline_wrong_losver_correct",
+    "matching_pairs": 52,
+    "pair_key": "primevul_paired:test:338",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:677",
+        "target": 1,
+        "project": "linux",
+        "commit_id": "775c5033a0d164622d9d10dd0f0a5531639ed3ed",
+        "source_header": "static inline void fuse_make_bad(struct inode *inode)",
+        "total_physical_lines": 4,
+        "diff_modified_lines": [],
+        "predicted_lines": [
+          1,
+          3
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:677",
+          "pair_key": "primevul_paired:test:338",
+          "project": "linux",
+          "target": 1.0,
+          "source_row": 677.0,
+          "physical_lines": 4.0,
+          "nonempty_lines": 4.0,
+          "source_tokens": 42.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 4.0,
+          "gt_total": 0.0,
+          "gt_visible": 0.0,
+          "gt_complete": 0.0,
+          "predicted_lines": 2.0,
+          "line_tp": 0.0,
+          "line_fp": 2.0,
+          "line_fn": 0.0,
+          "line_precision": 0.0,
+          "line_recall": null,
+          "line_f1": 0.0,
+          "code_tokens": 38.0,
+          "predicted_tokens": 36.0,
+          "gt_tokens": 0.0,
+          "selected_token_fraction": 0.9473684210526315,
+          "selected_mass": 0.9989834988321992,
+          "false_mass": 0.9989834988321992,
+          "true_mass": 0.0,
+          "effective_token_fraction": 0.949279672378379,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.9920971393585205,
+          "512/losver": 0.9966042041778564,
+          "512/losver_oracle": 0.8115591406822205,
+          "l1/unixcoder": 0.9716421961784363,
+          "l1/losver": 0.9223096966743469,
+          "l1/losver_oracle": 0.8061656951904297
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9617031812667847,
+          "predicted_2": 0.9399194121360779,
+          "predicted_3": 0.9287545680999756,
+          "predicted_5": 0.9223096966743469,
+          "predicted_10": 0.9212530851364136,
+          "random_42": 0.9679850935935974,
+          "random_43": 0.9716135263442993,
+          "random_44": 0.9402463436126709,
+          "true_5": 0.9617031812667847,
+          "predicted_tp_5": 0.9617031812667847,
+          "predicted_fp_5": 0.9223096966743469
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.8367300629615784,
+            "source": "static inline void fuse_make_bad(struct inode *inode)"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.43023937940597534,
+            "source": "{"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.910396158695221,
+            "source": "\tset_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state);"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.2751205265522003,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:678",
+        "target": 0,
+        "project": "linux",
+        "commit_id": "775c5033a0d164622d9d10dd0f0a5531639ed3ed",
+        "source_header": "static inline void fuse_make_bad(struct inode *inode)",
+        "total_physical_lines": 5,
+        "diff_modified_lines": [
+          3
+        ],
+        "predicted_lines": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:678",
+          "pair_key": "primevul_paired:test:338",
+          "project": "linux",
+          "target": 0.0,
+          "source_row": 678.0,
+          "physical_lines": 5.0,
+          "nonempty_lines": 5.0,
+          "source_tokens": 52.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 5.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 4.0,
+          "line_tp": 1.0,
+          "line_fp": 3.0,
+          "line_fn": 0.0,
+          "line_precision": 0.25,
+          "line_recall": 1.0,
+          "line_f1": 0.4,
+          "code_tokens": 46.0,
+          "predicted_tokens": 45.0,
+          "gt_tokens": 8.0,
+          "selected_token_fraction": 0.9782608695652174,
+          "selected_mass": 0.9995931513956308,
+          "false_mass": 0.8218877022586297,
+          "true_mass": 0.17770544913700104,
+          "effective_token_fraction": 0.9790500652009946,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.4929245710372925,
+          "512/losver": 0.5964857339859009,
+          "512/losver_oracle": 0.0034883550833910704,
+          "l1/unixcoder": 0.9189232587814331,
+          "l1/losver": 0.09016432613134384,
+          "l1/losver_oracle": 0.8925232887268066
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.14265118539333344,
+          "predicted_2": 0.10673446208238602,
+          "predicted_3": 0.09546361118555069,
+          "predicted_5": 0.09016432613134384,
+          "predicted_10": 0.0893622636795044,
+          "random_42": 0.14765897393226624,
+          "random_43": 0.00037759559927508235,
+          "random_44": 0.031383413821458817,
+          "true_5": 1.2348369939421677e-12,
+          "predicted_tp_5": 1.2348369939421677e-12,
+          "predicted_fp_5": 0.9727507829666138
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.806007981300354,
+            "source": "static inline void fuse_make_bad(struct inode *inode)"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5214661359786987,
+            "source": "{"
+          },
+          {
+            "line": 3,
+            "diff_modified": true,
+            "predicted": true,
+            "score": 0.9024365544319153,
+            "source": "\tremove_inode_hash(inode);"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.8652802109718323,
+            "source": "\tset_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state);"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.2556603252887726,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  },
+  {
+    "category": "oracle_correct_losver_wrong",
+    "matching_pairs": 184,
+    "pair_key": "primevul_paired:test:370",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:741",
+        "target": 1,
+        "project": "EternalTerminal",
+        "commit_id": "900348bb8bc96e1c7ba4888ac8480f643c43d3c3",
+        "source_header": "TerminalUserInfo UserTerminalRouter::getInfoForId(const string &id) {",
+        "total_physical_lines": 7,
+        "diff_modified_lines": [],
+        "predicted_lines": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:741",
+          "pair_key": "primevul_paired:test:370",
+          "project": "EternalTerminal",
+          "target": 1.0,
+          "source_row": 741.0,
+          "physical_lines": 7.0,
+          "nonempty_lines": 7.0,
+          "source_tokens": 72.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 7.0,
+          "gt_total": 0.0,
+          "gt_visible": 0.0,
+          "gt_complete": 0.0,
+          "predicted_lines": 5.0,
+          "line_tp": 0.0,
+          "line_fp": 5.0,
+          "line_fn": 0.0,
+          "line_precision": 0.0,
+          "line_recall": null,
+          "line_f1": 0.0,
+          "code_tokens": 61.0,
+          "predicted_tokens": 44.0,
+          "gt_tokens": 0.0,
+          "selected_token_fraction": 0.7213114754098361,
+          "selected_mass": 0.9929732280858947,
+          "false_mass": 0.9929732280858947,
+          "true_mass": 0.0,
+          "effective_token_fraction": 0.731461508007204,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.85090172290802,
+          "512/losver": 0.9953314661979675,
+          "512/losver_oracle": 0.9024317264556885,
+          "l1/unixcoder": 0.10864273458719254,
+          "l1/losver": 0.08605390042066574,
+          "l1/losver_oracle": 0.8887248635292053
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9054811000823975,
+          "predicted_2": 0.40979015827178955,
+          "predicted_3": 0.16289357841014862,
+          "predicted_5": 0.08605390042066574,
+          "predicted_10": 0.07716169208288193,
+          "random_42": 0.08605390042066574,
+          "random_43": 0.9995166063308716,
+          "random_44": 0.7479109168052673,
+          "true_5": 0.9054811000823975,
+          "predicted_tp_5": 0.9054811000823975,
+          "predicted_fp_5": 0.08605390042066574
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.41230714321136475,
+            "source": "TerminalUserInfo UserTerminalRouter::getInfoForId(const string &id) {"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7318587899208069,
+            "source": "  auto it = idInfoMap.find(id);"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6122453212738037,
+            "source": "  if (it == idInfoMap.end()) {"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7722364068031311,
+            "source": "    STFATAL << \" Tried to read from an id that no longer exists\";"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6388978362083435,
+            "source": "  }"
+          },
+          {
+            "line": 6,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.689521849155426,
+            "source": "  return it->second;"
+          },
+          {
+            "line": 7,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.150959774851799,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:742",
+        "target": 0,
+        "project": "EternalTerminal",
+        "commit_id": "900348bb8bc96e1c7ba4888ac8480f643c43d3c3",
+        "source_header": "TerminalUserInfo UserTerminalRouter::getInfoForId(const string &id) {",
+        "total_physical_lines": 8,
+        "diff_modified_lines": [
+          2
+        ],
+        "predicted_lines": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:742",
+          "pair_key": "primevul_paired:test:370",
+          "project": "EternalTerminal",
+          "target": 0.0,
+          "source_row": 742.0,
+          "physical_lines": 8.0,
+          "nonempty_lines": 8.0,
+          "source_tokens": 87.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 8.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 6.0,
+          "line_tp": 1.0,
+          "line_fp": 5.0,
+          "line_fn": 0.0,
+          "line_precision": 0.16666666666666666,
+          "line_recall": 1.0,
+          "line_f1": 0.2857142857142857,
+          "code_tokens": 74.0,
+          "predicted_tokens": 57.0,
+          "gt_tokens": 13.0,
+          "selected_token_fraction": 0.7702702702702703,
+          "selected_mass": 0.9945671184689079,
+          "false_mass": 0.7677360212742447,
+          "true_mass": 0.22683109719466324,
+          "effective_token_fraction": 0.7786306461357445,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.5290207862854004,
+          "512/losver": 6.454290996771306e-06,
+          "512/losver_oracle": 3.422209999826009e-07,
+          "l1/unixcoder": 5.574993701884523e-05,
+          "l1/losver": 1.253097536846326e-07,
+          "l1/losver_oracle": 7.927473781588201e-13
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.00025129050482064486,
+          "predicted_2": 2.976157475131913e-06,
+          "predicted_3": 3.883326655795827e-07,
+          "predicted_5": 1.253097536846326e-07,
+          "predicted_10": 1.043610851070298e-07,
+          "random_42": 4.418005119077861e-05,
+          "random_43": 1.253097536846326e-07,
+          "random_44": 0.009494691155850887,
+          "true_5": 1.7421675191546331e-15,
+          "predicted_tp_5": 1.7421675191546331e-15,
+          "predicted_fp_5": 4.877510582446121e-05
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.47289085388183594,
+            "source": "TerminalUserInfo UserTerminalRouter::getInfoForId(const string &id) {"
+          },
+          {
+            "line": 2,
+            "diff_modified": true,
+            "predicted": true,
+            "score": 0.5236625671386719,
+            "source": "  lock_guard<recursive_mutex> guard(routerMutex);"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7619606852531433,
+            "source": "  auto it = idInfoMap.find(id);"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6663874387741089,
+            "source": "  if (it == idInfoMap.end()) {"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.8516910076141357,
+            "source": "    STFATAL << \" Tried to read from an id that no longer exists\";"
+          },
+          {
+            "line": 6,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7791063785552979,
+            "source": "  }"
+          },
+          {
+            "line": 7,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7767391204833984,
+            "source": "  return it->second;"
+          },
+          {
+            "line": 8,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.165976881980896,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  },
+  {
+    "category": "newly_distinguishable_oracle_gain",
+    "matching_pairs": 61,
+    "pair_key": "primevul_paired:test:352",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:705",
+        "target": 1,
+        "project": "linux",
+        "commit_id": "e02f0d3970404bfea385b6edb86f2d936db0ea2b",
+        "source_header": "static int nft_verdict_init(const struct nft_ctx *ctx, struct nft_data *data,",
+        "total_physical_lines": 64,
+        "diff_modified_lines": [],
+        "predicted_lines": [
+          9,
+          10,
+          11,
+          12,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          56
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:705",
+          "pair_key": "primevul_paired:test:352",
+          "project": "linux",
+          "target": 1.0,
+          "source_row": 705.0,
+          "physical_lines": 64.0,
+          "nonempty_lines": 57.0,
+          "source_tokens": 612.0,
+          "windows": 2.0,
+          "length_group": "511-2048",
+          "window_group": "2-4",
+          "truncated": 0.0,
+          "visible_lines": 57.0,
+          "gt_total": 0.0,
+          "gt_visible": 0.0,
+          "gt_complete": 0.0,
+          "predicted_lines": 11.0,
+          "line_tp": 0.0,
+          "line_fp": 11.0,
+          "line_fn": 0.0,
+          "line_precision": 0.0,
+          "line_recall": null,
+          "line_f1": 0.0,
+          "code_tokens": 465.0,
+          "predicted_tokens": 104.0,
+          "gt_tokens": 0.0,
+          "selected_token_fraction": 0.22365591397849463,
+          "selected_mass": 0.9402239459703369,
+          "false_mass": 0.9402239459703369,
+          "true_mass": 0.0,
+          "effective_token_fraction": 0.25270413839712236,
+          "new_code_tokens": 72.0,
+          "new_predicted_tokens": 41.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 1.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.5580536127090454,
+          "512/losver": 0.47940123081207275,
+          "512/losver_oracle": 0.5269810557365417,
+          "l1/unixcoder": 0.32249313592910767,
+          "l1/losver": 0.01225537434220314,
+          "l1/losver_oracle": 0.9995854496955872
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.998123824596405,
+          "predicted_2": 0.9555769562721252,
+          "predicted_3": 0.37246230244636536,
+          "predicted_5": 0.01225537434220314,
+          "predicted_10": 0.005102797411382198,
+          "random_42": 0.17496100068092346,
+          "random_43": 0.9999967813491821,
+          "random_44": 0.88673996925354,
+          "true_5": 0.998123824596405,
+          "predicted_tp_5": 0.998123824596405,
+          "predicted_fp_5": 0.01225537434220314
+        },
+        "excerpt": [
+          {
+            "line": 8,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 9,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5433187484741211,
+            "source": "\terr = nla_parse_nested_deprecated(tb, NFTA_VERDICT_MAX, nla,"
+          },
+          {
+            "line": 10,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5233840346336365,
+            "source": "\t\t\t\t\t  nft_verdict_policy, NULL);"
+          },
+          {
+            "line": 11,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5486396551132202,
+            "source": "\tif (err < 0)"
+          },
+          {
+            "line": 12,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5080277323722839,
+            "source": "\t\treturn err;"
+          },
+          {
+            "line": 13,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 47,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 48,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5760422348976135,
+            "source": "\t\tif (IS_ERR(chain))"
+          },
+          {
+            "line": 49,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5248243808746338,
+            "source": "\t\t\treturn PTR_ERR(chain);"
+          },
+          {
+            "line": 50,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7481902241706848,
+            "source": "\t\tif (nft_is_base_chain(chain))"
+          },
+          {
+            "line": 51,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6573677062988281,
+            "source": "\t\t\treturn -EOPNOTSUPP;"
+          },
+          {
+            "line": 52,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6996016502380371,
+            "source": "\t\tif (desc->flags & NFT_DATA_DESC_SETELEM &&"
+          },
+          {
+            "line": 53,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6511856317520142,
+            "source": "\t\t    chain->flags & NFT_CHAIN_BINDING)"
+          },
+          {
+            "line": 54,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.45886918902397156,
+            "source": "\t\t\treturn -EINVAL;"
+          },
+          {
+            "line": 55,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 56,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7099238634109497,
+            "source": "\t\tchain->use++;"
+          },
+          {
+            "line": 57,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.2208293229341507,
+            "source": "\t\tdata->verdict.chain = chain;"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:706",
+        "target": 0,
+        "project": "linux",
+        "commit_id": "e02f0d3970404bfea385b6edb86f2d936db0ea2b",
+        "source_header": "static int nft_verdict_init(const struct nft_ctx *ctx, struct nft_data *data,",
+        "total_physical_lines": 66,
+        "diff_modified_lines": [
+          52,
+          53
+        ],
+        "predicted_lines": [
+          9,
+          10,
+          11,
+          12,
+          48,
+          50,
+          51,
+          54,
+          55,
+          58,
+          63
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:706",
+          "pair_key": "primevul_paired:test:352",
+          "project": "linux",
+          "target": 0.0,
+          "source_row": 706.0,
+          "physical_lines": 66.0,
+          "nonempty_lines": 59.0,
+          "source_tokens": 635.0,
+          "windows": 2.0,
+          "length_group": "511-2048",
+          "window_group": "2-4",
+          "truncated": 0.0,
+          "visible_lines": 59.0,
+          "gt_total": 2.0,
+          "gt_visible": 2.0,
+          "gt_complete": 2.0,
+          "predicted_lines": 11.0,
+          "line_tp": 0.0,
+          "line_fp": 11.0,
+          "line_fn": 2.0,
+          "line_precision": 0.0,
+          "line_recall": 0.0,
+          "line_f1": 0.0,
+          "code_tokens": 482.0,
+          "predicted_tokens": 108.0,
+          "gt_tokens": 17.0,
+          "selected_token_fraction": 0.22406639004149378,
+          "selected_mass": 0.9403565866332059,
+          "false_mass": 0.9403565866332059,
+          "true_mass": 0.0027110642439451865,
+          "effective_token_fraction": 0.2530972059012528,
+          "new_code_tokens": 89.0,
+          "new_predicted_tokens": 52.0,
+          "new_true_tokens": 17.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 1.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.5580536127090454,
+          "512/losver": 0.47940123081207275,
+          "512/losver_oracle": 0.5269810557365417,
+          "l1/unixcoder": 0.44060611724853516,
+          "l1/losver": 0.6889984011650085,
+          "l1/losver_oracle": 0.05459395796060562
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9985406398773193,
+          "predicted_2": 0.9918532967567444,
+          "predicted_3": 0.9464484453201294,
+          "predicted_5": 0.6889984011650085,
+          "predicted_10": 0.5796903967857361,
+          "random_42": 0.9999979734420776,
+          "random_43": 0.9686719179153442,
+          "random_44": 0.9999096393585205,
+          "true_5": 0.9611307382583618,
+          "predicted_tp_5": 0.9985406398773193,
+          "predicted_fp_5": 0.6889984011650085
+        },
+        "excerpt": [
+          {
+            "line": 8,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 9,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5433187484741211,
+            "source": "\terr = nla_parse_nested_deprecated(tb, NFTA_VERDICT_MAX, nla,"
+          },
+          {
+            "line": 10,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5233840346336365,
+            "source": "\t\t\t\t\t  nft_verdict_policy, NULL);"
+          },
+          {
+            "line": 11,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5486396551132202,
+            "source": "\tif (err < 0)"
+          },
+          {
+            "line": 12,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5080277323722839,
+            "source": "\t\treturn err;"
+          },
+          {
+            "line": 13,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 47,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 48,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5035324692726135,
+            "source": "\t\tif (IS_ERR(chain))"
+          },
+          {
+            "line": 49,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.4777374863624573,
+            "source": "\t\t\treturn PTR_ERR(chain);"
+          },
+          {
+            "line": 50,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5854403972625732,
+            "source": "\t\tif (nft_is_base_chain(chain))"
+          },
+          {
+            "line": 51,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5324767827987671,
+            "source": "\t\t\treturn -EOPNOTSUPP;"
+          },
+          {
+            "line": 52,
+            "diff_modified": true,
+            "predicted": false,
+            "score": 0.4816240668296814,
+            "source": "\t\tif (nft_chain_is_bound(chain))"
+          },
+          {
+            "line": 53,
+            "diff_modified": true,
+            "predicted": false,
+            "score": 0.38386401534080505,
+            "source": "\t\t\treturn -EINVAL;"
+          },
+          {
+            "line": 54,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5449992418289185,
+            "source": "\t\tif (desc->flags & NFT_DATA_DESC_SETELEM &&"
+          },
+          {
+            "line": 55,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.523381769657135,
+            "source": "\t\t    chain->flags & NFT_CHAIN_BINDING)"
+          },
+          {
+            "line": 56,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.3238615393638611,
+            "source": "\t\t\treturn -EINVAL;"
+          },
+          {
+            "line": 57,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 58,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.595019519329071,
+            "source": "\t\tchain->use++;"
+          },
+          {
+            "line": 59,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.2901271879673004,
+            "source": "\t\tdata->verdict.chain = chain;"
+          },
+          {
+            "line": 62,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 63,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.592819094657898,
+            "source": "\tdesc->len = sizeof(data->verdict);"
+          },
+          {
+            "line": 64,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  },
+  {
+    "category": "no_prediction_oracle_correct",
+    "matching_pairs": 11,
+    "pair_key": "primevul_paired:test:438",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:877",
+        "target": 1,
+        "project": "qemu",
+        "commit_id": "1caff0340f49c93d535c6558a5138d20d475315c",
+        "source_header": "e1000_send_packet(E1000State *s, const uint8_t *buf, int size)",
+        "total_physical_lines": 14,
+        "diff_modified_lines": [
+          8
+        ],
+        "predicted_lines": [],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:877",
+          "pair_key": "primevul_paired:test:438",
+          "project": "qemu",
+          "target": 1.0,
+          "source_row": 877.0,
+          "physical_lines": 14.0,
+          "nonempty_lines": 13.0,
+          "source_tokens": 186.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 13.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 0.0,
+          "line_tp": 0.0,
+          "line_fp": 0.0,
+          "line_fn": 1.0,
+          "line_precision": null,
+          "line_recall": 0.0,
+          "line_f1": 0.0,
+          "code_tokens": 163.0,
+          "predicted_tokens": 0.0,
+          "gt_tokens": 12.0,
+          "selected_token_fraction": 0.0,
+          "selected_mass": 0.0,
+          "false_mass": 0.0,
+          "true_mass": 0.0736196319018405,
+          "effective_token_fraction": 1.0,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.7006975412368774,
+          "512/losver": 2.2954315781475998e-08,
+          "512/losver_oracle": 0.7436612844467163,
+          "l1/unixcoder": 0.9791070222854614,
+          "l1/losver": 0.9999963045120239,
+          "l1/losver_oracle": 0.8249040842056274
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9999963045120239,
+          "predicted_2": 0.9999963045120239,
+          "predicted_3": 0.9999963045120239,
+          "predicted_5": 0.9999963045120239,
+          "predicted_10": 0.9999963045120239,
+          "random_42": 0.9999963045120239,
+          "random_43": 0.9999963045120239,
+          "random_44": 0.9999963045120239,
+          "true_5": 0.9999146461486816,
+          "predicted_tp_5": 0.9999963045120239,
+          "predicted_fp_5": 0.9999963045120239
+        },
+        "excerpt": [
+          {
+            "line": 7,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.2694442570209503,
+            "source": "    if (s->phy_reg[PHY_CTRL] & MII_CR_LOOPBACK) {"
+          },
+          {
+            "line": 8,
+            "diff_modified": true,
+            "predicted": false,
+            "score": 0.30477744340896606,
+            "source": "        nc->info->receive(nc, buf, size);"
+          },
+          {
+            "line": 9,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.03995201736688614,
+            "source": "    } else {"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:878",
+        "target": 0,
+        "project": "qemu",
+        "commit_id": "1caff0340f49c93d535c6558a5138d20d475315c",
+        "source_header": "e1000_send_packet(E1000State *s, const uint8_t *buf, int size)",
+        "total_physical_lines": 14,
+        "diff_modified_lines": [
+          8
+        ],
+        "predicted_lines": [],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:878",
+          "pair_key": "primevul_paired:test:438",
+          "project": "qemu",
+          "target": 0.0,
+          "source_row": 878.0,
+          "physical_lines": 14.0,
+          "nonempty_lines": 13.0,
+          "source_tokens": 186.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 13.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 0.0,
+          "line_tp": 0.0,
+          "line_fp": 0.0,
+          "line_fn": 1.0,
+          "line_precision": null,
+          "line_recall": 0.0,
+          "line_f1": 0.0,
+          "code_tokens": 163.0,
+          "predicted_tokens": 0.0,
+          "gt_tokens": 12.0,
+          "selected_token_fraction": 0.0,
+          "selected_mass": 0.0,
+          "false_mass": 0.0,
+          "true_mass": 0.0736196319018405,
+          "effective_token_fraction": 1.0,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.6869944930076599,
+          "512/losver": 6.8729918893950526e-06,
+          "512/losver_oracle": 0.2771923243999481,
+          "l1/unixcoder": 0.9100915789604187,
+          "l1/losver": 0.9999909400939941,
+          "l1/losver_oracle": 9.63117963692639e-06
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9999909400939941,
+          "predicted_2": 0.9999909400939941,
+          "predicted_3": 0.9999909400939941,
+          "predicted_5": 0.9999909400939941,
+          "predicted_10": 0.9999909400939941,
+          "random_42": 0.9999909400939941,
+          "random_43": 0.9999909400939941,
+          "random_44": 0.9999909400939941,
+          "true_5": 0.8538857698440552,
+          "predicted_tp_5": 0.9999909400939941,
+          "predicted_fp_5": 0.9999909400939941
+        },
+        "excerpt": [
+          {
+            "line": 7,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.3492295444011688,
+            "source": "    if (s->phy_reg[PHY_CTRL] & MII_CR_LOOPBACK) {"
+          },
+          {
+            "line": 8,
+            "diff_modified": true,
+            "predicted": false,
+            "score": 0.3271801173686981,
+            "source": "        qemu_receive_packet(nc, buf, size);"
+          },
+          {
+            "line": 9,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.04729641228914261,
+            "source": "    } else {"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  },
+  {
+    "category": "false_token_mass_dominates",
+    "matching_pairs": 106,
+    "pair_key": "primevul_paired:test:490",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:981",
+        "target": 1,
+        "project": "qemu",
+        "commit_id": "8c92060d3c0248bd4d515719a35922cd2391b9b4",
+        "source_header": "static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,",
+        "total_physical_lines": 11,
+        "diff_modified_lines": [
+          7
+        ],
+        "predicted_lines": [
+          1,
+          2,
+          7,
+          9,
+          11
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:981",
+          "pair_key": "primevul_paired:test:490",
+          "project": "qemu",
+          "target": 1.0,
+          "source_row": 981.0,
+          "physical_lines": 11.0,
+          "nonempty_lines": 10.0,
+          "source_tokens": 114.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 10.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 5.0,
+          "line_tp": 1.0,
+          "line_fp": 4.0,
+          "line_fn": 0.0,
+          "line_precision": 0.2,
+          "line_recall": 1.0,
+          "line_f1": 0.3333333333333333,
+          "code_tokens": 97.0,
+          "predicted_tokens": 51.0,
+          "gt_tokens": 12.0,
+          "selected_token_fraction": 0.5257731958762887,
+          "selected_mass": 0.9837484867862641,
+          "false_mass": 0.7522782546012609,
+          "true_mass": 0.23147023218500332,
+          "effective_token_fraction": 0.5431238831935638,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.9727274775505066,
+          "512/losver": 1.0,
+          "512/losver_oracle": 0.9217999577522278,
+          "l1/unixcoder": 0.999777615070343,
+          "l1/losver": 0.9999992847442627,
+          "l1/losver_oracle": 0.942979097366333
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9999998807907104,
+          "predicted_2": 0.9999997615814209,
+          "predicted_3": 0.9999995231628418,
+          "predicted_5": 0.9999992847442627,
+          "predicted_10": 0.9999992847442627,
+          "random_42": 1.0,
+          "random_43": 0.9999977350234985,
+          "random_44": 0.9998480081558228,
+          "true_5": 0.9999972581863403,
+          "predicted_tp_5": 0.9999972581863403,
+          "predicted_fp_5": 0.9999996423721313
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6848815679550171,
+            "source": "static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5387079119682312,
+            "source": "                               int size)"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.04400291293859482,
+            "source": "{"
+          },
+          {
+            "line": 6,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.47360101342201233,
+            "source": "    if (s->macregs[MAC_XIFCFG >> 2] & MAC_XIFCFG_LBCK) {"
+          },
+          {
+            "line": 7,
+            "diff_modified": true,
+            "predicted": true,
+            "score": 0.5913413166999817,
+            "source": "        nc->info->receive(nc, buf, size);"
+          },
+          {
+            "line": 8,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.13302110135555267,
+            "source": "    } else {"
+          },
+          {
+            "line": 9,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5601516962051392,
+            "source": "        qemu_send_packet(nc, buf, size);"
+          },
+          {
+            "line": 10,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.09365292638540268,
+            "source": "    }"
+          },
+          {
+            "line": 11,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7589976191520691,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:982",
+        "target": 0,
+        "project": "qemu",
+        "commit_id": "8c92060d3c0248bd4d515719a35922cd2391b9b4",
+        "source_header": "static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,",
+        "total_physical_lines": 11,
+        "diff_modified_lines": [
+          7
+        ],
+        "predicted_lines": [
+          1,
+          2,
+          6,
+          9,
+          11
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:982",
+          "pair_key": "primevul_paired:test:490",
+          "project": "qemu",
+          "target": 0.0,
+          "source_row": 982.0,
+          "physical_lines": 11.0,
+          "nonempty_lines": 10.0,
+          "source_tokens": 114.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 10.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 5.0,
+          "line_tp": 0.0,
+          "line_fp": 5.0,
+          "line_fn": 1.0,
+          "line_precision": 0.0,
+          "line_recall": 0.0,
+          "line_f1": 0.0,
+          "code_tokens": 97.0,
+          "predicted_tokens": 65.0,
+          "gt_tokens": 12.0,
+          "selected_token_fraction": 0.6701030927835051,
+          "selected_mass": 0.9910636485403489,
+          "false_mass": 0.9910636485403489,
+          "true_mass": 0.0033511317973691813,
+          "effective_token_fraction": 0.6821294665293823,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.9747123122215271,
+          "512/losver": 0.9998749494552612,
+          "512/losver_oracle": 0.7304578423500061,
+          "l1/unixcoder": 0.9995973706245422,
+          "l1/losver": 0.9999959468841553,
+          "l1/losver_oracle": 0.002322516171261668
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9999966621398926,
+          "predicted_2": 0.9999963045120239,
+          "predicted_3": 0.9999960660934448,
+          "predicted_5": 0.9999959468841553,
+          "predicted_10": 0.9999958276748657,
+          "random_42": 0.9997988343238831,
+          "random_43": 0.959830105304718,
+          "random_44": 0.9998283386230469,
+          "true_5": 0.9727826118469238,
+          "predicted_tp_5": 0.9999966621398926,
+          "predicted_fp_5": 0.9999959468841553
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.6957324743270874,
+            "source": "static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,"
+          },
+          {
+            "line": 2,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5314908027648926,
+            "source": "                               int size)"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.05633899196982384,
+            "source": "{"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": false,
+            "score": null,
+            "source": ""
+          },
+          {
+            "line": 6,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5108305811882019,
+            "source": "    if (s->macregs[MAC_XIFCFG >> 2] & MAC_XIFCFG_LBCK) {"
+          },
+          {
+            "line": 7,
+            "diff_modified": true,
+            "predicted": false,
+            "score": 0.4764464199542999,
+            "source": "        qemu_receive_packet(nc, buf, size);"
+          },
+          {
+            "line": 8,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.0803770050406456,
+            "source": "    } else {"
+          },
+          {
+            "line": 9,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.512199342250824,
+            "source": "        qemu_send_packet(nc, buf, size);"
+          },
+          {
+            "line": 10,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.07006069272756577,
+            "source": "    }"
+          },
+          {
+            "line": 11,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.7883927226066589,
+            "source": "}"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  },
+  {
+    "category": "frozen_true_lines_hurt_correct_pair",
+    "matching_pairs": 25,
+    "pair_key": "primevul_paired:test:61",
+    "selection": "shortest unused qualifying pair; outcome-selected, illustrative only",
+    "functions": [
+      {
+        "sample_key": "primevul_paired:test:123",
+        "target": 1,
+        "project": "tensorflow",
+        "commit_id": "a1e1511dde36b3f8aa27a6ec630838e7ea40e091",
+        "source_header": "TfLiteIntArray* TfLiteIntArrayCreate(int size) {",
+        "total_physical_lines": 8,
+        "diff_modified_lines": [
+          2
+        ],
+        "predicted_lines": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:123",
+          "pair_key": "primevul_paired:test:61",
+          "project": "tensorflow",
+          "target": 1.0,
+          "source_row": 123.0,
+          "physical_lines": 8.0,
+          "nonempty_lines": 8.0,
+          "source_tokens": 87.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 8.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 6.0,
+          "line_tp": 1.0,
+          "line_fp": 5.0,
+          "line_fn": 0.0,
+          "line_precision": 0.16666666666666666,
+          "line_recall": 1.0,
+          "line_f1": 0.2857142857142857,
+          "code_tokens": 74.0,
+          "predicted_tokens": 70.0,
+          "gt_tokens": 14.0,
+          "selected_token_fraction": 0.9459459459459459,
+          "selected_mass": 0.9989544863064304,
+          "false_mass": 0.7991635890451443,
+          "true_mass": 0.19979089726128607,
+          "effective_token_fraction": 0.947908880449911,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.4403550922870636,
+          "512/losver": 0.00036797401844523847,
+          "512/losver_oracle": 0.023306654766201973,
+          "l1/unixcoder": 0.46232327818870544,
+          "l1/losver": 0.9480956196784973,
+          "l1/losver_oracle": 0.09543848782777786
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.9639846682548523,
+          "predicted_2": 0.9546059966087341,
+          "predicted_3": 0.9503971338272095,
+          "predicted_5": 0.9480956196784973,
+          "predicted_10": 0.9477260708808899,
+          "random_42": 0.9179741144180298,
+          "random_43": 0.9903542995452881,
+          "random_44": 0.9893248677253723,
+          "true_5": 0.00011651177919702604,
+          "predicted_tp_5": 0.00011651177919702604,
+          "predicted_fp_5": 0.997808039188385
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5009840130805969,
+            "source": "TfLiteIntArray* TfLiteIntArrayCreate(int size) {"
+          },
+          {
+            "line": 2,
+            "diff_modified": true,
+            "predicted": true,
+            "score": 0.9045957922935486,
+            "source": "  int alloc_size = TfLiteIntArrayGetSizeInBytes(size);"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.8942739367485046,
+            "source": "  if (alloc_size <= 0) return NULL;"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.8899135589599609,
+            "source": "  TfLiteIntArray* ret = (TfLiteIntArray*)malloc(alloc_size);"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5413392186164856,
+            "source": "  if (!ret) return ret;"
+          },
+          {
+            "line": 6,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.608220100402832,
+            "source": "  ret->size = size;"
+          },
+          {
+            "line": 7,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.4481643736362457,
+            "source": "  return ret;"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      },
+      {
+        "sample_key": "primevul_paired:test:124",
+        "target": 0,
+        "project": "tensorflow",
+        "commit_id": "a1e1511dde36b3f8aa27a6ec630838e7ea40e091",
+        "source_header": "TfLiteIntArray* TfLiteIntArrayCreate(int size) {",
+        "total_physical_lines": 8,
+        "diff_modified_lines": [
+          2
+        ],
+        "predicted_lines": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "features": {
+          "mode": "l1",
+          "split": "test",
+          "sample_key": "primevul_paired:test:124",
+          "pair_key": "primevul_paired:test:61",
+          "project": "tensorflow",
+          "target": 0.0,
+          "source_row": 124.0,
+          "physical_lines": 8.0,
+          "nonempty_lines": 8.0,
+          "source_tokens": 89.0,
+          "windows": 1.0,
+          "length_group": "<=510",
+          "window_group": "1",
+          "truncated": 0.0,
+          "visible_lines": 8.0,
+          "gt_total": 1.0,
+          "gt_visible": 1.0,
+          "gt_complete": 1.0,
+          "predicted_lines": 5.0,
+          "line_tp": 1.0,
+          "line_fp": 4.0,
+          "line_fn": 0.0,
+          "line_precision": 0.2,
+          "line_recall": 1.0,
+          "line_f1": 0.3333333333333333,
+          "code_tokens": 76.0,
+          "predicted_tokens": 58.0,
+          "gt_tokens": 16.0,
+          "selected_token_fraction": 0.7631578947368421,
+          "selected_mass": 0.9943479633092591,
+          "false_mass": 0.7200450768791187,
+          "true_mass": 0.27430288643014045,
+          "effective_token_fraction": 0.7717780319908387,
+          "new_code_tokens": 0.0,
+          "new_predicted_tokens": 0.0,
+          "new_true_tokens": 0.0,
+          "unmapped_lines": 0.0,
+          "encoded_pair_identical": 0.0,
+          "old512_pair_identical": 0.0
+        },
+        "probabilities": {
+          "512/unixcoder": 0.30114075541496277,
+          "512/losver": 4.126121439185226e-06,
+          "512/losver_oracle": 3.360647724548471e-06,
+          "l1/unixcoder": 0.681185245513916,
+          "l1/losver": 0.13340526819229126,
+          "l1/losver_oracle": 5.978298759146128e-06
+        },
+        "frozen_losver_probabilities": {
+          "equal_1": 0.7612612247467041,
+          "predicted_2": 0.35390037298202515,
+          "predicted_3": 0.19515401124954224,
+          "predicted_5": 0.13340526819229126,
+          "predicted_10": 0.12512440979480743,
+          "random_42": 0.6948121786117554,
+          "random_43": 0.9981594681739807,
+          "random_44": 0.7031125426292419,
+          "true_5": 1.1097699825768359e-07,
+          "predicted_tp_5": 1.1097699825768359e-07,
+          "predicted_fp_5": 0.9801878333091736
+        },
+        "excerpt": [
+          {
+            "line": 1,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.45985424518585205,
+            "source": "TfLiteIntArray* TfLiteIntArrayCreate(int size) {"
+          },
+          {
+            "line": 2,
+            "diff_modified": true,
+            "predicted": true,
+            "score": 0.9004967212677002,
+            "source": "  size_t alloc_size = TfLiteIntArrayGetSizeInBytes(size);"
+          },
+          {
+            "line": 3,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.886938750743866,
+            "source": "  if (alloc_size <= 0) return NULL;"
+          },
+          {
+            "line": 4,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.8859484195709229,
+            "source": "  TfLiteIntArray* ret = (TfLiteIntArray*)malloc(alloc_size);"
+          },
+          {
+            "line": 5,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5466169118881226,
+            "source": "  if (!ret) return ret;"
+          },
+          {
+            "line": 6,
+            "diff_modified": false,
+            "predicted": true,
+            "score": 0.5876779556274414,
+            "source": "  ret->size = size;"
+          },
+          {
+            "line": 7,
+            "diff_modified": false,
+            "predicted": false,
+            "score": 0.43086132407188416,
+            "source": "  return ret;"
+          }
+        ],
+        "excerpt_limit": 28,
+        "line_numbers": "one-based for human review"
+      }
+    ]
+  }
+]

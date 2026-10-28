@@ -1,0 +1,168 @@
+{
+  "512": {
+    "train": {
+      "members": [
+        "primevul_paired:train:409",
+        "primevul_paired:train:410",
+        "primevul_paired:train:1425",
+        "primevul_paired:train:1426",
+        "primevul_paired:train:1679",
+        "primevul_paired:train:1680",
+        "primevul_paired:train:1825",
+        "primevul_paired:train:1826",
+        "primevul_paired:train:2287",
+        "primevul_paired:train:2288",
+        "primevul_paired:train:3657",
+        "primevul_paired:train:3658",
+        "primevul_paired:train:4013",
+        "primevul_paired:train:4014",
+        "primevul_paired:train:4507",
+        "primevul_paired:train:4508"
+      ],
+      "lines": 504,
+      "max_probability_error": 1.1920928955078125e-07,
+      "line_decision_flips": 0,
+      "source_only": true
+    },
+    "valid": {
+      "members": [
+        "primevul_paired:valid:51",
+        "primevul_paired:valid:52",
+        "primevul_paired:valid:209",
+        "primevul_paired:valid:210",
+        "primevul_paired:valid:229",
+        "primevul_paired:valid:230",
+        "primevul_paired:valid:285",
+        "primevul_paired:valid:286",
+        "primevul_paired:valid:457",
+        "primevul_paired:valid:458",
+        "primevul_paired:valid:501",
+        "primevul_paired:valid:502",
+        "primevul_paired:valid:563",
+        "primevul_paired:valid:564",
+        "primevul_paired:valid:1117",
+        "primevul_paired:valid:1118"
+      ],
+      "lines": 487,
+      "max_probability_error": 1.1920928955078125e-07,
+      "line_decision_flips": 0,
+      "source_only": true
+    },
+    "test": {
+      "members": [
+        "primevul_paired:test:51",
+        "primevul_paired:test:52",
+        "primevul_paired:test:209",
+        "primevul_paired:test:210",
+        "primevul_paired:test:229",
+        "primevul_paired:test:230",
+        "primevul_paired:test:285",
+        "primevul_paired:test:286",
+        "primevul_paired:test:457",
+        "primevul_paired:test:458",
+        "primevul_paired:test:501",
+        "primevul_paired:test:502",
+        "primevul_paired:test:563",
+        "primevul_paired:test:564",
+        "primevul_paired:test:1117",
+        "primevul_paired:test:1118"
+      ],
+      "lines": 595,
+      "max_probability_error": 2.086162567138672e-07,
+      "line_decision_flips": 0,
+      "source_only": true
+    },
+    "single_function": {
+      "members": [
+        "primevul_paired:valid:1",
+        "primevul_paired:valid:2"
+      ],
+      "max_probability_error": 1.1920928955078125e-07,
+      "decision_flips": 0,
+      "source_only": true
+    }
+  },
+  "l1": {
+    "train": {
+      "members": [
+        "primevul_paired:train:409",
+        "primevul_paired:train:410",
+        "primevul_paired:train:1425",
+        "primevul_paired:train:1426",
+        "primevul_paired:train:1679",
+        "primevul_paired:train:1680",
+        "primevul_paired:train:1825",
+        "primevul_paired:train:1826",
+        "primevul_paired:train:2287",
+        "primevul_paired:train:2288",
+        "primevul_paired:train:3657",
+        "primevul_paired:train:3658",
+        "primevul_paired:train:4013",
+        "primevul_paired:train:4014",
+        "primevul_paired:train:4507",
+        "primevul_paired:train:4508"
+      ],
+      "lines": 1825,
+      "max_probability_error": 2.384185791015625e-07,
+      "line_decision_flips": 0,
+      "source_only": true
+    },
+    "valid": {
+      "members": [
+        "primevul_paired:valid:51",
+        "primevul_paired:valid:52",
+        "primevul_paired:valid:209",
+        "primevul_paired:valid:210",
+        "primevul_paired:valid:229",
+        "primevul_paired:valid:230",
+        "primevul_paired:valid:285",
+        "primevul_paired:valid:286",
+        "primevul_paired:valid:457",
+        "primevul_paired:valid:458",
+        "primevul_paired:valid:501",
+        "primevul_paired:valid:502",
+        "primevul_paired:valid:563",
+        "primevul_paired:valid:564",
+        "primevul_paired:valid:1117",
+        "primevul_paired:valid:1118"
+      ],
+      "lines": 767,
+      "max_probability_error": 2.384185791015625e-07,
+      "line_decision_flips": 0,
+      "source_only": true
+    },
+    "test": {
+      "members": [
+        "primevul_paired:test:51",
+        "primevul_paired:test:52",
+        "primevul_paired:test:209",
+        "primevul_paired:test:210",
+        "primevul_paired:test:229",
+        "primevul_paired:test:230",
+        "primevul_paired:test:285",
+        "primevul_paired:test:286",
+        "primevul_paired:test:457",
+        "primevul_paired:test:458",
+        "primevul_paired:test:501",
+        "primevul_paired:test:502",
+        "primevul_paired:test:563",
+        "primevul_paired:test:564",
+        "primevul_paired:test:1117",
+        "primevul_paired:test:1118"
+      ],
+      "lines": 5689,
+      "max_probability_error": 2.384185791015625e-07,
+      "line_decision_flips": 0,
+      "source_only": true
+    },
+    "single_function": {
+      "members": [
+        "primevul_paired:valid:1",
+        "primevul_paired:valid:2"
+      ],
+      "max_probability_error": 5.960464477539063e-08,
+      "decision_flips": 0,
+      "source_only": true
+    }
+  }
+}

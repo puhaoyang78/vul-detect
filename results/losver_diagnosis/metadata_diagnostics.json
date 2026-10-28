@@ -1,0 +1,42 @@
+{
+  "splits": {
+    "train": {
+      "pairs": 4354,
+      "names_known": 3122,
+      "name_mismatch": 36,
+      "unknown_name": 1232,
+      "modified_lines": 49771,
+      "project_mismatch": 0,
+      "commit_id_mismatch": 0,
+      "cwe_mismatch": 116,
+      "big_vul_idx_mismatch": 144,
+      "modified_lines_big_vul_idx_mismatch": 6068,
+      "modified_lines_name_mismatch": 869
+    },
+    "valid": {
+      "pairs": 562,
+      "names_known": 426,
+      "name_mismatch": 13,
+      "unknown_name": 136,
+      "modified_lines": 5401,
+      "project_mismatch": 0,
+      "commit_id_mismatch": 0,
+      "cwe_mismatch": 0,
+      "big_vul_idx_mismatch": 0,
+      "modified_lines_name_mismatch": 138
+    },
+    "test": {
+      "pairs": 564,
+      "names_known": 412,
+      "name_mismatch": 5,
+      "unknown_name": 152,
+      "modified_lines": 5162,
+      "project_mismatch": 0,
+      "commit_id_mismatch": 0,
+      "cwe_mismatch": 0,
+      "big_vul_idx_mismatch": 0,
+      "modified_lines_name_mismatch": 67
+    }
+  },
+  "definition": "metadata/name mismatch flags are candidates, not automatic bad-pair labels; parser failures remain unknown"
+}
