@@ -116,3 +116,25 @@ L1消除了函数截断并提高Oracle的P-C，但预测修改行LOSVER的Test P
 LOSVER 512/L1的完整[失败原因诊断](results/losver_diagnosis/report.md)包含原始配对核验、定位器泛化、冻结checkpoint加权干预、逐样本案例与证据等级。复现统计和推理使用 `python -m vulnmechanism.losver_diagnosis`，具体命令、固定成员和结果表见报告。
 
 [第二轮修复对与Diff监督审计](results/losver_patch_audit/report.md)区分字段缺失、真实错配与合法重构，保存分层随机复核、原始提交证据、Oracle后验关联及Train候选区域探针。使用 `python -m vulnmechanism.losver_patch_audit` 复核；该入口不加载模型、不训练、不修改原数据或既有结果。
+
+修复关系区域监督与稳健融合使用同一套UniXcoder训练入口，结果独立写入 `results/repair_region_512/`。行标签为 `1=修复相关、0=弱背景、-1=Unknown`，Unknown从Focal分母排除，仍参与编码和函数BCE；没有可见区域正监督的函数只跳过行损失。直接修改语句权重1、可绑定的有限操作/控制关系0.6、未修改结构背景0.2；启发式依赖、邻近候选和未确认代码均为Unknown。Diff-only匹配对照共用有界直接语句映射和相同的masked Focal（alpha=0.5、gamma=1.5、pos_weight=1）；原LOSVER另列参照，保留其原始Diff与Focal。
+
+`robust_fusion`共用检测器一次编码的代码Token状态，以连续行分数聚合局部表示；分数超过0.5的部分归一化，最大超额分数衰减残差，beta上限0.25，没有有效质量时严格使用全局均值。训练beta固定0.25，每轮仅按源Valid P-C从0/0.1/0.25选择推理beta，平分偏向较小beta和较早Epoch；这些分数不被视为校准概率。分类头仍为Linear(768,1)，检测器只使用定位器对单函数的真实预测，不读GT区域。没有OOF、成对损失或额外网络。
+
+```bash
+python -m vulnmechanism.cli prepare --repair-regions --raw-root data --output-dir results/repair_region_512
+python -m vulnmechanism.cli check-paired --repair-regions --output-dir results/repair_region_512 --device cuda:0
+# 在tmux内运行；先定位器、再检测器。默认全量40/16 Epoch、Seed123456、Batch8。
+python -m vulnmechanism.cli train --dataset primevul_paired --output-dir results/repair_region_512 --methods diff_localizer repair_region_localizer --device cuda:0 --resume --save-every 2000
+python -m vulnmechanism.cli train --dataset primevul_paired --output-dir results/repair_region_512 --methods diff_hard_weight repair_region_hard_weight diff_robust_fusion repair_region_robust_fusion --device cuda:0 --resume --save-every 2000
+python -m vulnmechanism.cli evaluate --dataset primevul_paired --output-dir results/repair_region_512 --methods diff_localizer repair_region_localizer diff_hard_weight repair_region_hard_weight diff_robust_fusion repair_region_robust_fusion --split valid --clean-only --device cuda:0
+# 方案由源Valid确定后，才执行Test；定位器Test步骤只读取单函数源码。
+python -m vulnmechanism.cli evaluate --dataset primevul_paired --output-dir results/repair_region_512 --methods diff_localizer repair_region_localizer diff_hard_weight repair_region_hard_weight diff_robust_fusion repair_region_robust_fusion --split test --clean-only --device cuda:0
+python -m vulnmechanism.cli report --dataset primevul_paired --output-dir results/repair_region_512
+```
+
+Pilot统一增加 `--train-limit 1024 --valid-limit 256 --paired-epochs 4`（单位为函数，即512/128对，Seed42固定抽样），输出到 `results/repair_region_512/pilot/`；其`supervision`链接到上一级生成结果，不复制原数据。`neighbour_region_localizer/neighbour_region_robust_fusion`使用逐函数相同新增行数量及置信权重的邻近区域监督对照；匹配发生在完整源码，512截断后的可见区域数量可能不同，不能据微小指标差异认定程序关系有效。Pilot不评价Test。正式数据成员、历史checkpoint和两轮审计均不变；权重、源码监督缓存和完整预测源码留在本地。
+
+定位器阶段只训练行级Focal，检测器阶段保留全部函数并训练BCE。区域的“可靠关联”指有界语法绑定及控制关系候选，不是漏洞位置真值或完整数据流证明。弱背景主要为结构分隔符，自己的弱标签F1不能替代真实定位质量。β=0表示融合训练模型在推理时使用全局路径，不等同于独立训练的Baseline。
+
+多β验证会重放相同RNG状态，并仅保留一次Valid遍历的RNG推进，保证下一轮训练采样与单遍验证对照一致。[Pilot协议检查](results/repair_region_512/pilot/protocol-checks.json)记录相同步数、成员、参数量和RNG核验。早期受验证采样影响的三个Pilot检测器已移至`pilot/sampler_mismatch/`保留记录，排除在正式对比之外；当前表使用修正后重跑结果。

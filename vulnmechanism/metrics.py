@@ -79,6 +79,11 @@ def paired_metrics(rows, scores):
         raise ValueError("official labels and finite probabilities required")
     p = np.asarray(scores) > 0.5
     a, b = p[::2], p[1::2]
+    if any(
+        rows[i].get("pair_key") != rows[i + 1].get("pair_key")
+        for i in range(0, len(rows), 2)
+    ):
+        raise ValueError("pair_key alignment differs")
     n = len(a)
     count = dict(
         p_c=int((a & ~b).sum()),
@@ -100,4 +105,11 @@ def paired_metrics(rows, scores):
         mcc=float(matthews_corrcoef(labels, p)),
         auc=float(roc_auc_score(labels, scores)),
         auprc=float(average_precision_score(labels, scores)),
+        pair_ranking_accuracy=float(
+            (np.asarray(scores)[::2] > np.asarray(scores)[1::2]).mean()
+        ),
+        pair_ranking_ties=int(
+            (np.asarray(scores)[::2] == np.asarray(scores)[1::2]).sum()
+        ),
+        patched_fpr=float(b.mean()),
     )

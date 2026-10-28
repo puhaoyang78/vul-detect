@@ -158,20 +158,19 @@ def train(
     function_micro_batch=None,
     resume=False,
     save_every=100,
+    paired_epochs=None,
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
     if method in LOSVER_METHODS:
         if (
             dataset != "primevul_paired"
-            or train_limit is not None
-            or valid_limit is not None
             or config is not None
             or hard_selection != "hardest"
             or vat_direction != "finite_difference"
         ):
             raise ValueError(
-                "LOSVER requires whole official paired data and the unchanged official protocol"
+                "paired training requires primevul_paired and the shared LOSVER protocol"
             )
         return train_losver(
             data_dir,
@@ -184,13 +183,17 @@ def train(
             function_micro_batch=function_micro_batch,
             resume=resume,
             save_every=save_every,
+            epochs_override=paired_epochs,
+            train_limit=train_limit,
+            valid_limit=valid_limit,
         )
     if (
         paired_input != "512"
         or window_micro_batch is not None
         or function_micro_batch is not None
+        or paired_epochs is not None
     ):
-        raise ValueError("paired window options apply only to LOSVER methods")
+        raise ValueError("paired training options apply only to paired methods")
     if dataset not in DATASETS:
         raise ValueError(f"unknown dataset: {dataset}")
     if method not in METHODS:
@@ -224,7 +227,8 @@ def train(
         return json.loads((run / "training.metrics.json").read_text())
     continuing = resume and (run / "last.pt").exists()
     if not continuing and (
-        target.exists() or target.with_suffix(".training.jsonl").exists()
+        target.exists()
+        or target.with_suffix(".training.jsonl").exists()
         or (run / "last.pt").exists()
     ):
         raise FileExistsError(
@@ -324,15 +328,21 @@ def train(
         weight_decay=config["weight_decay"],
     )
     state = dict(
-        epoch=1, next_batch=0, global_step=0, best_key=(float("-inf"),) * 4,
-        selected_epoch=None, totals={}, training_seconds=0.0,
+        epoch=1,
+        next_batch=0,
+        global_step=0,
+        best_key=(float("-inf"),) * 4,
+        selected_epoch=None,
+        totals={},
+        training_seconds=0.0,
     )
     if continuing:
         state, saved_rng = load_training_state(run, model, optimizer, metadata)
         restore_rng(saved_rng)
         print(
             f"{run}: resuming epoch {state['epoch']}, batch {state['next_batch']}, "
-            f"step {state['global_step']}", flush=True,
+            f"step {state['global_step']}",
+            flush=True,
         )
     if not continuing:
         save_training_state(run, model, optimizer, metadata, state)
@@ -356,8 +366,12 @@ def train(
         transformed = totals.get("transformed", 0)
         queries = totals.get("queries", 0)
         original_queries = totals.get("original_queries", 0)
-        vat_eligible, vat_zero = totals.get("vat_eligible", 0), totals.get("vat_zero", 0)
-        vat_norm_min, vat_norm_max = totals.get("vat_norm_min"), totals.get("vat_norm_max")
+        vat_eligible, vat_zero = totals.get("vat_eligible", 0), totals.get(
+            "vat_zero", 0
+        )
+        vat_norm_min, vat_norm_max = totals.get("vat_norm_min"), totals.get(
+            "vat_norm_max"
+        )
         search_seconds = totals.get("search_seconds", 0.0)
         selection_reasons = Counter(totals.get("selection_reasons", {}))
         search_costs = Counter(totals.get("search_costs", {}))
@@ -552,17 +566,32 @@ def train(
                         f"{dataset}/{method} epoch {epoch} step {steps}/{steps_per_epoch}",
                         flush=True,
                     )
-                if global_step == 1 or global_step % save_every == 0 or batch_index + 1 == num_batches:
+                if (
+                    global_step == 1
+                    or global_step % save_every == 0
+                    or batch_index + 1 == num_batches
+                ):
                     state.update(
-                        next_batch=batch_index + 1, global_step=global_step,
+                        next_batch=batch_index + 1,
+                        global_step=global_step,
                         training_seconds=previous_seconds + time.monotonic() - started,
-                        totals=dict(running=running, vat_total=vat_total,
-                                    transformed=transformed, queries=queries,
-                                    original_queries=original_queries, vat_eligible=vat_eligible,
-                                    vat_zero=vat_zero, vat_norm_min=vat_norm_min,
-                                    vat_norm_max=vat_norm_max, search_seconds=search_seconds,
-                                    selection_reasons=dict(selection_reasons), search_costs=dict(search_costs),
-                                    bce_costs=dict(bce_costs), vat_costs=dict(vat_costs), steps=steps),
+                        totals=dict(
+                            running=running,
+                            vat_total=vat_total,
+                            transformed=transformed,
+                            queries=queries,
+                            original_queries=original_queries,
+                            vat_eligible=vat_eligible,
+                            vat_zero=vat_zero,
+                            vat_norm_min=vat_norm_min,
+                            vat_norm_max=vat_norm_max,
+                            search_seconds=search_seconds,
+                            selection_reasons=dict(selection_reasons),
+                            search_costs=dict(search_costs),
+                            bce_costs=dict(bce_costs),
+                            vat_costs=dict(vat_costs),
+                            steps=steps,
+                        ),
                     )
                     save_training_state(run, model, optimizer, metadata, state)
         training_seconds = previous_seconds + time.monotonic() - started
@@ -625,8 +654,15 @@ def train(
             torch.save(checkpoint, temporary)
             temporary.replace(target)
             del checkpoint
-        state.update(epoch=epoch + 1, next_batch=0, global_step=global_step,
-                     best_key=best_key, selected_epoch=selected_epoch, totals={}, training_seconds=0.0)
+        state.update(
+            epoch=epoch + 1,
+            next_batch=0,
+            global_step=global_step,
+            best_key=best_key,
+            selected_epoch=selected_epoch,
+            totals={},
+            training_seconds=0.0,
+        )
         save_training_state(run, model, optimizer, metadata, state)
     summary = dict(
         metadata,
@@ -638,9 +674,38 @@ def train(
     return summary
 
 
-LOSVER_METHODS = ("unixcoder", "losver_localizer", "losver", "losver_oracle")
+LOSVER_METHODS = (
+    "unixcoder",
+    "losver_localizer",
+    "losver",
+    "losver_oracle",
+    "diff_localizer",
+    "repair_region_localizer",
+    "neighbour_region_localizer",
+    "diff_hard_weight",
+    "repair_region_hard_weight",
+    "diff_robust_fusion",
+    "repair_region_robust_fusion",
+    "neighbour_region_robust_fusion",
+)
 LOSVER_VARIANTS = dict(
-    zip(LOSVER_METHODS, ("baseline", "localizer", "predicted", "oracle"))
+    zip(
+        LOSVER_METHODS,
+        (
+            "baseline",
+            "localizer",
+            "predicted",
+            "oracle",
+            "localizer",
+            "localizer",
+            "localizer",
+            "predicted",
+            "predicted",
+            "predicted",
+            "predicted",
+            "predicted",
+        ),
+    )
 )
 LOSVER_CONFIG = dict(
     seed=123456,
@@ -698,12 +763,21 @@ class LOSVERAdamW(torch.optim.Optimizer):
 
 def paired_collate(features):
     """Native windows and unique cores; physical lines are shared across windows."""
-    ids, attention, masks, contexts, weights, owners, positions, window_lines = (
-        [] for _ in range(8)
-    )
+    (
+        ids,
+        attention,
+        masks,
+        contexts,
+        weights,
+        owners,
+        positions,
+        window_lines,
+        region_scores,
+    ) = ([] for _ in range(9))
     line_offset = 0
     for owner, f in enumerate(features):
         lookup = {}
+        source_scores = f.get("region_scores")
         visible_count = sum(d - c for a, b, c, d in f["windows"])
         for line, tokens in enumerate(f["line_token_indices"]):
             for token in tokens:
@@ -722,17 +796,22 @@ def paired_collate(features):
             core = [False] * 512
             context = [False] * 512
             token_weights = [1.0] * 512
+            token_scores = [0.0] * 512
             mapping = {}
             for slot, source in enumerate(range(left, right), 1):
                 context[slot] = f["code_mask"][source + 1]
                 if core_start <= source < core_end:
                     core[slot] = context[slot]
                     token_weights[slot] = f["token_weights"][source + 1]
+                    token_scores[slot] = (
+                        source_scores[source + 1] if source_scores is not None else 0.0
+                    )
                     for line in lookup.get(source, []):
                         mapping.setdefault(line, []).append(slot)
             masks.append(core)
             contexts.append(context)
             weights.append(token_weights)
+            region_scores.append(token_scores)
             owners.append(owner)
             positions.append([-1, *range(left, right), *([-1] * (511 - width))])
             window_lines.append(mapping)
@@ -750,6 +829,7 @@ def paired_collate(features):
         code_mask=torch.tensor(masks, dtype=torch.bool),
         context_mask=torch.tensor(contexts, dtype=torch.bool),
         token_weights=torch.tensor(weights),
+        region_scores=torch.tensor(region_scores),
         window_owners=torch.tensor(owners),
         source_positions=torch.tensor(positions),
         line_indices=line_indices,
@@ -759,16 +839,24 @@ def paired_collate(features):
     numbers = torch.full((len(features), count), -1, dtype=torch.long)
     local = isinstance(features[0]["labels"], list)
     labels = (
-        torch.full((len(features), count), -1, dtype=torch.long)
+        torch.full((len(features), count), -1.0, dtype=torch.float)
         if local
         else torch.tensor([f["labels"] for f in features])
     )
+    label_weights = torch.zeros(len(features), count)
     for i, f in enumerate(features):
         n = len(f["line_numbers"])
         numbers[i, :n] = torch.tensor(f["line_numbers"])
         if local:
             labels[i, :n] = torch.tensor(f["labels"])
-    return dict(batch, line_token_mask=membership, line_numbers=numbers, labels=labels)
+            label_weights[i, :n] = torch.tensor(f.get("label_weights", [1.0] * n))
+    return dict(
+        batch,
+        line_token_mask=membership,
+        line_numbers=numbers,
+        labels=labels,
+        label_weights=label_weights,
+    )
 
 
 def paired_loader(
@@ -800,10 +888,14 @@ def paired_forward(model, batch, variant, device, *, with_labels=True):
     )
     if with_labels:
         keys.append("labels")
+        if variant == "localizer" and getattr(model, "weak_supervision", False):
+            keys.append("label_weights")
+    if getattr(model, "pooling", None) == "robust_fusion":
+        keys.append("region_scores")
     return model(**{key: batch[key].to(device) for key in keys})
 
 
-def paired_rows(data_dir, output_dir, variant, split):
+def paired_rows(data_dir, output_dir, variant, split, *, method=None):
     """A predicted detector never opens the test oracle annotations."""
     root = Path(data_dir) / "primevul_paired"
     name = (
@@ -812,9 +904,29 @@ def paired_rows(data_dir, output_dir, variant, split):
         else f"{split}.jsonl"
     )
     if variant == "predicted":
-        root = Path(output_dir) / "primevul_paired/losver_localizer"
+        localizer = (
+            (method.split("_hard_weight")[0].split("_robust_fusion")[0] + "_localizer")
+            if method and method not in ("losver",)
+            else "losver_localizer"
+        )
+        root = Path(output_dir) / "primevul_paired" / localizer
         name = f"{split}.predicted.jsonl"
-    return read_jsonl(root / name)
+    rows = read_jsonl(root / name)
+    if variant == "predicted" and method and method != "losver":
+        scores = {
+            r["sample_key"]: r for r in read_jsonl(root / f"{split}.line_scores.jsonl")
+        }
+        for row in rows:
+            score = scores[row["sample_key"]]
+            ns, ps = score["line_numbers"], score["line_scores"]
+            if (
+                ns != row["line_numbers"]
+                or len(ns) != len(ps)
+                or [n for n, p in zip(ns, ps) if p > 0.5] != row["lines_predicted"]
+            ):
+                raise ValueError("predicted line scores and physical lines differ")
+            row["line_scores"] = ps
+    return rows
 
 
 def train_losver(
@@ -830,6 +942,9 @@ def train_losver(
     function_micro_batch=None,
     resume=False,
     save_every=100,
+    epochs_override=None,
+    train_limit=None,
+    valid_limit=None,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -838,6 +953,23 @@ def train_losver(
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    supervision, pooling = "diff", "hard_weight"
+    weak = method not in ("unixcoder", "losver_localizer", "losver", "losver_oracle")
+    if weak:
+        if input_mode != "512":
+            raise ValueError("repair-region methods currently require 512 input")
+        supervision = (
+            method.split("_localizer")[0]
+            .split("_hard_weight")[0]
+            .split("_robust_fusion")[0]
+        )
+        pooling = "robust_fusion" if method.endswith("robust_fusion") else "hard_weight"
+    if epochs_override is not None:
+        if epochs_override < 1:
+            raise ValueError("epochs must be positive")
+        settings = dict(
+            settings, epochs=dict(settings["epochs"], **{variant: epochs_override})
+        )
     if save_every < 1:
         raise ValueError("save_every must be positive")
     if input_mode not in ("512", "l1"):
@@ -865,9 +997,31 @@ def train_losver(
     if not continuing and (
         (run / "best.training.jsonl").exists() or (run / "last.pt").exists()
     ):
-        raise FileExistsError(f"{run}: training already started; use --resume with last.pt")
-    train_rows = paired_rows(data_dir, output_dir, variant, "train")
-    valid_rows = paired_rows(data_dir, output_dir, variant, "valid")
+        raise FileExistsError(
+            f"{run}: training already started; use --resume with last.pt"
+        )
+    if weak and variant == "localizer":
+        train_rows = read_jsonl(
+            Path(output_dir) / "supervision" / supervision / "train.jsonl"
+        )
+        valid_rows = read_jsonl(
+            Path(output_dir) / "supervision" / supervision / "valid.jsonl"
+        )
+    else:
+        train_rows = paired_rows(data_dir, output_dir, variant, "train", method=method)
+        valid_rows = paired_rows(data_dir, output_dir, variant, "valid", method=method)
+
+    def subset(rows, limit):
+        if limit is None:
+            return rows
+        if limit < 2 or limit % 2:
+            raise ValueError("paired limits are positive even function counts")
+        keys = sorted({r["pair_key"] for r in rows})
+        chosen = set(random.Random(42).sample(keys, min(limit // 2, len(keys))))
+        return [r for r in rows if r["pair_key"] in chosen]
+
+    train_rows = subset(train_rows, train_limit)
+    valid_rows = subset(valid_rows, valid_limit)
     device = resolve_device(device)
     seed_everything(settings["seed"])
     np.random.seed(settings["seed"])
@@ -879,6 +1033,11 @@ def train_losver(
         gradient_checkpointing=input_mode == "l1",
     )
     model.input_mode = input_mode
+    model.weak_supervision = weak and variant == "localizer"
+    if variant != "localizer":
+        model.pooling = pooling
+    if pooling == "robust_fusion" and input_mode != "512":
+        raise ValueError("robust fusion requires 512 input")
     model.to(device)
     loader = paired_loader(
         train_rows,
@@ -905,10 +1064,27 @@ def train_losver(
         annotations = read_jsonl(
             Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl"
         )
+        selected = {r["sample_key"] for r in rows}
+        annotations = [r for r in annotations if r["sample_key"] in selected]
         if [r["sample_key"] for r in annotations] != [r["sample_key"] for r in rows]:
             raise ValueError("input coverage annotations and training members differ")
         # Annotation statistics only; no Diff feature enters a normal detector.
         input_coverage[split] = paired_statistics(annotations, data_loader.dataset)
+        if model.weak_supervision:
+            fs = data_loader.dataset
+            counts = Counter(int(y) for f in fs for y in f["labels"])
+            input_coverage[split]["region_supervision"] = dict(
+                visible_lines=sum(counts.values()),
+                labels=dict(counts),
+                unknown_fraction=counts[-1] / sum(counts.values()),
+                positive_fraction=counts[1] / sum(counts.values()),
+                background_fraction=counts[0] / sum(counts.values()),
+                no_positive_functions=sum(1 not in f["labels"] for f in fs),
+                no_effective_line_loss_functions=sum(
+                    not any(f["label_weights"]) for f in fs
+                ),
+                effective_line_weight=sum(sum(f["label_weights"]) for f in fs),
+            )
     epochs = settings["epochs"][variant]
     steps_per_epoch = math.ceil(len(train_rows) / settings["batch_size"])
     optimizer = LOSVERAdamW(
@@ -936,6 +1112,22 @@ def train_losver(
         classifier_head="code-only pooling + shared Linear(hidden_size, 1)",
         dataset="primevul_paired",
         method=method,
+        supervision=supervision if weak else "original_diff",
+        weak_supervision=model.weak_supervision,
+        region_loss=(
+            dict(
+                labels="1=repair-related,0=weak background,-1=unknown",
+                unknown="excluded from loss and denominator; retained in encoder and all detection BCE",
+                alpha=0.5,
+                gamma=1.5,
+                pos_weight=1.0,
+            )
+            if weak
+            else None
+        ),
+        pooling=pooling,
+        fusion_beta=0.25 if pooling == "robust_fusion" else None,
+        fusion_validation_grid=[0.0, 0.1, 0.25] if pooling == "robust_fusion" else None,
         variant=variant,
         model_path=str(model_path),
         training_config=settings,
@@ -953,11 +1145,16 @@ def train_losver(
         selection_ties="earlier epoch; strict improvement",
         precision=(
             "FP32 eager attention; window activation checkpointing; no AMP"
-            if input_mode == "l1" else "FP32 eager attention; no AMP/checkpointing"
+            if input_mode == "l1"
+            else "FP32 eager attention; no AMP/checkpointing"
         ),
         localizer_attention="same 8-head attention within each window; core-token sums merged by physical line before classification; dropout=0",
         localizer_path=(
-            str(root / "losver_localizer/best-f1.pt")
+            str(
+                root
+                / ((supervision + "_localizer") if weak else "losver_localizer")
+                / "best-f1.pt"
+            )
             if variant == "predicted"
             else None
         ),
@@ -975,6 +1172,10 @@ def train_losver(
             ),
         ),
     )
+    if pooling == "robust_fusion":
+        metadata["validation_rng"] = (
+            "beta grid preserves exactly one validation-loader RNG advance"
+        )
     best = (
         {"f1": -1.0}
         if variant == "localizer"
@@ -983,18 +1184,29 @@ def train_losver(
     chosen = {}
     global_step = 0
     state = dict(
-        epoch=1, next_batch=0, global_step=0, best=best, chosen=chosen,
-        running=0.0, training_seconds=0.0, epoch_rng=None,
+        epoch=1,
+        next_batch=0,
+        global_step=0,
+        best=best,
+        chosen=chosen,
+        running=0.0,
+        training_seconds=0.0,
+        epoch_rng=None,
     )
     if continuing:
         state, saved_rng = load_training_state(
-            run, model, optimizer, metadata, scheduler=scheduler,
+            run,
+            model,
+            optimizer,
+            metadata,
+            scheduler=scheduler,
         )
         best, chosen, global_step = state["best"], state["chosen"], state["global_step"]
         restore_rng(saved_rng)
         print(
             f"{run}: resuming epoch {state['epoch']}, optimizer batch "
-            f"{state['next_batch']}, step {global_step}", flush=True,
+            f"{state['next_batch']}, step {global_step}",
+            flush=True,
         )
     if not continuing:
         save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
@@ -1021,7 +1233,8 @@ def train_losver(
                 next(iterator)
             restore_rng(saved_rng)
         for step in training_bar(
-            range(state["next_batch"], steps_per_epoch), desc=f"{method} {epoch}/{epochs}"
+            range(state["next_batch"], steps_per_epoch),
+            desc=f"{method} {epoch}/{epochs}",
         ):
             group = list(islice(iterator, accumulation))
             if not group:
@@ -1030,7 +1243,11 @@ def train_losver(
             # average BCE, including the smaller final effective batch.
             sizes = [
                 (
-                    int((b["labels"] >= 0).sum())
+                    (
+                        float((b["label_weights"] * (b["labels"] >= 0)).sum())
+                        if model.weak_supervision
+                        else int((b["labels"] >= 0).sum())
+                    )
                     if variant == "localizer"
                     else len(b["labels"])
                 )
@@ -1041,7 +1258,7 @@ def train_losver(
                 loss, _ = paired_forward(model, batch, variant, device)
                 if not torch.isfinite(loss):
                     raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
-                coefficient = size / sum(sizes)
+                coefficient = size / sum(sizes) if sum(sizes) else 1 / len(sizes)
                 (loss * coefficient).backward()
                 group_loss += float(loss.detach()) * coefficient
             torch.nn.utils.clip_grad_norm_(
@@ -1063,16 +1280,44 @@ def train_losver(
                 )
                 history.add(item)
                 print(json.dumps(item), flush=True)
-            if global_step == 1 or global_step % save_every == 0 or step + 1 == steps_per_epoch:
+            if (
+                global_step == 1
+                or global_step % save_every == 0
+                or step + 1 == steps_per_epoch
+            ):
                 state.update(
-                    next_batch=step + 1, global_step=global_step, running=running,
+                    next_batch=step + 1,
+                    global_step=global_step,
+                    running=running,
                     training_seconds=previous_seconds + time.monotonic() - started,
                 )
-                save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
+                save_training_state(
+                    run, model, optimizer, metadata, state, scheduler=scheduler
+                )
         train_seconds = previous_seconds + time.monotonic() - started
-        validation, predictions = validate_paired(
-            model, valid_rows, tokenizer, variant, device, loader=valid_loader
+        grid = []
+        before_validation = rng_state() if pooling == "robust_fusion" else None
+        after_validation = None
+        for beta in ([0.0, 0.1, 0.25] if pooling == "robust_fusion" else [None]):
+            if grid and before_validation is not None:
+                restore_rng(before_validation)
+            if beta is not None:
+                model.fusion_beta = beta
+            value, pred = validate_paired(
+                model, valid_rows, tokenizer, variant, device, loader=valid_loader
+            )
+            grid.append((beta, value, pred))
+            if before_validation is not None and after_validation is None:
+                after_validation = rng_state()
+        if after_validation is not None:
+            restore_rng(after_validation)
+        selected_beta, validation, predictions = (
+            max(grid, key=lambda t: (round(t[1]["p_c"], 4), -(t[0] or 0)))
+            if pooling == "robust_fusion"
+            else grid[0]
         )
+        if pooling == "robust_fusion":
+            model.fusion_beta = 0.25
         event = dict(
             event="epoch",
             variant=method,
@@ -1082,6 +1327,11 @@ def train_losver(
             global_step=global_step,
             validation_threshold=0.5,
             validation=validation,
+            fusion_validation=(
+                [dict(beta=b, metrics=v) for b, v, p in grid]
+                if pooling == "robust_fusion"
+                else None
+            ),
             training_seconds=train_seconds,
             epoch_seconds=previous_seconds + time.monotonic() - started,
         )
@@ -1100,18 +1350,29 @@ def train_losver(
                     selection_metric=key,
                     selected_epoch=epoch,
                     validation=validation,
+                    selected_fusion_beta=selected_beta,
                 )
                 temporary = run / f"best-{key}.pt.tmp"
                 torch.save(cp, temporary)
                 temporary.replace(run / f"best-{key}.pt")
                 write_json(
-                    run / f"best-{key}.json", dict(epoch=epoch, validation=validation)
+                    run / f"best-{key}.json",
+                    dict(
+                        epoch=epoch,
+                        validation=validation,
+                        selected_fusion_beta=selected_beta,
+                    ),
                 )
                 write_jsonl(run / f"valid.best-{key}.predictions.jsonl", predictions)
                 del cp
         state.update(
-            epoch=epoch + 1, next_batch=0, global_step=global_step,
-            best=best, chosen=chosen, running=0.0, training_seconds=0.0,
+            epoch=epoch + 1,
+            next_batch=0,
+            global_step=global_step,
+            best=best,
+            chosen=chosen,
+            running=0.0,
+            training_seconds=0.0,
             epoch_rng=None,
         )
         save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
@@ -1128,7 +1389,24 @@ def train_losver(
         del model, optimizer
         if device.type == "cuda":
             torch.cuda.empty_cache()
-        for split in ("test", "valid", "train"):
-            localize_paired(data_dir, output_dir, split, device=device)
+        pilot = train_limit is not None or valid_limit is not None
+        for split in (
+            ("valid", "train") if weak or pilot else ("test", "valid", "train")
+        ):
+            localize_paired(
+                data_dir,
+                output_dir,
+                split,
+                device=device,
+                method=method,
+                sample_keys=(
+                    {
+                        r["sample_key"]
+                        for r in (valid_rows if split == "valid" else train_rows)
+                    }
+                    if weak or pilot
+                    else None
+                ),
+            )
     write_json(run / "training.metrics.json", summary)
     return summary

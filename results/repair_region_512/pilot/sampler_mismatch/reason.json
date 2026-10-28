@@ -1,0 +1,6 @@
+{
+  "reason": "Repeated beta validation advanced DataLoader/global CPU RNG three times instead of once, changing later training shuffle order relative to hard/global controls.",
+  "status": "excluded from matched conclusions; checkpoints and predictions preserved",
+  "correction": "restore pre-validation RNG before each beta, restore first-validation post-state afterward; retrain only three affected pilot detectors with unchanged localizers/data/initialization/budget",
+  "test_used": false
+}

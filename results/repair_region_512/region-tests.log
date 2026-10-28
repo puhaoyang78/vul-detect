@@ -1,0 +1,21 @@
+test_array_initializer_is_not_whole_region (tests.test_repair_region.RepairRegionTests.test_array_initializer_is_not_whole_region) ... ok
+test_cached_official_diff_produces_identical_supervision (tests.test_repair_region.RepairRegionTests.test_cached_official_diff_produces_identical_supervision) ... ok
+test_fusion_mean_fallback_padding_and_attenuation (tests.test_repair_region.RepairRegionTests.test_fusion_mean_fallback_padding_and_attenuation) ... ok
+test_ignored_line_gradients_and_real_encoder_backward (tests.test_repair_region.RepairRegionTests.test_ignored_line_gradients_and_real_encoder_backward) ... ok
+test_insert_maps_bound_operation_and_leaves_unknown_unlabeled (tests.test_repair_region.RepairRegionTests.test_insert_maps_bound_operation_and_leaves_unknown_unlabeled) ... ok
+test_nested_fields_and_generic_call_context_are_unknown (tests.test_repair_region.RepairRegionTests.test_nested_fields_and_generic_call_context_are_unknown) ... ok
+test_new_methods_reject_l1_without_loading_data (tests.test_repair_region.RepairRegionTests.test_new_methods_reject_l1_without_loading_data) ... ok
+test_no_visible_positive_disables_line_loss_but_keeps_all_tokens (tests.test_repair_region.RepairRegionTests.test_no_visible_positive_disables_line_loss_but_keeps_all_tokens) ... ok
+test_paired_epoch_override_is_not_silently_ignored_by_codebert (tests.test_repair_region.RepairRegionTests.test_paired_epoch_override_is_not_silently_ignored_by_codebert) ... ok
+test_pilot_checkpoint_rejects_formal_test_before_model_loading (tests.test_repair_region.RepairRegionTests.test_pilot_checkpoint_rejects_formal_test_before_model_loading) ... ok
+test_prediction_features_do_not_read_diff_and_scores_share_offsets (tests.test_repair_region.RepairRegionTests.test_prediction_features_do_not_read_diff_and_scores_share_offsets) ... ok
+test_save_reload_robust_settings_and_forward (tests.test_repair_region.RepairRegionTests.test_save_reload_robust_settings_and_forward) ... ok
+test_score_cache_join_checks_physical_lines_and_threshold (tests.test_repair_region.RepairRegionTests.test_score_cache_join_checks_physical_lines_and_threshold) ... ok
+test_shadowing_and_field_paths_are_not_broad_same_name_matches (tests.test_repair_region.RepairRegionTests.test_shadowing_and_field_paths_are_not_broad_same_name_matches) ... ok
+test_unknown_excluded_from_weighted_denominator_and_binary_bce_retained (tests.test_repair_region.RepairRegionTests.test_unknown_excluded_from_weighted_denominator_and_binary_bce_retained) ... ok
+test_unknown_parse_and_rename_never_get_arbitrary_expansion (tests.test_repair_region.RepairRegionTests.test_unknown_parse_and_rename_never_get_arbitrary_expansion) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.433s
+
+OK

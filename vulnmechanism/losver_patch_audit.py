@@ -18,7 +18,8 @@ from sklearn.metrics import roc_auc_score
 from .artifacts import write_json
 from .data import modified_lines, read_jsonl
 from .losver_diagnosis import annotations, quantiles, selected_mass, write_csv
-from .syntax import function_bindings, parser_for, resolve_local_binding, source_token_spans, text, walk
+from .syntax import (CONTROLS, STATEMENTS, source_lines, parse_source, edit_hunks,
+                     statement_units, parser_for, source_token_spans, text, walk)
 
 
 RAW = Path("/home/PublicData/PHY-data/vul_detect/data/PrimeVul_original")
@@ -27,12 +28,6 @@ OUT = Path("results/losver_patch_audit")
 SPLITS = ("train", "valid", "test")
 SEED = 42
 SHAPES = ("addition_only", "replacement_only", "deletion_only", "mixed")
-STATEMENTS = {
-    "declaration", "expression_statement", "return_statement", "throw_statement",
-    "goto_statement", "break_statement", "continue_statement",
-}
-CONTROLS = {"if_statement", "while_statement", "for_statement", "do_statement",
-            "switch_statement", "for_range_loop"}
 
 
 def rows_by_pair():
@@ -49,49 +44,10 @@ def rows_by_pair():
     return result
 
 
-def source_lines(node):
-    """Zero-based physical lines touched by a nonempty AST node."""
-    last = node.end_point.row - int(node.end_point.column == 0)
-    return set(range(node.start_point.row, max(node.start_point.row, last)+1))
 
 
-def parse_source(source):
-    """Try the two existing grammars; errors remain errors, never repaired text."""
-    raw = source.encode()
-    attempts = []
-    for language in ("c", "cpp"):
-        tree = parser_for(language).parse(raw)
-        nodes = list(walk(tree.root_node))
-        errors = [n for n in nodes if n.type == "ERROR" or n.is_missing]
-        attempts.append((sum(max(1, n.end_byte-n.start_byte) for n in errors),
-                         len(errors), language, tree, nodes))
-        if not tree.root_node.has_error:
-            break
-    _, errors, language, tree, nodes = min(attempts, key=lambda x: x[:2])
-    functions = [n for n in nodes if n.type == "function_definition"]
-    function = functions[0] if len(functions) == 1 else None
-    name = None
-    if function is not None:
-        d = function.child_by_field_name("declarator")
-        while d is not None:
-            if d.type in {"identifier", "field_identifier", "operator_name", "destructor_name"}:
-                name = text(d, raw)
-                break
-            d = d.child_by_field_name("name" if d.type in
-                                     {"qualified_identifier", "scoped_identifier"}
-                                     else "declarator")
-    strict = not tree.root_node.has_error and function is not None
-    return dict(raw=raw, tree=tree, nodes=nodes, function=function,
-                name=name, language=language, errors=errors, strict=strict,
-                function_count=len(functions))
 
 
-def edit_hunks(vulnerable, patched):
-    """Structural alignment for the audit; never replaces official Differ labels."""
-    a, b = vulnerable.splitlines(keepends=True), patched.splitlines(keepends=True)
-    return [dict(tag=t, v_start=i, v_end=j, p_start=k, p_end=l)
-            for t, i, j, k, l in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
-            if t != "equal"]
 
 
 def edit_shape(dv, dp, hunks):
@@ -688,45 +644,6 @@ def upstream_records(output=OUT):
     print(f"upstream provenance: {len(found)} candidate records, {seen} streamed rows, {time.perf_counter()-start:.1f}s", flush=True)
 
 
-def statement_units(parsed):
-    """Atomic statements and control headers, never the entire enclosing body."""
-    units = []
-    function = parsed["function"]
-    for n in walk(function):
-        if n.type in STATEMENTS:
-            units.append(dict(node=n, lines=source_lines(n), kind=n.type))
-        elif n.type in CONTROLS:
-            condition = n.child_by_field_name("condition") or n.child_by_field_name("right")
-            if condition:
-                units.append(dict(node=condition, lines=source_lines(condition), kind="control_condition"))
-    units.sort(key=lambda u: (u["node"].start_byte, u["node"].end_byte))
-    bindings = function_bindings(function, parsed["raw"])
-    by_name = defaultdict(list)
-    for b in bindings:
-        if b["supported"]:
-            b["key"] = (b["name"], b["declaration"].start_byte)
-            by_name[b["name"]].append(b)
-    for u in units:
-        refs, writes = set(), set()
-        for n in walk(u["node"]):
-            if n.type != "identifier":
-                continue
-            choices = by_name.get(text(n, parsed["raw"]), [])
-            binding = next((b for b in choices if b["declaration"] == n), None)
-            if binding is None:
-                binding = resolve_local_binding(n, choices, parsed["raw"])
-            if binding is None:
-                continue
-            refs.add(binding["key"])
-            parent = n.parent
-            if n == binding["declaration"]:
-                writes.add(binding["key"])
-            elif parent.type == "assignment_expression" and parent.child_by_field_name("left") == n:
-                writes.add(binding["key"])
-            elif parent.type == "update_expression":
-                writes.add(binding["key"])
-        u["refs"], u["writes"] = refs, writes
-    return units, by_name
 
 
 def candidate_region(vulnerable, patched, dv, dp):

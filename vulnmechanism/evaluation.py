@@ -740,20 +740,37 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
     line_y = []
     line_p = []
     loss = 0.0
+    loss_mass = 0.0
     at = 0
     for batch in training_bar(loader, desc=f"Valid {variant}"):
         value, prob = paired_forward(model, batch, variant, device)
-        loss += float(value)
+        if variant == "localizer" and getattr(model, "weak_supervision", False):
+            mass = float((batch["label_weights"] * (batch["labels"] >= 0)).sum())
+            loss += float(value) * mass
+            loss_mass += mass
+        else:
+            loss += float(value)
         if variant == "localizer":
-            for y, numbers, p in zip(batch["labels"], batch["line_numbers"], prob):
+            for row_index, (y, numbers, p) in enumerate(
+                zip(batch["labels"], batch["line_numbers"], prob)
+            ):
                 p = p.cpu().tolist()
                 valid = numbers >= 0
                 ns = numbers[valid].tolist()
                 ys = y[valid].tolist()
-                if len(p) != len(ns) or any(v < 0 for v in ys):
+                if len(p) != len(ns):
                     raise ValueError("localizer scores and physical line labels differ")
-                line_y.extend(ys)
-                line_p.extend(p)
+                trusted = [
+                    i
+                    for i, yv in enumerate(ys)
+                    if yv in (0, 1)
+                    and (
+                        not getattr(model, "weak_supervision", False)
+                        or batch["label_weights"][row_index, i] > 0
+                    )
+                ]
+                line_y.extend(ys[i] for i in trusted)
+                line_p.extend(p[i] for i in trusted)
                 predictions.append(
                     dict(
                         sample_key=rows[at]["sample_key"],
@@ -775,7 +792,11 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
             lines=len(line_y),
             modified_lines=sum(line_y),
             confusion_matrix=confusion_matrix(line_y, pred, labels=[0, 1]).tolist(),
-            loss=loss / len(loader),
+            loss=(
+                loss / max(1e-12, loss_mass)
+                if getattr(model, "weak_supervision", False)
+                else loss / len(loader)
+            ),
         )
     else:
         result = paired_metrics(rows, scores)
@@ -804,20 +825,35 @@ def load_paired(checkpoint, device):
         window_micro_batch=checkpoint.get("window_micro_batch", 8),
     )
     model.input_mode = checkpoint["input_mode"]
+    model.weak_supervision = checkpoint.get("weak_supervision", False)
+    if checkpoint["variant"] != "localizer":
+        model.pooling = checkpoint.get("pooling", "hard_weight")
+        if model.pooling == "robust_fusion":
+            model.fusion_beta = float(checkpoint["selected_fusion_beta"])
     model.load_state_dict(checkpoint["state_dict"], strict=True)
     return model.to(device).eval(), tokenizer
 
 
 @torch.no_grad()
-def localize_paired(data_dir, output_dir, split, *, device="auto"):
+def localize_paired(
+    data_dir,
+    output_dir,
+    split,
+    *,
+    device="auto",
+    method="losver_localizer",
+    sample_keys=None,
+):
     """Single-function prediction: this function never opens Diff annotations."""
     from .training import paired_loader, paired_forward
 
     device = core.resolve_device(device)
-    root = Path(output_dir) / "primevul_paired/losver_localizer"
+    root = Path(output_dir) / "primevul_paired" / method
     cp = torch.load(root / "best-f1.pt", map_location="cpu", weights_only=False)
     model, tokenizer = load_paired(cp, device)
     rows = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.jsonl")
+    if sample_keys is not None:
+        rows = [r for r in rows if r["sample_key"] in sample_keys]
     # No training/Valid/Test counterpart or modification label enters this loader.
     probabilities, line_numbers = [], []
     for batch in training_bar(
@@ -875,13 +911,30 @@ def evaluate_paired(
         )
         if not (run / "training.metrics.json").exists():
             raise ValueError("training must complete before formal evaluation")
+        if "test" in splits and cp.get("train_samples", 8708) < 8708:
+            raise ValueError("paired pilot checkpoints must not evaluate Test")
         model, tokenizer = load_paired(cp, device)
         for split in splits:
             if variant == "localizer" and split == "test":
                 # Normal detector localization is source-only. Oracle line-quality metrics are separate.
-                localize_paired(data_dir, output_dir, split, device=device)
+                localize_paired(
+                    data_dir, output_dir, split, device=device, method=method
+                )
                 continue
-            rows = paired_rows(data_dir, output_dir, variant, split)
+            if variant == "localizer" and cp.get("weak_supervision"):
+                rows = read_jsonl(
+                    Path(output_dir)
+                    / "supervision"
+                    / cp["supervision"]
+                    / f"{split}.jsonl"
+                )
+            else:
+                rows = paired_rows(data_dir, output_dir, variant, split, method=method)
+            if split == "valid":
+                selected = set(
+                    cp.get("validation_members", [r["sample_key"] for r in rows])
+                )
+                rows = [r for r in rows if r["sample_key"] in selected]
             value, predictions = validate_paired(
                 model, rows, tokenizer, variant, device
             )
@@ -900,7 +953,600 @@ def evaluate_paired(
             torch.cuda.empty_cache()
 
 
+def repair_region_report(output_dir, data_dir):
+    """Report aligned source-Valid/final-Test results, with no model selection."""
+    import csv
+    import numpy as np
+    from collections import Counter
+    from sklearn.metrics import precision_score, recall_score, f1_score
+    from .metrics import paired_metrics
+    from .syntax import edit_hunks
+
+    root = Path(output_dir)
+    runs = root / "primevul_paired"
+    pilot = (runs / "unixcoder/training.metrics.json").exists() and json.loads(
+        (runs / "unixcoder/training.metrics.json").read_text()
+    )["train_samples"] < 8708
+    specs = [
+        (
+            "global_mean",
+            (
+                runs / "unixcoder"
+                if pilot
+                else Path("results/losver_512/primevul_paired/unixcoder")
+            ),
+        ),
+        (
+            "original_losver",
+            (
+                runs / "losver"
+                if pilot
+                else Path("results/losver_512/primevul_paired/losver")
+            ),
+        ),
+    ]
+    specs += [
+        (m, runs / m)
+        for m in (
+            "diff_hard_weight",
+            "repair_region_hard_weight",
+            "diff_robust_fusion",
+            "repair_region_robust_fusion",
+            "neighbour_region_robust_fusion",
+        )
+    ]
+    table = []
+    groups = []
+    cohorts = {}
+    for name, run in specs:
+        if not (run / "training.metrics.json").exists():
+            continue
+        training = json.loads((run / "training.metrics.json").read_text())
+        for split in ("valid", "test"):
+            predpath = run / f"{split}.predictions.jsonl"
+            if not predpath.exists():
+                continue
+            if pilot and split == "test":
+                raise ValueError("pilot must not evaluate Test")
+            predictions = read_jsonl(predpath)
+            source = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.jsonl")
+            bykey = {p["sample_key"]: p for p in predictions}
+            cohort = [r for r in source if r["sample_key"] in bykey]
+            if len(cohort) != len(predictions) or len(bykey) != len(predictions):
+                raise ValueError("prediction members differ")
+            if split in cohorts and cohorts[split] != set(bykey):
+                raise ValueError("methods have different evaluation cohorts")
+            cohorts[split] = set(bykey)
+            metric = paired_metrics(
+                cohort, [bykey[r["sample_key"]]["probability"] for r in cohort]
+            )
+            selected = json.loads((run / "best-p_c.json").read_text())
+            table.append(
+                dict(
+                    method=name,
+                    split=split,
+                    epoch=selected["epoch"],
+                    training_functions=training["train_samples"],
+                    selected_beta=selected.get("selected_fusion_beta"),
+                    **{
+                        k: metric[k]
+                        for k in (
+                            "samples",
+                            "pairs",
+                            "p_c",
+                            "p_v",
+                            "p_b",
+                            "p_r",
+                            "accuracy",
+                            "precision",
+                            "recall",
+                            "f1",
+                            "mcc",
+                            "auc",
+                            "auprc",
+                            "pair_ranking_accuracy",
+                            "pair_ranking_ties",
+                            "patched_fpr",
+                        )
+                    },
+                )
+            )
+            labels = read_jsonl(
+                Path(data_dir)
+                / "primevul_paired"
+                / (f"{split}.lines.jsonl" if split != "test" else "test.oracle.jsonl")
+            )
+            ann = {r["sample_key"]: r for r in labels}
+            strata = {
+                s: []
+                for s in ("addition_only", "deletion_only", "replacement_only", "mixed")
+            }
+            for i in range(0, len(cohort), 2):
+                a, b = cohort[i : i + 2]
+                dv, dp = (
+                    ann[a["sample_key"]]["lines_ground_truth"],
+                    ann[b["sample_key"]]["lines_ground_truth"],
+                )
+                kind = (
+                    "addition_only"
+                    if not dv
+                    else (
+                        "deletion_only"
+                        if not dp
+                        else (
+                            "replacement_only"
+                            if all(
+                                h["tag"] == "replace"
+                                for h in edit_hunks(a["func"], b["func"])
+                            )
+                            else "mixed"
+                        )
+                    )
+                )
+                strata[kind].extend((a, b))
+            for kind, rr in strata.items():
+                if rr:
+                    groups.append(
+                        dict(
+                            method=name,
+                            split=split,
+                            repair_type=kind,
+                            **paired_metrics(
+                                rr, [bykey[r["sample_key"]]["probability"] for r in rr]
+                            ),
+                        )
+                    )
+    # Use only the normal source-only line-score caches, aligned by member key.
+    quality = []
+    for supervision in ("diff", "repair_region", "neighbour_region"):
+        run = runs / (supervision + "_localizer")
+        if not (run / "training.metrics.json").exists():
+            continue
+        for split in ("train", "valid"):
+            scores = read_jsonl(run / f"{split}.line_scores.jsonl")
+            annotations = {
+                r["sample_key"]: r
+                for r in read_jsonl(
+                    root / "supervision" / supervision / f"{split}.jsonl"
+                )
+            }
+            ys = []
+            ps = []
+            diff_y = []
+            diff_p = []
+            counts = Counter()
+            predicted_by_label = Counter()
+            no_positive = 0
+            predicted = 0
+            line_total = 0
+            for s in scores:
+                a = annotations[s["sample_key"]]
+                ns = s["line_numbers"]
+                probs = s["line_scores"]
+                if len(ns) != len(probs):
+                    raise ValueError("line score alignment differs")
+                active = any(a["region_labels"][n] == 1 for n in ns)
+                no_positive += not active
+                gt = set(a["lines_ground_truth"])
+                for n, p in zip(ns, probs):
+                    y = a["region_labels"][n]
+                    counts[int(y)] += 1
+                    predicted_by_label[int(y)] += p > 0.5
+                    line_total += 1
+                    predicted += p > 0.5
+                    if active and y in (0, 1) and a["region_weights"][n] > 0:
+                        ys.append(y)
+                        ps.append(p > 0.5)
+                    diff_y.append(n in gt)
+                    diff_p.append(p > 0.5)
+            quality.append(
+                dict(
+                    supervision=supervision,
+                    split=split,
+                    functions=len(scores),
+                    visible_lines=line_total,
+                    line_label_counts=dict(counts),
+                    unknown_fraction=counts[-1] / line_total,
+                    positive_fraction=counts[1] / line_total,
+                    background_fraction=counts[0] / line_total,
+                    no_positive_functions=no_positive,
+                    no_positive_fraction=no_positive / len(scores),
+                    evaluated_supervised_lines=len(ys),
+                    predicted_positive_lines=predicted,
+                    predicted_fraction=predicted / line_total,
+                    unknown_predicted_positive_fraction=predicted_by_label[-1]
+                    / max(1, counts[-1]),
+                    supervised_precision=float(
+                        precision_score(ys, ps, zero_division=0)
+                    ),
+                    supervised_recall=float(recall_score(ys, ps, zero_division=0)),
+                    supervised_f1=float(f1_score(ys, ps, zero_division=0)),
+                    diff_reference_f1=float(f1_score(diff_y, diff_p, zero_division=0)),
+                    warning="own weak-label F1 is not vulnerability-location accuracy; original Diff F1 is an auxiliary common reference",
+                )
+            )
+
+    def save_csv(path, rows):
+        if not rows:
+            return
+        with path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+
+    for row in table:
+        baseline = next(
+            r
+            for r in table
+            if r["split"] == row["split"] and r["method"] == "global_mean"
+        )
+        for metric in ("p_c", "auc", "mcc", "f1"):
+            row["delta_" + metric + "_vs_global"] = row[metric] - baseline[metric]
+    fusion_usage = []
+    for method, run in specs:
+        if not method.endswith("robust_fusion") or not (run / "best-p_c.json").exists():
+            continue
+        selection = json.loads((run / "best-p_c.json").read_text())
+        beta = selection["selected_fusion_beta"]
+        localizer = runs / (method.removesuffix("_robust_fusion") + "_localizer")
+        for split in ("train", "valid", "test"):
+            path = localizer / f"{split}.line_scores.jsonl"
+            if not path.exists():
+                continue
+            scores = read_jsonl(path)
+            maxima = np.asarray([max(r["line_scores"]) for r in scores])
+            strength = np.clip((maxima - 0.5) / 0.5, 0, 1)
+            effective = beta * strength
+            fusion_usage.append(
+                dict(
+                    method=method,
+                    split=split,
+                    functions=len(scores),
+                    selected_beta=beta,
+                    no_above_gate_fraction=float((strength == 0).mean()),
+                    local_branch_disabled_by_valid=beta == 0,
+                    nonzero_residual_fraction=float((effective > 0).mean()),
+                    effective_beta_quantiles=np.quantile(
+                        effective, [0, 0.5, 0.9, 1]
+                    ).tolist(),
+                )
+            )
+    save_csv(root / "comparison.csv", table)
+    required = (
+        "diff_hard_weight",
+        "repair_region_hard_weight",
+        "diff_robust_fusion",
+        "repair_region_robust_fusion",
+    )
+    pending = [m for m in required if not (runs / m / "training.metrics.json").exists()]
+    untested = [
+        m for m in required if not (runs / m / "test.predictions.jsonl").exists()
+    ]
+    write_json(
+        root / "comparison.json",
+        dict(
+            pilot=pilot,
+            results=table,
+            pending_training=pending,
+            pending_formal_test=untested if not pilot else [],
+            test_used=any(r["split"] == "test" for r in table),
+        ),
+    )
+    write_json(root / "repair_types.json", groups)
+    write_json(root / "localizer_quality.json", quality)
+    write_json(root / "fusion_usage.json", fusion_usage)
+    lines = [
+        "# Repair-region supervision and robust global-local fusion (512)",
+        "",
+        f"Status: {'fixed Train/Valid pilot; Test not used' if pilot else 'full-data runs; formal Test is reported only where completed'}. Pending training: {pending}; pending formal Test: {untested if not pilot else 'not part of pilot'}.",
+        "",
+        "All functions retain binary labels 0=safe / 1=vulnerable. Line labels are 1=repair-related, 0=weak structural background, -1=Unknown. Unknown has zero focal weight and stays in encoding/BCE. Functions with no visible positive region have no line loss, but remain in detector training and inference.",
+        "",
+        "Both weak localizers use the same masked focal loss (alpha=.5, gamma=1.5, pos_weight=1). Direct statement weight=1, bounded bound/control relation=.6, background=.2, Unknown=0. Heuristic/nearest definitions and unproven neighbours are Unknown. Original LOSVER uses its historical focal definition and is an additional reference, not the matched weak-loss control.",
+        "",
+        "Robust fusion: s=clamp((p-.5)/.5,0,1) on valid code tokens; h_region=sum(s*h)/sum(s); h=h_global+beta*max(s)*(h_region-h_global). With no positive mass, h=h_global exactly. Focal sigmoid outputs are not assumed calibrated. Train beta=.25; each epoch selects inference beta from {0,.1,.25} on source Valid P-C, ties prefer smaller beta, then earlier epoch. No Test choice.",
+        "",
+        "Same UniXcoder pretrained initialization, 512 token offsets/code mask, Linear(768,1), BCE and optimizer budget across detector controls. No GT regions are used in detector training. No OOF, pair loss, extra encoder or adaptive network.",
+        "",
+        "The localizer stage optimizes only its line objective; the detector stage retains all original functions and optimizes function BCE. The reported syntactic relations are repair-related candidates, not proven vulnerability locations or a complete data-flow analysis. The existing corrected 512 global/LOSVER results are full-data references; the pilot trains its references on the same subset and budget.",
+        "",
+        "| Model | Split | Epoch | Beta | P-C | AUC | MCC | F1 | Recall | Patched FPR | Pair ranking |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for r in table:
+        lines.append(
+            f"| {r['method']} | {r['split']} | {r['epoch']} | {r['selected_beta']} | {r['p_c']:.4f} | {r['auc']:.4f} | {r['mcc']:.4f} | {r['f1']:.4f} | {r['recall']:.4f} | {r['patched_fpr']:.4f} | {r['pair_ranking_accuracy']:.4f} |"
+        )
+    lines += ["", "## Classification evidence", ""]
+    for split in ("valid", "test"):
+        full = next(
+            (
+                r
+                for r in table
+                if r["split"] == split and r["method"] == "repair_region_robust_fusion"
+            ),
+            None,
+        )
+        if full is None:
+            continue
+        for reference in (
+            "global_mean",
+            "original_losver",
+            "diff_robust_fusion",
+            "repair_region_hard_weight",
+        ):
+            base = next(
+                (r for r in table if r["split"] == split and r["method"] == reference),
+                None,
+            )
+            if base is not None:
+                lines.append(
+                    f"- {split}: full method versus {reference}: delta P-C={full['p_c']-base['p_c']:+.4f}, AUC={full['auc']-base['auc']:+.4f}, MCC={full['mcc']-base['mcc']:+.4f}, F1={full['f1']-base['f1']:+.4f}."
+                )
+        if full["delta_p_c_vs_global"] <= 0 and full["delta_auc_vs_global"] <= 0:
+            lines += [
+                f"- {split}: no improvement over the global baseline on either P-C or AUC."
+            ]
+        else:
+            lines += [
+                f"- {split}: the table shows metric-specific differences from one seed; it does not establish stable or causal classification gains."
+            ]
+    lines += [
+        "",
+        "Beta=0 disables the local branch at inference; this is the global path of a model trained with beta=.25, not the independently trained global baseline. [fusion_usage.json](fusion_usage.json) records score-gate fallback and effective beta. No module is added in response to these results.",
+        "",
+        "The neighbour-region pilot control matches added label counts and confidence weights per full-source function. Truncation can change its visible positive count and eligible line-loss denominator, so it is not an exact visible-area control and small differences cannot be attributed solely to program relations.",
+    ]
+    lines += [
+        "",
+        "## Supervision and train–Valid mismatch",
+        "",
+        "| Localizer | Split | Functions | Unknown | Positive | Background | No positive function | Evaluated lines | Predicted lines | Weak-label F1 | Diff reference F1 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for r in quality:
+        lines.append(
+            f"| {r['supervision']} | {r['split']} | {r['functions']} | {r['unknown_fraction']:.2%} | {r['positive_fraction']:.2%} | {r['background_fraction']:.2%} | {r['no_positive_fraction']:.2%} | {r['evaluated_supervised_lines']} | {r['predicted_fraction']:.2%} | {r['supervised_f1']:.4f} | {r['diff_reference_f1']:.4f} |"
+        )
+    lines += [
+        "",
+        "Train caches are in-sample predictions, Valid uses unseen functions. This mismatch remains; the experiment does not establish a causal effect from any association between localization and detection. Own weak-label metrics use different positive regions across supervision types and must not be compared as localization ground truth.",
+        "",
+        "The negative labels here are weak structural background, not a representative set of unrelated executable statements. High supervised F1 can therefore reflect easy code-versus-structure separation; it is insufficient evidence of precise repair localization. A high score on an Unknown line cannot by itself be called a false positive. The broad predicted-region coverage below is evidence of weak selectivity, with semantic accuracy still unmeasured on most executable lines.",
+        "",
+        "Repair-type metrics and denominators: [repair_types.json](repair_types.json). Aligned detector predictions, selected beta, epoch histories, optimizer steps and input/Unknown coverage are in each method directory. Historical checkpoints/results are referenced without modification.",
+        "",
+    ]
+    for r in quality:
+        if r["split"] == "valid":
+            lines.append(
+                f"- {r['supervision']}: {r['unknown_predicted_positive_fraction']:.2%} of Unknown-supervision visible lines receive score >.5. Unknown is a training-label mask, not an uncertain model output; this fraction does not measure an error rate without independent labels."
+            )
+    supervision_statistics = json.loads(
+        (root / "supervision/statistics.json").read_text()
+    )
+    lines += ["", "## Supervision extraction limits", ""]
+    for split in ("train", "valid"):
+        stats = supervision_statistics["splits"]["repair_region:" + split]
+        reasons = Counter()
+        for reason, count in stats["reasons"].items():
+            reasons[reason.split(":")[0]] += count
+        levels = stats["levels"]
+        lines.append(
+            f"- Full-source {split}, {stats['functions']} functions: direct positive lines={levels.get('direct', 0)}, bound-operation positives={levels.get('bound_relation', 0)}, enclosing-control positives={levels.get('control_relation', 0)}, no positive function={stats['no_positive_functions']}; own parse-failure/direct-only functions={reasons['parse_failure_direct_only']}, correspondence-Unknown functions={reasons['pair_correspondence_unknown']}. These counts precede 512 truncation and are not pilot-subset counts. All functions remain in function BCE."
+        )
+    lines += [
+        "",
+        "Most added positives are enclosing-control lines; the current conservative mapping does not establish full def-use or resource-state semantics. Unproved lexical definition/use paths stay Unknown. Strict parse failures and the 512 visibility boundary limit useful supervision.",
+        "",
+        "The pre-existing Train development review in ../train_region_review.csv (or train_region_review.csv in the full root) contains 86 additional-line judgments: 13/55 reviewed related lines become positive, 40/55 stay Unknown and 2/55 weak background; 0/21 reviewed unrelated and 0/10 uncertain lines become positive. This reused development review is not independent precision/recall validation or vulnerability-location ground truth.",
+    ]
+    coverage_path = runs / "diff_localizer/config.json"
+    if coverage_path.exists():
+        coverage = json.loads(coverage_path.read_text())["input_coverage"]
+        lines += [
+            "",
+            "| 512 input | Functions | Truncated functions | Visible original Diff lines / all | Identical encoded pairs |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        for split, c in coverage.items():
+            lines.append(
+                f"| {split} | {c['functions']} | {c['truncated_functions']} | {c['visible_modified_lines']}/{c['modified_lines']} | {c['identical_pairs']} |"
+            )
+        lines += [
+            "",
+            "Input coverage is common to all compared methods; identical encoded pairs and invisible repair changes remain in function BCE and evaluation. Region labels cannot recover code outside the fixed 512 input. No member or input rule was changed to improve these counts.",
+        ]
+    lines += [
+        "",
+        "## Addition-only repair pairs",
+        "",
+        "| Model | Split | Pairs | P-C | AUC | Recall | Patched FPR |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for r in groups:
+        if r["repair_type"] == "addition_only":
+            lines.append(
+                f"| {r['method']} | {r['split']} | {r['pairs']} | {r['p_c']:.4f} | {r['auc']:.4f} | {r['recall']:.4f} | {r['patched_fpr']:.4f} |"
+            )
+    lines += [
+        "",
+        "Pure addition is defined from the original nonempty Diff deletion labels, before any new supervision. It includes checks, initialization, state/cleanup and comments; these are not all new checks. The group is descriptive and does not select hyperparameters.",
+        "",
+    ]
+    (root / "report.md").write_text("\n".join(lines))
+    return dict(
+        pilot=pilot,
+        results=table,
+        pending_training=pending,
+        pending_formal_test=untested if not pilot else [],
+    )
+
+
+def check_repair_regions(
+    data_dir, output_dir, model_path, *, device="auto", input_mode="512"
+):
+    """Real Train-only GPU forward/backward and single-function reload checks."""
+    import tempfile, time
+    from .data import paired_features, repair_region_supervision
+    from .training import paired_collate, paired_forward, LOSVERAdamW, LOSVER_CONFIG
+
+    if input_mode != "512":
+        raise ValueError("repair region checks require 512")
+    device = core.resolve_device(device)
+    if device.type != "cuda":
+        raise ValueError(
+            "the requested repair-region smoke check requires a real CUDA device"
+        )
+    root = Path(output_dir)
+    source = read_jsonl(Path(data_dir) / "primevul_paired/train.jsonl")
+    selected = [
+        r
+        for r in source
+        if r["pair_key"] in {"primevul_paired:train:641", "primevul_paired:train:111"}
+    ]
+    if len(selected) != 4:
+        raise ValueError("expected four fixed Train smoke members")
+    # Use an existing, actual localization checkpoint. Neither Diff nor its labels
+    # supplies detector scores in this check or in normal detector training.
+    cp = torch.load(
+        "results/losver_512/primevul_paired/losver_localizer/best-f1.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    locator, tokenizer = load_paired(cp, device)
+    scores = []
+    for row in selected:
+        f = paired_features(row, tokenizer, "localizer")
+        with torch.no_grad():
+            p = paired_forward(
+                locator, paired_collate([f]), "localizer", device, with_labels=False
+            )[0]
+        scores.append(
+            dict(
+                row,
+                line_numbers=f["line_numbers"],
+                line_scores=p.cpu().tolist(),
+                lines_predicted=[n for n, v in zip(f["line_numbers"], p) if v > 0.5],
+            )
+        )
+    del locator, cp
+    torch.cuda.empty_cache()
+    results = []
+    for name, variant, pooling in (
+        ("diff_localizer", "localizer", "hard_weight"),
+        ("repair_region_localizer", "localizer", "hard_weight"),
+        ("global_mean", "baseline", "hard_weight"),
+        ("hard_weight", "predicted", "hard_weight"),
+        ("robust_fusion", "predicted", "robust_fusion"),
+    ):
+        core.seed_everything(LOSVER_CONFIG["seed"])
+        m, _ = core.losver_model(model_path, variant)
+        m.input_mode = "512"
+        m.weak_supervision = variant == "localizer"
+        if variant != "localizer":
+            m.pooling = pooling
+        m.to(device)
+        m.train()
+        torch.cuda.reset_peak_memory_stats(device)
+        if variant == "localizer":
+            mode = name.removesuffix("_localizer")
+            rows = []
+            for i in range(0, len(selected), 2):
+                a, b = selected[i : i + 2]
+                labels = repair_region_supervision(
+                    a["func"], b["func"], relation=mode == "repair_region"
+                )
+                rows.extend(dict(r, **lab) for r, lab in zip((a, b), labels))
+        else:
+            rows = scores
+        features = [paired_features(r, tokenizer, variant) for r in rows]
+        reference = [paired_features(r, tokenizer, "baseline") for r in rows]
+        for f, ref in zip(features, reference):
+            for key in ("input_ids", "code_mask", "offset_mapping", "line_numbers"):
+                if f[key] != ref[key]:
+                    raise ValueError("experimental inputs differ")
+        batch = paired_collate(features)
+        optimizer = LOSVERAdamW(m.parameters(), lr=2e-5)
+        torch.cuda.synchronize()
+        started = time.monotonic()
+        loss, _ = paired_forward(m, batch, variant, device)
+        loss.backward()
+        encoder_grad = float(
+            sum(
+                p.grad.detach().float().square().sum()
+                for p in m.encoder.parameters()
+                if p.grad is not None
+            ).sqrt()
+        )
+        if not torch.isfinite(loss) or not encoder_grad > 0:
+            raise ValueError("invalid encoder backward")
+        torch.nn.utils.clip_grad_norm_(m.parameters(), 1.0, error_if_nonfinite=True)
+        optimizer.step()
+        m.eval()
+        with torch.no_grad():
+            p = paired_forward(m, batch, variant, device, with_labels=False)
+        checkpoint = dict(
+            protocol="losver",
+            line_mapping="source_offsets",
+            input_mode="512",
+            model_path=str(model_path),
+            variant=variant,
+            pooling=pooling,
+            weak_supervision=m.weak_supervision,
+            selected_fusion_beta=0.25,
+            state_dict={k: v.detach().cpu() for k, v in m.state_dict().items()},
+        )
+        del optimizer
+        torch.cuda.empty_cache()
+        with tempfile.TemporaryDirectory(prefix="repair-smoke-", dir=root) as tmp:
+            path = Path(tmp) / "check.pt"
+            torch.save(checkpoint, path)
+            other, _ = load_paired(
+                torch.load(path, map_location="cpu", weights_only=False), device
+            )
+            with torch.no_grad():
+                q = paired_forward(other, batch, variant, device, with_labels=False)
+            x = torch.cat(p) if variant == "localizer" else p
+            y = torch.cat(q) if variant == "localizer" else q
+            error = float((x - y).abs().max())
+            if error > 1e-6:
+                raise ValueError("save/reload predictions differ")
+            del other
+        torch.cuda.synchronize()
+        results.append(
+            dict(
+                method=name,
+                loss=float(loss),
+                encoder_gradient=encoder_grad,
+                reload_max_error=error,
+                seconds=time.monotonic() - started,
+                peak_memory_bytes=torch.cuda.max_memory_allocated(device),
+                functions=len(rows),
+                encoder_windows=len(batch["input_ids"]),
+                encoder_tokens=batch["input_ids"].numel(),
+                supervised_line_mass=(
+                    float(batch["label_weights"].sum())
+                    if variant == "localizer"
+                    else None
+                ),
+            )
+        )
+        del m, checkpoint, p, q, loss
+        torch.cuda.empty_cache()
+    result = dict(
+        device=str(device),
+        members=[r["sample_key"] for r in selected],
+        test_used=False,
+        checks=results,
+    )
+    write_json(root / "gpu-smoke.json", result)
+    return result
+
+
 def paired_report(output_dir, data_dir):
+    if (Path(output_dir) / "supervision/statistics.json").exists():
+        return repair_region_report(output_dir, data_dir)
     from .training import LOSVER_CONFIG
 
     root = Path(output_dir) / "primevul_paired"

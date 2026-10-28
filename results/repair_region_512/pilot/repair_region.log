@@ -1,0 +1,229 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.21603110432624817, "learning_rate": 3.90625e-07}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.03213641047477722, "learning_rate": 1.7881944444444445e-05}
+
+repair_region_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.04534 │ 128   │ 0.5000    │ —   │ —   │ 0.9246 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 1, "train_loss": 0.04533781754071242, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"f1": 0.9246298788694481, "weighted_f1": 0.9409087492856126, "precision": 0.8992146596858639, "recall": 0.9515235457063712, "lines": 1886, "modified_lines": 722.0, "confusion_matrix": [[1087, 77], [35, 687]], "loss": 0.02222913848481065}, "fusion_validation": null, "training_seconds": 65.92158601945266, "epoch_seconds": 68.6005683192052}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.01407394278794527, "learning_rate": 1.3541666666666668e-05}
+
+repair_region_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.01693 │ 128   │ 0.5000    │ —   │ —   │ 0.8847 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 2, "train_loss": 0.016931848937019822, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"f1": 0.8846641318124208, "weighted_f1": 0.9046498504916614, "precision": 0.8154205607476636, "recall": 0.9667590027700831, "lines": 1886, "modified_lines": 722.0, "confusion_matrix": [[1006, 158], [24, 698]], "loss": 0.022441933306069844}, "fusion_validation": null, "training_seconds": 48.23554835515097, "epoch_seconds": 50.98164491914213}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.0006746404687874019, "learning_rate": 9.201388888888889e-06}
+
+repair_region_localizer · Epoch 3 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.00843 │ 128   │ 0.5000    │ —   │ —   │ 0.9228 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 3, "train_loss": 0.008430312667314865, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"f1": 0.9227696404793608, "weighted_f1": 0.9388959396076921, "precision": 0.8884615384615384, "recall": 0.9598337950138505, "lines": 1886, "modified_lines": 722.0, "confusion_matrix": [[1077, 87], [29, 693]], "loss": 0.025201139855909504}, "fusion_validation": null, "training_seconds": 47.11303933802992, "epoch_seconds": 49.9176643807441}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.0015436119865626097, "learning_rate": 4.861111111111111e-06}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.003119314555078745, "learning_rate": 5.208333333333334e-07}
+
+repair_region_localizer · Epoch 4 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.00363 │ 128   │ 0.5000    │ —   │ —   │ 0.9369 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 4, "train_loss": 0.0036302252332234275, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"f1": 0.9368635437881874, "weighted_f1": 0.9508636899477362, "precision": 0.918774966711052, "recall": 0.9556786703601108, "lines": 1886, "modified_lines": 722.0, "confusion_matrix": [[1103, 61], [32, 690]], "loss": 0.029979761851097825}, "fusion_validation": null, "training_seconds": 47.28211342263967, "epoch_seconds": 50.056254079565406}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.8779608607292175, "learning_rate": 3.90625e-07}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.818474292755127, "learning_rate": 1.7881944444444445e-05}
+
+repair_region_hard_weight · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.74050 │ 128   │ 0.5000    │ 0.0000 │ 0.5027 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 1, "train_loss": 0.7404960263520479, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.502716064453125, "auprc": 0.5076223465726063, "pair_ranking_accuracy": 0.4296875, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.715023634955287}, "fusion_validation": null, "training_seconds": 29.563156052026898, "epoch_seconds": 31.803972254972905}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.7038598656654358, "learning_rate": 1.3541666666666668e-05}
+
+repair_region_hard_weight · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70671 │ 128   │ 0.5000    │ 0.0137 │ 0.5243 │ 0.6482 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 2, "train_loss": 0.7067128689959645, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 115, "p_b": 10, "p_r": 1}, "p_c": 0.015625, "p_v": 0.8984375, "p_b": 0.078125, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5021459227467812, "recall": 0.9140625, "f1": 0.6481994459833795, "mcc": 0.013660233452652507, "auc": 0.524322509765625, "auprc": 0.5260223156719204, "pair_ranking_accuracy": 0.46875, "pair_ranking_ties": 30, "patched_fpr": 0.90625, "loss": 0.6934494767338037}, "fusion_validation": null, "training_seconds": 24.47977421199903, "epoch_seconds": 26.7027695402503}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.8018536567687988, "learning_rate": 9.201388888888889e-06}
+
+repair_region_hard_weight · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70186 │ 128   │ 0.5000    │ 0.0240 │ 0.5323 │ 0.0593 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 3, "train_loss": 0.7018594015389681, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 3, "p_b": 124, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0234375, "p_b": 0.96875, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.5714285714285714, "recall": 0.03125, "f1": 0.05925925925925926, "mcc": 0.02395252523826518, "auc": 0.532318115234375, "auprc": 0.533054172019709, "pair_ranking_accuracy": 0.5078125, "pair_ranking_ties": 30, "patched_fpr": 0.0234375, "loss": 0.6976442523300648}, "fusion_validation": null, "training_seconds": 24.665176436305046, "epoch_seconds": 26.977166910190135}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.6852189302444458, "learning_rate": 4.861111111111111e-06}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.6874408721923828, "learning_rate": 5.208333333333334e-07}
+
+repair_region_hard_weight · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69768 │ 128   │ 0.5000    │ 0.0370 │ 0.5375 │ 0.2038 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 4, "train_loss": 0.6976809622719884, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 4, "p_v": 12, "p_b": 111, "p_r": 1}, "p_c": 0.03125, "p_v": 0.09375, "p_b": 0.8671875, "p_r": 0.0078125, "accuracy": 0.51171875, "precision": 0.5517241379310345, "recall": 0.125, "f1": 0.20382165605095542, "mcc": 0.03697509744106487, "auc": 0.537506103515625, "auprc": 0.5366284098476843, "pair_ranking_accuracy": 0.515625, "pair_ranking_ties": 30, "patched_fpr": 0.1015625, "loss": 0.6926471274346113}, "fusion_validation": null, "training_seconds": 24.5941598219797, "epoch_seconds": 26.907987685874104}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.8750898838043213, "learning_rate": 3.90625e-07}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.8145394921302795, "learning_rate": 1.7881944444444445e-05}
+
+repair_region_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.73899 │ 128   │ 0.5000    │ 0.0000 │ 0.5115 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 1, "train_loss": 0.7389944852329791, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.511505126953125, "auprc": 0.5186322178737499, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7141814418137074}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.511505126953125, "auprc": 0.5186322178737499, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7141814418137074}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.510772705078125, "auprc": 0.5179325466760021, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.714661018922925}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5101318359375, "auprc": 0.5177830219145536, "pair_ranking_accuracy": 0.46875, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7153905909508467}}], "training_seconds": 31.402029057964683, "epoch_seconds": 38.57887013023719}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.7048481702804565, "learning_rate": 1.3541666666666668e-05}
+
+repair_region_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71229 │ 128   │ 0.5000    │ 0.0363 │ 0.5316 │ 0.0305 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 2, "train_loss": 0.7122875964269042, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.531646728515625, "auprc": 0.531959187732659, "pair_ranking_accuracy": 0.5078125, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.7006813064217567}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.531646728515625, "auprc": 0.531959187732659, "pair_ranking_accuracy": 0.5078125, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.7006813064217567}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.531219482421875, "auprc": 0.5319169336787455, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.7006600331515074}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.529815673828125, "auprc": 0.5294005444324202, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.7006334234029055}}], "training_seconds": 25.232597750145942, "epoch_seconds": 32.49578984640539}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.6881429553031921, "learning_rate": 9.201388888888889e-06}
+
+repair_region_robust_fusion · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70650 │ 128   │ 0.5000    │ 0.0000 │ 0.5187 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 3, "train_loss": 0.7065044236369431, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.518707275390625, "auprc": 0.5316989470082869, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6993850152939558}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.518707275390625, "auprc": 0.5316989470082869, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6993850152939558}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.518096923828125, "auprc": 0.5307866319205433, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6996299810707569}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.516510009765625, "auprc": 0.5300705200182116, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7000024318695068}}], "training_seconds": 25.908170531969517, "epoch_seconds": 33.1160363429226}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.8534579277038574, "learning_rate": 4.861111111111111e-06}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.7143446207046509, "learning_rate": 5.208333333333334e-07}
+
+repair_region_robust_fusion · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69504 │ 128   │ 0.5000    │ 0.0142 │ 0.5403 │ 0.1477 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 4, "train_loss": 0.695041541941464, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.540252685546875, "auprc": 0.5405133122867695, "pair_ranking_accuracy": 0.4921875, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6921301633119583}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.540252685546875, "auprc": 0.5405133122867695, "pair_ranking_accuracy": 0.4921875, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6921301633119583}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.538360595703125, "auprc": 0.5385378196249193, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6922058574855328}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 10, "p_b": 115, "p_r": 1}, "p_c": 0.015625, "p_v": 0.078125, "p_b": 0.8984375, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5217391304347826, "recall": 0.09375, "f1": 0.15894039735099338, "mcc": 0.013660233452652507, "auc": 0.536041259765625, "auprc": 0.535481882345377, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.0859375, "loss": 0.6923248562961817}}], "training_seconds": 24.482884360011667, "epoch_seconds": 31.634148622397333}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.17984092235565186, "learning_rate": 3.90625e-07}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.033510174602270126, "learning_rate": 1.7881944444444445e-05}
+
+neighbour_region_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.04854 │ 128   │ 0.5000    │ —   │ —   │ 0.9127 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 1, "train_loss": 0.048536273527133744, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"f1": 0.9126607989167231, "weighted_f1": 0.9289569293343545, "precision": 0.8880105401844532, "recall": 0.9387186629526463, "lines": 1808, "modified_lines": 718.0, "confusion_matrix": [[1005, 85], [44, 674]], "loss": 0.0291919629781066}, "fusion_validation": null, "training_seconds": 52.696491478942335, "epoch_seconds": 55.70288637559861}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.015343076549470425, "learning_rate": 1.3541666666666668e-05}
+
+neighbour_region_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.02013 │ 128   │ 0.5000    │ —   │ —   │ 0.8413 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 2, "train_loss": 0.020125763050600654, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"f1": 0.8413284132841329, "weighted_f1": 0.8588258948138465, "precision": 0.7533039647577092, "recall": 0.9526462395543176, "lines": 1808, "modified_lines": 718.0, "confusion_matrix": [[866, 224], [34, 684]], "loss": 0.03115545484816406}, "fusion_validation": null, "training_seconds": 37.4558051279746, "epoch_seconds": 40.43663628771901}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.0009495537378825247, "learning_rate": 9.201388888888889e-06}
+
+neighbour_region_localizer · Epoch 3 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.01086 │ 128   │ 0.5000    │ —   │ —   │ 0.8609 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 3, "train_loss": 0.010864729580816856, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"f1": 0.8609355246523388, "weighted_f1": 0.8795663356318066, "precision": 0.7881944444444444, "recall": 0.9484679665738162, "lines": 1808, "modified_lines": 718.0, "confusion_matrix": [[907, 183], [37, 681]], "loss": 0.033910980596901945}, "fusion_validation": null, "training_seconds": 37.3892795718275, "epoch_seconds": 40.338871913962066}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.014726309105753899, "learning_rate": 4.861111111111111e-06}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.004830378107726574, "learning_rate": 5.208333333333334e-07}
+
+neighbour_region_localizer · Epoch 4 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.00529 │ 128   │ 0.5000    │ —   │ —   │ 0.8987 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 4, "train_loss": 0.00528626031245949, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"f1": 0.8986666666666666, "weighted_f1": 0.9164513218573475, "precision": 0.8618925831202046, "recall": 0.9387186629526463, "lines": 1808, "modified_lines": 718.0, "confusion_matrix": [[982, 108], [44, 674]], "loss": 0.03584509756417565}, "fusion_validation": null, "training_seconds": 37.69292779220268, "epoch_seconds": 40.66598947206512}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.8749533891677856, "learning_rate": 3.90625e-07}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.8156805634498596, "learning_rate": 1.7881944444444445e-05}
+
+neighbour_region_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.73895 │ 128   │ 0.5000    │ 0.0000 │ 0.5110 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 1, "train_loss": 0.7389494148083031, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.511016845703125, "auprc": 0.5183205314440382, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7144433800131083}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.511016845703125, "auprc": 0.5183205314440382, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7144433800131083}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.510040283203125, "auprc": 0.5175044797459756, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7149230651557446}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.509368896484375, "auprc": 0.5177112537680177, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.7156524006277323}}], "training_seconds": 46.63460364891216, "epoch_seconds": 53.380326339975}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.7045835256576538, "learning_rate": 1.3541666666666668e-05}
+
+neighbour_region_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71225 │ 128   │ 0.5000    │ 0.0363 │ 0.5312 │ 0.0305 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 2, "train_loss": 0.7122495444491506, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.531219482421875, "auprc": 0.5313842628181854, "pair_ranking_accuracy": 0.5078125, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.700796702876687}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.531219482421875, "auprc": 0.5313842628181854, "pair_ranking_accuracy": 0.5078125, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.700796702876687}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.531890869140625, "auprc": 0.5319264445555016, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.7007659673690796}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 1, "p_b": 126, "p_r": 0}, "p_c": 0.0078125, "p_v": 0.0078125, "p_b": 0.984375, "p_r": 0.0, "accuracy": 0.50390625, "precision": 0.6666666666666666, "recall": 0.015625, "f1": 0.030534351145038167, "mcc": 0.036297700432031385, "auc": 0.529571533203125, "auprc": 0.5298615163465985, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 30, "patched_fpr": 0.0078125, "loss": 0.7007249053567648}}], "training_seconds": 34.053040656261146, "epoch_seconds": 41.05021570017561}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.6879611015319824, "learning_rate": 9.201388888888889e-06}
+
+neighbour_region_robust_fusion · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70649 │ 128   │ 0.5000    │ 0.0000 │ 0.5180 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 3, "train_loss": 0.706492583733052, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.517974853515625, "auprc": 0.5315905657597225, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6993415113538504}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.517974853515625, "auprc": 0.5315905657597225, "pair_ranking_accuracy": 0.4765625, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6993415113538504}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 128, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.516998291015625, "auprc": 0.530880292775634, "pair_ranking_accuracy": 0.46875, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6995771192014217}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 127, "p_b": 0, "p_r": 1}, "p_c": 0.0, "p_v": 0.9921875, "p_b": 0.0, "p_r": 0.0078125, "accuracy": 0.49609375, "precision": 0.4980392156862745, "recall": 0.9921875, "f1": 0.6631853785900783, "mcc": -0.06262242910851495, "auc": 0.515716552734375, "auprc": 0.5298177986952111, "pair_ranking_accuracy": 0.46875, "pair_ranking_ties": 30, "patched_fpr": 1.0, "loss": 0.6999351214617491}}], "training_seconds": 33.86451573111117, "epoch_seconds": 41.230589914135635}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.8532894849777222, "learning_rate": 4.861111111111111e-06}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.7142136096954346, "learning_rate": 5.208333333333334e-07}
+
+neighbour_region_robust_fusion · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69506 │ 128   │ 0.5000    │ 0.0142 │ 0.5398 │ 0.1477 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 4, "train_loss": 0.6950570428743958, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.539764404296875, "auprc": 0.5402798838933245, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6921519488096237}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.539764404296875, "auprc": 0.5402798838933245, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6921519488096237}}, {"beta": 0.1, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.538909912109375, "auprc": 0.5393467117815338, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6922215707600117}}, {"beta": 0.25, "metrics": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 10, "p_b": 115, "p_r": 1}, "p_c": 0.015625, "p_v": 0.078125, "p_b": 0.8984375, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5217391304347826, "recall": 0.09375, "f1": 0.15894039735099338, "mcc": 0.013660233452652507, "auc": 0.535980224609375, "auprc": 0.5368449448178539, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.0859375, "loss": 0.6923310235142708}}], "training_seconds": 33.67242586798966, "epoch_seconds": 41.038291042204946}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+repair_region_hard_weight valid {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 4, "p_v": 12, "p_b": 111, "p_r": 1}, "p_c": 0.03125, "p_v": 0.09375, "p_b": 0.8671875, "p_r": 0.0078125, "accuracy": 0.51171875, "precision": 0.5517241379310345, "recall": 0.125, "f1": 0.20382165605095542, "mcc": 0.03697509744106487, "auc": 0.537506103515625, "auprc": 0.5366284098476843, "pair_ranking_accuracy": 0.515625, "pair_ranking_ties": 30, "patched_fpr": 0.1015625, "loss": 0.6926471274346113}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+repair_region_robust_fusion valid {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.540252685546875, "auprc": 0.5405133122867695, "pair_ranking_accuracy": 0.4921875, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6921301633119583}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+neighbour_region_robust_fusion valid {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 2, "p_v": 9, "p_b": 116, "p_r": 1}, "p_c": 0.015625, "p_v": 0.0703125, "p_b": 0.90625, "p_r": 0.0078125, "accuracy": 0.50390625, "precision": 0.5238095238095238, "recall": 0.0859375, "f1": 0.1476510067114094, "mcc": 0.014234965584343246, "auc": 0.539764404296875, "auprc": 0.5402798838933245, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.078125, "loss": 0.6921519488096237}

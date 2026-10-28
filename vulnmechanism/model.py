@@ -354,6 +354,7 @@ class LOSVERLocalizer(nn.Module):
         self.window_micro_batch = getattr(args, "window_micro_batch", 8)
         self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
         self.input_mode = "512"
+        self.weak_supervision = False
 
         # Single attention layer for global context
         self.line_attention = nn.MultiheadAttention(
@@ -376,8 +377,8 @@ class LOSVERLocalizer(nn.Module):
             nn.Linear(self.hidden_size, 1),
         )
 
-    def focal_loss(self, logits, labels):
-        pos_weight = torch.tensor(5, device=logits.device)
+    def focal_loss(self, logits, labels, *, alpha=0.8, gamma=1.5, pos_weight=5):
+        pos_weight = torch.tensor(pos_weight, device=logits.device)
 
         # BCEWithLogitsLoss applies sigmoid internally
         ce_loss = F.binary_cross_entropy_with_logits(
@@ -386,8 +387,6 @@ class LOSVERLocalizer(nn.Module):
         p_t = torch.sigmoid(logits) * labels + (1 - torch.sigmoid(logits)) * (
             1 - labels
         )
-        alpha = 0.8
-        gamma = 1.5
         alpha_factor = labels * alpha + (1 - labels) * (1 - alpha)
         modulating_factor = (1.0 - p_t).pow(gamma)
         return alpha_factor * modulating_factor * ce_loss
@@ -403,6 +402,7 @@ class LOSVERLocalizer(nn.Module):
         line_counts,
         window_owners,
         labels=None,
+        label_weights=None,
     ):
         from torch.utils.checkpoint import checkpoint
 
@@ -459,6 +459,24 @@ class LOSVERLocalizer(nn.Module):
         probabilities = list(z.sigmoid().split(line_counts.tolist()))
         if labels is not None:
             y = torch.cat([row[:n] for row, n in zip(labels, line_counts.tolist())])
+            if label_weights is not None:
+                weights = torch.cat(
+                    [row[:n] for row, n in zip(label_weights, line_counts.tolist())]
+                )
+                valid = (weights > 0) & (y >= 0)
+                if (
+                    not ((y == 0) | (y == 1) | (y == -1)).all()
+                    or not (weights >= 0).all()
+                ):
+                    raise ValueError(
+                        "region labels must be 0/1/-1 with nonnegative weights"
+                    )
+                # The same symmetric focal definition for BOTH weak-supervision
+                # localizers. Unknown lines have zero gradient, not negative labels.
+                w = weights * valid
+                per_line = self.focal_loss(z, y.clamp(0, 1), alpha=0.5, pos_weight=1)
+                loss = (per_line * w).sum() / w.sum().clamp_min(1e-12)
+                return loss, probabilities
             if not ((y == 0) | (y == 1)).all():
                 raise ValueError("visible physical lines require binary labels")
             return self.focal_loss(z, y.float()).mean(), probabilities
@@ -476,6 +494,8 @@ class LOSVERDetector(nn.Module):
         self.window_micro_batch = getattr(args, "window_micro_batch", 8)
         self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
         self.input_mode = "512"
+        self.pooling = "hard_weight"
+        self.fusion_beta = 0.25
 
     @staticmethod
     def pool(states, code_mask, token_weights):
@@ -485,6 +505,24 @@ class LOSVERDetector(nn.Module):
         attention = token_weights.masked_fill(~code_mask, float("-inf")).softmax(-1)
         return (states * attention.unsqueeze(-1)).sum(1)
 
+    @staticmethod
+    def robust_pool(states, code_mask, region_scores, beta):
+        if not 0 <= beta <= 0.25:
+            raise ValueError("fusion beta must lie in [0,0.25]")
+        valid = code_mask.to(states.dtype)
+        count = valid.sum(-1, keepdim=True)
+        if not (count > 0).all():
+            raise ValueError("detector input has no valid source tokens")
+        global_mean = (states * valid[..., None]).sum(1) / count
+        # Scores are focal outputs, NOT calibrated probabilities. Fixed .5 gate
+        # and excess-score attenuation prevent tiny positives getting full beta.
+        s = ((region_scores - 0.5) / 0.5).clamp(0, 1) * valid
+        mass = s.sum(-1, keepdim=True)
+        local = (states * s[..., None]).sum(1) / mass.clamp_min(1e-12)
+        strength = s.amax(-1, keepdim=True)
+        result = global_mean + beta * strength * (local - global_mean)
+        return torch.where(mass > 0, result, global_mean)
+
     def forward(
         self,
         input_ids,
@@ -493,6 +531,7 @@ class LOSVERDetector(nn.Module):
         token_weights,
         window_owners,
         labels=None,
+        region_scores=None,
     ):
         from torch.utils.checkpoint import checkpoint
 
@@ -504,7 +543,18 @@ class LOSVERDetector(nn.Module):
                 pooled = pooled.index_copy(
                     0,
                     occupied.nonzero().flatten(),
-                    self.pool(states[occupied], valid[occupied], weights[occupied]),
+                    (
+                        self.robust_pool(
+                            states[occupied],
+                            valid[occupied],
+                            weights[occupied],
+                            self.fusion_beta,
+                        )
+                        if self.pooling == "robust_fusion"
+                        else self.pool(
+                            states[occupied], valid[occupied], weights[occupied]
+                        )
+                    ),
                 )
             return pooled
 
@@ -515,7 +565,9 @@ class LOSVERDetector(nn.Module):
                 input_ids[start:end],
                 attention_mask[start:end],
                 code_mask[start:end],
-                token_weights[start:end],
+                (region_scores if self.pooling == "robust_fusion" else token_weights)[
+                    start:end
+                ],
             )
             parts.append(
                 checkpoint(encode, *args, use_reentrant=False)
@@ -531,6 +583,10 @@ class LOSVERDetector(nn.Module):
         ):
             pooled = windows
         else:
+            if self.pooling == "robust_fusion":
+                raise ValueError(
+                    "robust fusion currently supports the 512 setting only"
+                )
             # Reuse the native sliding-window function pool. Window mass makes
             # this exactly one global Softmax over all unique core code tokens.
             mass = (
@@ -613,6 +669,7 @@ def predict_paired(checkpoint, records, *, device="auto", model_path=None):
             )[0]
             row.update(
                 line_numbers=encoding["line_numbers"],
+                line_scores=scores.cpu().tolist(),
                 lines_predicted=[
                     n for n, p in zip(encoding["line_numbers"], scores) if p > 0.5
                 ],

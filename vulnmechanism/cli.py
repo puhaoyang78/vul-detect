@@ -22,6 +22,11 @@ def build_parser():
         help="official PrimeVul original pairs for LOSVER",
     )
     p.add_argument(
+        "--repair-regions",
+        action="store_true",
+        help="generate Train/Valid weak supervision without touching original data",
+    )
+    p.add_argument(
         "--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine"
     )
     for command in ("train", "candidates", "evaluate"):
@@ -65,6 +70,11 @@ def build_parser():
                 default="finite_difference",
             )
             p.add_argument("--train-limit", type=int)
+            p.add_argument(
+                "--paired-epochs",
+                type=int,
+                help="fixed pilot budget; omit for unchanged 40/16 epochs",
+            )
         if command in ("train", "evaluate"):
             p.add_argument("--valid-limit", type=int)
         if command in ("candidates", "evaluate"):
@@ -109,15 +119,22 @@ def build_parser():
     )
     p.add_argument("--device", default="auto")
     p.add_argument("--paired-input", choices=("512", "l1"), default="512")
+    p.add_argument(
+        "--repair-regions",
+        action="store_true",
+        help="check weak supervision and bounded fusion on source Train",
+    )
     return parser
 
 
 def main():
     args = build_parser().parse_args()
     if args.command == "prepare":
-        from .data import prepare, prepare_paired
+        from .data import prepare, prepare_paired, prepare_repair_regions
 
-        if args.paired:
+        if args.repair_regions:
+            prepare_repair_regions(args.raw_root, args.output_dir)
+        elif args.paired:
             if args.datasets != ["primevul"]:
                 raise ValueError("--paired requires --datasets primevul")
             prepare_paired(args.raw_root, args.output_dir, args.model)
@@ -158,13 +175,14 @@ def main():
                     function_micro_batch=args.function_micro_batch,
                     resume=args.resume,
                     save_every=args.save_every,
+                    paired_epochs=args.paired_epochs,
                 )
     elif args.command == "check-paired":
-        from .evaluation import check_paired
+        from .evaluation import check_paired, check_repair_regions
 
         print(
             json.dumps(
-                check_paired(
+                (check_repair_regions if args.repair_regions else check_paired)(
                     args.data_dir,
                     args.output_dir,
                     args.model,

@@ -1,0 +1,72 @@
+{
+  "device": "cuda:0",
+  "members": [
+    "primevul_paired:train:223",
+    "primevul_paired:train:224",
+    "primevul_paired:train:1283",
+    "primevul_paired:train:1284"
+  ],
+  "test_used": false,
+  "checks": [
+    {
+      "method": "diff_localizer",
+      "loss": 0.18542659282684326,
+      "encoder_gradient": 5.75537109375,
+      "reload_max_error": 0.0,
+      "seconds": 16.062853356823325,
+      "peak_memory_bytes": 3230012928,
+      "functions": 4,
+      "encoder_windows": 4,
+      "encoder_tokens": 2048,
+      "supervised_line_mass": 24.80000114440918
+    },
+    {
+      "method": "repair_region_localizer",
+      "loss": 0.1780766099691391,
+      "encoder_gradient": 5.39810037612915,
+      "reload_max_error": 0.0,
+      "seconds": 5.480849802028388,
+      "peak_memory_bytes": 3231710720,
+      "functions": 4,
+      "encoder_windows": 4,
+      "encoder_tokens": 2048,
+      "supervised_line_mass": 26.600000381469727
+    },
+    {
+      "method": "global_mean",
+      "loss": 0.6677737236022949,
+      "encoder_gradient": 7.406976699829102,
+      "reload_max_error": 0.0,
+      "seconds": 15.03452610084787,
+      "peak_memory_bytes": 3198619136,
+      "functions": 4,
+      "encoder_windows": 4,
+      "encoder_tokens": 2048,
+      "supervised_line_mass": null
+    },
+    {
+      "method": "hard_weight",
+      "loss": 0.7598612308502197,
+      "encoder_gradient": 8.54118824005127,
+      "reload_max_error": 0.0,
+      "seconds": 23.60606424184516,
+      "peak_memory_bytes": 3198619136,
+      "functions": 4,
+      "encoder_windows": 4,
+      "encoder_tokens": 2048,
+      "supervised_line_mass": null
+    },
+    {
+      "method": "robust_fusion",
+      "loss": 0.6908646821975708,
+      "encoder_gradient": 7.58610200881958,
+      "reload_max_error": 0.0,
+      "seconds": 5.000547661911696,
+      "peak_memory_bytes": 3198619136,
+      "functions": 4,
+      "encoder_windows": 4,
+      "encoder_tokens": 2048,
+      "supervised_line_mass": null
+    }
+  ]
+}

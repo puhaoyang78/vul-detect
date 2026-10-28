@@ -1,0 +1,31 @@
+{
+  "epoch": 4,
+  "validation": {
+    "samples": 256,
+    "pairs": 128,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 2,
+      "p_v": 9,
+      "p_b": 116,
+      "p_r": 1
+    },
+    "p_c": 0.015625,
+    "p_v": 0.0703125,
+    "p_b": 0.90625,
+    "p_r": 0.0078125,
+    "accuracy": 0.50390625,
+    "precision": 0.5238095238095238,
+    "recall": 0.0859375,
+    "f1": 0.1476510067114094,
+    "mcc": 0.014234965584343246,
+    "auc": 0.540679931640625,
+    "auprc": 0.541074687756421,
+    "pair_ranking_accuracy": 0.4921875,
+    "pair_ranking_ties": 30,
+    "patched_fpr": 0.078125,
+    "loss": 0.6921265628188848
+  },
+  "selected_fusion_beta": 0.0
+}

@@ -466,6 +466,385 @@ def paired_encoding(code, tokenizer, input_mode="512", *, tokenization=None):
     )
 
 
+def repair_region_supervision(
+    vulnerable, patched, *, relation=True, anomalous=False, diffs=None
+):
+    """Conservative, source-aligned weak labels, never vulnerability-location truth.
+
+    Direct=1/1 (target/weight); related=1/.6; heuristic=-1/0;
+    structural background=0/.2; all other/failed/ambiguous lines=-1/0.
+    No arbitrary unmodified executable line is forced to be negative.
+    """
+    import re
+    from .syntax import (
+        parse_source,
+        statement_units,
+        source_lines,
+        edit_hunks,
+        walk,
+        text,
+        source_token_spans,
+        CONTROLS,
+    )
+
+    codes = (vulnerable, patched)
+    parsed = [parse_source(c) for c in codes]
+    diffs = (
+        [
+            set(modified_lines(vulnerable, patched)),
+            set(modified_lines(patched, vulnerable)),
+        ]
+        if diffs is None
+        else [set(d) for d in diffs]
+    )
+    result = []
+    for code in codes:
+        lines = code.splitlines(keepends=True)
+        starts, offset = [], 0
+        for line in lines:
+            starts.append(offset)
+            offset += len(line)
+        result.append(
+            dict(
+                region_labels=[-1.0] * len(lines),
+                region_weights=[0.0] * len(lines),
+                region_levels=["unknown"] * len(lines),
+                region_spans=[],
+                region_reasons=[],
+                region_loss_active=False,
+                physical_offsets=[(a, a + len(l)) for a, l in zip(starts, lines)],
+            )
+        )
+    if anomalous or (
+        parsed[0]["name"]
+        and parsed[1]["name"]
+        and parsed[0]["name"] != parsed[1]["name"]
+    ):
+        for r in result:
+            r["region_reasons"].append("pair_correspondence_unknown")
+        return result
+
+    for side, (code, p, r, diff) in enumerate(zip(codes, parsed, result, diffs)):
+        code_lines = set()
+        from bisect import bisect_right
+
+        starts = [a for a, b in r["physical_offsets"]]
+        for token, a, b in source_token_spans(code):
+            code_lines.update(
+                range(bisect_right(starts, a) - 1, bisect_right(starts, b - 1))
+            )
+
+        def assign(ns, level, q, weight):
+            for n in sorted(ns):
+                if (
+                    n < 0
+                    or n >= len(r["region_labels"])
+                    or not code.splitlines()[n].strip()
+                ):
+                    continue
+                if weight > r["region_weights"][n]:
+                    r["region_labels"][n] = q
+                    r["region_weights"][n] = weight
+                    r["region_levels"][n] = level
+
+        # Genuine unchanged structural background only; executable non-candidates
+        # remain unlabeled. Modified comments are unknown rather than negatives.
+        background = {
+            n
+            for n, line in enumerate(code.splitlines())
+            if n not in diff
+            and line.strip()
+            and (n not in code_lines or re.fullmatch(r"[{};]+", line.strip()))
+        }
+        assign(background, "structural_background", 0.0, 0.2)
+        direct = diff & code_lines
+        assign(direct, "direct", 1.0, 1.0)
+        if not p["strict"]:
+            r["region_reasons"].append("parse_failure_direct_only")
+            continue
+        units, names = statement_units(p)
+        # Expand direct changes to a bounded atomic expression, not an entire
+        # initializer list, compound statement, or multi-variable declaration.
+        for u in units:
+            if not (u["lines"] & direct):
+                continue
+            nodes = list(walk(u["node"]))
+            broad = any(
+                n.type in {"initializer_list", "lambda_expression"} for n in nodes
+            )
+            multi = len(u["node"].children_by_field_name("declarator")) > 1
+            if (
+                not broad
+                and not multi
+                and len(u["lines"]) <= 8
+                and len(text(u["node"], p["raw"])) <= 400
+            ):
+                assign(u["lines"] & code_lines, "direct", 1.0, 1.0)
+        if not relation:
+            continue
+        other = parsed[1 - side]
+        if not other["strict"]:
+            r["region_reasons"].append("counterpart_parse_failure")
+            continue
+        other_units, other_names = statement_units(other)
+
+        def accesses(unit, source, bindings):
+            found = set()
+            for n in walk(unit["node"]):
+                if n.type not in {"identifier", "field_expression"}:
+                    continue
+                if n.type == "identifier" and n.parent.type == "field_expression":
+                    continue
+                if n.type == "field_expression" and n.parent.type == "field_expression":
+                    continue
+                name = text(n, source)
+                root = re.split(r"->|\.", name)[0].strip()
+                if len(bindings.get(root, [])) == 1:
+                    found.add((root, re.sub(r"\s+", "", name)))
+            return found
+
+        own_access = [accesses(u, p["raw"], names) for u in units]
+        anchors = []
+        if side == 0:
+            for h in edit_hunks(vulnerable, patched):
+                if h["tag"] == "insert":
+                    anchors.append((h["v_start"], set(range(h["p_start"], h["p_end"]))))
+        else:
+            for h in edit_hunks(patched, vulnerable):
+                if h["tag"] == "insert":
+                    anchors.append((h["v_start"], set(range(h["p_start"], h["p_end"]))))
+        chosen = set(i for i, u in enumerate(units) if u["lines"] & direct)
+        for anchor, changed in anchors:
+            refs = (
+                set().union(
+                    *(
+                        accesses(u, other["raw"], other_names)
+                        for u in other_units
+                        if u["lines"] & changed
+                    )
+                )
+                if other_units
+                else set()
+            )
+            for root, path in sorted(refs):
+                if len(names.get(root, [])) != 1 or len(other_names.get(root, [])) != 1:
+                    r["region_reasons"].append("ambiguous_binding:" + root)
+                    continue
+                candidates = [
+                    i
+                    for i, u in enumerate(units)
+                    if (root, path) in own_access[i]
+                    and abs(u["node"].start_point.row - anchor) <= 8
+                ]
+                if not candidates:
+                    r["region_reasons"].append("no_bounded_bound_use:" + path)
+                    continue
+                i = min(
+                    candidates,
+                    key=lambda i: (abs(units[i]["node"].start_point.row - anchor), i),
+                )
+                u = units[i]
+                ns = u["lines"] & code_lines
+                if len(ns) > 8 or any(
+                    n.type == "initializer_list" for n in walk(u["node"])
+                ):
+                    r["region_reasons"].append("broad_ast_unit_unknown")
+                    continue
+                operators = [
+                    n
+                    for n in walk(u["node"])
+                    if n.type
+                    in {
+                        "binary_expression",
+                        "subscript_expression",
+                        "pointer_expression",
+                        "assignment_expression",
+                        "update_expression",
+                    }
+                ]
+                reliable = any(
+                    (root, path) in accesses(dict(node=n), p["raw"], names)
+                    and not any(x.type == "call_expression" for x in walk(n))
+                    for n in operators
+                )
+                if reliable:
+                    assign(ns, "bound_relation", 1.0, 0.6)
+                    chosen.add(i)
+                else:
+                    r["region_reasons"].append("unknown_heuristic_relation:" + path)
+        # One bounded lexical def-use hop; branch feasibility is NOT proven.
+        for i in sorted(chosen):
+            unit = units[i]
+            for binding in unit["refs"]:
+                before = [
+                    j
+                    for j, u in enumerate(units)
+                    if binding in u["writes"]
+                    and u["node"].end_byte <= unit["node"].start_byte
+                    and unit["node"].start_point.row - u["node"].start_point.row <= 8
+                ]
+                if before:
+                    j = max(before, key=lambda j: units[j]["node"].end_byte)
+                    ns = units[j]["lines"] & code_lines
+                    if len(ns) <= 4 and not any(
+                        n.type == "initializer_list" for n in walk(units[j]["node"])
+                    ):
+                        r["region_reasons"].append("unknown_lexical_definition")
+            parent = unit["node"].parent
+            while parent is not None and parent != p["function"]:
+                if parent.type in CONTROLS:
+                    cond = parent.child_by_field_name("condition")
+                    if cond and len(source_lines(cond)) <= 2:
+                        assign(
+                            source_lines(cond) & code_lines,
+                            "control_relation",
+                            1.0,
+                            0.6,
+                        )
+                parent = parent.parent
+        # At most eight additional non-direct lines, deterministic by proximity.
+        extras = [
+            n
+            for n, l in enumerate(r["region_levels"])
+            if l not in {"direct", "unknown", "structural_background"}
+        ]
+        origin = direct or {a for a, _ in anchors}
+        extras.sort(key=lambda n: (min((abs(n - x) for x in origin), default=0), n))
+        for n in extras[8:]:
+            r["region_labels"][n] = -1.0
+            r["region_weights"][n] = 0.0
+            r["region_levels"][n] = "unknown"
+        if len(extras) > 8:
+            r["region_reasons"].append("eight_extra_lines_limit")
+    for r in result:
+        r["region_loss_active"] = any(y == 1 for y in r["region_labels"])
+        r["region_spans"] = [
+            dict(line=n, start=a, end=b, level=l)
+            for n, ((a, b), l) in enumerate(
+                zip(r["physical_offsets"], r["region_levels"])
+            )
+            if l != "unknown"
+        ]
+    return result
+
+
+def prepare_repair_regions(data_dir, output_dir):
+    """Train/Valid supervision only. Test Diff is deliberately never opened."""
+    import time
+
+    root = Path(output_dir) / "supervision"
+    if (root / "statistics.json").exists():
+        raise FileExistsError(f"{root}: supervision already prepared")
+    root.mkdir(parents=True, exist_ok=True)
+    statistics = {}
+    started = time.monotonic()
+    for split in ("train", "valid"):
+        rows = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl")
+        methods = {"diff": [], "repair_region": [], "neighbour_region": []}
+        for i in range(0, len(rows), 2):
+            v, p = rows[i : i + 2]
+            if v["pair_key"] != p["pair_key"] or [v["target"], p["target"]] != [1, 0]:
+                raise ValueError("unaligned official pair")
+            # Intrinsic metadata only; no manual Test judgments or member deletion.
+            vi, pi = v.get("big_vul_idx"), p.get("big_vul_idx")
+            anomalous = (
+                v.get("project") != p.get("project")
+                or v.get("commit_id") != p.get("commit_id")
+                or (vi is not None and pi is not None and vi != pi)
+            )
+            related = repair_region_supervision(
+                v["func"],
+                p["func"],
+                anomalous=anomalous,
+                diffs=(v["lines_ground_truth"], p["lines_ground_truth"]),
+            )
+            import copy
+
+            direct = copy.deepcopy(related)
+            for r in direct:
+                for n, l in enumerate(r["region_levels"]):
+                    if l not in {"direct", "structural_background"}:
+                        r["region_labels"][n] = -1.0
+                        r["region_weights"][n] = 0.0
+                        r["region_levels"][n] = "unknown"
+                r["region_loss_active"] = any(y == 1 for y in r["region_labels"])
+                r["region_spans"] = [
+                    s
+                    for s in r["region_spans"]
+                    if r["region_levels"][s["line"]] != "unknown"
+                ]
+            for row, d, r in zip((v, p), direct, related):
+                methods["diff"].append(dict(row, **d))
+                methods["repair_region"].append(dict(row, **r))
+                # Same extra-line count and confidence multiset; nearest available
+                # executable lines are a control for simply enlarging the region.
+                n = copy.deepcopy(d)
+                extra = [
+                    j
+                    for j, l in enumerate(r["region_levels"])
+                    if l not in {"direct", "unknown", "structural_background"}
+                ]
+                candidates = [
+                    j
+                    for j, l in enumerate(n["region_levels"])
+                    if l == "unknown" and row["func"].splitlines()[j].strip()
+                ]
+                from .syntax import edit_hunks
+
+                other = p["func"] if row is v else v["func"]
+                anchors = set(row["lines_ground_truth"]) or {
+                    h["v_start"] for h in edit_hunks(row["func"], other)
+                }
+                candidates.sort(
+                    key=lambda j: (min((abs(j - a) for a in anchors), default=j), j)
+                )
+                for dst, src in zip(candidates, extra):
+                    n["region_labels"][dst] = r["region_labels"][src]
+                    n["region_weights"][dst] = r["region_weights"][src]
+                    n["region_levels"][dst] = "neighbour_control"
+                n["region_spans"] = [
+                    dict(line=j, start=a, end=b, level=l)
+                    for j, ((a, b), l) in enumerate(
+                        zip(n["physical_offsets"], n["region_levels"])
+                    )
+                    if l != "unknown"
+                ]
+                n["region_loss_active"] = any(y == 1 for y in n["region_labels"])
+                methods["neighbour_region"].append(dict(row, **n))
+            if (i // 2 + 1) % 500 == 0:
+                print(
+                    f"{split}: {i//2+1} pairs, {time.monotonic()-started:.1f}s",
+                    flush=True,
+                )
+        for name, rr in methods.items():
+            write_jsonl(root / name / f"{split}.jsonl", rr)
+            statistics[f"{name}:{split}"] = dict(
+                functions=len(rr),
+                levels=dict(Counter(l for r in rr for l in r["region_levels"])),
+                labels=dict(
+                    Counter(str(int(y)) for r in rr for y in r["region_labels"])
+                ),
+                no_positive_functions=sum(not r["region_loss_active"] for r in rr),
+                reasons=dict(Counter(l for r in rr for l in r["region_reasons"])),
+            )
+    write_json(
+        root / "statistics.json",
+        dict(
+            seconds=time.monotonic() - started,
+            splits=statistics,
+            weights=dict(
+                direct=1.0, bound_relation=0.6, structural_background=0.2, unknown=0.0
+            ),
+            targets=dict(
+                direct=1, bound_relation=1, structural_background=0, unknown=-1
+            ),
+            focal=dict(alpha=0.5, gamma=1.5, pos_weight=1.0),
+            test_supervision_generated=False,
+        ),
+    )
+    return statistics
+
+
 def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512"):
     """Attach labels or binary 5/1 weights to the same source-aligned input."""
     if variant not in ("localizer", "baseline", "predicted", "oracle"):
@@ -478,6 +857,11 @@ def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512")
     if variant == "localizer":
         gt = set(row.get("lines_ground_truth", []))
         f["labels"] = [int(n in gt) for n in f["line_numbers"]]
+        if "region_labels" in row:
+            f["labels"] = [row["region_labels"][n] for n in f["line_numbers"]]
+            f["label_weights"] = [row["region_weights"][n] for n in f["line_numbers"]]
+            if 1 not in f["labels"]:
+                f["label_weights"] = [0.0] * len(f["labels"])
     else:
         f["labels"] = row["target"]
     if variant == "oracle":
@@ -491,11 +875,23 @@ def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512")
     else:
         selected = set()
     weights = [1.0] * len(f["input_ids"])
+    line_scores = dict(zip(row.get("line_numbers", []), row.get("line_scores", [])))
+    if "line_scores" in row and (
+        list(line_scores) != f["line_numbers"]
+        or any(not 0 <= p <= 1 for p in line_scores.values())
+    ):
+        raise ValueError("region scores must align to visible physical lines")
+    scores = [0.0] * len(f["input_ids"]) if line_scores else None
     for number, tokens in zip(f["line_numbers"], f["line_token_indices"]):
         if number in selected:
             for token in tokens:
                 weights[token] = 5.0
+        if scores is not None:
+            for token in tokens:
+                scores[token] = max(scores[token], line_scores.get(number, 0.0))
     f["token_weights"] = weights
+    if scores is not None:
+        f["region_scores"] = scores
     return f
 
 

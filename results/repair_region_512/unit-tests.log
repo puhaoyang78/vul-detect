@@ -1,0 +1,1354 @@
+test_global_vat_signal_dropout_gradient_and_radius (test_codebert_source.CodeBERTTests.test_global_vat_signal_dropout_gradient_and_radius) ... ok
+test_twelve_fresh_paths_updates_and_strict_save_load (test_codebert_source.CodeBERTTests.test_twelve_fresh_paths_updates_and_strict_save_load) ... ok
+test_window_coverage_and_function_normalization (test_codebert_source.CodeBERTTests.test_window_coverage_and_function_normalization) ... ok
+test_balance_keeps_all_positives_duplicates_and_conflicting_labels (test_data.DataTests.test_balance_keeps_all_positives_duplicates_and_conflicting_labels) ... ok
+test_native_sources_and_official_splits (test_data.DataTests.test_native_sources_and_official_splits) ... ok
+test_prepare_preserves_positives_and_flags_only_exact_test_overlap (test_data.DataTests.test_prepare_preserves_positives_and_flags_only_exact_test_overlap) ... {
+  "dataset": "primevul",
+  "seed": 42,
+  "raw_root": "/tmp/tmpkg1k625j/raw",
+  "native": {
+    "train": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "valid": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "test": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    }
+  },
+  "balanced": {
+    "train": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "valid": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "test": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    }
+  },
+  "positives_removed": 0,
+  "sampling": "retain all native positives; random.Random(42) samples negatives; stable source order",
+  "test_exact_overlap": {
+    "by_training_dataset": {
+      "primevul": {
+        "samples": 1,
+        "positive": 1,
+        "negative": 0
+      }
+    },
+    "excluded": {
+      "samples": 1,
+      "positive": 1,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 3,
+      "positive": 1,
+      "negative": 2
+    },
+    "with_valid": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "policy": "retain all positives in data lists; exclude own Train exact overlap from Valid, and own Train/Valid exact overlap from Test evaluation; no cross-dataset filtering"
+  },
+  "valid_exact_overlap": {
+    "excluded": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    }
+  }
+}
+{
+  "dataset": "megavul",
+  "seed": 42,
+  "raw_root": "/tmp/tmpkg1k625j/raw",
+  "native": {
+    "train": {
+      "samples": 32,
+      "positive": 16,
+      "negative": 16
+    },
+    "valid": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "test": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    }
+  },
+  "balanced": {
+    "train": {
+      "samples": 32,
+      "positive": 16,
+      "negative": 16
+    },
+    "valid": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "test": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    }
+  },
+  "positives_removed": 0,
+  "sampling": "retain all native positives; random.Random(42) samples negatives; stable source order",
+  "test_exact_overlap": {
+    "by_training_dataset": {
+      "megavul": {
+        "samples": 0,
+        "positive": 0,
+        "negative": 0
+      }
+    },
+    "excluded": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    },
+    "with_valid": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "policy": "retain all positives in data lists; exclude own Train exact overlap from Valid, and own Train/Valid exact overlap from Test evaluation; no cross-dataset filtering"
+  },
+  "valid_exact_overlap": {
+    "excluded": {
+      "samples": 0,
+      "positive": 0,
+      "negative": 0
+    },
+    "evaluated": {
+      "samples": 4,
+      "positive": 2,
+      "negative": 2
+    }
+  },
+  "projects": {
+    "train": 16,
+    "valid": 2,
+    "test": 2
+  }
+}
+ok
+test_project_split_targets_positive_counts_instead_of_project_counts (test_data.DataTests.test_project_split_targets_positive_counts_instead_of_project_counts) ... ok
+test_split_readers_exclude_internal_exact_leakage_only (test_data.DataTests.test_split_readers_exclude_internal_exact_leakage_only) ... ok
+test_streaming_array_handles_chunk_boundaries_and_rejects_truncation (test_data.DataTests.test_streaming_array_handles_chunk_boundaries_and_rejects_truncation) ... ok
+test_clean_cache_predicts_only_restored_members_and_recomputes_metrics (test_evaluation.EvaluationTests.test_clean_cache_predicts_only_restored_members_and_recomputes_metrics) ... tmppip443xl/test: reuse 2, predict 2 members
+ok
+test_clean_evaluation_reads_only_own_valid_and_test (test_evaluation.EvaluationTests.test_clean_evaluation_reads_only_own_valid_and_test) ... bce/valid: reuse 0, predict 2 members
+bce/test: reuse 0, predict 3 members
+bce/valid: reuse 0, predict 2 members
+bce/test: reuse 0, predict 3 members
+ok
+test_metrics_threshold_and_single_class (test_evaluation.EvaluationTests.test_metrics_threshold_and_single_class) ... ok
+test_report_contains_twelve_clean_and_robust_models (test_evaluation.EvaluationTests.test_report_contains_twelve_clean_and_robust_models) ... ok
+test_single_function_inference_requires_only_source (test_evaluation.EvaluationTests.test_single_function_inference_requires_only_source) ... ok
+test_actual_byte_bpe_offsets (test_losver.LOSVERTests.test_actual_byte_bpe_offsets) ...
+
+
+ok
+test_all_variants_share_truncation_and_partial_final_line (test_losver.LOSVERTests.test_all_variants_share_truncation_and_partial_final_line) ... ok
+test_cross_line_token_has_shared_memberships (test_losver.LOSVERTests.test_cross_line_token_has_shared_memberships) ... ok
+test_diff_rule_unchanged (test_losver.LOSVERTests.test_diff_rule_unchanged) ... ok
+test_encoder_padding_invariance_for_both_heads (test_losver.LOSVERTests.test_encoder_padding_invariance_for_both_heads) ... ok
+test_l1_boundaries_and_unique_source_cores (test_losver.LOSVERTests.test_l1_boundaries_and_unique_source_cores) ... ok
+test_l1_global_softmax_does_not_recount_context (test_losver.LOSVERTests.test_l1_global_softmax_does_not_recount_context) ... ok
+test_localizer_positive_f1_and_physical_output_ids (test_losver.LOSVERTests.test_localizer_positive_f1_and_physical_output_ids) ... ok
+test_long_physical_line_is_classified_once_after_core_mean (test_losver.LOSVERTests.test_long_physical_line_is_classified_once_after_core_mean) ... ok
+test_original_focal_and_adamw_are_preserved (test_losver.LOSVERTests.test_original_focal_and_adamw_are_preserved) ... ok
+test_overlapping_byte_offsets_still_mark_incomplete_line (test_losver.LOSVERTests.test_overlapping_byte_offsets_still_mark_incomplete_line) ... ok
+test_pair_metrics_and_oracle_isolation (test_losver.LOSVERTests.test_pair_metrics_and_oracle_isolation) ... ok
+test_paired_report_preserves_input_budget_and_rejects_mixing (test_losver.LOSVERTests.test_paired_report_preserves_input_budget_and_rejects_mixing) ... ok
+test_physical_lines_merged_whitespace_crlf_and_eof (test_losver.LOSVERTests.test_physical_lines_merged_whitespace_crlf_and_eof) ... ok
+test_ragged_batch_preserves_sparse_physical_ids (test_losver.LOSVERTests.test_ragged_batch_preserves_sparse_physical_ids) ... ok
+test_real_encoder_backward_and_strict_reload (test_losver.LOSVERTests.test_real_encoder_backward_and_strict_reload) ... ok
+test_same_factory_and_linear_head_for_three_detectors (test_losver.LOSVERTests.test_same_factory_and_linear_head_for_three_detectors) ... ok
+test_short_l1_is_identical_to_512_for_all_variants (test_losver.LOSVERTests.test_short_l1_is_identical_to_512_for_all_variants) ... ok
+test_softmax_excludes_padding_and_specials_and_trains_all_dimensions (test_losver.LOSVERTests.test_softmax_excludes_padding_and_specials_and_trains_all_dimensions) ... ok
+test_source_only_inference_uses_one_tokenization (test_losver.LOSVERTests.test_source_only_inference_uses_one_tokenization) ... ok
+test_window_checkpoint_preserves_dropout_and_parameter_gradients (test_losver.LOSVERTests.test_window_checkpoint_preserves_dropout_and_parameter_gradients) ... ok
+test_interventions_reproduce_all_canonical_pools_and_isolate_diff (test_losver_diagnosis.DiagnosisTests.test_interventions_reproduce_all_canonical_pools_and_isolate_diff) ... ok
+test_softmax_amplifies_by_exp_four_not_five (test_losver_diagnosis.DiagnosisTests.test_softmax_amplifies_by_exp_four_not_five) ... ok
+test_strict_boundary_and_pair_denominators (test_losver_diagnosis.DiagnosisTests.test_strict_boundary_and_pair_denominators) ... ok
+test_addition_has_no_vulnerable_diff_label (test_losver_patch_audit.PatchAuditTests.test_addition_has_no_vulnerable_diff_label) ... ok
+test_ambiguous_hunk_is_not_applied (test_losver_patch_audit.PatchAuditTests.test_ambiguous_hunk_is_not_applied) ... ok
+test_binding_scope_does_not_link_shadowed_definition (test_losver_patch_audit.PatchAuditTests.test_binding_scope_does_not_link_shadowed_definition) ... ok
+test_comment_lines_and_crlf_are_not_executable_changes (test_losver_patch_audit.PatchAuditTests.test_comment_lines_and_crlf_are_not_executable_changes) ... ok
+test_enclosing_condition_is_header_not_entire_branch (test_losver_patch_audit.PatchAuditTests.test_enclosing_condition_is_header_not_entire_branch) ... ok
+test_qualified_class_and_preprocessor_identity (test_losver_patch_audit.PatchAuditTests.test_qualified_class_and_preprocessor_identity) ... ok
+test_semantic_categories_separate_check_cleanup_and_state (test_losver_patch_audit.PatchAuditTests.test_semantic_categories_separate_check_cleanup_and_state) ... ok
+test_unknown_parsing_and_correspondence_are_not_success (test_losver_patch_audit.PatchAuditTests.test_unknown_parsing_and_correspondence_are_not_success) ... ok
+test_whole_function_patch_replay_and_rename (test_losver_patch_audit.PatchAuditTests.test_whole_function_patch_replay_and_rename) ... ok
+test_array_initializer_is_not_whole_region (test_repair_region.RepairRegionTests.test_array_initializer_is_not_whole_region) ... ok
+test_cached_official_diff_produces_identical_supervision (test_repair_region.RepairRegionTests.test_cached_official_diff_produces_identical_supervision) ... ok
+test_fusion_mean_fallback_padding_and_attenuation (test_repair_region.RepairRegionTests.test_fusion_mean_fallback_padding_and_attenuation) ... ok
+test_ignored_line_gradients_and_real_encoder_backward (test_repair_region.RepairRegionTests.test_ignored_line_gradients_and_real_encoder_backward) ... ok
+test_insert_maps_bound_operation_and_leaves_unknown_unlabeled (test_repair_region.RepairRegionTests.test_insert_maps_bound_operation_and_leaves_unknown_unlabeled) ... ok
+test_nested_fields_and_generic_call_context_are_unknown (test_repair_region.RepairRegionTests.test_nested_fields_and_generic_call_context_are_unknown) ... ok
+test_new_methods_reject_l1_without_loading_data (test_repair_region.RepairRegionTests.test_new_methods_reject_l1_without_loading_data) ... ok
+test_no_visible_positive_disables_line_loss_but_keeps_all_tokens (test_repair_region.RepairRegionTests.test_no_visible_positive_disables_line_loss_but_keeps_all_tokens) ... ok
+test_paired_epoch_override_is_not_silently_ignored_by_codebert (test_repair_region.RepairRegionTests.test_paired_epoch_override_is_not_silently_ignored_by_codebert) ... ok
+test_pilot_checkpoint_rejects_formal_test_before_model_loading (test_repair_region.RepairRegionTests.test_pilot_checkpoint_rejects_formal_test_before_model_loading) ... ok
+test_prediction_features_do_not_read_diff_and_scores_share_offsets (test_repair_region.RepairRegionTests.test_prediction_features_do_not_read_diff_and_scores_share_offsets) ... ok
+test_save_reload_robust_settings_and_forward (test_repair_region.RepairRegionTests.test_save_reload_robust_settings_and_forward) ... ok
+test_score_cache_join_checks_physical_lines_and_threshold (test_repair_region.RepairRegionTests.test_score_cache_join_checks_physical_lines_and_threshold) ... ok
+test_shadowing_and_field_paths_are_not_broad_same_name_matches (test_repair_region.RepairRegionTests.test_shadowing_and_field_paths_are_not_broad_same_name_matches) ... ok
+test_unknown_excluded_from_weighted_denominator_and_binary_bce_retained (test_repair_region.RepairRegionTests.test_unknown_excluded_from_weighted_denominator_and_binary_bce_retained) ... ok
+test_unknown_parse_and_rename_never_get_arbitrary_expansion (test_repair_region.RepairRegionTests.test_unknown_parse_and_rename_never_get_arbitrary_expansion) ... ok
+test_all_codebert_methods_resume_with_identical_weights_candidates_and_thresholds (test_resume.ResumeTests.test_all_codebert_methods_resume_with_identical_weights_candidates_and_thresholds) ... primevul/bce epoch 1 step 1/3
+primevul/bce epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69302 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/bce epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69385 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/bce epoch 1 step 1/3
+/tmp/tmpx6zphkc4/bce/resumed/primevul/bce: resuming epoch 1, batch 2, step 1
+primevul/bce epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69302 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/bce epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69385 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+/tmp/tmpx6zphkc4/bce/resumed/primevul/bce: training complete; skipping
+primevul/vat epoch 1 step 1/3
+primevul/vat epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69303 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/vat epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69382 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/vat epoch 1 step 1/3
+/tmp/tmpx6zphkc4/vat/resumed/primevul/vat: resuming epoch 1, batch 2, step 1
+primevul/vat epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69303 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/vat epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69382 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+/tmp/tmpx6zphkc4/vat/resumed/primevul/vat: training complete; skipping
+primevul/random_aug_bce epoch 1 step 1/3
+primevul/random_aug_bce epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69614 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/random_aug_bce epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69377 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/random_aug_bce epoch 1 step 1/3
+/tmp/tmpx6zphkc4/random_aug_bce/resumed/primevul/random_aug_bce: resuming epoch 1, batch 2, step 1
+primevul/random_aug_bce epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69614 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/random_aug_bce epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69377 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+/tmp/tmpx6zphkc4/random_aug_bce/resumed/primevul/random_aug_bce: training complete; skipping
+primevul/hard_aug_bce epoch 1 step 1/3
+primevul/hard_aug_bce epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70153 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_bce epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69824 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_bce epoch 1 step 1/3
+/tmp/tmpx6zphkc4/hard_aug_bce/resumed/primevul/hard_aug_bce: resuming epoch 1, batch 2, step 1
+primevul/hard_aug_bce epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70153 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_bce epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69824 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+/tmp/tmpx6zphkc4/hard_aug_bce/resumed/primevul/hard_aug_bce: training complete; skipping
+primevul/random_aug_vat epoch 1 step 1/3
+primevul/random_aug_vat epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69621 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/random_aug_vat epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69399 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/random_aug_vat epoch 1 step 1/3
+/tmp/tmpx6zphkc4/random_aug_vat/resumed/primevul/random_aug_vat: resuming epoch 1, batch 2, step 1
+primevul/random_aug_vat epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69621 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/random_aug_vat epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69399 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+/tmp/tmpx6zphkc4/random_aug_vat/resumed/primevul/random_aug_vat: training complete; skipping
+primevul/hard_aug_vat epoch 1 step 1/3
+primevul/hard_aug_vat epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70154 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_vat epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69831 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_vat epoch 1 step 1/3
+/tmp/tmpx6zphkc4/hard_aug_vat/resumed/primevul/hard_aug_vat: resuming epoch 1, batch 2, step 1
+primevul/hard_aug_vat epoch 1 step 3/3
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70154 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_vat epoch 2 step 3/3
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69831 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+/tmp/tmpx6zphkc4/hard_aug_vat/resumed/primevul/hard_aug_vat: training complete; skipping
+ok
+test_all_losver_variants_resume_random_sampler_dropout_and_scheduler (test_resume.ResumeTests.test_all_losver_variants_resume_random_sampler_dropout_and_scheduler) ... /home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.8518518518518518e-05}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71737 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7173692882061005, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966806054115295}, "fusion_validation": null, "training_seconds": 1.008376032114029, "epoch_seconds": 1.3781271032057703}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+unixcoder · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70921 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 2, "train_loss": 0.7092132270336151, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963934004306793}, "fusion_validation": null, "training_seconds": 0.9045589361339808, "epoch_seconds": 1.2839119918644428}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.8518518518518518e-05}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71737 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7173692882061005, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966806054115295}, "fusion_validation": null, "training_seconds": 0.9376963591203094, "epoch_seconds": 1.313064618036151}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmp34iqpw2h/resumed/primevul_paired/unixcoder: resuming epoch 2, optimizer batch 1, step 4
+
+unixcoder · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70921 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 2, "train_loss": 0.7092132270336151, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963934004306793}, "fusion_validation": null, "training_seconds": 1.0935942642390728, "epoch_seconds": 1.457714311312884}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 1.0737503821199592, "learning_rate": 1.8518518518518518e-05}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 1.01233 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 1.0123328534942686, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0531727969646454}, "fusion_validation": null, "training_seconds": 1.0099975252524018, "epoch_seconds": 1.4034207039512694}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.97792 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.9779239356517792, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0430253744125366}, "fusion_validation": null, "training_seconds": 1.0063513610512018, "epoch_seconds": 1.4140738821588457}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 1.0737503821199592, "learning_rate": 1.8518518518518518e-05}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 1.01233 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 1.0123328534942686, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0531727969646454}, "fusion_validation": null, "training_seconds": 1.0148729463107884, "epoch_seconds": 1.4040258340537548}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpu5dfcdb1/resumed/primevul_paired/losver_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.97792 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.9779239356517792, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0430253744125366}, "fusion_validation": null, "training_seconds": 1.1779903718270361, "epoch_seconds": 1.5587876816280186}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.9190221703611314, "epoch_seconds": 1.2893639630638063}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+losver · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 0.8864694531075656, "epoch_seconds": 1.2503239163197577}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.9242187989875674, "epoch_seconds": 1.2852613208815455}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpbjrwnch6/resumed/primevul_paired/losver: resuming epoch 2, optimizer batch 1, step 4
+
+losver · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 1.0733308009803295, "epoch_seconds": 1.4336177008226514}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver_oracle · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.8951361421495676, "epoch_seconds": 1.2611702140420675}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+losver_oracle · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 0.8751326920464635, "epoch_seconds": 1.2452297043055296}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver_oracle · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.9366132500581443, "epoch_seconds": 1.2992857941426337}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmp5z1dhafo/resumed/primevul_paired/losver_oracle: resuming epoch 2, optimizer batch 1, step 4
+
+losver_oracle · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 1.069626837503165, "epoch_seconds": 1.4356865491718054}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.28548815693597024, "learning_rate": 1.8518518518518518e-05}
+
+diff_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.27671 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "diff_localizer", "epoch": 1, "train_loss": 0.2767065696290467, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.2746596842850946}, "fusion_validation": null, "training_seconds": 1.008219534996897, "epoch_seconds": 1.4097678419202566}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.26104 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "diff_localizer", "epoch": 2, "train_loss": 0.26103930857826335, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.27218937530062276}, "fusion_validation": null, "training_seconds": 1.0249297693371773, "epoch_seconds": 1.4152894872240722}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.28548815693597024, "learning_rate": 1.8518518518518518e-05}
+
+diff_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.27671 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "diff_localizer", "epoch": 1, "train_loss": 0.2767065696290467, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.2746596842850946}, "fusion_validation": null, "training_seconds": 1.0153423743322492, "epoch_seconds": 1.408129135146737}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpgxi84jo8/resumed/primevul_paired/diff_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+diff_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.26104 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "diff_localizer", "epoch": 2, "train_loss": 0.26103930857826335, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.27218937530062276}, "fusion_validation": null, "training_seconds": 1.1676554926671088, "epoch_seconds": 1.5734353815205395}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.28548815693597024, "learning_rate": 1.8518518518518518e-05}
+
+repair_region_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.27671 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 1, "train_loss": 0.2767065696290467, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.2746596842850946}, "fusion_validation": null, "training_seconds": 1.0132622178643942, "epoch_seconds": 1.4024347867816687}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+repair_region_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.26104 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 2, "train_loss": 0.26103930857826335, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.27218937530062276}, "fusion_validation": null, "training_seconds": 1.0148392710834742, "epoch_seconds": 1.4235213343054056}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.28548815693597024, "learning_rate": 1.8518518518518518e-05}
+
+repair_region_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.27671 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 1, "train_loss": 0.2767065696290467, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.2746596842850946}, "fusion_validation": null, "training_seconds": 1.0409037349745631, "epoch_seconds": 1.4238692331127822}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpqkvlegbv/resumed/primevul_paired/repair_region_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+repair_region_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.26104 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "repair_region_localizer", "epoch": 2, "train_loss": 0.26103930857826335, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.27218937530062276}, "fusion_validation": null, "training_seconds": 1.2361430157907307, "epoch_seconds": 1.6454184539616108}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.28548815693597024, "learning_rate": 1.8518518518518518e-05}
+
+neighbour_region_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.27671 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 1, "train_loss": 0.2767065696290467, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.2746596842850946}, "fusion_validation": null, "training_seconds": 1.047423749230802, "epoch_seconds": 1.4597591571509838}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+neighbour_region_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.26104 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 2, "train_loss": 0.26103930857826335, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.27218937530062276}, "fusion_validation": null, "training_seconds": 1.0309128789231181, "epoch_seconds": 1.4219977539032698}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.28548815693597024, "learning_rate": 1.8518518518518518e-05}
+
+neighbour_region_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.27671 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 1, "train_loss": 0.2767065696290467, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.2746596842850946}, "fusion_validation": null, "training_seconds": 1.039634343702346, "epoch_seconds": 1.4393139728344977}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpad9bj3q_/resumed/primevul_paired/neighbour_region_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+neighbour_region_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.26104 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_localizer", "epoch": 2, "train_loss": 0.26103930857826335, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 0.27218937530062276}, "fusion_validation": null, "training_seconds": 1.2017538454383612, "epoch_seconds": 1.5856715789996088}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+diff_hard_weight · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_hard_weight", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.9398774420842528, "epoch_seconds": 1.302708915900439}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_hard_weight · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_hard_weight", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 0.9281166042201221, "epoch_seconds": 1.2982310391962528}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+diff_hard_weight · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_hard_weight", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.9119809111580253, "epoch_seconds": 1.283619413152337}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmp7d0jipf2/resumed/primevul_paired/diff_hard_weight: resuming epoch 2, optimizer batch 1, step 4
+
+diff_hard_weight · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_hard_weight", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 1.1438761376775801, "epoch_seconds": 1.5205586166121066}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+repair_region_hard_weight · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.9416474630124867, "epoch_seconds": 1.3110946412198246}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+repair_region_hard_weight · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 0.9521121541038156, "epoch_seconds": 1.3415752560831606}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+repair_region_hard_weight · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71532 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 1, "train_loss": 0.7153169959783554, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919427514076233}, "fusion_validation": null, "training_seconds": 0.911758387926966, "epoch_seconds": 1.2873398228548467}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpjz79jj4j/resumed/primevul_paired/repair_region_hard_weight: resuming epoch 2, optimizer batch 1, step 4
+
+repair_region_hard_weight · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69752 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_hard_weight", "epoch": 2, "train_loss": 0.6975153734286627, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916686296463013}, "fusion_validation": null, "training_seconds": 1.0864246496930718, "epoch_seconds": 1.4620287264697254}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6735395342111588, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71698 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_robust_fusion", "epoch": 1, "train_loss": 0.7169827868541082, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963804364204407}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959303021430969}}], "training_seconds": 1.2069017179310322, "epoch_seconds": 2.2825185279361904}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70734 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_robust_fusion", "epoch": 2, "train_loss": 0.7073407570521036, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960946321487427}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956441402435303}}], "training_seconds": 0.9233190240338445, "epoch_seconds": 2.0268384981900454}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6735395342111588, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71698 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_robust_fusion", "epoch": 1, "train_loss": 0.7169827868541082, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963804364204407}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959303021430969}}], "training_seconds": 0.9291440029628575, "epoch_seconds": 2.004205489065498}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmp85pmq0yt/resumed/primevul_paired/diff_robust_fusion: resuming epoch 2, optimizer batch 1, step 4
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70734 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_robust_fusion", "epoch": 2, "train_loss": 0.7073407570521036, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960946321487427}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956441402435303}}], "training_seconds": 1.069054998923093, "epoch_seconds": 2.1548199472017586}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6735395342111588, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+repair_region_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71698 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 1, "train_loss": 0.7169827868541082, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963804364204407}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959303021430969}}], "training_seconds": 0.8997264350764453, "epoch_seconds": 1.9809735240414739}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+repair_region_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70734 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 2, "train_loss": 0.7073407570521036, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960946321487427}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956441402435303}}], "training_seconds": 0.9190323897637427, "epoch_seconds": 2.0295619410462677}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6735395342111588, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+repair_region_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71698 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 1, "train_loss": 0.7169827868541082, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963804364204407}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959303021430969}}], "training_seconds": 0.9272891068831086, "epoch_seconds": 2.074978904798627}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpfrf47d5r/resumed/primevul_paired/repair_region_robust_fusion: resuming epoch 2, optimizer batch 1, step 4
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+repair_region_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70734 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "repair_region_robust_fusion", "epoch": 2, "train_loss": 0.7073407570521036, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960946321487427}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956441402435303}}], "training_seconds": 1.102809363976121, "epoch_seconds": 2.1720026838593185}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6735395342111588, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+neighbour_region_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71698 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 1, "train_loss": 0.7169827868541082, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963804364204407}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959303021430969}}], "training_seconds": 0.9163593589328229, "epoch_seconds": 1.9974109139293432}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+neighbour_region_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70734 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 2, "train_loss": 0.7073407570521036, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960946321487427}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956441402435303}}], "training_seconds": 0.9327268623746932, "epoch_seconds": 2.023626320064068}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6735395342111588, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+neighbour_region_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71698 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 1, "train_loss": 0.7169827868541082, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966811716556549}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963804364204407}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959303021430969}}], "training_seconds": 0.9057395160198212, "epoch_seconds": 2.014355517923832}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpwdoexkix/resumed/primevul_paired/neighbour_region_robust_fusion: resuming epoch 2, optimizer batch 1, step 4
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+neighbour_region_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70734 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "neighbour_region_robust_fusion", "epoch": 2, "train_loss": 0.7073407570521036, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963957250118256}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960946321487427}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956441402435303}}], "training_seconds": 1.0742074828594923, "epoch_seconds": 2.1532978918403387}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.8518518518518518e-05}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70627 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7062670042117437, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6967796087265015}, "fusion_validation": null, "training_seconds": 1.4771934868767858, "epoch_seconds": 1.8546685022301972}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+unixcoder · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71676 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 2, "train_loss": 0.716758077343305, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6965079307556152}, "fusion_validation": null, "training_seconds": 1.4952963721007109, "epoch_seconds": 1.8790516471490264}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.8518518518518518e-05}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70627 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7062670042117437, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6967796087265015}, "fusion_validation": null, "training_seconds": 1.4585384568199515, "epoch_seconds": 1.840345149859786}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpe43zy9dj/resumed/primevul_paired/unixcoder: resuming epoch 2, optimizer batch 1, step 4
+
+unixcoder · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71676 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 2, "train_loss": 0.716758077343305, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6965079307556152}, "fusion_validation": null, "training_seconds": 1.7458656062372029, "epoch_seconds": 2.125346985179931}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.9161182687832758, "learning_rate": 1.8518518518518518e-05}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94669 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9466900244737282, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.5664335664335665, "precision": 0.0, "recall": 0.0, "lines": 13, "modified_lines": 4.0, "confusion_matrix": [[9, 0], [4, 0]], "loss": 0.8890585899353027}, "fusion_validation": null, "training_seconds": 1.6125230840407312, "epoch_seconds": 2.0157530969008803}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.87409 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.8740923966352757, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.5664335664335665, "precision": 0.0, "recall": 0.0, "lines": 13, "modified_lines": 4.0, "confusion_matrix": [[9, 0], [4, 0]], "loss": 0.8802303671836853}, "fusion_validation": null, "training_seconds": 1.6034009801223874, "epoch_seconds": 2.0115655520930886}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.9161182687832758, "learning_rate": 1.8518518518518518e-05}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94669 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9466900244737282, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.5664335664335665, "precision": 0.0, "recall": 0.0, "lines": 13, "modified_lines": 4.0, "confusion_matrix": [[9, 0], [4, 0]], "loss": 0.8890585899353027}, "fusion_validation": null, "training_seconds": 1.6411171210929751, "epoch_seconds": 2.0367513461969793}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpty7fuwt2/resumed/primevul_paired/losver_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.87409 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.8740923966352757, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.5664335664335665, "precision": 0.0, "recall": 0.0, "lines": 13, "modified_lines": 4.0, "confusion_matrix": [[9, 0], [4, 0]], "loss": 0.8802303671836853}, "fusion_validation": null, "training_seconds": 1.781369450967759, "epoch_seconds": 2.1780596431344748}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70122 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 1, "train_loss": 0.7012220869461695, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6921586394309998}, "fusion_validation": null, "training_seconds": 1.5445381198078394, "epoch_seconds": 1.9217095649801195}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+losver · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71167 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 2, "train_loss": 0.7116688340902328, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919095814228058}, "fusion_validation": null, "training_seconds": 1.4875021032057703, "epoch_seconds": 1.860455121845007}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70122 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 1, "train_loss": 0.7012220869461695, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6921586394309998}, "fusion_validation": null, "training_seconds": 1.5202944497577846, "epoch_seconds": 1.8957828697748482}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpuqmo_10z/resumed/primevul_paired/losver: resuming epoch 2, optimizer batch 1, step 4
+
+losver · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71167 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 2, "train_loss": 0.7116688340902328, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919095814228058}, "fusion_validation": null, "training_seconds": 1.696156249847263, "epoch_seconds": 2.0660259309224784}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver_oracle · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70122 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 1, "train_loss": 0.7012220869461695, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6921586394309998}, "fusion_validation": null, "training_seconds": 1.5339431939646602, "epoch_seconds": 1.9034164999611676}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+losver_oracle · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71167 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 2, "train_loss": 0.7116688340902328, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919095814228058}, "fusion_validation": null, "training_seconds": 1.5133157931268215, "epoch_seconds": 1.9007935589179397}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6672016084194183, "learning_rate": 1.8518518518518518e-05}
+
+losver_oracle · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70122 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 1, "train_loss": 0.7012220869461695, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6921586394309998}, "fusion_validation": null, "training_seconds": 1.5314086778089404, "epoch_seconds": 1.9059122209437191}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/tmp/tmpu8pda6wv/resumed/primevul_paired/losver_oracle: resuming epoch 2, optimizer batch 1, step 4
+
+losver_oracle · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71167 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver_oracle", "epoch": 2, "train_loss": 0.7116688340902328, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919095814228058}, "fusion_validation": null, "training_seconds": 1.6886604740284383, "epoch_seconds": 2.064318842254579}
+ok
+test_atomic_save_preserves_previous_state_and_cli (test_resume.ResumeTests.test_atomic_save_preserves_previous_state_and_cli) ... ok
+test_beta_validation_grid_keeps_hard_weight_sampling_rng (test_resume.ResumeTests.test_beta_validation_grid_keeps_hard_weight_sampling_rng) ... /home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6603297591209412, "learning_rate": 1.8518518518518518e-05}
+
+diff_hard_weight · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70863 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_hard_weight", "epoch": 1, "train_loss": 0.7086347540219625, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6919314861297607}, "fusion_validation": null, "training_seconds": 0.8301667519845068, "epoch_seconds": 1.2629574602469802}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_hard_weight · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.68283 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_hard_weight", "epoch": 2, "train_loss": 0.6828324993451437, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6916391849517822}, "fusion_validation": null, "training_seconds": 0.9066641633398831, "epoch_seconds": 1.3538155793212354}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6610205173492432, "learning_rate": 1.8518518518518518e-05}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_robust_fusion · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70574 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_robust_fusion", "epoch": 1, "train_loss": 0.7057428359985352, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966865062713623}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6966865062713623}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6963843703269958}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6959324777126312}}], "training_seconds": 0.8340388010255992, "epoch_seconds": 2.029074527323246}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+diff_robust_fusion · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.68815 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "diff_robust_fusion", "epoch": 2, "train_loss": 0.688154399394989, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.696399986743927}, "fusion_validation": [{"beta": 0.0, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.696399986743927}}, {"beta": 0.1, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6960968375205994}}, {"beta": 0.25, "metrics": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6956432163715363}}], "training_seconds": 0.8930775322951376, "epoch_seconds": 2.202543819323182}
+ok
+test_interrupted_initial_save_can_start_again (test_resume.ResumeTests.test_interrupted_initial_save_can_start_again) ... /home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.4814814814814815e-05}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70627 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7062668949365616, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6969273090362549}, "fusion_validation": null, "training_seconds": 1.4433379508554935, "epoch_seconds": 1.8228473248891532}
+primevul/bce epoch 1 step 1/1
+ok
+test_validation_and_localizer_export_can_resume_without_more_updates (test_resume.ResumeTests.test_validation_and_localizer_export_can_resume_without_more_updates) ... /home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69944 │ 1     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.4814814814814815e-05}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70627 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7062668949365616, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6969273090362549}, "fusion_validation": null, "training_seconds": 1.4501535552553833, "epoch_seconds": 1.8428488122299314}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.6748629957437515, "learning_rate": 1.4814814814814815e-05}
+/tmp/tmpyxb_8d99/resumed/primevul_paired/unixcoder: resuming epoch 1, optimizer batch 3, step 3
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70627 │ 3     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.7062668949365616, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"samples": 4, "pairs": 2, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 2, "p_b": 0, "p_r": 0}, "p_c": 0.0, "p_v": 1.0, "p_b": 0.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 1.0, "f1": 0.6666666666666666, "mcc": 0.0, "auc": 0.5, "auprc": 0.75, "pair_ranking_accuracy": 0.5, "pair_ranking_ties": 0, "patched_fpr": 1.0, "loss": 0.6969273090362549}, "fusion_validation": null, "training_seconds": 1.6771387169137597, "epoch_seconds": 2.1416862322948873}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.9161182687832758, "learning_rate": 1.4814814814814815e-05}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94714 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9471433972701048, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.5664335664335665, "precision": 0.0, "recall": 0.0, "lines": 13, "modified_lines": 4.0, "confusion_matrix": [[9, 0], [4, 0]], "loss": 0.8934523165225983}, "fusion_validation": null, "training_seconds": 1.5902885710820556, "epoch_seconds": 2.0184337850660086}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.9161182687832758, "learning_rate": 1.4814814814814815e-05}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94714 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9471433972701048, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.5664335664335665, "precision": 0.0, "recall": 0.0, "lines": 13, "modified_lines": 4.0, "confusion_matrix": [[9, 0], [4, 0]], "loss": 0.8934523165225983}, "fusion_validation": null, "training_seconds": 1.580000318121165, "epoch_seconds": 2.004172741435468}
+/tmp/tmp9d_7dfjo/resumed/primevul_paired/losver_localizer: resuming epoch 2, optimizer batch 0, step 3
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+ok
+test_binding_shadowing_utf8_members_macros_and_self_references (test_surface_vat.SurfaceVATTests.test_binding_shadowing_utf8_members_macros_and_self_references) ... ok
+test_boundary_finishes_layer_skips_wrong_original_and_keeps_hardest_default (test_surface_vat.SurfaceVATTests.test_boundary_finishes_layer_skips_wrong_original_and_keeps_hardest_default) ... ok
+test_comment_edits_and_visibility (test_surface_vat.SurfaceVATTests.test_comment_edits_and_visibility) ... ok
+test_dynamic_reproducibility_holdout_and_hardest_search (test_surface_vat.SurfaceVATTests.test_dynamic_reproducibility_holdout_and_hardest_search) ... ok
+test_evaluation_uses_the_saved_float32_threshold_boundary (test_surface_vat.SurfaceVATTests.test_evaluation_uses_the_saved_float32_threshold_boundary) ... ok
+test_four_training_switches_use_the_same_budget_and_save_their_config (test_surface_vat.SurfaceVATTests.test_four_training_switches_use_the_same_budget_and_save_their_config) ... primevul/hard_aug_vat epoch 1 step 1/1
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70531 │ 1     │ 0.5000    │ 0.0000 │ 1.0000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_vat epoch 1 step 1/1
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70531 │ 1     │ 0.5000    │ 0.0000 │ 1.0000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_vat epoch 1 step 1/1
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69410 │ 1     │ 0.5000    │ 0.0000 │ 1.0000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+primevul/hard_aug_vat epoch 1 step 1/1
+ok
+test_function_weights_and_complete_robustness_denominators (test_surface_vat.SurfaceVATTests.test_function_weights_and_complete_robustness_denominators) ... ok
+test_gradient_copy_metric_and_expanded_radius (test_surface_vat.SurfaceVATTests.test_gradient_copy_metric_and_expanded_radius) ... ok
+test_logit_vat_uses_raw_sign_before_copy_correction_and_keeps_final_gradients (test_surface_vat.SurfaceVATTests.test_logit_vat_uses_raw_sign_before_copy_correction_and_keeps_final_gradients) ... ok
+test_search_reuses_offsets_and_passes_the_same_source_ids_to_scoring (test_surface_vat.SurfaceVATTests.test_search_reuses_offsets_and_passes_the_same_source_ids_to_scoring) ... ok
+
+----------------------------------------------------------------------
+Ran 79 tests in 182.083s
+
+OK
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69410 │ 1     │ 0.5000    │ 0.0000 │ 1.0000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘

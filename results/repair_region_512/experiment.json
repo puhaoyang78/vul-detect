@@ -1,0 +1,78 @@
+{
+  "dataset": "PrimeVul Original",
+  "official_pairs": {
+    "train": 4354,
+    "valid": 562,
+    "test": 564
+  },
+  "input": "existing source_offsets 512: BOS+first510 source tokens+EOS",
+  "seed": 123456,
+  "pilot_sampling_seed": 42,
+  "pilot": {
+    "train_pairs": 512,
+    "valid_pairs": 128,
+    "epochs": 4,
+    "effective_function_batch": 8,
+    "optimizer_steps_per_method": 512,
+    "test_used": false
+  },
+  "full": {
+    "localizer_epochs": 40,
+    "detector_epochs": 16,
+    "effective_function_batch": 8,
+    "learning_rate": 2e-05,
+    "source_valid_selection": "localizer masked positive F1; detector P-C rounded4, earlier epoch on ties",
+    "threshold": 0.5,
+    "threshold_comparison": ">"
+  },
+  "unknown": {
+    "meaning": "line-level repair-relation supervision only, never a function class or a prediction outcome",
+    "labels": [
+      -1,
+      0,
+      1
+    ],
+    "excluded_from_focal_denominator": true,
+    "retained_in_encoding_and_function_bce": true,
+    "no_visible_positive": "skip line objective, retain all function BCE",
+    "background": "unchanged structural delimiters/comments only, weight .2; all unselected executable lines remain Unknown"
+  },
+  "focal": {
+    "alpha": 0.5,
+    "gamma": 1.5,
+    "pos_weight": 1.0,
+    "same_for_diff_and_repair": true,
+    "historical_original_losver_unchanged": true
+  },
+  "weights": {
+    "direct": 1.0,
+    "bound_relation": 0.6,
+    "control_relation": 0.6,
+    "background": 0.2,
+    "unknown": 0.0
+  },
+  "fusion": {
+    "train_beta": 0.25,
+    "validation_beta_grid": [
+      0.0,
+      0.1,
+      0.25
+    ],
+    "score_gate": 0.5,
+    "score_transform": "clamp((p-.5)/.5,0,1)",
+    "strength": "max excess score",
+    "no_calibration_assumption": true,
+    "no_region": "exact global mean"
+  },
+  "controls": [
+    "global_mean",
+    "original_losver",
+    "diff_hard_weight",
+    "repair_region_hard_weight",
+    "diff_robust_fusion",
+    "repair_region_robust_fusion",
+    "neighbour_region_robust_fusion (pilot area-size control)"
+  ],
+  "note": "Diff-only matched control shares bounded direct-statement mapping, sparse background/Unknown handling and focal definition with repair_region; original raw-Diff LOSVER is an additional historical/full or matched/pilot reference. No Test tuning, OOF, pair loss or new encoder/head.",
+  "validation_rng": "Exactly one validation-loader RNG advance per epoch; beta repeats replay the same RNG state."
+}

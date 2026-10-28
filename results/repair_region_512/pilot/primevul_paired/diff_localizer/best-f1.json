@@ -1,0 +1,23 @@
+{
+  "epoch": 4,
+  "validation": {
+    "f1": 0.9223454833597464,
+    "weighted_f1": 0.9415750904816784,
+    "precision": 0.8967642526964561,
+    "recall": 0.9494290375203915,
+    "lines": 1668,
+    "modified_lines": 613.0,
+    "confusion_matrix": [
+      [
+        988,
+        67
+      ],
+      [
+        31,
+        582
+      ]
+    ],
+    "loss": 0.02903712732836546
+  },
+  "selected_fusion_beta": null
+}

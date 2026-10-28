@@ -1,0 +1,92 @@
+[
+  {
+    "method": "diff_robust_fusion",
+    "split": "train",
+    "functions": 1024,
+    "selected_beta": 0.0,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": true,
+    "nonzero_residual_fraction": 0.0,
+    "effective_beta_quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "method": "diff_robust_fusion",
+    "split": "valid",
+    "functions": 256,
+    "selected_beta": 0.0,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": true,
+    "nonzero_residual_fraction": 0.0,
+    "effective_beta_quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "method": "repair_region_robust_fusion",
+    "split": "train",
+    "functions": 1024,
+    "selected_beta": 0.0,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": true,
+    "nonzero_residual_fraction": 0.0,
+    "effective_beta_quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "method": "repair_region_robust_fusion",
+    "split": "valid",
+    "functions": 256,
+    "selected_beta": 0.0,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": true,
+    "nonzero_residual_fraction": 0.0,
+    "effective_beta_quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "method": "neighbour_region_robust_fusion",
+    "split": "train",
+    "functions": 1024,
+    "selected_beta": 0.0,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": true,
+    "nonzero_residual_fraction": 0.0,
+    "effective_beta_quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "method": "neighbour_region_robust_fusion",
+    "split": "valid",
+    "functions": 256,
+    "selected_beta": 0.0,
+    "no_above_gate_fraction": 0.0,
+    "local_branch_disabled_by_valid": true,
+    "nonzero_residual_fraction": 0.0,
+    "effective_beta_quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "test_used": false,
+  "device": "cuda:0",
+  "entry": "python -m vulnmechanism.cli infer",
+  "checks": [
+    {
+      "method": "repair_region_hard_weight",
+      "sample_key": "primevul_paired:valid:5",
+      "source_only_input": true,
+      "probability": 0.4690805673599243,
+      "batch_prediction": 0.4690805673599243,
+      "absolute_difference": 0.0,
+      "prediction": 0
+    },
+    {
+      "method": "repair_region_robust_fusion",
+      "sample_key": "primevul_paired:valid:5",
+      "source_only_input": true,
+      "probability": 0.5234314799308777,
+      "batch_prediction": 0.5234314799308777,
+      "absolute_difference": 0.0,
+      "prediction": 1
+    }
+  ]
+}

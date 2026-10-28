@@ -1,0 +1,14 @@
+{
+  "lines": 86,
+  "counts": {
+    "related:total": 55,
+    "related:-1": 40,
+    "unknown:total": 10,
+    "unknown:-1": 10,
+    "related:1": 13,
+    "unrelated:total": 21,
+    "unrelated:-1": 21,
+    "related:0": 2
+  },
+  "scope": "same Train development reviews from prior audit, not an independent validation or vulnerability-location gold standard"
+}

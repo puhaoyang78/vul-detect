@@ -1,0 +1,97 @@
+{
+  "detector_reference": "global mean + Linear",
+  "checks": [
+    {
+      "method": "losver",
+      "steps": 512,
+      "same_train_members": true,
+      "same_valid_members": true,
+      "same_detector_parameter_count": true,
+      "head_shape": [
+        1,
+        768
+      ],
+      "cpu_sampling_rng_matches_global": true,
+      "cuda_dropout_rng_matches_global": true,
+      "python_rng_matches_global": true,
+      "numpy_rng_matches_global": true
+    },
+    {
+      "method": "diff_hard_weight",
+      "steps": 512,
+      "same_train_members": true,
+      "same_valid_members": true,
+      "same_detector_parameter_count": true,
+      "head_shape": [
+        1,
+        768
+      ],
+      "cpu_sampling_rng_matches_global": true,
+      "cuda_dropout_rng_matches_global": true,
+      "python_rng_matches_global": true,
+      "numpy_rng_matches_global": true
+    },
+    {
+      "method": "repair_region_hard_weight",
+      "steps": 512,
+      "same_train_members": true,
+      "same_valid_members": true,
+      "same_detector_parameter_count": true,
+      "head_shape": [
+        1,
+        768
+      ],
+      "cpu_sampling_rng_matches_global": true,
+      "cuda_dropout_rng_matches_global": true,
+      "python_rng_matches_global": true,
+      "numpy_rng_matches_global": true
+    },
+    {
+      "method": "diff_robust_fusion",
+      "steps": 512,
+      "same_train_members": true,
+      "same_valid_members": true,
+      "same_detector_parameter_count": true,
+      "head_shape": [
+        1,
+        768
+      ],
+      "cpu_sampling_rng_matches_global": true,
+      "cuda_dropout_rng_matches_global": true,
+      "python_rng_matches_global": true,
+      "numpy_rng_matches_global": true
+    },
+    {
+      "method": "repair_region_robust_fusion",
+      "steps": 512,
+      "same_train_members": true,
+      "same_valid_members": true,
+      "same_detector_parameter_count": true,
+      "head_shape": [
+        1,
+        768
+      ],
+      "cpu_sampling_rng_matches_global": true,
+      "cuda_dropout_rng_matches_global": true,
+      "python_rng_matches_global": true,
+      "numpy_rng_matches_global": true
+    },
+    {
+      "method": "neighbour_region_robust_fusion",
+      "steps": 512,
+      "same_train_members": true,
+      "same_valid_members": true,
+      "same_detector_parameter_count": true,
+      "head_shape": [
+        1,
+        768
+      ],
+      "cpu_sampling_rng_matches_global": true,
+      "cuda_dropout_rng_matches_global": true,
+      "python_rng_matches_global": true,
+      "numpy_rng_matches_global": true
+    }
+  ],
+  "archived_unmatched_runs": "sampler_mismatch/reason.json",
+  "test_used": false
+}

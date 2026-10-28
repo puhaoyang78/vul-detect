@@ -1,0 +1,87 @@
+pair_key,sample_key,line,judgment,source,note,new_label,new_weight,new_level
+primevul_paired:train:111,primevul_paired:train:223,14,related,"    src_x = av_clip(src_x, -16, s->width); // FIXME unneeded for emu?",边缘坐标、指针及像素读取有关；emu的返回/初始化属于更宽行为上下文。,-1,0.0,unknown
+primevul_paired:train:111,primevul_paired:train:223,17,related,"    src_y = av_clip(src_y, -16, s->height);",边缘坐标、指针及像素读取有关；emu的返回/初始化属于更宽行为上下文。,-1,0.0,unknown
+primevul_paired:train:111,primevul_paired:train:223,20,related,     src += src_y * s->linesize + src_x;,边缘坐标、指针及像素读取有关；emu的返回/初始化属于更宽行为上下文。,-1,0.0,unknown
+primevul_paired:train:111,primevul_paired:train:223,34,related,"     pix_op[dxy](dest, src, s->linesize, 8);",边缘坐标、指针及像素读取有关；emu的返回/初始化属于更宽行为上下文。,-1,0.0,unknown
+primevul_paired:train:111,primevul_paired:train:223,8,unknown,    int emu = 0;,边缘坐标、指针及像素读取有关；emu的返回/初始化属于更宽行为上下文。,-1,0.0,unknown
+primevul_paired:train:111,primevul_paired:train:223,35,unknown,     return emu;,边缘坐标、指针及像素读取有关；emu的返回/初始化属于更宽行为上下文。,-1,0.0,unknown
+primevul_paired:train:641,primevul_paired:train:1283,4,related, 	unsigned int buffer_size;,,-1,0.0,unknown
+primevul_paired:train:641,primevul_paired:train:1283,7,related, 	buffer_size = params->buffer.fragment_size * params->buffer.fragments;,,1,0.6,bound_relation
+primevul_paired:train:641,primevul_paired:train:1283,14,related,"		buffer = kmalloc(buffer_size, GFP_KERNEL);",,-1,0.0,unknown
+primevul_paired:train:797,primevul_paired:train:1595,122,related,    length=ReadBlobMSBLong(image);,跨分支的最近chunk释放和另一alpha_image写入不属于当前JDAT分支；color_image错误路径保留不确定。,-1,0.0,unknown
+primevul_paired:train:797,primevul_paired:train:1595,313,related,"    if (memcmp(type,mng_JDAT,4) == 0)",跨分支的最近chunk释放和另一alpha_image写入不属于当前JDAT分支；color_image错误路径保留不确定。,1,0.6,control_relation
+primevul_paired:train:797,primevul_paired:train:1595,322,related,         if (length != 0),跨分支的最近chunk释放和另一alpha_image写入不属于当前JDAT分支；color_image错误路径保留不确定。,1,0.6,control_relation
+primevul_paired:train:797,primevul_paired:train:1595,201,unrelated,          chunk=(unsigned char *) RelinquishMagickMemory(chunk);,跨分支的最近chunk释放和另一alpha_image写入不属于当前JDAT分支；color_image错误路径保留不确定。,-1,0.0,unknown
+primevul_paired:train:797,primevul_paired:train:1595,345,unrelated,"            (void) WriteBlob(alpha_image,length,chunk);",跨分支的最近chunk释放和另一alpha_image写入不属于当前JDAT分支；color_image错误路径保留不确定。,-1,0.0,unknown
+primevul_paired:train:797,primevul_paired:train:1595,280,unknown,                color_image=DestroyImage(color_image);,跨分支的最近chunk释放和另一alpha_image写入不属于当前JDAT分支；color_image错误路径保留不确定。,-1,0.0,unknown
+primevul_paired:train:1123,primevul_paired:train:2247,10,related,     current_element = object->child;,,-1,0.0,unknown
+primevul_paired:train:1123,primevul_paired:train:2247,11,related,     if (case_sensitive),,1,0.6,control_relation
+primevul_paired:train:1123,primevul_paired:train:2247,22,related,            current_element = current_element->next;,,-1,0.0,unknown
+primevul_paired:train:1123,primevul_paired:train:2247,26,related,     return current_element;,,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,60,unrelated,      image=DestroyImageList(image);,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,338,unrelated,"      offset+=ReadBlob(image,GetStringInfoLength(profile),",共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,339,unrelated,        GetStringInfoDatum(profile));,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,353,unrelated,     int,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,354,unrelated,      c;,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,9,unknown,  CINInfo,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,10,unknown,    cin;,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,351,unknown,   for ( ; offset < (MagickOffsetType) cin.file.image_offset; offset++),共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,356,unknown,    c=ReadBlobByte(image);,共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1190,primevul_paired:train:2381,357,unknown,    if (c == EOF),共享image对象使不同字段、profile读取及错误路径混在一起；未证明cin/偏移读取的相关性。,-1,0.0,unknown
+primevul_paired:train:1595,primevul_paired:train:3191,8,related,   base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);,scoped_blocking_call在新增条件编译范围内；无条件return true不在其内，setxattr关键调用未命中。,-1,0.0,unknown
+primevul_paired:train:1595,primevul_paired:train:3191,15,unrelated,   return true;,scoped_blocking_call在新增条件编译范围内；无条件return true不在其内，setxattr关键调用未命中。,-1,0.0,unknown
+primevul_paired:train:1651,primevul_paired:train:3303,12,related,     unsigned sectionLength = U16_AT(data + 1) & 0xfff;,,-1,0.0,unknown
+primevul_paired:train:1651,primevul_paired:train:3303,15,related,     sectionLength -= mSkipBytes;,,1,0.6,bound_relation
+primevul_paired:train:1651,primevul_paired:train:3303,18,related, for(unsigned i = 0; i < sectionLength + 4 /* crc */; i++) {,,-1,0.0,unknown
+primevul_paired:train:1653,primevul_paired:train:3307,12,related,        namelen = node->namelen;,,-1,0.0,unknown
+primevul_paired:train:1653,primevul_paired:train:3307,20,related,     ssize_t pathlen = 0;,,-1,0.0,unknown
+primevul_paired:train:1653,primevul_paired:train:3307,21,related,     if (node->parent && node->graft_path == NULL) {,,1,0.6,control_relation
+primevul_paired:train:1653,primevul_paired:train:3307,23,related,         if (pathlen < 0) {,,-1,0.0,unknown
+primevul_paired:train:1684,primevul_paired:train:3369,4,related, codec_t *ps_codec = (codec_t *)(ps_codec_obj->pv_codec_handle);,,-1,0.0,unknown
+primevul_paired:train:1684,primevul_paired:train:3369,212,related, while(MIN_START_CODE_LEN < ps_codec->i4_bytes_remaining),,1,0.6,control_relation
+primevul_paired:train:1684,primevul_paired:train:3369,291,related,         if(IHEVCD_IGNORE_SLICE == ret),,1,0.6,control_relation
+primevul_paired:train:1693,primevul_paired:train:3387,53,related,     ps_cur_slice = ps_dec->ps_cur_slice;,,-1,0.0,unknown
+primevul_paired:train:1728,primevul_paired:train:3457,2,related," ssize_t utf8Length = utf16_to_utf8_length(utf16.data(), utf16.length());",,-1,0.0,unknown
+primevul_paired:train:1728,primevul_paired:train:3457,8,related,     std::string utf8;,,-1,0.0,unknown
+primevul_paired:train:1728,primevul_paired:train:3457,9,related,     utf8.resize(utf8Length);,,-1,0.0,unknown
+primevul_paired:train:1883,primevul_paired:train:3767,4,related,  switch (type.value) {,,1,0.6,control_relation
+primevul_paired:train:2194,primevul_paired:train:4389,25,related,	if (is_destroy) {,,1,0.6,control_relation
+primevul_paired:train:2194,primevul_paired:train:4389,28,related,		if (state->bs) {,,1,0.6,control_relation
+primevul_paired:train:2197,primevul_paired:train:4395,47,related,"  pwp_image=AcquireImage(image_info,exception);",,-1,0.0,unknown
+primevul_paired:train:2426,primevul_paired:train:4853,23,unrelated,    Tensor* output = nullptr;,只通过通用context参数连接到输出分配，没有找到bias非零与后续运算之间的直接关系。,-1,0.0,unknown
+primevul_paired:train:2426,primevul_paired:train:4853,24,unrelated,"    OP_REQUIRES_OK(context,",只通过通用context参数连接到输出分配，没有找到bias非零与后续运算之间的直接关系。,-1,0.0,unknown
+primevul_paired:train:2426,primevul_paired:train:4853,25,unrelated,"                   context->allocate_output(0, input.shape(), &output));",只通过通用context参数连接到输出分配，没有找到bias非零与后续运算之间的直接关系。,-1,0.0,unknown
+primevul_paired:train:2459,primevul_paired:train:4919,30,related,    if (ncolors < 0) {,,1,0.6,control_relation
+primevul_paired:train:2459,primevul_paired:train:4919,31,related,        ncolors = 256;,,-1,0.0,unknown
+primevul_paired:train:2459,primevul_paired:train:4919,34,related,        if (ncolors > SIXEL_PALETTE_MAX) {,,1,0.6,control_relation
+primevul_paired:train:2459,primevul_paired:train:4919,35,related,            ncolors = 256;,,-1,0.0,unknown
+primevul_paired:train:2459,primevul_paired:train:4919,42,related,    datasize = (size_t)(ncolors * 3);,,-1,0.0,unknown
+primevul_paired:train:2459,primevul_paired:train:4919,72,related,    status = SIXEL_OK;,,-1,0.0,unknown
+primevul_paired:train:2459,primevul_paired:train:4919,75,related,    return status;,,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,22,related,    const char *libs[] =,整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,23,related,    {,整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,0,0.2,structural_background
+primevul_paired:train:2505,primevul_paired:train:5011,32,related,      0,整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,33,related,    };,整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,0,0.2,structural_background
+primevul_paired:train:2505,primevul_paired:train:5011,35,related,    for( int i = 0; libs[i]; ++i ),整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,24,unrelated,"      ""libXrdSeckrb5.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,25,unrelated,"      ""libXrdSecgsi.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,26,unrelated,"      ""libXrdSecgsiAuthzVO.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,27,unrelated,"      ""libXrdSecgsiGMAPDN.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,29,unrelated,"      ""libXrdSecpwd.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,30,unrelated,"      ""libXrdSecsss.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2505,primevul_paired:train:5011,31,unrelated,"      ""libXrdSecunix.so"",",整块数组声明混入其他插件名；仅删除LDAP条目并不使所有其他插件条目成为修复区域。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,28,related,  unsigned char,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,29,related,    *group4;,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,130,related,  write_info=CloneImageInfo(image_info);,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,133,related,"  group4_image=CloneImage(image,0,0,MagickTrue,exception);",多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,134,related,  if (group4_image == (Image *) NULL),多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,136,related,      (void) CloseBlob(image);,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,139,related,"  group4=(unsigned char *) ImageToBlob(write_info,group4_image,&length,",多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,140,related,    exception);,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,142,related,  if (group4 == (unsigned char *) NULL),多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,144,related,      (void) CloseBlob(image);,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,20,unrelated,"    density,",多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,22,unrelated,"    orient_x,",多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,23,unrelated,    orient_y;,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,19,unknown,  size_t,多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown
+primevul_paired:train:2548,primevul_paired:train:5097,21,unknown,"    length,",多变量声明整块扩展带入density/orient；length及类型行单独不能确定。,-1,0.0,unknown

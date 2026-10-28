@@ -133,6 +133,43 @@ class ResumeTests(unittest.TestCase):
                             [dict(r, lines_predicted=[1],
                                   line_numbers=paired_encoding(r["func"], Tokens(), mode)["line_numbers"])
                              for r in rows])
+                for supervision in ("diff", "repair_region", "neighbour_region"):
+                    weak = []
+                    predicted = []
+                    scores = []
+                    for row in rows:
+                        count = len(row["func"].splitlines())
+                        weak.append(
+                            dict(
+                                row,
+                                region_labels=[float(i == 1) for i in range(count)],
+                                region_weights=[
+                                    0.2 if i != 1 else 1.0 for i in range(count)
+                                ],
+                            )
+                        )
+                        ns = paired_encoding(row["func"], Tokens(), mode)[
+                            "line_numbers"
+                        ]
+                        predicted.append(
+                            dict(row, line_numbers=ns, lines_predicted=[1])
+                        )
+                        scores.append(
+                            dict(
+                                sample_key=row["sample_key"],
+                                line_numbers=ns,
+                                line_scores=[0.8 if i == 1 else 0.2 for i in ns],
+                            )
+                        )
+                    write_jsonl(
+                        root / output / "supervision" / supervision / f"{split}.jsonl",
+                        weak,
+                    )
+                    location = (
+                        root / output / "primevul_paired" / (supervision + "_localizer")
+                    )
+                    write_jsonl(location / f"{split}.predicted.jsonl", predicted)
+                    write_jsonl(location / f"{split}.line_scores.jsonl", scores)
 
     def test_all_losver_variants_resume_random_sampler_dropout_and_scheduler(self):
         def factory(path, variant, *, window_micro_batch=8, gradient_checkpointing=False):
@@ -142,7 +179,11 @@ class ResumeTests(unittest.TestCase):
             return model, Tokens()
 
         for mode in ("512", "l1"):
-            for method in training.LOSVER_METHODS:
+            for method in (
+                training.LOSVER_METHODS
+                if mode == "512"
+                else ("unixcoder", "losver_localizer", "losver", "losver_oracle")
+            ):
                 with self.subTest(mode=mode, method=method), tempfile.TemporaryDirectory() as tmp, patch.object(
                     core, "losver_model", side_effect=factory
                 ):
@@ -161,14 +202,66 @@ class ResumeTests(unittest.TestCase):
                     with (run / "best.training.jsonl").open("a") as f:
                         f.write('{"unfinished":')
                     training.train_losver(root / "data", root / "resumed", "fixture", method, resume=True, **options)
-                    names = ["best-f1.pt"] if method == "losver_localizer" else ["best-p_c.pt"]
+                    names = (
+                        ["best-f1.pt"]
+                        if training.LOSVER_VARIANTS[method] == "localizer"
+                        else ["best-p_c.pt"]
+                    )
                     self.compare_runs(root / "control/primevul_paired" / method, run, names)
-                    if method == "losver_localizer":
-                        for split in ("train", "valid", "test"):
+                    if training.LOSVER_VARIANTS[method] == "localizer":
+                        for split in (
+                            ("train", "valid", "test")
+                            if method == "losver_localizer"
+                            else ("train", "valid")
+                        ):
                             self.assertEqual(
-                                (root / "control/primevul_paired/losver_localizer" / f"{split}.predicted.jsonl").read_bytes(),
+                                (
+                                    root
+                                    / "control/primevul_paired"
+                                    / method
+                                    / f"{split}.predicted.jsonl"
+                                ).read_bytes(),
                                 (run / f"{split}.predicted.jsonl").read_bytes(),
                             )
+
+    def test_beta_validation_grid_keeps_hard_weight_sampling_rng(self):
+        def factory(path, variant, **kwargs):
+            return paired_model(variant == "localizer"), Tokens()
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            core, "losver_model", side_effect=factory
+        ):
+            root = Path(tmp)
+            self.paired_fixture(root, "512")
+            config = dict(
+                training.LOSVER_CONFIG,
+                batch_size=4,
+                eval_batch_size=2,
+                epochs=dict(baseline=2, localizer=2, predicted=2, oracle=2),
+            )
+            for output, method in (
+                ("control", "diff_hard_weight"),
+                ("resumed", "diff_robust_fusion"),
+            ):
+                training.train_losver(
+                    root / "data",
+                    root / output,
+                    "fixture",
+                    method,
+                    config=config,
+                    device="cpu",
+                    save_every=100,
+                )
+            a = torch.load(
+                root / "control/primevul_paired/diff_hard_weight/last.pt",
+                weights_only=False,
+            )
+            b = torch.load(
+                root / "resumed/primevul_paired/diff_robust_fusion/last.pt",
+                weights_only=False,
+            )
+            self.assert_state_equal(a["rng"], b["rng"])
+            self.assertEqual(a["loop"]["global_step"], b["loop"]["global_step"])
 
     def test_atomic_save_preserves_previous_state_and_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
