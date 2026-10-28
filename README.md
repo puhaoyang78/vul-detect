@@ -100,4 +100,15 @@ python -m vulnmechanism.cli report --dataset primevul_paired --output-dir result
 
 上述指标及历史权重原样保留，属于旧映射、旧分类头和旧选模协议。当前实现拒绝将旧 checkpoint 或缺少物理行号的预测文件用于修正后的实验；没有保留旧模型实现或自动兼容分支。
 
-修正版512的四组训练及检测器Valid/Test评价已完成，完整结果见 [512正式结果](results/losver_512/primevul_paired/report.md)。Test P-C：UniXcoder **14.54%**、预测修改行LOSVER **14.01%**、真实修改行Oracle **29.96%**；预测修改行LOSVER未超过Baseline。结果目录保存配置、逐Epoch日志、选模记录、指标及逐样本预测，权重保留在本地。L1仍在训练，尚无正式Test结论。
+修正版512和L1的四组训练及检测器Valid/Test评价均已完成，完整结果见 [512正式结果](results/losver_512/primevul_paired/report.md)与[L1正式结果](results/losver_l1/primevul_paired/report.md)。下表使用相同的564对Test，各模型仅按自身Valid P-C选模，固定概率>0.5。
+
+| 输入 | 模型 | Test P-C | Accuracy | F1 | AUC |
+|---|---|---:|---:|---:|---:|
+| 512 | UniXcoder Baseline | 14.54% | 55.59% | 58.15% | 0.5729 |
+| L1 | UniXcoder Baseline | 15.96% | 54.43% | 50.00% | 0.5627 |
+| 512 | LOSVER：预测修改行 | 14.01% | 54.43% | 52.67% | 0.5679 |
+| L1 | LOSVER：预测修改行 | 14.01% | 54.79% | 58.13% | 0.5701 |
+| 512 | Oracle：真实修改行 | 29.96% | 63.12% | 66.07% | 0.7028 |
+| L1 | Oracle：真实修改行 | 42.02% | 69.15% | 72.12% | 0.7423 |
+
+L1消除了函数截断并提高Oracle的P-C，但预测修改行LOSVER的Test P-C未超过L1 Baseline，且与512 LOSVER相同，不能认定全覆盖带来稳定的实际检测收益。L1定位器选中第8轮，Valid修改行正类F1为21.96%；512为28.05%，两者可见行范围不同。结果目录保存配置、逐Epoch日志、选模记录、指标及逐样本预测，权重和含原始源码的定位缓存保留在本地。
