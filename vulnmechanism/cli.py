@@ -31,6 +31,11 @@ def build_parser():
         "--diff-neighbour", action="store_true",
         help="supplement empty-side Diff labels with visible edit-adjacent lines",
     )
+    supervision.add_argument(
+        "--oof-predictions", action="store_true",
+        help="check and merge the two completed Pilot localizers' held-out predictions",
+    )
+    p.add_argument("--reference-dir", type=Path)
     p.add_argument(
         "--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine"
     )
@@ -68,6 +73,12 @@ def build_parser():
             p.add_argument("--function-micro-batch", type=int)
             p.add_argument("--line-auxiliary", choices=("diff", "random"))
             p.add_argument("--line-auxiliary-weight", type=float)
+            p.add_argument("--oof-fold", type=int, choices=(0, 1),
+                           help="held-out Train pair fold; train the original localizer on the other fold")
+            p.add_argument("--localizer-dir", type=Path,
+                           help="completed localizer directory for Valid, inference and default Train predictions")
+            p.add_argument("--train-localizer-dir", type=Path,
+                           help="override only the detector's Train prediction directory")
             p.add_argument("--localizer-dropout", type=float)
             p.add_argument("--localizer-weight-decay", type=float)
             p.add_argument(
@@ -150,7 +161,10 @@ def main():
     if args.command == "prepare":
         from .data import prepare, prepare_paired, prepare_repair_regions, prepare_diff_neighbour
 
-        if args.diff_neighbour:
+        if args.oof_predictions:
+            from .data import prepare_oof_predictions
+            prepare_oof_predictions(args.raw_root, args.output_dir, args.reference_dir)
+        elif args.diff_neighbour:
             prepare_diff_neighbour(args.raw_root, args.output_dir, args.model)
         elif args.repair_regions:
             prepare_repair_regions(args.raw_root, args.output_dir)
@@ -201,6 +215,9 @@ def main():
                     localizer_rdrop=args.localizer_rdrop,
                     line_auxiliary=args.line_auxiliary,
                     line_auxiliary_weight=args.line_auxiliary_weight,
+                    oof_fold=args.oof_fold,
+                    localizer_dir=args.localizer_dir,
+                    train_localizer_dir=args.train_localizer_dir,
                 )
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions

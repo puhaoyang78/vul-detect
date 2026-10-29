@@ -155,3 +155,16 @@ __pycache__/
 !/results/line_auxiliary_512/*/primevul_paired/unixcoder/
 !/results/line_auxiliary_512/*/primevul_paired/unixcoder/*.json
 !/results/line_auxiliary_512/*/primevul_paired/unixcoder/*.jsonl
+!/results/losver_oof_512/
+!/results/losver_oof_512/*.json
+!/results/losver_oof_512/*.csv
+!/results/losver_oof_512/*.md
+!/results/losver_oof_512/*.log
+!/results/losver_oof_512/*/
+!/results/losver_oof_512/*/primevul_paired/
+!/results/losver_oof_512/*/primevul_paired/*/
+!/results/losver_oof_512/*/primevul_paired/*/*.json
+!/results/losver_oof_512/*/primevul_paired/*/best.training.jsonl
+!/results/losver_oof_512/*/primevul_paired/*/*.line_scores.jsonl
+!/results/losver_oof_512/*/primevul_paired/*/valid*.predictions.jsonl
+!/results/losver_oof_512/oof_predictions/*.line_scores.jsonl

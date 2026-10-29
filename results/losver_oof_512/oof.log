@@ -1,0 +1,41 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.8111847043037415, "learning_rate": 3.90625e-07}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.7971827387809753, "learning_rate": 1.7881944444444445e-05}
+
+losver · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.74411 │ 128   │ 0.5000    │ 0.0000 │ 0.5208 │ 0.6649 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 1, "train_loss": 0.7441065823659301, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 127, "p_b": 1, "p_r": 0}, "p_c": 0.0, "p_v": 0.9921875, "p_b": 0.0078125, "p_r": 0.0, "accuracy": 0.5, "precision": 0.5, "recall": 0.9921875, "f1": 0.6649214659685864, "mcc": 0.0, "auc": 0.520782470703125, "auprc": 0.5245589651853056, "pair_ranking_accuracy": 0.4921875, "pair_ranking_ties": 30, "patched_fpr": 0.9921875, "loss": 0.7082638759166002}, "fusion_validation": null, "training_seconds": 50.08336014300585, "epoch_seconds": 51.96422261418775}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.684934675693512, "learning_rate": 1.3541666666666668e-05}
+
+losver · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70659 │ 128   │ 0.5000    │ 0.0123 │ 0.5320 │ 0.6423 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 2, "train_loss": 0.7065851557999849, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 4, "p_v": 110, "p_b": 11, "p_r": 3}, "p_c": 0.03125, "p_v": 0.859375, "p_b": 0.0859375, "p_r": 0.0234375, "accuracy": 0.50390625, "precision": 0.5022026431718062, "recall": 0.890625, "f1": 0.6422535211267606, "mcc": 0.012325032480354957, "auc": 0.532012939453125, "auprc": 0.523137209354342, "pair_ranking_accuracy": 0.515625, "pair_ranking_ties": 30, "patched_fpr": 0.8828125, "loss": 0.6963134743273258}, "fusion_validation": null, "training_seconds": 32.91062613390386, "epoch_seconds": 35.06511363107711}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.827727198600769, "learning_rate": 9.201388888888889e-06}
+
+losver · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70008 │ 128   │ 0.5000    │ 0.0000 │ 0.5353 │ 0.0857 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 3, "train_loss": 0.700078226160258, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 1, "p_v": 5, "p_b": 121, "p_r": 1}, "p_c": 0.0078125, "p_v": 0.0390625, "p_b": 0.9453125, "p_r": 0.0078125, "accuracy": 0.5, "precision": 0.5, "recall": 0.046875, "f1": 0.08571428571428572, "mcc": 0.0, "auc": 0.535308837890625, "auprc": 0.5255501567068739, "pair_ranking_accuracy": 0.484375, "pair_ranking_ties": 30, "patched_fpr": 0.046875, "loss": 0.6977861281484365}, "fusion_validation": null, "training_seconds": 32.78966579865664, "epoch_seconds": 34.929990879725665}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.7036666870117188, "learning_rate": 4.861111111111111e-06}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.6487092971801758, "learning_rate": 5.208333333333334e-07}
+
+losver · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69214 │ 128   │ 0.5000    │ 0.0262 │ 0.5348 │ 0.3719 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "losver", "epoch": 4, "train_loss": 0.6921436316333711, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"samples": 256, "pairs": 128, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 9, "p_v": 28, "p_b": 85, "p_r": 6}, "p_c": 0.0703125, "p_v": 0.21875, "p_b": 0.6640625, "p_r": 0.046875, "accuracy": 0.51171875, "precision": 0.5211267605633803, "recall": 0.2890625, "f1": 0.37185929648241206, "mcc": 0.026176176850105693, "auc": 0.534759521484375, "auprc": 0.5211435864219771, "pair_ranking_accuracy": 0.4921875, "pair_ranking_ties": 30, "patched_fpr": 0.265625, "loss": 0.693552078679204}, "fusion_validation": null, "training_seconds": 32.41116010490805, "epoch_seconds": 34.57173018157482}

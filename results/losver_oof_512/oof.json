@@ -1,0 +1,34 @@
+{
+  "reference_dir": "results/repair_region_512/pilot",
+  "full_localizer_dir": "results/repair_region_512/pilot/primevul_paired/losver_localizer",
+  "seed": 123456,
+  "train_functions": 1024,
+  "valid_functions": 256,
+  "full_optimizer_steps": 512,
+  "folds": [
+    {
+      "fold": 0,
+      "directory": "results/losver_oof_512/fold_0/primevul_paired/losver_localizer",
+      "epochs": 8,
+      "functions": 512,
+      "held_out_functions": 512,
+      "optimizer_steps": 512,
+      "selected_epoch": 4,
+      "selected_optimizer_steps": 256
+    },
+    {
+      "fold": 1,
+      "directory": "results/losver_oof_512/fold_1/primevul_paired/losver_localizer",
+      "epochs": 8,
+      "functions": 512,
+      "held_out_functions": 512,
+      "optimizer_steps": 512,
+      "selected_epoch": 3,
+      "selected_optimizer_steps": 192
+    }
+  ],
+  "test_used": false,
+  "cross_fold_pair_overlap": 0,
+  "cross_fold_exact_source_groups": 0,
+  "cross_fold_exact_source_functions": 0
+}

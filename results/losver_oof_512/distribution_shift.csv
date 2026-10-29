@@ -1,0 +1,7 @@
+condition,reference,quantity,wasserstein_distance
+in_sample,full_valid,selected_line_fraction,0.05286533460013896
+in_sample,full_valid,true_diff_mass,0.08333275176627111
+in_sample,full_valid,selected_background_mass,0.21292997867925095
+oof,full_valid,selected_line_fraction,0.04914936639356927
+oof,full_valid,true_diff_mass,0.0713740854052242
+oof,full_valid,selected_background_mass,0.02165873912910983

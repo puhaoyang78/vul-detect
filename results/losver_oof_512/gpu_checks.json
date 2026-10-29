@@ -1,0 +1,14 @@
+{
+  "full_localizer_cached_prediction_max_absolute_error": 0.0,
+  "functions": 8,
+  "source_only": true,
+  "device": "NVIDIA GeForce RTX 4090",
+  "torch": "2.9.1+cu128",
+  "localizer_checkpoint": "results/repair_region_512/pilot/primevul_paired/losver_localizer/best-f1.pt",
+  "test_used": false,
+  "in_sample_single_function_prediction_max_absolute_error": 1.1920928955078125e-07,
+  "in_sample_normal_inference_localizer": "results/repair_region_512/pilot/primevul_paired/losver_localizer/best-f1.pt",
+  "oof_single_function_prediction_max_absolute_error": 8.940696716308594e-08,
+  "oof_normal_inference_localizer": "results/repair_region_512/pilot/primevul_paired/losver_localizer/best-f1.pt",
+  "source_only_valid_functions_per_detector": 4
+}

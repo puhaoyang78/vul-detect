@@ -164,6 +164,9 @@ def train(
     localizer_rdrop=None,
     line_auxiliary=None,
     line_auxiliary_weight=None,
+    oof_fold=None,
+    localizer_dir=None,
+    train_localizer_dir=None,
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
@@ -196,6 +199,9 @@ def train(
             localizer_rdrop=localizer_rdrop,
             line_auxiliary=line_auxiliary,
             line_auxiliary_weight=line_auxiliary_weight,
+            oof_fold=oof_fold,
+            localizer_dir=localizer_dir,
+            train_localizer_dir=train_localizer_dir,
         )
     if (
         paired_input != "512"
@@ -204,6 +210,7 @@ def train(
         or paired_epochs is not None
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
         or line_auxiliary is not None or line_auxiliary_weight is not None
+        or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
     ):
         raise ValueError("paired training options apply only to paired methods")
     if dataset not in DATASETS:
@@ -953,7 +960,7 @@ def shuffle_line_labels(features, seed):
         feature["line_labels"] = shuffled
 
 
-def paired_rows(data_dir, output_dir, variant, split, *, method=None):
+def paired_rows(data_dir, output_dir, variant, split, *, method=None, localizer_dir=None):
     """A predicted detector never opens the test oracle annotations."""
     root = Path(data_dir) / "primevul_paired"
     name = (
@@ -967,7 +974,7 @@ def paired_rows(data_dir, output_dir, variant, split, *, method=None):
             if method and method not in ("losver",)
             else "losver_localizer"
         )
-        root = Path(output_dir) / "primevul_paired" / localizer
+        root = Path(localizer_dir) if localizer_dir is not None else Path(output_dir) / "primevul_paired" / localizer
         name = f"{split}.predicted.jsonl"
     rows = read_jsonl(root / name)
     if variant == "predicted" and method and method != "losver":
@@ -1008,6 +1015,9 @@ def train_losver(
     localizer_rdrop=None,
     line_auxiliary=None,
     line_auxiliary_weight=None,
+    oof_fold=None,
+    localizer_dir=None,
+    train_localizer_dir=None,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -1016,6 +1026,15 @@ def train_losver(
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    if oof_fold is not None and (
+        oof_fold not in (0, 1) or method != "losver_localizer" or input_mode != "512"
+        or train_limit is None or valid_limit is None
+    ):
+        raise ValueError("OOF folds require original 512 localizer and explicit Pilot limits")
+    if (localizer_dir is not None or train_localizer_dir is not None) and method != "losver":
+        raise ValueError("external line predictions apply only to the original LOSVER detector")
+    if train_localizer_dir is not None and localizer_dir is None:
+        raise ValueError("Train prediction override requires the shared Valid/inference localizer directory")
     joint = line_auxiliary is not None
     if joint or line_auxiliary_weight is not None:
         if (method != "unixcoder" or input_mode != "512"
@@ -1108,8 +1127,10 @@ def train_losver(
             Path(output_dir) / "supervision" / supervision / "valid.jsonl"
         )
     else:
-        train_rows = paired_rows(data_dir, output_dir, variant, "train", method=method)
-        valid_rows = paired_rows(data_dir, output_dir, variant, "valid", method=method)
+        train_rows = paired_rows(data_dir, output_dir, variant, "train", method=method,
+                                 localizer_dir=train_localizer_dir or localizer_dir)
+        valid_rows = paired_rows(data_dir, output_dir, variant, "valid", method=method,
+                                 localizer_dir=localizer_dir)
 
     def subset(rows, limit):
         if limit is None:
@@ -1122,6 +1143,13 @@ def train_losver(
 
     train_rows = subset(train_rows, train_limit)
     valid_rows = subset(valid_rows, valid_limit)
+    held_out = None
+    if oof_fold is not None:
+        from .data import paired_folds
+
+        folds = paired_folds(train_rows, settings["seed"])
+        held_out = [r for r in train_rows if folds[r["pair_key"]] == oof_fold]
+        train_rows = [r for r in train_rows if folds[r["pair_key"]] != oof_fold]
     device = resolve_device(device)
     seed_everything(settings["seed"])
     np.random.seed(settings["seed"])
@@ -1296,6 +1324,17 @@ def train_losver(
             encoder_dropout=dict(hidden=model.config.hidden_dropout_prob,
                                  attention=model.config.attention_probs_dropout_prob),
         )
+    if oof_fold is not None:
+        metadata["oof"] = dict(
+            held_out_fold=oof_fold, seed=settings["seed"], folds=2,
+            prediction_members=[r["sample_key"] for r in held_out],
+            prediction_split="train", selection="source Valid only; never held-out Train",
+        )
+    if localizer_dir is not None:
+        metadata["localizer_predictions"] = dict(
+            train=str(train_localizer_dir or localizer_dir), valid=str(localizer_dir),
+        )
+        metadata["localizer_path"] = str(Path(localizer_dir) / "best-f1.pt")
     if joint:
         metadata["line_auxiliary"] = dict(
             supervision=line_auxiliary, weight=line_auxiliary_weight,
@@ -1560,7 +1599,8 @@ def train_losver(
                 sample_keys=(
                     {
                         r["sample_key"]
-                        for r in (valid_rows if split == "valid" else train_rows)
+                        for r in (valid_rows if split == "valid" else
+                                  (held_out if held_out is not None else train_rows))
                     }
                     if weak or neighbour or pilot
                     else None

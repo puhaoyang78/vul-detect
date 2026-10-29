@@ -202,3 +202,32 @@ python -m vulnmechanism.cli report --data-dir data --dataset primevul_paired --o
 推理仍直接使用 `infer --checkpoint .../best-p_c.pt --source-file ...`，不读取Diff，不调用辅助行头。五组Valid分类指标、真实Diff行AP、逐样本预测和两项训练损失汇总到[实验目录](results/line_auxiliary_512/)，权重保留本地。
 
 五组已完成全量训练。真实Diff λ=.1/.3的Valid P-C为14.41%/14.23%，低于Baseline的15.48%；修改行AP为.1991/.2294。λ=.1虽提高F1和漏洞Recall，但修复侧误报率从36.83%升至51.78%，MCC和AUC下降。随机λ=.1/.3的P-C为16.01%/13.35%。本轮没有一致的Clean分类收益，未继续叠加模块或读取Test；完整结果见[报告](results/line_auxiliary_512/report.md)。
+
+### 两折 OOF 定位预测（512 Pilot）
+
+复用 `results/repair_region_512/pilot/primevul_paired/losver_localizer/` 的完整 Pilot 定位器及其 Train 1024/Valid 256 函数。Train 按 `pair_key` 用独立 Seed123456 分为两折，修复前后始终同折。`--oof-fold` 指定**不参与该模型训练、只用于预测**的 Train 折；每个定位器只训练另512条函数，跑8轮/512步，匹配完整 Pilot 定位器4轮/512步的优化预算。折模型仍仅按同一源Valid的原始Diff F1选模。数据减半、重复次数及验证次数增加的影响须与OOF作用区分。
+
+在 tmux 中分别运行两折，完成后合并；均支持原断点续训：
+
+```bash
+for fold in 0 1; do
+  python -m vulnmechanism.cli train --data-dir data --dataset primevul_paired --methods losver_localizer --output-dir "results/losver_oof_512/fold_$fold" --device "cuda:$fold" --paired-input 512 --train-limit 1024 --valid-limit 256 --paired-epochs 8 --oof-fold "$fold" --resume --save-every 1000
+done
+python -m vulnmechanism.cli prepare --oof-predictions --raw-root data --output-dir results/losver_oof_512 --reference-dir results/repair_region_512/pilot
+# 训练内预测对照
+python -m vulnmechanism.cli train --data-dir data --dataset primevul_paired --methods losver --output-dir results/losver_oof_512/in_sample --device cuda:0 --paired-input 512 --train-limit 1024 --valid-limit 256 --paired-epochs 4 --localizer-dir results/repair_region_512/pilot/primevul_paired/losver_localizer --resume --save-every 1000
+# 只替换Train行预测；Valid和正常单函数推理仍使用同一个完整定位器
+python -m vulnmechanism.cli train --data-dir data --dataset primevul_paired --methods losver --output-dir results/losver_oof_512/oof --device cuda:1 --paired-input 512 --train-limit 1024 --valid-limit 256 --paired-epochs 4 --localizer-dir results/repair_region_512/pilot/primevul_paired/losver_localizer --train-localizer-dir results/losver_oof_512/oof_predictions --resume --save-every 1000
+python -m vulnmechanism.cli report --data-dir data --dataset primevul_paired --output-dir results/losver_oof_512
+```
+
+两个Detector均从同一预训练UniXcoder和Seed123456初始化，维持原Focal、5/1 Softmax、Linear分类头、样本顺序、4轮/512步和固定阈值>.5，仅按Valid P-C选模。本轮不读取Test、不改标签、不增加正则或新模块。成员、折预测来源、原始Diff下行级质量、Token聚合质量及成对分类变化保存到[实验目录](results/losver_oof_512/)，含源码缓存和checkpoint保留本地。
+
+四组Pilot训练已完成，两个Detector均选择第4轮：
+
+| Detector Train行预测 | Valid P-C | AUC | MCC | F1 | 修复侧FPR |
+|---|---:|---:|---:|---:|---:|
+| 训练内 | 13/128（10.16%） | .5424 | .0825 | .3704 | 20.31% |
+| OOF | 9/128（7.03%） | .5348 | .0262 | .3719 | 26.56% |
+
+训练内/OOF/Valid定位AP为.8881/.1288/.1506。OOF的部分预测及聚合分布更接近Valid，但分类P-C、AUC、MCC下降，不能据此认定泛化改善。折模型独立训练样本减半，并在第256/192步选中checkpoint；完整定位器选在第512步。在共同Valid上的折模型F1/AP并未一致明显变差，仍不能单独隔离数据规模与训练内暴露的影响。未继续全量实验；见[完整报告](results/losver_oof_512/report.md)。

@@ -885,6 +885,8 @@ def localize_paired(
     rows = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.jsonl")
     if sample_keys is not None:
         rows = [r for r in rows if r["sample_key"] in sample_keys]
+        if {r["sample_key"] for r in rows} != set(sample_keys):
+            raise ValueError("requested localization members are missing from the source split")
     # No training/Valid/Test counterpart or modification label enters this loader.
     probabilities, line_numbers = [], []
     for batch in training_bar(
@@ -960,7 +962,8 @@ def evaluate_paired(
                     / f"{split}.jsonl"
                 )
             else:
-                rows = paired_rows(data_dir, output_dir, variant, split, method=method)
+                rows = paired_rows(data_dir, output_dir, variant, split, method=method,
+                                   localizer_dir=cp.get("localizer_predictions", {}).get(split))
             if split == "valid":
                 selected = set(
                     cp.get("validation_members", [r["sample_key"] for r in rows])
@@ -2027,7 +2030,253 @@ def line_auxiliary_report(output_dir, data_dir):
     return result
 
 
+def oof_report(output_dir, data_dir):
+    """Pilot-only localization shift and aligned detector comparison; no Test reads."""
+    import numpy as np
+    from collections import Counter
+    from scipy.stats import wasserstein_distance
+    from sklearn.metrics import average_precision_score, precision_score, recall_score, f1_score
+    from .data import paired_encoding
+    from .metrics import paired_metrics
+
+    root = Path(output_dir)
+    setup = json.loads((root / "oof.json").read_text())
+    full = Path(setup["full_localizer_dir"])
+    reference = json.loads((full / "training.metrics.json").read_text())
+    tokenizer = core.RobertaTokenizerFast.from_pretrained(reference["model_path"], trim_offsets=False)
+    annotations = {s: {r["sample_key"]:r for r in read_jsonl(
+        Path(data_dir) / "primevul_paired" / f"{s}.lines.jsonl")} for s in ("train", "valid")}
+    encodings = {}
+    conditions = (("in_sample", "train", full),
+                  ("oof", "train", root/"oof_predictions"), ("full_valid", "valid", full),
+                  ("fold_0_valid", "valid", root/"fold_0/primevul_paired/losver_localizer"),
+                  ("fold_1_valid", "valid", root/"fold_1/primevul_paired/losver_localizer"))
+    details, line_table = [], []
+    for name, split, path in conditions:
+        predictions = read_jsonl(path/f"{split}.line_scores.jsonl")
+        keys = reference["training_members" if split == "train" else "validation_members"]
+        if [r["sample_key"] for r in predictions] != keys:
+            raise ValueError("OOF report line prediction members/order differ")
+        side_lines = {side: ([], []) for side in ("all", "vulnerable", "patched")}
+        for pred in predictions:
+            key = pred["sample_key"]
+            row = annotations[split][key]
+            if key not in encodings:
+                encodings[key] = paired_encoding(row["func"], tokenizer, "512")
+            f = encodings[key]
+            ns, ps = pred["line_numbers"], pred["line_scores"]
+            if (ns != f["line_numbers"] or len(ns) != len(ps)
+                    or any(not np.isfinite(p) or not 0 <= p <= 1 for p in ps)):
+                raise ValueError("OOF line scores do not match actual token/physical-line mapping")
+            gt = set(row["lines_ground_truth"])
+            ys = [int(n in gt) for n in ns]
+            for side in ("all", "vulnerable" if row["target"] else "patched"):
+                side_lines[side][0].extend(ys)
+                side_lines[side][1].extend(ps)
+            code = np.asarray(f["code_mask"], dtype=bool)
+            true_tokens, selected_tokens = np.zeros(len(code), dtype=bool), np.zeros(len(code), dtype=bool)
+            for n, p, indices in zip(ns, ps, f["line_token_indices"]):
+                if n in gt:
+                    true_tokens[indices] = True
+                if p > .5:
+                    selected_tokens[indices] = True
+            true_tokens &= code
+            selected_tokens &= code
+            weights = np.exp(4 * selected_tokens.astype(float)) * code
+            weights /= weights.sum() if weights.sum() else 1
+            details.append(dict(condition=name, split=split, sample_key=key, pair_key=row["pair_key"],
+                target=row["target"], visible_lines=len(ns), true_lines=sum(ys),
+                selected_lines=sum(p > .5 for p in ps), code_tokens=int(code.sum()),
+                true_tokens=int(true_tokens.sum()), selected_tokens=int(selected_tokens.sum()),
+                selected_true_tokens=int((selected_tokens & true_tokens).sum()),
+                true_diff_mass=float(weights[true_tokens].sum()),
+                background_mass=float(weights[code & ~true_tokens].sum()),
+                selected_background_mass=float(weights[selected_tokens & ~true_tokens].sum()),
+                selected_mass=float(weights[selected_tokens].sum()),
+                equal_weight_diff_mass=float(true_tokens.sum()/code.sum()) if code.any() else 0.))
+        for side, (ys, ps) in side_lines.items():
+            selected = np.asarray(ps) > .5
+            fs = [r for r in details if r["condition"] == name
+                  and (side == "all" or r["target"] == int(side == "vulnerable"))]
+            nt = sum(r["true_tokens"] for r in fs)
+            npred = sum(r["selected_tokens"] for r in fs)
+            hits = sum(r["selected_true_tokens"] for r in fs)
+            with_diff = [r for r in fs if r["true_tokens"]]
+            line_table.append(dict(condition=name, split=split, side=side, functions=len(fs),
+                lines=len(ys), positive_lines=sum(ys), predicted_positive_lines=int(selected.sum()),
+                precision=float(precision_score(ys, selected, zero_division=0)),
+                recall=float(recall_score(ys, selected, zero_division=0)),
+                f1=float(f1_score(ys, selected, zero_division=0)),
+                auprc=float(average_precision_score(ys, ps)) if sum(ys) else None,
+                selected_line_fraction=float(selected.mean()),
+                no_prediction_functions=sum(r["selected_lines"] == 0 for r in fs),
+                token_precision=hits/npred if npred else 0., token_recall=hits/nt if nt else 0.,
+                true_tokens=nt, selected_tokens=npred, selected_true_tokens=hits,
+                mean_true_diff_mass=float(np.mean([r["true_diff_mass"] for r in fs])),
+                mean_background_mass=float(np.mean([r["background_mass"] for r in fs])),
+                mean_selected_background_mass=float(np.mean([r["selected_background_mass"] for r in fs])),
+                mean_selected_mass=float(np.mean([r["selected_mass"] for r in fs])),
+                mean_equal_weight_diff_mass=float(np.mean([r["equal_weight_diff_mass"] for r in fs])),
+                visible_diff_functions=len(with_diff),
+                mean_diff_mass_when_visible=float(np.mean([r["true_diff_mass"] for r in with_diff])) if with_diff else None))
+    distances = []
+    for name in ("in_sample", "oof"):
+        for field in ("selected_line_fraction", "true_diff_mass", "selected_background_mass"):
+            def values(condition):
+                return [r["selected_lines"]/max(1,r["visible_lines"]) if field == "selected_line_fraction"
+                        else r[field] for r in details if r["condition"] == condition]
+            distances.append(dict(condition=name, reference="full_valid", quantity=field,
+                                  wasserstein_distance=float(wasserstein_distance(values(name), values("full_valid")))))
+    runs = {name: root/name/"primevul_paired/losver" for name in ("in_sample", "oof")}
+    configs = {name: json.loads((run/"training.metrics.json").read_text()) for name,run in runs.items()}
+    matched = ("training_members", "validation_members", "training_config", "epochs", "optimizer_steps",
+               "input_mode", "input_coverage", "model_path", "parameters", "selection", "selection_ties",
+               "function_micro_batch", "window_micro_batch", "localizer_path")
+    if any(configs["in_sample"][k] != configs["oof"][k] for k in matched):
+        raise ValueError("detector comparison differs beyond Train line prediction provenance")
+    for name, config in configs.items():
+        if (config["training_members"] != reference["training_members"]
+                or config["validation_members"] != reference["validation_members"]
+                or config["epochs"] != 4 or config["optimizer_steps"] != 512
+                or config["localizer_predictions"]["valid"] != str(full)
+                or config["localizer_predictions"]["train"] != str(full if name == "in_sample" else root/"oof_predictions")):
+            raise ValueError("detectors must use exact original Pilot members, budget and common Valid localizer")
+    comparisons, predictions, costs = [], {}, []
+    for name, run in runs.items():
+        ps = read_jsonl(run/"valid.best-p_c.predictions.jsonl")
+        keys = reference["validation_members"]
+        if [p["sample_key"] for p in ps] != keys:
+            raise ValueError("detector Valid prediction alignment differs")
+        rows = [annotations["valid"][k] for k in keys]
+        if any(p["target"] != r["target"] or p["pair_key"] != r["pair_key"] for p,r in zip(ps,rows)):
+            raise ValueError("detector prediction labels/pairs differ from source")
+        scores = [p["probability"] for p in ps]
+        value = paired_metrics(rows, scores)
+        selected = json.loads((run/"best-p_c.json").read_text())
+        if any(abs(value[k]-selected["validation"][k]) > 1e-12 for k in ("p_c", "auc", "mcc", "f1", "patched_fpr")):
+            raise ValueError("selected detector metrics and saved predictions differ")
+        comparisons.append(dict(method=name, epoch=selected["epoch"], **value))
+        predictions[name] = scores
+    for name, run in dict(runs, **{f"fold_{i}":root/f"fold_{i}/primevul_paired/losver_localizer" for i in (0,1)}).items():
+        events = [e for e in read_jsonl(run/"best.training.jsonl") if e.get("event") == "epoch"]
+        costs.append(dict(run=name, epochs=len(events),
+            training_seconds=sum(e["training_seconds"] for e in events),
+            training_and_validation_seconds=sum(e["epoch_seconds"] for e in events)))
+    transitions, changes = Counter(), []
+    def category(v, p):
+        return "p_c" if v > .5 and p <= .5 else "p_v" if v > .5 else "p_r" if p > .5 else "p_b"
+    for i in range(0, len(rows), 2):
+        a, b = predictions["in_sample"][i:i+2], predictions["oof"][i:i+2]
+        before, after = category(*a), category(*b)
+        transitions[before,after] += 1
+        changes.append(dict(pair_key=rows[i]["pair_key"], vulnerable_key=rows[i]["sample_key"],
+            patched_key=rows[i+1]["sample_key"], in_sample_state=before, oof_state=after,
+            in_sample_vulnerable=a[0], in_sample_patched=a[1],
+            oof_vulnerable=b[0], oof_patched=b[1], delta_vulnerable=b[0]-a[0], delta_patched=b[1]-a[1]))
+    probability_changes = dict(
+        mean_vulnerable_delta=float(np.mean([r["delta_vulnerable"] for r in changes])),
+        mean_patched_delta=float(np.mean([r["delta_patched"] for r in changes])))
+    for side in ("vulnerable", "patched"):
+        for before, after in ((0,1), (1,0)):
+            probability_changes[f"{side}_{before}_to_{after}"] = sum(
+                (r[f"in_sample_{side}"] > .5) == before and (r[f"oof_{side}"] > .5) == after for r in changes)
+    rngs = [torch.load(run/"last.pt", map_location="cpu", mmap=True, weights_only=False)["rng"] for run in runs.values()]
+    same_sampler_rng = torch.equal(rngs[0]["torch"], rngs[1]["torch"])
+    if not same_sampler_rng:
+        raise ValueError("detector CPU sampler/loader RNG advancement differs")
+    historical = read_jsonl(Path(setup["reference_dir"])/"primevul_paired/losver/valid.best-p_c.predictions.jsonl")
+    if [r["sample_key"] for r in historical] != reference["validation_members"]:
+        raise ValueError("historical detector comparison members differ")
+    historical_error = max(abs(r["probability"]-p) for r,p in zip(historical,predictions["in_sample"]))
+    checks = dict(matched_fields=list(matched), sampler_rng_equal=same_sampler_rng,
+        same_ordered_members=True, shared_valid_predictions=True, test_used=False,
+        pair_overlap=setup["cross_fold_pair_overlap"],
+        baseline_historical_max_probability_error=historical_error,
+        initialization="same pretrained factory and seed; no localizer weights initialize either detector")
+    comparison = dict(setup=setup, localization=line_table, detectors=comparisons,
+        transitions=[dict(before=a,after=b,pairs=n) for (a,b),n in sorted(transitions.items())],
+        costs=costs, checks=checks, distribution_distances=distances, probability_changes=probability_changes)
+    write_json(root/"comparison.json", comparison)
+    for filename, values in (("localization.csv", line_table), ("token_mass.samples.csv", details),
+                             ("detectors.csv", comparisons), ("valid.pair_changes.csv", changes),
+                             ("distribution_shift.csv", distances), ("costs.csv", costs)):
+        with (root/filename).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(values[0]))
+            writer.writeheader()
+            writer.writerows(values)
+    lines = ["# LOSVER two-fold OOF 512 Pilot", "",
+        "Train 1,024 functions / 512 pairs; Valid 256 / 128. No Test was read. "
+        "Member sampling seed 42, fold/training seed 123456. Original Diff, Focal and binary 5/1 Softmax unchanged. "
+        "Both detectors use the same completed full Pilot localizer on Valid and for single-function inference.", "",
+        "## Localization", "",
+        "| Prediction source | Lines | Precision | Recall | F1 | AP | Selected lines | No prediction functions |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    all_lines = [r for r in line_table if r["side"] == "all"]
+    for r in all_lines:
+        lines.append(f"| {r['condition']} | {r['lines']} | {r['precision']:.4f} | {r['recall']:.4f} | {r['f1']:.4f} | {r['auprc']:.4f} | {r['selected_line_fraction']:.2%} | {r['no_prediction_functions']}/{r['functions']} |")
+    lines += ["", "Line metrics use original visible Diff labels. Vulnerable/patched breakdowns are in localization.csv.", "",
+        "| Prediction source | Selected-token precision | Selected-token recall | Diff mass | Background mass | Selected background mass |",
+        "|---|---:|---:|---:|---:|---:|"]
+    for r in all_lines:
+        lines.append(f"| {r['condition']} | {r['token_precision']:.4f} | {r['token_recall']:.4f} | {r['mean_true_diff_mass']:.4f} | {r['mean_background_mass']:.4f} | {r['mean_selected_background_mass']:.4f} |")
+    lines += ["", "Token P/R are micro counts over valid code tokens; mass is averaged per function using the actual exp(5)/exp(1) weights. "
+        "Functions with no visible Diff have Diff mass zero; visible-positive-only means and equal-pooling reference are also saved. "
+        "Diff agreement is a supervision diagnostic, not proof of vulnerability-semantic correctness.", "", "## Detector Valid", "",
+        "| Train predictions | Epoch | P-C | AUC | MCC | F1 | Vulnerable recall | Patched FPR |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in comparisons:
+        lines.append(f"| {r['method']} | {r['epoch']} | {r['pair_counts']['p_c']}/{r['pairs']} ({r['p_c']:.2%}) | {r['auc']:.4f} | {r['mcc']:.4f} | {r['f1']:.4f} | {r['recall']:.4f} | {r['patched_fpr']:.4f} |")
+    baseline, oof = comparisons
+    lines += ["", f"OOF minus in-sample: P-C {oof['p_c']-baseline['p_c']:+.4f}, AUC {oof['auc']-baseline['auc']:+.4f}, MCC {oof['mcc']-baseline['mcc']:+.4f}, F1 {oof['f1']-baseline['f1']:+.4f}.", "",
+        f"Strict-pair gains: {sum(n for (a,b),n in transitions.items() if a != 'p_c' and b == 'p_c')}; losses: {sum(n for (a,b),n in transitions.items() if a == 'p_c' and b != 'p_c')}. "
+        "All 128 pairs and their probability changes are saved in valid.pair_changes.csv; the full state transition table is in comparison.json.", "",
+        f"Mean probability change: vulnerable {probability_changes['mean_vulnerable_delta']:+.4f}, patched {probability_changes['mean_patched_delta']:+.4f}.", "",
+        "| In-sample → OOF | P-C | P-V | P-B | P-R |", "|---|---:|---:|---:|---:|"]
+    for before in ("p_c", "p_v", "p_b", "p_r"):
+        lines.append(f"| {before} | " + " | ".join(str(transitions[before,after]) for after in ("p_c", "p_v", "p_b", "p_r")) + " |")
+    ins, out, valid = all_lines[:3]
+    lines += ["", "## Observations", "",
+        f"OOF vs in-sample Train AP: {out['auprc']:.4f} vs {ins['auprc']:.4f}; the common Valid AP is {valid['auprc']:.4f}. "
+        f"Absolute pooled selected-line-rate gap to Valid is {abs(ins['selected_line_fraction']-valid['selected_line_fraction']):.4f} in-sample and {abs(out['selected_line_fraction']-valid['selected_line_fraction']):.4f} OOF. "
+        "Ranking/label agreement and selection rate therefore need separate interpretation.", "",
+        "Function-level Wasserstein distances to the same full-Valid predictions:", "",
+        "| Quantity | In-sample → Valid | OOF → Valid |", "|---|---:|---:|"]
+    for field in ("selected_line_fraction", "true_diff_mass", "selected_background_mass"):
+        ds = [r["wasserstein_distance"] for r in distances if r["quantity"] == field]
+        lines.append(f"| {field} | {ds[0]:.4f} | {ds[1]:.4f} |")
+    lines += ["", "The distributions are closer on these three per-function statistics, especially selected-background mass; "
+        "the pooled selected-line-rate gap still grows. Reduced distribution distances do not establish correct localization or classification benefit.", "",
+        ("OOF does not improve either selected Valid P-C or AUC in this Pilot. "
+         "Any higher recall/F1 must be interpreted alongside patched-side FPR; there is no classification benefit supporting a full run."
+         if oof["p_c"] <= baseline["p_c"] and oof["auc"] <= baseline["auc"] else
+         "The selected Valid changes are shown above; a single-seed Pilot does not establish stable classification benefit."), "",
+        "## Budget and interpretation", "",
+        "The full localizer trained 4 epochs on 1,024 functions; each fold localizer trains 8 epochs on 512 functions. "
+        "Each runs 512 optimizer steps with the same LR/warmup schedule, but the fold models see half as many unique functions twice as often. "
+        "Fold checkpoint selection uses only the same 256-function source Valid, never held-out Train. "
+        "Eight versus four validation opportunities and potentially different selected steps remain comparison limitations.", ""]
+    for f in setup["folds"]:
+        lines.append(f"- Fold {f['fold']}: selected epoch {f['selected_epoch']}, step {f['selected_optimizer_steps']}/{f['optimizer_steps']}; held-out functions {f['held_out_functions']}.")
+    lines += ["", f"Cross-fold pair overlap: 0. Exact-source overlap across different pairs: {setup['cross_fold_exact_source_groups']} groups / {setup['cross_fold_exact_source_functions']} functions; no member was removed or resampled.", "",
+        "Fold-specific Valid rows above diagnose half-data model quality only; neither detector uses those Valid predictions. "
+        "Both use full_valid. Function-level distribution distances are in distribution_shift.csv; "
+        "closer values on one statistic do not establish that every aspect of the shift improved.", "",
+        "On this common Valid, the fold models are not consistently worse than the full model in F1/AP. "
+        "The much lower OOF Train quality than in-sample quality alone cannot distinguish missing in-sample exposure from half-data training effects.", "",
+        "Training/validation loop times are in costs.csv. Jobs ran concurrently on two RTX 4090 GPUs; "
+        "these times exclude initial loading/feature extraction and final checkpoint/export I/O, and are not a controlled speed comparison. "
+        "Real GPU cache and source-only single-function checks are saved in gpu_checks.json.", "",
+        "OOF changes both training membership exposure and the effective quality of localization. "
+        "A weaker OOF localizer cannot isolate the effect of removing in-sample exposure alone. "
+        "This is one fixed-seed Pilot, not evidence of stable population-level improvement. "
+        "No extra method, full-data training or Test evaluation was launched.", ""]
+    (root/"report.md").write_text("\n".join(lines), encoding="utf-8")
+    return comparison
+
+
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False):
+    if (Path(output_dir) / "oof.json").exists():
+        return oof_report(output_dir, data_dir)
     if (Path(output_dir) / "baseline/primevul_paired/unixcoder/config.json").exists():
         return line_auxiliary_report(output_dir, data_dir)
     if localizer_regularization:

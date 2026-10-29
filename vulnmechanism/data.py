@@ -14,6 +14,101 @@ DATASETS = ("primevul", "megavul")
 SPLITS = ("train", "valid", "test")
 
 
+def paired_folds(rows, seed=123456):
+    """Two deterministic pair-level folds without advancing the training RNG."""
+    groups = {}
+    samples = set()
+    for row in rows:
+        if row["sample_key"] in samples:
+            raise ValueError("duplicate OOF sample_key")
+        samples.add(row["sample_key"])
+        groups.setdefault(row["pair_key"], []).append(row["target"])
+    if len(groups) < 2 or any(sorted(labels) != [0, 1] for labels in groups.values()):
+        raise ValueError("OOF requires complete vulnerable/patched pairs")
+    keys = sorted(groups)
+    random.Random(seed).shuffle(keys)
+    return {key: i % 2 for i, key in enumerate(keys)}
+
+
+def prepare_oof_predictions(data_dir, output_dir, reference_dir):
+    """Merge held-out predictions, checking provenance before detector training."""
+    import math
+
+    if reference_dir is None:
+        raise ValueError("OOF preparation requires --reference-dir")
+    root = Path(output_dir)
+    reference = Path(reference_dir) / "primevul_paired/losver_localizer"
+    full = json.loads((reference / "training.metrics.json").read_text())
+    if (full["input_mode"] != "512" or full["supervision"] != "original_diff"
+            or full["train_samples"] != 1024 or full["valid_samples"] != 256):
+        raise ValueError("OOF reference must be the completed original 512 Pilot localizer")
+    source = read_jsonl(Path(data_dir) / "primevul_paired/train.jsonl")
+    keys = set(full["training_members"])
+    rows = [r for r in source if r["sample_key"] in keys]
+    if [r["sample_key"] for r in rows] != full["training_members"]:
+        raise ValueError("full localizer and source Train members/order differ")
+    folds = paired_folds(rows, full["training_config"]["seed"])
+    expected_settings = {k: v for k, v in full["training_config"].items() if k != "epochs"}
+    expected_scores = {r["sample_key"]: r for r in read_jsonl(reference / "train.line_scores.jsonl")}
+    merged, provenance = {}, []
+    for fold in (0, 1):
+        run = root / f"fold_{fold}/primevul_paired/losver_localizer"
+        config = json.loads((run / "training.metrics.json").read_text())
+        held = [r["sample_key"] for r in rows if folds[r["pair_key"]] == fold]
+        trained = [r["sample_key"] for r in rows if folds[r["pair_key"]] != fold]
+        if (config["training_members"] != trained
+                or config["oof"]["prediction_members"] != held
+                or config["oof"]["held_out_fold"] != fold
+                or config["validation_members"] != full["validation_members"]
+                or config["optimizer_steps"] != full["optimizer_steps"]
+                or config["supervision"] != "original_diff"
+                or config["input_mode"] != "512"
+                or config["model_path"] != full["model_path"]
+                or config["parameters"] != full["parameters"]
+                or config["selection"] != full["selection"]
+                or {k:v for k,v in config["training_config"].items() if k != "epochs"} != expected_settings):
+            raise ValueError(f"fold {fold}: unmatched data, optimization budget or OOF provenance")
+        scores = read_jsonl(run / "train.line_scores.jsonl")
+        if [r["sample_key"] for r in scores] != held:
+            raise ValueError(f"fold {fold}: exported predictions are not exactly held-out members")
+        for score in scores:
+            key = score["sample_key"]
+            ns, ps = score["line_numbers"], score["line_scores"]
+            if (key in merged or ns != expected_scores[key]["line_numbers"]
+                    or len(ns) != len(ps) or len(ns) != len(set(ns))
+                    or any(not math.isfinite(p) or not 0 <= p <= 1 for p in ps)):
+                raise ValueError("OOF score coverage, physical lines or probabilities differ")
+            merged[key] = score
+        provenance.append(dict(fold=fold, directory=str(run), epochs=config["epochs"],
+            functions=len(trained), held_out_functions=len(held),
+            optimizer_steps=config["optimizer_steps"], selected_epoch=config["selected_epochs"]["f1"],
+            selected_optimizer_steps=config["selected_epochs"]["f1"] * math.ceil(len(trained) / config["training_config"]["batch_size"])))
+    if set(merged) != keys:
+        raise ValueError("merged OOF predictions do not cover every Pilot Train member once")
+    destination = root / "oof_predictions"
+    write_jsonl(destination / "train.line_scores.jsonl", [merged[r["sample_key"]] for r in rows])
+    write_jsonl(destination / "train.predicted.jsonl", [dict(r,
+        line_numbers=merged[r["sample_key"]]["line_numbers"],
+        lines_predicted=[n for n,p in zip(merged[r["sample_key"]]["line_numbers"],
+                                        merged[r["sample_key"]]["line_scores"]) if p > .5]) for r in rows])
+    by_code = {}
+    for r in rows:
+        by_code.setdefault(r["func"], set()).add(folds[r["pair_key"]])
+    overlap = {code for code, fs in by_code.items() if len(fs) > 1}
+    config = dict(reference_dir=str(reference_dir), full_localizer_dir=str(reference),
+        seed=full["training_config"]["seed"], train_functions=len(rows), valid_functions=full["valid_samples"],
+        full_optimizer_steps=full["optimizer_steps"], folds=provenance, test_used=False,
+        cross_fold_pair_overlap=0, cross_fold_exact_source_groups=len(overlap),
+        cross_fold_exact_source_functions=sum(r["func"] in overlap for r in rows))
+    write_json(root / "oof.json", config)
+    with (root / "folds.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["sample_key", "pair_key", "target", "held_out_fold"])
+        writer.writeheader()
+        writer.writerows(dict(sample_key=r["sample_key"], pair_key=r["pair_key"], target=r["target"],
+                              held_out_fold=folds[r["pair_key"]]) for r in rows)
+    return config
+
+
 def json_array(path):
     """Read the upstream MegaVul array without loading its graph/diff metadata."""
     decoder = json.JSONDecoder()
