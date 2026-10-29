@@ -182,3 +182,23 @@ python -m vulnmechanism.cli report --dataset primevul_paired --data-dir data --o
 ```
 
 所选checkpoint的Train/Valid AUPRC、F1、Precision、Recall及预测阳性比例，按全部/漏洞侧/修复侧汇总到[结果目录](results/localizer_regularization_512/)。AUPRC用于诊断排序能力，不替换原F1选模规则；较小的Train–Valid差距应结合Valid绝对性能解读。
+
+### 修改行辅助的联合训练（完整512设置）
+
+仍使用 `unixcoder`：全部有效代码Token等权均值＋原函数Linear分类头。配置 `--line-auxiliary` 后，在同一次encoder输出上对每行代码Token取均值，额外用一个Linear预测原始Diff；目标为函数BCE＋λ×Focal。Focal沿用α=.8/γ=1.5/pos_weight=5，先在函数内按有效可见行平均，再按batch平均。空Diff保留全零行标签和函数BCE。新增头不改变编码器、函数头初始化或采样RNG；默认入口不启用辅助头。
+
+五组均使用完整Train8708/Valid1124函数、512-token原输入、16轮/17424步、Seed123456和原优化器。随机对照用独立的 `random.Random(123456)`，训练前在每个函数的可见行中固定打乱标签并保持正行数量，两个λ共享同一随机标签。Valid始终使用真实Diff。只按Valid P-C选checkpoint和λ，轮次并列取较早轮，λ并列取较小值；固定概率阈值>.5。本轮不读取Test。λ=0组也保留同容量但不学习的辅助头，其行AP仅作诊断。
+
+在tmux内执行以下正式入口命令，可将不同配置分配到不同GPU和会话；每组目录独立，支持断点续训：
+
+```bash
+for setting in 'baseline diff 0' 'diff_0.1 diff .1' 'diff_0.3 diff .3' 'random_0.1 random .1' 'random_0.3 random .3'; do
+  read -r name supervision weight <<< "$setting"
+  python -m vulnmechanism.cli train --data-dir data --dataset primevul_paired --methods unixcoder --output-dir "results/line_auxiliary_512/$name" --device cuda:0 --paired-input 512 --line-auxiliary "$supervision" --line-auxiliary-weight "$weight" --resume --save-every 1000
+done
+python -m vulnmechanism.cli report --data-dir data --dataset primevul_paired --output-dir results/line_auxiliary_512
+```
+
+推理仍直接使用 `infer --checkpoint .../best-p_c.pt --source-file ...`，不读取Diff，不调用辅助行头。五组Valid分类指标、真实Diff行AP、逐样本预测和两项训练损失汇总到[实验目录](results/line_auxiliary_512/)，权重保留本地。
+
+五组已完成全量训练。真实Diff λ=.1/.3的Valid P-C为14.41%/14.23%，低于Baseline的15.48%；修改行AP为.1991/.2294。λ=.1虽提高F1和漏洞Recall，但修复侧误报率从36.83%升至51.78%，MCC和AUC下降。随机λ=.1/.3的P-C为16.01%/13.35%。本轮没有一致的Clean分类收益，未继续叠加模块或读取Test；完整结果见[报告](results/line_auxiliary_512/report.md)。

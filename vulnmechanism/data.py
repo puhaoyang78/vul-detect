@@ -1091,6 +1091,9 @@ def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512")
                 f["label_weights"] = [0.0] * len(f["labels"])
     else:
         f["labels"] = row["target"]
+        if variant == "baseline" and "lines_ground_truth" in row:
+            gt = set(row["lines_ground_truth"])
+            f["line_labels"] = [int(n in gt) for n in f["line_numbers"]]
     if variant == "oracle":
         selected = set(row["lines_ground_truth"])
     elif variant == "predicted":

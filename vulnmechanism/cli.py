@@ -66,6 +66,8 @@ def build_parser():
             p.add_argument("--paired-input", choices=("512", "l1"), default="512")
             p.add_argument("--window-micro-batch", type=int)
             p.add_argument("--function-micro-batch", type=int)
+            p.add_argument("--line-auxiliary", choices=("diff", "random"))
+            p.add_argument("--line-auxiliary-weight", type=float)
             p.add_argument("--localizer-dropout", type=float)
             p.add_argument("--localizer-weight-decay", type=float)
             p.add_argument(
@@ -197,6 +199,8 @@ def main():
                     localizer_dropout=args.localizer_dropout,
                     localizer_weight_decay=args.localizer_weight_decay,
                     localizer_rdrop=args.localizer_rdrop,
+                    line_auxiliary=args.line_auxiliary,
+                    line_auxiliary_weight=args.line_auxiliary_weight,
                 )
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions

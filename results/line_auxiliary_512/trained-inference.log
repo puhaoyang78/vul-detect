@@ -1,0 +1,24 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{
+  "selected_epoch": 14,
+  "functions": 8,
+  "source_split": "train",
+  "sample_keys": [
+    "primevul_paired:train:1",
+    "primevul_paired:train:2",
+    "primevul_paired:train:3",
+    "primevul_paired:train:4",
+    "primevul_paired:train:5",
+    "primevul_paired:train:6",
+    "primevul_paired:train:7",
+    "primevul_paired:train:8"
+  ],
+  "input_contains_diff": false,
+  "trained_lambda0_original_baseline_probability_max_error": 0.0,
+  "auxiliary_head_inference_calls": 0
+}

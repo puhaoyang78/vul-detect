@@ -162,6 +162,8 @@ def train(
     localizer_dropout=None,
     localizer_weight_decay=None,
     localizer_rdrop=None,
+    line_auxiliary=None,
+    line_auxiliary_weight=None,
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
@@ -192,6 +194,8 @@ def train(
             localizer_dropout=localizer_dropout,
             localizer_weight_decay=localizer_weight_decay,
             localizer_rdrop=localizer_rdrop,
+            line_auxiliary=line_auxiliary,
+            line_auxiliary_weight=line_auxiliary_weight,
         )
     if (
         paired_input != "512"
@@ -199,6 +203,7 @@ def train(
         or function_micro_batch is not None
         or paired_epochs is not None
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
+        or line_auxiliary is not None or line_auxiliary_weight is not None
     ):
         raise ValueError("paired training options apply only to paired methods")
     if dataset not in DATASETS:
@@ -865,6 +870,11 @@ def paired_collate(features):
         if local:
             labels[i, :n] = torch.tensor(f["labels"])
             label_weights[i, :n] = torch.tensor(f.get("label_weights", [1.0] * n))
+    if "line_labels" in features[0]:
+        auxiliary = torch.full((len(features), count), -1.0)
+        for i, f in enumerate(features):
+            auxiliary[i, :len(f["line_numbers"])] = torch.tensor(f["line_labels"])
+        batch["line_labels"] = auxiliary
     return dict(
         batch,
         line_token_mask=membership,
@@ -894,7 +904,8 @@ def paired_loader(
     )
 
 
-def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False):
+def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False,
+                   return_auxiliary=False):
     keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
     keys.extend(
         ["line_token_mask", "context_mask", "line_indices", "line_counts"]
@@ -912,6 +923,12 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         if variant != "localizer":
             raise ValueError("line logits require the localizer")
         args["return_logits"] = True
+    if return_auxiliary:
+        if variant != "baseline" or not with_labels:
+            raise ValueError("line auxiliary loss requires baseline function labels")
+        for key in ("line_token_mask", "line_indices", "line_counts", "line_labels"):
+            args[key] = batch[key].to(device)
+        args["return_auxiliary"] = True
     return model(**args)
 
 
@@ -925,6 +942,15 @@ def paired_rdrop_loss(model, batch, device, coefficient):
     divergence = model.symmetric_bernoulli_kl(a, b, valid)
     focal = (first + second) * 0.5
     return focal + coefficient * divergence, dict(focal=focal, rdrop_kl=divergence)
+
+
+def shuffle_line_labels(features, seed):
+    """Fixed Train-only within-function permutation; never advances global RNG."""
+    rng = random.Random(seed)
+    for feature in features:
+        shuffled = list(feature["line_labels"])
+        rng.shuffle(shuffled)
+        feature["line_labels"] = shuffled
 
 
 def paired_rows(data_dir, output_dir, variant, split, *, method=None):
@@ -980,6 +1006,8 @@ def train_losver(
     localizer_dropout=None,
     localizer_weight_decay=None,
     localizer_rdrop=None,
+    line_auxiliary=None,
+    line_auxiliary_weight=None,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -988,6 +1016,13 @@ def train_losver(
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    joint = line_auxiliary is not None
+    if joint or line_auxiliary_weight is not None:
+        if (method != "unixcoder" or input_mode != "512"
+                or line_auxiliary not in ("diff", "random")
+                or line_auxiliary_weight is None
+                or not math.isfinite(line_auxiliary_weight) or line_auxiliary_weight < 0):
+            raise ValueError("line auxiliary requires unixcoder, 512, diff/random and a nonnegative weight")
     regularized = any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
     if regularized and (method != "losver_localizer" or input_mode != "512"):
         raise ValueError("localizer regularization requires original LOSVER 512 supervision")
@@ -1055,7 +1090,10 @@ def train_losver(
         raise FileExistsError(
             f"{run}: training already started; use --resume with last.pt"
         )
-    if neighbour and variant == "localizer":
+    if joint:
+        train_rows = paired_rows(data_dir, output_dir, "localizer", "train")
+        valid_rows = paired_rows(data_dir, output_dir, "localizer", "valid")
+    elif neighbour and variant == "localizer":
         train_rows = read_jsonl(
             Path(output_dir) / "supervision" / "diff_neighbour" / "train.jsonl"
         )
@@ -1094,6 +1132,7 @@ def train_losver(
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=input_mode == "l1",
         **(dict(dropout_probability=settings["dropout_probability"]) if settings["dropout_probability"] else {}),
+        **(dict(line_auxiliary_weight=line_auxiliary_weight) if joint else {}),
     )
     model.input_mode = input_mode
     model.weak_supervision = weak and variant == "localizer"
@@ -1117,6 +1156,14 @@ def train_losver(
         batch_size=settings["eval_batch_size"],
         input_mode=input_mode,
     )
+    if line_auxiliary == "random":
+        shuffle_line_labels(loader.dataset, settings["seed"])
+    if joint:
+        write_jsonl(run / "train.line_labels.jsonl", [
+            dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"],
+                 labels=f["line_labels"])
+            for r, f in zip(train_rows, loader.dataset)
+        ])
     from .data import paired_statistics
 
     input_coverage = {}
@@ -1249,6 +1296,17 @@ def train_losver(
             encoder_dropout=dict(hidden=model.config.hidden_dropout_prob,
                                  attention=model.config.attention_probs_dropout_prob),
         )
+    if joint:
+        metadata["line_auxiliary"] = dict(
+            supervision=line_auxiliary, weight=line_auxiliary_weight,
+            random_seed=settings["seed"] if line_auxiliary == "random" else None,
+            validation_supervision="original_diff", head="Linear(hidden_size, 1)",
+            loss="mean visible-line Focal within function, then mean over functions",
+            focal=dict(alpha=.8, gamma=1.5, pos_weight=5),
+            inference="original global code-token mean and function linear head only",
+            zero_visible_positive_functions=sum(1 not in f["line_labels"] for f in loader.dataset),
+        )
+        metadata["localizer_attention"] = "none; auxiliary linear head on mean source-token states"
     if pooling == "robust_fusion":
         metadata["validation_rng"] = (
             "beta grid preserves exactly one validation-loader RNG advance"
@@ -1256,7 +1314,7 @@ def train_losver(
     best = (
         {"f1": -1.0}
         if variant == "localizer"
-        else {"accuracy": -1.0, "f1": -1.0, "p_c": -1.0}
+        else ({"p_c": -1.0} if joint else {"accuracy": -1.0, "f1": -1.0, "p_c": -1.0})
     )
     chosen = {}
     global_step = 0
@@ -1270,7 +1328,9 @@ def train_losver(
         training_seconds=0.0,
         epoch_rng=None,
     )
-    if localizer_rdrop is not None:
+    if joint:
+        state["running_components"] = dict(bce=0.0, line_focal=0.0)
+    elif localizer_rdrop is not None:
         state["running_components"] = dict(focal=0.0, rdrop_kl=0.0)
     if continuing:
         state, saved_rng = load_training_state(
@@ -1334,9 +1394,11 @@ def train_losver(
                 for b in group
             ]
             group_loss = 0.0
-            group_components = dict(focal=0.0, rdrop_kl=0.0)
+            group_components = {k: 0.0 for k in components} if components is not None else {}
             for batch, size in zip(group, sizes):
-                if localizer_rdrop is None:
+                if joint:
+                    loss, _, parts = paired_forward(model, batch, variant, device, return_auxiliary=True)
+                elif localizer_rdrop is None:
                     loss, _ = paired_forward(model, batch, variant, device)
                 else:
                     loss, parts = paired_rdrop_loss(model, batch, device, localizer_rdrop)
@@ -1346,8 +1408,8 @@ def train_losver(
                 (loss * coefficient).backward()
                 group_loss += float(loss.detach()) * coefficient
                 if components is not None:
-                    for key, value in parts.items():
-                        group_components[key] += float(value.detach()) * coefficient
+                    for key in components:
+                        group_components[key] += float(parts[key].detach()) * coefficient
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
             )
@@ -1470,7 +1532,7 @@ def train_losver(
             epoch_rng=None,
         )
         if components is not None:
-            state["running_components"] = dict(focal=0.0, rdrop_kl=0.0)
+            state["running_components"] = {k: 0.0 for k in components}
         save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
     required = "f1" if variant == "localizer" else "p_c"
     if required not in chosen:

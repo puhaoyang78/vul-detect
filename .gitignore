@@ -144,3 +144,14 @@ __pycache__/
 !/results/localizer_regularization_512/*/primevul_paired/losver_localizer/best.training.jsonl
 !/results/localizer_regularization_512/*/primevul_paired/losver_localizer/*.line_scores.jsonl
 !/results/localizer_regularization_512/*/primevul_paired/losver_localizer/valid.best-f1.predictions.jsonl
+!/results/line_auxiliary_512/
+!/results/line_auxiliary_512/*.json
+!/results/line_auxiliary_512/*.csv
+!/results/line_auxiliary_512/*.md
+!/results/line_auxiliary_512/*.log
+!/results/line_auxiliary_512/*/
+!/results/line_auxiliary_512/*/*.log
+!/results/line_auxiliary_512/*/primevul_paired/
+!/results/line_auxiliary_512/*/primevul_paired/unixcoder/
+!/results/line_auxiliary_512/*/primevul_paired/unixcoder/*.json
+!/results/line_auxiliary_512/*/primevul_paired/unixcoder/*.jsonl

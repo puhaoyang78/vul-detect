@@ -1,0 +1,76 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{
+  "device": "NVIDIA GeForce RTX 4090",
+  "source_split": "train",
+  "sample_keys": [
+    "primevul_paired:train:1",
+    "primevul_paired:train:2",
+    "primevul_paired:train:3",
+    "primevul_paired:train:4",
+    "primevul_paired:train:5",
+    "primevul_paired:train:6",
+    "primevul_paired:train:7",
+    "primevul_paired:train:8"
+  ],
+  "source_tokens": [
+    111,
+    107,
+    263,
+    263,
+    249,
+    263,
+    8658,
+    8668
+  ],
+  "functions": 8,
+  "visible_lines": [
+    8,
+    8,
+    27,
+    27,
+    26,
+    27,
+    40,
+    40
+  ],
+  "positive_lines": [
+    1,
+    1,
+    1,
+    1,
+    0,
+    1,
+    1,
+    0
+  ],
+  "same_initial_encoder_and_function_head": true,
+  "same_initial_sampler_rng": true,
+  "zero_weight_prediction_max_error": 0.0,
+  "single_encoder_forward": true,
+  "line_only_encoder_gradient_norm": 0.1326400637626648,
+  "finite_total_gradients": true,
+  "function_head_updated": true,
+  "inference_skips_line_head": true,
+  "losses": {
+    "bce": 0.7531251907348633,
+    "line_focal": 0.14152812957763672,
+    "total": 0.7955836057662964
+  },
+  "reload_max_error": 0.0,
+  "single_function_probability_max_error": 0.0,
+  "random_positive_counts_preserved": true,
+  "random_global_rng_unchanged": true,
+  "peak_gpu_mib": 6127.751953125,
+  "seconds": 7.10953671624884
+}

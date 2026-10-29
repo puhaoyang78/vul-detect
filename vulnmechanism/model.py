@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from functools import lru_cache
 import random
+import math
 import torch
 from torch import nn
 from types import SimpleNamespace
@@ -379,7 +380,8 @@ class LOSVERLocalizer(nn.Module):
             nn.Linear(self.hidden_size, 1),
         )
 
-    def focal_loss(self, logits, labels, *, alpha=0.8, gamma=1.5, pos_weight=5):
+    @staticmethod
+    def focal_loss(logits, labels, *, alpha=0.8, gamma=1.5, pos_weight=5):
         pos_weight = torch.tensor(pos_weight, device=logits.device)
 
         # BCEWithLogitsLoss applies sigmoid internally
@@ -514,6 +516,13 @@ class LOSVERDetector(nn.Module):
         self.input_mode = "512"
         self.pooling = "hard_weight"
         self.fusion_beta = 0.25
+        self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
+        if self.line_auxiliary_weight is not None:
+            if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
+                raise ValueError("line auxiliary weight must be finite and nonnegative")
+            # Keep encoder/head initialization AND the original sampler RNG.
+            with torch.random.fork_rng(devices=[]):
+                self.line_classifier = nn.Linear(config.hidden_size, 1)
 
     @staticmethod
     def pool(states, code_mask, token_weights):
@@ -550,8 +559,19 @@ class LOSVERDetector(nn.Module):
         window_owners,
         labels=None,
         region_scores=None,
+        line_token_mask=None,
+        line_indices=None,
+        line_counts=None,
+        line_labels=None,
+        return_auxiliary=False,
     ):
         from torch.utils.checkpoint import checkpoint
+
+        if return_auxiliary and (
+            self.line_auxiliary_weight is None or self.input_mode != "512"
+            or self.pooling != "hard_weight" or line_labels is None or labels is None
+        ):
+            raise ValueError("line auxiliary training requires labeled 512 baseline inputs")
 
         def encode(ids, attention, valid, weights):
             states = self.encoder(ids, attention_mask=attention)[0]
@@ -574,9 +594,10 @@ class LOSVERDetector(nn.Module):
                         )
                     ),
                 )
-            return pooled
+            return (pooled, states) if return_auxiliary else pooled
 
         parts = []
+        token_states = []
         for start in range(0, len(input_ids), self.window_micro_batch):
             end = start + self.window_micro_batch
             args = (
@@ -587,13 +608,17 @@ class LOSVERDetector(nn.Module):
                     start:end
                 ],
             )
-            parts.append(
+            encoded = (
                 checkpoint(encode, *args, use_reentrant=False)
                 if self.gradient_checkpointing
                 and self.training
                 and torch.is_grad_enabled()
                 else encode(*args)
             )
+            if return_auxiliary:
+                token_states.append(encoded[1])
+                encoded = encoded[0]
+            parts.append(encoded)
         windows = torch.cat(parts)
         function_count = int(window_owners.max()) + 1
         if len(windows) == function_count and torch.equal(
@@ -623,6 +648,31 @@ class LOSVERDetector(nn.Module):
             y = labels.float()
             weights = y * self.class_weight + (1 - y)
             loss = F.binary_cross_entropy_with_logits(logits[:, 0], y, weight=weights)
+            if return_auxiliary:
+                states = torch.cat(token_states)
+                membership = line_token_mask.to(states.dtype)
+                valid = line_indices >= 0
+                indices = line_indices[valid]
+                total_lines = int(line_counts.sum())
+                sums = states.new_zeros((total_lines, states.shape[-1])).index_add(
+                    0, indices, torch.bmm(membership, states)[valid]
+                )
+                counts = states.new_zeros(total_lines).index_add(
+                    0, indices, membership.sum(-1)[valid]
+                )
+                if not (counts > 0).all():
+                    raise ValueError("auxiliary line has no source-token membership")
+                z = self.line_classifier(sums / counts[:, None]).squeeze(-1)
+                ns = line_counts.tolist()
+                targets = torch.cat([row[:n] for row, n in zip(line_labels, ns)])
+                if not ((targets == 0) | (targets == 1)).all():
+                    raise ValueError("Diff auxiliary labels must be binary on visible lines")
+                per_line = LOSVERLocalizer.focal_loss(z, targets.float())
+                focal = torch.stack([x.mean() for x in per_line.split(ns)]).mean()
+                return loss + self.line_auxiliary_weight * focal, probability, dict(
+                    bce=loss, line_focal=focal,
+                    line_probabilities=list(z.sigmoid().split(ns)),
+                )
             return loss, probability
         return probability
 
@@ -630,6 +680,7 @@ class LOSVERDetector(nn.Module):
 def losver_model(
     model_path, variant, *, window_micro_batch=8, gradient_checkpointing=False,
     dropout_probability=0.0,
+    line_auxiliary_weight=None,
 ):
     """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
     config = RobertaConfig.from_pretrained(model_path)
@@ -641,6 +692,7 @@ def losver_model(
         dropout_probability=dropout_probability,
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=gradient_checkpointing,
+        line_auxiliary_weight=line_auxiliary_weight,
     )
     encoder = RobertaModel.from_pretrained(
         model_path, config=config, attn_implementation="eager", add_pooling_layer=False

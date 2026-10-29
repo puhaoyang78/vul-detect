@@ -740,11 +740,24 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
     scores = []
     line_y = []
     line_p = []
+    auxiliary_predictions = []
     loss = 0.0
     loss_mass = 0.0
     at = 0
     for batch in training_bar(loader, desc=f"Valid {variant}"):
-        value, prob = paired_forward(model, batch, variant, device)
+        joint = getattr(model, "line_auxiliary_weight", None) is not None and "line_labels" in batch
+        if joint:
+            value, prob, details = paired_forward(model, batch, variant, device, return_auxiliary=True)
+            for labels, numbers, p in zip(batch["line_labels"], batch["line_numbers"], details["line_probabilities"]):
+                valid = numbers >= 0
+                ns, ys, ps = numbers[valid].tolist(), labels[valid].tolist(), p.cpu().tolist()
+                if len(ps) != len(ns):
+                    raise ValueError("auxiliary scores and visible physical lines differ")
+                line_y.extend(ys)
+                line_p.extend(ps)
+                auxiliary_predictions.append(dict(line_numbers=ns, line_scores=ps))
+        else:
+            value, prob = paired_forward(model, batch, variant, device)
         if variant == "localizer" and getattr(model, "weak_supervision", False):
             mass = float((batch["label_weights"] * (batch["labels"] >= 0)).sum())
             loss += float(value) * mass
@@ -814,6 +827,14 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
             )
             for r, p in zip(rows, scores)
         ]
+        if auxiliary_predictions:
+            if len(auxiliary_predictions) != len(predictions):
+                raise ValueError("auxiliary and function prediction members differ")
+            for prediction, auxiliary in zip(predictions, auxiliary_predictions):
+                prediction.update(auxiliary)
+            result["line_ap"] = float(average_precision_score(line_y, line_p)) if sum(line_y) else None
+            result["line_samples"] = len(line_y)
+            result["line_positives"] = int(sum(line_y))
     return result, predictions
 
 
@@ -831,6 +852,8 @@ def load_paired(checkpoint, device):
             if checkpoint.get("training_config", {}).get("dropout_probability", 0.0)
             else {}
         ),
+        **(dict(line_auxiliary_weight=checkpoint["line_auxiliary"]["weight"])
+           if "line_auxiliary" in checkpoint else {}),
     )
     model.input_mode = checkpoint["input_mode"]
     model.weak_supervision = checkpoint.get("weak_supervision", False)
@@ -1881,7 +1904,132 @@ def localizer_regularization_report(output_dir, data_dir, reference_dir):
     return dict(results=table, generalization_gaps=gaps, test_used=False)
 
 
+def line_auxiliary_report(output_dir, data_dir):
+    """Five complete, matched runs; select checkpoints/lambda using Valid P-C only."""
+    from sklearn.metrics import average_precision_score
+    from .metrics import paired_metrics
+
+    root = Path(output_dir)
+    experiments = (("baseline", "diff", 0.), ("diff_0.1", "diff", .1),
+                   ("diff_0.3", "diff", .3), ("random_0.1", "random", .1),
+                   ("random_0.3", "random", .3))
+    paths = {name: root / name / "primevul_paired/unixcoder" for name, _, _ in experiments}
+    configs = {name: json.loads((run / "training.metrics.json").read_text()) for name, run in paths.items()}
+    reference = configs["baseline"]
+    fields = ("training_members", "validation_members", "input_coverage", "training_config",
+              "input_mode", "parameters", "epochs", "optimizer_steps", "model_path",
+              "function_micro_batch", "window_micro_batch", "gradient_accumulation", "selection")
+    annotations = read_jsonl(Path(data_dir) / "primevul_paired/valid.lines.jsonl")
+    if (reference["train_samples"], reference["valid_samples"], reference["epochs"],
+        reference["optimizer_steps"], reference["input_mode"]) != (8708, 1124, 16, 17424, "512"):
+        raise ValueError("line auxiliary report requires the complete official 16-epoch/512 experiment")
+    if [r["sample_key"] for r in annotations] != reference["validation_members"]:
+        raise ValueError("full official Valid members do not match the experiment")
+    labels = {name: read_jsonl(run / "train.line_labels.jsonl") for name, run in paths.items()}
+    if [r["sample_key"] for r in labels["baseline"]] != reference["training_members"]:
+        raise ValueError("Train line labels do not match the training member order")
+    if labels["diff_0.1"] != labels["baseline"] or labels["diff_0.3"] != labels["baseline"]:
+        raise ValueError("real-Diff configurations have different Train labels")
+    if labels["random_0.1"] != labels["random_0.3"]:
+        raise ValueError("random controls must reuse the same precomputed permutations")
+    changed = 0
+    for actual, shuffled in zip(labels["baseline"], labels["random_0.1"]):
+        if (actual["sample_key"] != shuffled["sample_key"] or actual["line_numbers"] != shuffled["line_numbers"]
+                or sum(actual["labels"]) != sum(shuffled["labels"])):
+            raise ValueError("random line control changed members, visible coordinates or positive counts")
+        changed += actual["labels"] != shuffled["labels"]
+    table, epochs, coordinates = [], [], None
+    for name, supervision, weight in experiments:
+        config, run = configs[name], paths[name]
+        if any(config[k] != reference[k] for k in fields) or config["completed_epochs"] != 16:
+            raise ValueError(f"unmatched data, initialization settings or budget: {name}")
+        setting = config["line_auxiliary"]
+        if (setting["supervision"], setting["weight"], setting["validation_supervision"]) != (supervision, weight, "original_diff"):
+            raise ValueError("auxiliary supervision/weight is inconsistent")
+        predictions = read_jsonl(run / "valid.best-p_c.predictions.jsonl")
+        if [(r["sample_key"], r["pair_key"], r["target"]) for r in predictions] != [
+            (r["sample_key"], r["pair_key"], r["target"]) for r in annotations
+        ]:
+            raise ValueError("selected predictions and original Valid annotations are misaligned")
+        ns = [(r["sample_key"], r["line_numbers"]) for r in predictions]
+        if coordinates is not None and ns != coordinates:
+            raise ValueError("visible physical lines differ across configurations")
+        coordinates = ns
+        y, p = [], []
+        for actual, prediction in zip(annotations, predictions):
+            gt = set(actual["lines_ground_truth"])
+            if len(prediction["line_numbers"]) != len(prediction["line_scores"]):
+                raise ValueError("line probabilities and coordinates differ")
+            y.extend(int(n in gt) for n in prediction["line_numbers"])
+            p.extend(prediction["line_scores"])
+        metrics = paired_metrics(annotations, [r["probability"] for r in predictions])
+        line_ap = float(average_precision_score(y, p))
+        selected = json.loads((run / "best-p_c.json").read_text())
+        for key in ("p_c", "auc", "mcc", "f1"):
+            if abs(metrics[key] - selected["validation"][key]) > 1e-12:
+                raise ValueError("selected function metrics and saved predictions differ")
+        if abs(line_ap - selected["validation"]["line_ap"]) > 1e-12:
+            raise ValueError("line AP is not computed on the original Diff")
+        history = [r for r in read_jsonl(run / "best.training.jsonl") if r["event"] == "epoch"]
+        if len(history) != 16 or max(history, key=lambda r: round(r["validation"]["p_c"], 4))["epoch"] != selected["epoch"]:
+            raise ValueError("checkpoint selection does not follow original Valid P-C")
+        for row in history:
+            parts = row["train_components"]
+            if abs(row["train_loss"] - parts["bce"] - weight * parts["line_focal"]) > 1e-7:
+                raise ValueError("training losses do not reproduce the joint objective")
+            epochs.append(dict(configuration=name, epoch=row["epoch"], step=row["global_step"],
+                bce=parts["bce"], line_focal=parts["line_focal"], total=row["train_loss"],
+                valid_p_c=row["validation"]["p_c"], valid_auc=row["validation"]["auc"],
+                valid_line_ap=row["validation"]["line_ap"], seconds=row["epoch_seconds"]))
+        table.append(dict(configuration=name, supervision=supervision, weight=weight,
+            epoch=selected["epoch"], correct_pairs=metrics["pair_counts"]["p_c"], pairs=metrics["pairs"],
+            p_c=metrics["p_c"], auc=metrics["auc"], mcc=metrics["mcc"], f1=metrics["f1"],
+            accuracy=metrics["accuracy"], recall=metrics["recall"], patched_fpr=metrics["patched_fpr"],
+            line_ap=line_ap, lines=len(y), positive_lines=sum(y)))
+    selected = {family: max((r for r in table if r["supervision"] == family and r["weight"] > 0),
+                           key=lambda r: (round(r["p_c"], 4), -r["weight"]))
+                for family in ("diff", "random")}
+    result = dict(results=table, selected_by_valid_p_c=selected, test_used=False,
+                  random_changed_functions=changed, matched_fields=list(fields))
+    write_json(root / "comparison.json", result)
+    for filename, records in (("comparison.csv", table), ("training.csv", epochs)):
+        with (root / filename).open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(records[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(records)
+    lines = ["# Function classification with original-Diff line auxiliary supervision", "",
+        "Full official PrimeVul Original Train=4,354 pairs/8,708 functions and Valid=562 pairs/1,124 functions. All five runs use 512 tokens, seed123456, batch8, 16 epochs/17,424 optimizer steps, LR2e-5, 10% warmup and unchanged LOSVERAdamW (weight decay0). Threshold is strictly >.5. Test is never read.", "",
+        "All runs share the original UniXcoder and function linear-head initialization. A single additional Linear(hidden_size,1), initialized without advancing the sampler RNG, is present in all five controls. Each function's visible code-line states are means from the SAME encoder output. Original Focal (alpha=.8, gamma=1.5, pos_weight=5) is averaged over visible lines WITHIN each function, then over functions. Empty Diff is all-zero line supervision and never drops function BCE.", "",
+        "Independent `random.Random(123456)` permutes each Train function's visible line labels once, before training. Counts are preserved and the same permutations are used at both weights. Valid line AP pools all visible lines against real Diff, whereas Focal is function-balanced. Only function-level Valid P-C selects the epoch and lambda; epoch ties keep the earlier checkpoint, lambda ties prefer .1. Line AP and AUC do not select anything.", "",
+        "Inference runs only the original global code-token mean and original function linear head. Diff and line logits do not affect pooling, token weights or the function prediction. The lambda0 line head is untrained: its AP is a random-projection diagnostic, not a learned localizer baseline.", "",
+        "## Valid results", "",
+        "| Configuration | Selected epoch | Correct pairs /562 | P-C | AUC | MCC | F1 | True-Diff line AP |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for row in table:
+        lines.append(f"| {row['configuration']} | {row['epoch']} | {row['correct_pairs']}/562 | {row['p_c']:.4f} | {row['auc']:.4f} | {row['mcc']:.4f} | {row['f1']:.4f} | {row['line_ap']:.4f} |")
+    lines += ["", "## Selection and interpretation", ""]
+    baseline = table[0]
+    for family, row in selected.items():
+        lines.append(f"{family}: Valid P-C selects lambda={row['weight']}; P-C difference from baseline={row['p_c']-baseline['p_c']:+.6f}, AUC difference={row['auc']-baseline['auc']:+.6f}, MCC difference={row['mcc']-baseline['mcc']:+.6f}.")
+        lines.append("")
+    for weight in (.1, .3):
+        real, shuffled = [next(r for r in table if r["supervision"] == family and r["weight"] == weight)
+                          for family in ("diff", "random")]
+        lines += [f"At matched lambda={weight}, real Diff minus random: P-C={real['p_c']-shuffled['p_c']:+.6f}, AUC={real['auc']-shuffled['auc']:+.6f}, MCC={real['mcc']-shuffled['mcc']:+.6f}, F1={real['f1']-shuffled['f1']:+.6f}.", ""]
+    if selected["diff"]["p_c"] <= baseline["p_c"]:
+        lines += ["The predefined real-Diff auxiliary grid does not improve the primary Valid P-C over baseline. The other metrics must be read separately; no further module or Test experiment is added.", ""]
+    for row in table:
+        if row["supervision"] == "diff" and row["weight"] > 0:
+            lines += [f"{row['configuration']}: F1={row['f1']:.6f} versus baseline {baseline['f1']:.6f}; vulnerable Recall={row['recall']:.6f} versus {baseline['recall']:.6f}; patched-side FPR={row['patched_fpr']:.6f} versus {baseline['patched_fpr']:.6f}. A higher F1 does not by itself imply better pair discrimination or a lower false-positive rate.", ""]
+    lines += [f"Random permutations changed {changed}/8708 functions' visible labels. Unchanged all-zero/all-one or coincidentally identical permutations are retained. Line denominators are identical across the five runs and are saved in comparison.csv. Increasing line AP alone does not establish a classification gain; compare real Diff against the count-matched random control at BOTH preset weights. This is one training seed and one predefined lambda grid, with no Test selection and no additional method.", "",
+        "[Training losses](training.csv) contain both unweighted BCE and function-balanced Focal, total objective and Valid metrics for all 80 epochs. Each run retains configuration, best-P-C predictions (function probabilities plus physical-line scores), logs and resumable local checkpoints. [GPU smoke](gpu-smoke.json), [tests](tests.log) and [resume checks](resume-tests.log) record the actual correctness checks; [protocol checks](protocol-checks.json) inspect the completed runs. Reproduction commands are in the [README](../../README.md).", ""]
+    (root / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    return result
+
+
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False):
+    if (Path(output_dir) / "baseline/primevul_paired/unixcoder/config.json").exists():
+        return line_auxiliary_report(output_dir, data_dir)
     if localizer_regularization:
         return localizer_regularization_report(output_dir, data_dir, reference_dir)
     if (Path(output_dir) / "supervision/diff_neighbour/statistics.json").exists():

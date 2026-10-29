@@ -285,6 +285,28 @@ class ResumeTests(unittest.TestCase):
                 training.train_losver(root/"data",root/"resumed","fixture","losver_localizer",resume=True,**options)
                 self.compare_runs(root/"control/primevul_paired/losver_localizer",root/"resumed/primevul_paired/losver_localizer",["best-f1.pt"])
 
+    def test_line_auxiliary_resume_preserves_labels_components_and_rng(self):
+        from tests.test_line_auxiliary import detector
+
+        def factory(path, variant, **kwargs):
+            return detector(kwargs.get("line_auxiliary_weight")), Tokens()
+
+        for supervision in ("diff", "random"):
+            with self.subTest(supervision=supervision), tempfile.TemporaryDirectory() as tmp, patch.object(core, "losver_model", side_effect=factory):
+                root = Path(tmp)
+                self.paired_fixture(root, "512")
+                settings = dict(training.LOSVER_CONFIG, batch_size=4, eval_batch_size=2,
+                                epochs=dict(baseline=2, localizer=2, predicted=2, oracle=2))
+                options = dict(device="cpu", config=settings, input_mode="512", save_every=1,
+                               line_auxiliary=supervision, line_auxiliary_weight=.3)
+                training.train_losver(root/"data", root/"control", "fixture", "unixcoder", **options)
+                with self.interruption(epoch=2, step=4, after_save=True), self.assertRaises(Interrupted):
+                    training.train_losver(root/"data", root/"resumed", "fixture", "unixcoder", **options)
+                training.train_losver(root/"data", root/"resumed", "fixture", "unixcoder", resume=True, **options)
+                a, b = [root/name/"primevul_paired/unixcoder" for name in ("control", "resumed")]
+                self.compare_runs(a, b, ["best-p_c.pt"])
+                self.assertEqual((a/"train.line_labels.jsonl").read_bytes(), (b/"train.line_labels.jsonl").read_bytes())
+
     def test_atomic_save_preserves_previous_state_and_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)
