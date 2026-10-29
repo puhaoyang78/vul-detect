@@ -166,3 +166,19 @@ python -m vulnmechanism.cli report --data-dir data --output-dir results/diff_nei
 ```
 
 训练应在tmux中执行。统计、40个Train抽查案例、真实GPU检查、两种行标签指标和分类对比保存到[实验目录](results/diff_neighbour_512/)。原始数据、历史结果及checkpoint保持不变；含完整源码的监督缓存和模型权重留在本地。
+
+### 定位器基础正则化与逐行 R-Drop（512 Pilot）
+
+仍使用 `losver_localizer`、原始Diff、原Focal和Valid正类F1选模。默认新增层dropout=0、weight decay=0、单前向保持不变；新增层dropout不修改UniXcoder编码器已有的0.1。`--localizer-rdrop`省略时单前向，显式`0`时两次Focal取平均，`0.1`再加入逐行Bernoulli对称KL；两次logit均保留梯度，padding不参与。`LOSVERAdamW`在原自适应更新后执行decoupled decay，排除全部bias和LayerNorm参数。
+
+A复用原Pilot；B/C使用完全相同的dropout=0.1、weight decay=0.01、两次前向、Train1024/Valid256函数、4 Epoch/512步，仅λ不同。训练Seed123456、成员Seed42、LR2e-5、10% warmup、Focal α=.8/γ=1.5/pos_weight=5、阈值>.5和选模规则不变。分别在tmux会话运行以下B/C命令；未启动检测器或Test。
+
+```bash
+# B：基础正则化，双前向，λ=0
+python -m vulnmechanism.cli train --data-dir data --dataset primevul_paired --methods losver_localizer --output-dir results/localizer_regularization_512/dropout_weight_decay --device cuda:0 --paired-input 512 --train-limit 1024 --valid-limit 256 --paired-epochs 4 --localizer-dropout .1 --localizer-weight-decay .01 --localizer-rdrop 0 --resume --save-every 1000
+# C：与B相同，仅λ=.1
+python -m vulnmechanism.cli train --data-dir data --dataset primevul_paired --methods losver_localizer --output-dir results/localizer_regularization_512/line_rdrop --device cuda:1 --paired-input 512 --train-limit 1024 --valid-limit 256 --paired-epochs 4 --localizer-dropout .1 --localizer-weight-decay .01 --localizer-rdrop .1 --resume --save-every 1000
+python -m vulnmechanism.cli report --dataset primevul_paired --data-dir data --output-dir results/localizer_regularization_512 --reference-dir results/repair_region_512/pilot --localizer-regularization
+```
+
+所选checkpoint的Train/Valid AUPRC、F1、Precision、Recall及预测阳性比例，按全部/漏洞侧/修复侧汇总到[结果目录](results/localizer_regularization_512/)。AUPRC用于诊断排序能力，不替换原F1选模规则；较小的Train–Valid差距应结合Valid绝对性能解读。

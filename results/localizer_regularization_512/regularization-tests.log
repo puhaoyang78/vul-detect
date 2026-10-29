@@ -1,0 +1,7 @@
+/home/PublicData/PHY-data/vul_detect/work/vul-detect/tests/test_localizer_regularization.py:50: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  self.assertGreater(float((x-y).abs().max()), 0)
+----------------------------------------------------------------------
+Ran 7 tests in 0.804s
+
+OK

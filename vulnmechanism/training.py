@@ -159,6 +159,9 @@ def train(
     resume=False,
     save_every=100,
     paired_epochs=None,
+    localizer_dropout=None,
+    localizer_weight_decay=None,
+    localizer_rdrop=None,
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
@@ -186,12 +189,16 @@ def train(
             epochs_override=paired_epochs,
             train_limit=train_limit,
             valid_limit=valid_limit,
+            localizer_dropout=localizer_dropout,
+            localizer_weight_decay=localizer_weight_decay,
+            localizer_rdrop=localizer_rdrop,
         )
     if (
         paired_input != "512"
         or window_micro_batch is not None
         or function_micro_batch is not None
         or paired_epochs is not None
+        or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
     ):
         raise ValueError("paired training options apply only to paired methods")
     if dataset not in DATASETS:
@@ -715,8 +722,10 @@ LOSVER_CONFIG = dict(
 class LOSVERAdamW(torch.optim.Optimizer):
     """The Transformers 4.19 AdamW rule, including epsilon before bias correction."""
 
-    def __init__(self, params, lr=2e-5, eps=1e-8):
-        super().__init__(params, dict(lr=lr, eps=eps, betas=(0.9, 0.999)))
+    def __init__(self, params, lr=2e-5, eps=1e-8, weight_decay=0.0):
+        if not math.isfinite(weight_decay) or weight_decay < 0:
+            raise ValueError("weight decay must be finite and nonnegative")
+        super().__init__(params, dict(lr=lr, eps=eps, betas=(0.9, 0.999), weight_decay=weight_decay))
 
     @torch.no_grad()
     def step(self):
@@ -746,6 +755,25 @@ class LOSVERAdamW(torch.optim.Optimizer):
                     / (1 - b1 ** state["step"])
                 )
                 p.addcdiv_(avg, denom, value=-step_size)
+                # Original Transformers AdamW applies decoupled decay AFTER its
+                # adaptive update. The decay never enters either moment.
+                decay = group.get("weight_decay", 0.0)
+                if decay:
+                    p.add_(p, alpha=-group["lr"] * decay)
+
+
+def losver_parameter_groups(model, weight_decay):
+    """Exclude all bias and actual LayerNorm parameters, including numeric heads."""
+    norm = {
+        id(p) for module in model.modules() if isinstance(module, torch.nn.LayerNorm)
+        for p in module.parameters(recurse=False)
+    }
+    decay, excluded = [], []
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad:
+            group = excluded if id(parameter) in norm or name.endswith("bias") else decay
+            group.append(parameter)
+    return [dict(params=decay, weight_decay=weight_decay), dict(params=excluded, weight_decay=0.0)]
 
 
 def paired_collate(features):
@@ -866,7 +894,7 @@ def paired_loader(
     )
 
 
-def paired_forward(model, batch, variant, device, *, with_labels=True):
+def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False):
     keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
     keys.extend(
         ["line_token_mask", "context_mask", "line_indices", "line_counts"]
@@ -879,7 +907,24 @@ def paired_forward(model, batch, variant, device, *, with_labels=True):
             keys.append("label_weights")
     if getattr(model, "pooling", None) == "robust_fusion":
         keys.append("region_scores")
-    return model(**{key: batch[key].to(device) for key in keys})
+    args = {key: batch[key].to(device) for key in keys}
+    if return_logits:
+        if variant != "localizer":
+            raise ValueError("line logits require the localizer")
+        args["return_logits"] = True
+    return model(**args)
+
+
+def paired_rdrop_loss(model, batch, device, coefficient):
+    """Two independent stochastic Focal forwards; no detached KL reference."""
+    first, z1 = paired_forward(model, batch, "localizer", device, return_logits=True)
+    second, z2 = paired_forward(model, batch, "localizer", device, return_logits=True)
+    a = torch.nn.utils.rnn.pad_sequence(z1, batch_first=True)
+    b = torch.nn.utils.rnn.pad_sequence(z2, batch_first=True)
+    valid = ((batch["line_numbers"] >= 0) & (batch["labels"] >= 0)).to(device)
+    divergence = model.symmetric_bernoulli_kl(a, b, valid)
+    focal = (first + second) * 0.5
+    return focal + coefficient * divergence, dict(focal=focal, rdrop_kl=divergence)
 
 
 def paired_rows(data_dir, output_dir, variant, split, *, method=None):
@@ -932,6 +977,9 @@ def train_losver(
     epochs_override=None,
     train_limit=None,
     valid_limit=None,
+    localizer_dropout=None,
+    localizer_weight_decay=None,
+    localizer_rdrop=None,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -940,6 +988,19 @@ def train_losver(
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    regularized = any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
+    if regularized and (method != "losver_localizer" or input_mode != "512"):
+        raise ValueError("localizer regularization requires original LOSVER 512 supervision")
+    if localizer_dropout is not None:
+        if not 0 <= localizer_dropout < 1:
+            raise ValueError("localizer dropout must lie in [0, 1)")
+        settings["dropout_probability"] = localizer_dropout
+    if localizer_weight_decay is not None:
+        if not math.isfinite(localizer_weight_decay) or localizer_weight_decay < 0:
+            raise ValueError("weight decay must be finite and nonnegative")
+        settings["weight_decay"] = localizer_weight_decay
+    if localizer_rdrop is not None and (not math.isfinite(localizer_rdrop) or localizer_rdrop < 0):
+        raise ValueError("R-Drop coefficient must be finite and nonnegative")
     supervision, pooling = "diff", "hard_weight"
     neighbour = method in ("diff_neighbour_localizer", "diff_neighbour")
     weak = not neighbour and method not in (
@@ -1032,6 +1093,7 @@ def train_losver(
         variant,
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=input_mode == "l1",
+        **(dict(dropout_probability=settings["dropout_probability"]) if settings["dropout_probability"] else {}),
     )
     model.input_mode = input_mode
     model.weak_supervision = weak and variant == "localizer"
@@ -1089,7 +1151,10 @@ def train_losver(
     epochs = settings["epochs"][variant]
     steps_per_epoch = math.ceil(len(train_rows) / settings["batch_size"])
     optimizer = LOSVERAdamW(
-        model.parameters(), lr=settings["learning_rate"], eps=settings["adam_epsilon"]
+        losver_parameter_groups(model, settings["weight_decay"])
+        if settings["weight_decay"] else model.parameters(),
+        lr=settings["learning_rate"], eps=settings["adam_epsilon"],
+        weight_decay=settings["weight_decay"],
     )
     scheduler = transformers.get_linear_schedule_with_warmup(
         optimizer,
@@ -1149,7 +1214,7 @@ def train_losver(
             if input_mode == "l1"
             else "FP32 eager attention; no AMP/checkpointing"
         ),
-        localizer_attention="same 8-head attention within each window; core-token sums merged by physical line before classification; dropout=0",
+        localizer_attention=f"same 8-head attention within each window; core-token sums merged by physical line before classification; dropout={settings['dropout_probability']:g}",
         localizer_path=(
             str(
                 root
@@ -1173,6 +1238,17 @@ def train_losver(
             ),
         ),
     )
+    if regularized:
+        metadata["localizer_regularization"] = dict(
+            dropout=settings["dropout_probability"],
+            weight_decay=settings["weight_decay"],
+            decay_exclusions="all bias and LayerNorm parameters; decay after adaptive update",
+            rdrop_lambda=localizer_rdrop,
+            training_forwards=2 if localizer_rdrop is not None else 1,
+            validation_forwards=1,
+            encoder_dropout=dict(hidden=model.config.hidden_dropout_prob,
+                                 attention=model.config.attention_probs_dropout_prob),
+        )
     if pooling == "robust_fusion":
         metadata["validation_rng"] = (
             "beta grid preserves exactly one validation-loader RNG advance"
@@ -1194,6 +1270,8 @@ def train_losver(
         training_seconds=0.0,
         epoch_rng=None,
     )
+    if localizer_rdrop is not None:
+        state["running_components"] = dict(focal=0.0, rdrop_kl=0.0)
     if continuing:
         state, saved_rng = load_training_state(
             run,
@@ -1218,6 +1296,7 @@ def train_losver(
         started = time.monotonic()
         previous_seconds = state["training_seconds"]
         running = state["running"]
+        components = state.get("running_components")
         model.train()
         from itertools import islice
 
@@ -1255,13 +1334,20 @@ def train_losver(
                 for b in group
             ]
             group_loss = 0.0
+            group_components = dict(focal=0.0, rdrop_kl=0.0)
             for batch, size in zip(group, sizes):
-                loss, _ = paired_forward(model, batch, variant, device)
+                if localizer_rdrop is None:
+                    loss, _ = paired_forward(model, batch, variant, device)
+                else:
+                    loss, parts = paired_rdrop_loss(model, batch, device, localizer_rdrop)
                 if not torch.isfinite(loss):
                     raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
                 coefficient = size / sum(sizes) if sum(sizes) else 1 / len(sizes)
                 (loss * coefficient).backward()
                 group_loss += float(loss.detach()) * coefficient
+                if components is not None:
+                    for key, value in parts.items():
+                        group_components[key] += float(value.detach()) * coefficient
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
             )
@@ -1270,6 +1356,9 @@ def train_losver(
             scheduler.step()
             global_step += 1
             running += group_loss
+            if components is not None:
+                for key, value in group_components.items():
+                    components[key] += value
             if global_step == 1 or global_step % 100 == 0:
                 item = dict(
                     event="step",
@@ -1279,6 +1368,8 @@ def train_losver(
                     loss=group_loss,
                     learning_rate=optimizer.param_groups[0]["lr"],
                 )
+                if components is not None:
+                    item.update(group_components)
                 history.add(item)
                 print(json.dumps(item), flush=True)
             if (
@@ -1336,6 +1427,8 @@ def train_losver(
             training_seconds=train_seconds,
             epoch_seconds=previous_seconds + time.monotonic() - started,
         )
+        if components is not None:
+            event["train_components"] = {k: v / steps_per_epoch for k, v in components.items()}
         history.add(event)
         print(json.dumps(event), flush=True)
         for key in best:
@@ -1376,6 +1469,8 @@ def train_losver(
             training_seconds=0.0,
             epoch_rng=None,
         )
+        if components is not None:
+            state["running_components"] = dict(focal=0.0, rdrop_kl=0.0)
         save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
     required = "f1" if variant == "localizer" else "p_c"
     if required not in chosen:

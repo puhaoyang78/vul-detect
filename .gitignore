@@ -131,3 +131,16 @@ __pycache__/
 !/results/diff_neighbour_512/primevul_paired/*/best.training.jsonl
 !/results/diff_neighbour_512/primevul_paired/*/valid*.predictions.jsonl
 !/results/diff_neighbour_512/primevul_paired/*/*.line_scores.jsonl
+!/results/localizer_regularization_512/
+!/results/localizer_regularization_512/*.json
+!/results/localizer_regularization_512/*.csv
+!/results/localizer_regularization_512/*.md
+!/results/localizer_regularization_512/*.log
+!/results/localizer_regularization_512/*/
+!/results/localizer_regularization_512/*/*.log
+!/results/localizer_regularization_512/*/primevul_paired/
+!/results/localizer_regularization_512/*/primevul_paired/losver_localizer/
+!/results/localizer_regularization_512/*/primevul_paired/losver_localizer/*.json
+!/results/localizer_regularization_512/*/primevul_paired/losver_localizer/best.training.jsonl
+!/results/localizer_regularization_512/*/primevul_paired/losver_localizer/*.line_scores.jsonl
+!/results/localizer_regularization_512/*/primevul_paired/losver_localizer/valid.best-f1.predictions.jsonl

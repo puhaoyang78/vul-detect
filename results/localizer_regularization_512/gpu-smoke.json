@@ -1,0 +1,69 @@
+{
+  "device": "NVIDIA GeForce RTX 4090",
+  "source_split": "train",
+  "sample_keys": [
+    "primevul_paired:train:6573",
+    "primevul_paired:train:6574",
+    "primevul_paired:train:4101",
+    "primevul_paired:train:4102",
+    "primevul_paired:train:7873",
+    "primevul_paired:train:7874",
+    "primevul_paired:train:6319",
+    "primevul_paired:train:6320"
+  ],
+  "functions": 8,
+  "source_tokens": [
+    231660,
+    232766,
+    47477,
+    47572,
+    29308,
+    29335,
+    19253,
+    19270
+  ],
+  "valid_lines": 323,
+  "padded_lines": 125,
+  "new_attention_dropout": 0.1,
+  "new_classifier_dropout": [
+    0.1,
+    0.1
+  ],
+  "encoder_dropout": [
+    0.1,
+    0.1
+  ],
+  "train_forward_max_difference_with_encoder_dropout_disabled": 0.28189387917518616,
+  "decay_groups": [
+    {
+      "weight_decay": 0.01,
+      "parameters": 129347328
+    },
+    {
+      "weight_decay": 0.0,
+      "parameters": 129025
+    }
+  ],
+  "zero_gradient_decay_max_parameter_change": {
+    "weight": 7.450580596923828e-09,
+    "bias": 0.0,
+    "layernorm": 0.0
+  },
+  "objective": 0.08274754136800766,
+  "focal": 0.08118419349193573,
+  "symmetric_kl": 0.015633475035429,
+  "both_forward_logit_gradient_norms": [
+    0.001325780656770803,
+    0.001340312126558274
+  ],
+  "parameter_gradient_norms": {
+    "encoder": 0.0769747942686081,
+    "attention": 0.20279626548290253,
+    "head": 0.667344331741333
+  },
+  "padding_perturbation_changes_kl": false,
+  "inference_repeat_max_error": 0.0,
+  "reload_max_error": 0.0,
+  "peak_gpu_mib": 11831.61669921875,
+  "seconds": 6.532481729052961
+}

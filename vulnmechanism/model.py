@@ -350,7 +350,9 @@ class LOSVERLocalizer(nn.Module):
         self.config = config
         self.hidden_size = self.config.hidden_size
         self.args = args
-        self.drop_out = 0.0
+        self.drop_out = getattr(args, "dropout_probability", 0.0)
+        if not 0 <= self.drop_out < 1:
+            raise ValueError("localizer dropout must lie in [0, 1)")
         self.window_micro_batch = getattr(args, "window_micro_batch", 8)
         self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
         self.input_mode = "512"
@@ -391,6 +393,21 @@ class LOSVERLocalizer(nn.Module):
         modulating_factor = (1.0 - p_t).pow(gamma)
         return alpha_factor * modulating_factor * ce_loss
 
+    @staticmethod
+    def symmetric_bernoulli_kl(first, second, valid):
+        """Mean (KL12+KL21)/2 over valid independent binary line logits.
+
+        The Bernoulli identity avoids log(0) and preserves BOTH gradients:
+        (KL12+KL21)/2 = (sigmoid(z1)-sigmoid(z2)) * (z1-z2) / 2.
+        Padding is indexed out before any arithmetic, not treated as a class.
+        """
+        if first.shape != second.shape or first.shape != valid.shape:
+            raise ValueError("line logits and valid mask must have equal shapes")
+        a, b = first[valid.bool()], second[valid.bool()]
+        if not a.numel():
+            return a.sum() + b.sum()
+        return ((a.sigmoid() - b.sigmoid()) * (a - b) * 0.5).mean()
+
     def forward(
         self,
         input_ids,
@@ -403,6 +420,7 @@ class LOSVERLocalizer(nn.Module):
         window_owners,
         labels=None,
         label_weights=None,
+        return_logits=False,
     ):
         from torch.utils.checkpoint import checkpoint
 
@@ -456,7 +474,7 @@ class LOSVERLocalizer(nn.Module):
         if not (counts > 0).all():
             raise ValueError("physical line has no core source-token membership")
         z = self.line_classifier(sums / counts[:, None]).squeeze(-1)
-        probabilities = list(z.sigmoid().split(line_counts.tolist()))
+        outputs = list((z if return_logits else z.sigmoid()).split(line_counts.tolist()))
         if labels is not None:
             y = torch.cat([row[:n] for row, n in zip(labels, line_counts.tolist())])
             if label_weights is not None:
@@ -476,11 +494,11 @@ class LOSVERLocalizer(nn.Module):
                 w = weights * valid
                 per_line = self.focal_loss(z, y.clamp(0, 1), alpha=0.5, pos_weight=1)
                 loss = (per_line * w).sum() / w.sum().clamp_min(1e-12)
-                return loss, probabilities
+                return loss, outputs
             if not ((y == 0) | (y == 1)).all():
                 raise ValueError("visible physical lines require binary labels")
-            return self.focal_loss(z, y.float()).mean(), probabilities
-        return probabilities
+            return self.focal_loss(z, y.float()).mean(), outputs
+        return outputs
 
 
 class LOSVERDetector(nn.Module):
@@ -610,7 +628,8 @@ class LOSVERDetector(nn.Module):
 
 
 def losver_model(
-    model_path, variant, *, window_micro_batch=8, gradient_checkpointing=False
+    model_path, variant, *, window_micro_batch=8, gradient_checkpointing=False,
+    dropout_probability=0.0,
 ):
     """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
     config = RobertaConfig.from_pretrained(model_path)
@@ -619,7 +638,7 @@ def losver_model(
         raise ValueError("window micro-batch must be positive")
     args = SimpleNamespace(
         class_weight=1.0,
-        dropout_probability=0.0,
+        dropout_probability=dropout_probability,
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=gradient_checkpointing,
     )

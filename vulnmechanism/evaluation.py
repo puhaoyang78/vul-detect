@@ -725,6 +725,7 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
         precision_score,
         recall_score,
         confusion_matrix,
+        average_precision_score,
     )
     from .training import paired_loader, paired_forward
     from .metrics import paired_metrics
@@ -789,6 +790,8 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
             weighted_f1=f1_score(line_y, pred, average="weighted", zero_division=0),
             precision=precision_score(line_y, pred, zero_division=0),
             recall=recall_score(line_y, pred, zero_division=0),
+            auprc=float(average_precision_score(line_y, line_p)) if sum(line_y) else None,
+            predicted_positive_fraction=float(pred.mean()) if len(pred) else None,
             lines=len(line_y),
             modified_lines=sum(line_y),
             confusion_matrix=confusion_matrix(line_y, pred, labels=[0, 1]).tolist(),
@@ -823,6 +826,11 @@ def load_paired(checkpoint, device):
         checkpoint["model_path"],
         checkpoint["variant"],
         window_micro_batch=checkpoint.get("window_micro_batch", 8),
+        **(
+            dict(dropout_probability=checkpoint["training_config"]["dropout_probability"])
+            if checkpoint.get("training_config", {}).get("dropout_probability", 0.0)
+            else {}
+        ),
     )
     model.input_mode = checkpoint["input_mode"]
     model.weak_supervision = checkpoint.get("weak_supervision", False)
@@ -1758,7 +1766,124 @@ def diff_neighbour_report(output_dir, data_dir, reference_dir):
     return dict(results=table, pilot_coverage=pilot_coverage)
 
 
-def paired_report(output_dir, data_dir, *, reference_dir=None):
+def localizer_regularization_report(output_dir, data_dir, reference_dir):
+    """Original Diff line ranking and threshold metrics on matched Train/Valid."""
+    import numpy as np
+    from sklearn.metrics import average_precision_score, precision_score, recall_score, f1_score
+
+    if reference_dir is None:
+        raise ValueError("localizer regularization report requires --reference-dir")
+    root = Path(output_dir)
+    paths = dict(
+        original_losver=Path(reference_dir) / "primevul_paired/losver_localizer",
+        dropout_weight_decay=root / "dropout_weight_decay/primevul_paired/losver_localizer",
+        line_rdrop=root / "line_rdrop/primevul_paired/losver_localizer",
+    )
+    configs = {name: json.loads((p / "training.metrics.json").read_text()) for name, p in paths.items()}
+    reference = configs["original_losver"]
+    fields = ("training_members", "validation_members", "input_mode", "parameters", "epochs",
+              "optimizer_steps", "input_coverage", "selection", "selection_ties", "model_path",
+              "function_micro_batch", "window_micro_batch", "gradient_accumulation")
+    for name, config in configs.items():
+        if any(config[k] != reference[k] for k in fields):
+            raise ValueError(f"unmatched localizer data/budget/selection: {name}")
+        if config["weak_supervision"] or config["supervision"] != "original_diff" or config["input_mode"] != "512":
+            raise ValueError("regularization comparison requires original binary Diff and 512 input")
+        settings = {k:v for k,v in config["training_config"].items()
+                    if k not in ("weight_decay", "dropout_probability")}
+        expected = {k:v for k,v in reference["training_config"].items()
+                    if k not in ("weight_decay", "dropout_probability")}
+        if settings != expected:
+            raise ValueError("learning rate, schedule, seed or other settings differ")
+    for name, coefficient in (("dropout_weight_decay", 0.0), ("line_rdrop", 0.1)):
+        reg = configs[name]["localizer_regularization"]
+        if (reg["dropout"], reg["weight_decay"], reg["rdrop_lambda"], reg["training_forwards"]) != (.1, .01, coefficient, 2):
+            raise ValueError("expected matched dropout/decay/two-forward R-Drop controls")
+    annotations = {s: {r["sample_key"]:r for r in read_jsonl(Path(data_dir) / "primevul_paired" / f"{s}.lines.jsonl")}
+                   for s in ("train", "valid")}
+    table, coordinates = [], {}
+    for name, run in paths.items():
+        epoch = configs[name]["selected_epochs"]["f1"]
+        for split in ("train", "valid"):
+            scores = read_jsonl(run / f"{split}.line_scores.jsonl")
+            keys = reference["training_members" if split == "train" else "validation_members"]
+            if [r["sample_key"] for r in scores] != keys:
+                raise ValueError("line score members/order differ")
+            ns = [(r["sample_key"], r["line_numbers"]) for r in scores]
+            if split in coordinates and ns != coordinates[split]:
+                raise ValueError("methods have different visible physical lines")
+            coordinates[split] = ns
+            for side in ("all", "vulnerable", "patched"):
+                selected = [r for r in scores if side == "all" or annotations[split][r["sample_key"]]["target"] == int(side == "vulnerable")]
+                y, p = [], []
+                for row in selected:
+                    gt = set(annotations[split][row["sample_key"]]["lines_ground_truth"])
+                    if len(row["line_numbers"]) != len(row["line_scores"]):
+                        raise ValueError("physical lines and probabilities differ")
+                    y.extend(int(n in gt) for n in row["line_numbers"])
+                    p.extend(row["line_scores"])
+                predicted = np.asarray(p) > .5
+                table.append(dict(method=name, split=split, side=side, epoch=epoch,
+                    functions=len(selected), lines=len(y), positive_lines=sum(y),
+                    predicted_positive_lines=int(predicted.sum()),
+                    predicted_positive_fraction=float(predicted.mean()),
+                    auprc=float(average_precision_score(y, p)) if sum(y) else None,
+                    f1=float(f1_score(y, predicted, zero_division=0)),
+                    precision=float(precision_score(y, predicted, zero_division=0)),
+                    recall=float(recall_score(y, predicted, zero_division=0))))
+        valid = next(r for r in table if r["method"] == name and r["split"] == "valid" and r["side"] == "all")
+        selected = json.loads((run / "best-f1.json").read_text())
+        if selected["epoch"] != epoch or abs(selected["validation"]["f1"] - valid["f1"]) > 1e-12:
+            raise ValueError("selected checkpoint and exported line scores differ")
+    gaps = []
+    for name in paths:
+        for side in ("all", "vulnerable", "patched"):
+            train, valid = [r for r in table if r["method"] == name and r["side"] == side]
+            gaps.append(dict(method=name, side=side, auprc_train_minus_valid=train["auprc"]-valid["auprc"],
+                             f1_train_minus_valid=train["f1"]-valid["f1"]))
+    write_json(root / "comparison.json", dict(results=table, generalization_gaps=gaps,
+               reference_dir=str(reference_dir), test_used=False, matched_fields=list(fields)))
+    for filename, records in (("comparison.csv", table), ("generalization_gaps.csv", gaps)):
+        with (root / filename).open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(records[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(records)
+    lines = ["# Original LOSVER localizer: regularization and line R-Drop", "",
+        f"512 token Pilot, {reference['train_samples']} Train/{reference['valid_samples']} Valid functions, {reference['epochs']} epochs and {reference['optimizer_steps']} optimizer steps per method. Member seed42; training seed{reference['training_config']['seed']}. A reuses `{reference_dir}`. B/C start from the same pretrained UniXcoder with identical initialization, members, Focal, LR/schedule and two-forward budget; C alone adds lambda=.1.", "",
+        "Original binary Diff labels and visible physical lines are identical. Focal alpha=.8, gamma=1.5, pos_weight=5. Best checkpoint remains original Valid positive F1 rounded to4 decimals, earlier tie; threshold remains >.5. AUPRC is reported at that checkpoint, never used to select a different epoch. Test and detectors are not evaluated or trained.", "",
+        "New attention/head dropout: A=0, B=C=.1. Encoder hidden/attention dropout stays .1. Weight decay: A=0, B=C=.01, decoupled AFTER the unchanged adaptive AdamW update; all bias (including in_proj_bias) and LayerNorm parameters are excluded. The two Focal losses are averaged in B/C; independent Bernoulli symmetric KL is averaged over real lines only, with gradients on both logits. Validation/inference uses one dropout-disabled forward.", "",
+        "## Selected checkpoint metrics", "",
+        "Metrics pool valid visible lines; vulnerable/patched refer to the original function target, not predicted classes. Positive-line fraction uses >.5; AUPRC uses continuous probabilities. All count denominators are saved in comparison.csv.", "",
+        "| Method | Split | Side | Epoch | Lines | AUPRC | F1 | Precision | Recall | Predicted positive fraction |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for r in table:
+        lines.append(f"| {r['method']} | {r['split']} | {r['side']} | {r['epoch']} | {r['lines']} | {r['auprc']:.4f} | {r['f1']:.4f} | {r['precision']:.4f} | {r['recall']:.4f} | {r['predicted_positive_fraction']:.4f} |")
+    lines += ["", "## Train minus Valid gaps", "", "| Method | Side | AUPRC gap | F1 gap |",
+              "| --- | --- | ---: | ---: |"]
+    for r in gaps:
+        lines.append(f"| {r['method']} | {r['side']} | {r['auprc_train_minus_valid']:.4f} | {r['f1_train_minus_valid']:.4f} |")
+    lines += ["", "## Valid differences at the selected checkpoints", "",
+              "Differences below are absolute metric differences, not relative percentages.", "",
+              "| Comparison | Side | AUPRC difference | F1 difference |",
+              "| --- | --- | ---: | ---: |"]
+    for newer, older in (("dropout_weight_decay", "original_losver"),
+                         ("line_rdrop", "dropout_weight_decay")):
+        for side in ("all", "vulnerable", "patched"):
+            new, old = [next(r for r in table if r["method"] == name
+                            and r["split"] == "valid" and r["side"] == side)
+                        for name in (newer, older)]
+            lines.append(f"| {newer} minus {older} | {side} | {new['auprc']-old['auprc']:+.6f} | {new['f1']-old['f1']:+.6f} |")
+    lines += ["", "A smaller gap can arise from worse Train ranking; read it together with Valid absolute AUPRC. Compare C against B to isolate KL from the base regularization and the two supervised forwards. B/C double the training forwards, not optimizer steps. These are one-seed, four-epoch pilot results, not full-data or Test claims.", "",
+        "## Checks and reproduction", "",
+        "[GPU smoke](gpu-smoke.json) records actual Train forward/backward, new-layer stochastic dropout, zero-gradient decoupled weight decay, padding-invariant KL, both logit gradients and exact save/reload. [Protocol checks](protocol-checks.json) inspect the persisted optimizer/scheduler steps and RNG states. The [full test log](tests.log) and [resume test log](resume-tests.log) retain the executed correctness checks.", "",
+        "The exact B/C train and report commands are in the [README](../../README.md). Configs, epoch/component losses and source-only line probabilities are retained under `dropout_weight_decay/` and `line_rdrop/`. Checkpoints stay locally in those same run directories; historical A remains at its original path.", ""]
+    (root / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    return dict(results=table, generalization_gaps=gaps, test_used=False)
+
+
+def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False):
+    if localizer_regularization:
+        return localizer_regularization_report(output_dir, data_dir, reference_dir)
     if (Path(output_dir) / "supervision/diff_neighbour/statistics.json").exists():
         return diff_neighbour_report(output_dir, data_dir, reference_dir)
     if (Path(output_dir) / "supervision/statistics.json").exists():

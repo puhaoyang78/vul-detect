@@ -265,6 +265,26 @@ class ResumeTests(unittest.TestCase):
             self.assert_state_equal(a["rng"], b["rng"])
             self.assertEqual(a["loop"]["global_step"], b["loop"]["global_step"])
 
+    def test_localizer_rdrop_and_decay_resume_exactly(self):
+        from tests.test_localizer_regularization import localizer
+
+        def factory(path, variant, **kwargs):
+            return localizer(kwargs.get("dropout_probability", 0.)), Tokens()
+
+        for coefficient in (0., .1):
+            with self.subTest(coefficient=coefficient), tempfile.TemporaryDirectory() as tmp, patch.object(core,"losver_model",side_effect=factory):
+                root=Path(tmp)
+                self.paired_fixture(root,"512")
+                settings=dict(training.LOSVER_CONFIG,batch_size=4,eval_batch_size=2,
+                              epochs=dict(baseline=2,localizer=2,predicted=2,oracle=2))
+                options=dict(device="cpu",config=settings,input_mode="512",save_every=1,
+                             localizer_dropout=.1,localizer_weight_decay=.01,localizer_rdrop=coefficient)
+                training.train_losver(root/"data",root/"control","fixture","losver_localizer",**options)
+                with self.interruption(epoch=2,step=4,after_save=True), self.assertRaises(Interrupted):
+                    training.train_losver(root/"data",root/"resumed","fixture","losver_localizer",**options)
+                training.train_losver(root/"data",root/"resumed","fixture","losver_localizer",resume=True,**options)
+                self.compare_runs(root/"control/primevul_paired/losver_localizer",root/"resumed/primevul_paired/losver_localizer",["best-f1.pt"])
+
     def test_atomic_save_preserves_previous_state_and_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)

@@ -66,6 +66,12 @@ def build_parser():
             p.add_argument("--paired-input", choices=("512", "l1"), default="512")
             p.add_argument("--window-micro-batch", type=int)
             p.add_argument("--function-micro-batch", type=int)
+            p.add_argument("--localizer-dropout", type=float)
+            p.add_argument("--localizer-weight-decay", type=float)
+            p.add_argument(
+                "--localizer-rdrop", type=float,
+                help="two stochastic Focal forwards plus lambda * line KL; 0 keeps the two-forward control; omit for one forward",
+            )
             p.add_argument(
                 "--hard-selection", choices=("hardest", "boundary"), default="hardest"
             )
@@ -92,8 +98,9 @@ def build_parser():
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument(
         "--reference-dir", type=Path,
-        help="completed original LOSVER pilot for the diff_neighbour comparison",
+        help="completed original LOSVER pilot used as the comparison reference",
     )
+    p.add_argument("--localizer-regularization", action="store_true")
     p.add_argument(
         "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
     )
@@ -187,6 +194,9 @@ def main():
                     resume=args.resume,
                     save_every=args.save_every,
                     paired_epochs=args.paired_epochs,
+                    localizer_dropout=args.localizer_dropout,
+                    localizer_weight_decay=args.localizer_weight_decay,
+                    localizer_rdrop=args.localizer_rdrop,
                 )
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions
@@ -236,7 +246,8 @@ def main():
 
         print(
             json.dumps(
-                paired_report(args.output_dir, args.data_dir, reference_dir=args.reference_dir)
+                paired_report(args.output_dir, args.data_dir, reference_dir=args.reference_dir,
+                              localizer_regularization=args.localizer_regularization)
                 if args.dataset == "primevul_paired"
                 else report(args.output_dir, args.data_dir),
                 indent=2,

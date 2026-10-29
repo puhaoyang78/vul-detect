@@ -1,0 +1,47 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.10063719004392624, "learning_rate": 3.90625e-07, "focal": 0.09882185608148575, "rdrop_kl": 0.018153363838791847}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.06887973845005035, "learning_rate": 1.7881944444444445e-05, "focal": 0.06802324950695038, "rdrop_kl": 0.008564881049096584}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.11544 │ 128   │ 0.5000    │ —   │ —   │ 0.1923 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.11544039787258953, "optimizer_steps": 128, "global_step": 128, "validation_threshold": 0.5, "validation": {"f1": 0.1923329682365827, "weighted_f1": 0.6705539643211357, "precision": 0.11376004146151852, "recall": 0.6218130311614731, "auprc": 0.12283995769252223, "predicted_positive_fraction": 0.44351223997241696, "lines": 8701, "modified_lines": 706.0, "confusion_matrix": [[4575, 3420], [267, 439]], "loss": 0.12494318548124284}, "fusion_validation": null, "training_seconds": 97.05555616505444, "epoch_seconds": 99.59668609220535, "train_components": {"focal": 0.11414446419803426, "rdrop_kl": 0.012959333405888174}}
+{"event": "step", "epoch": 2, "step": 200, "batch": 72, "loss": 0.07013997435569763, "learning_rate": 1.3541666666666668e-05, "focal": 0.0692007839679718, "rdrop_kl": 0.009391892701387405}
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.08264 │ 128   │ 0.5000    │ —   │ —   │ 0.2252 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.08264276818954386, "optimizer_steps": 128, "global_step": 256, "validation_threshold": 0.5, "validation": {"f1": 0.22517861542251785, "weighted_f1": 0.7205518569043882, "precision": 0.13629585445869372, "recall": 0.6473087818696884, "auprc": 0.15408197803846202, "predicted_positive_fraction": 0.38535800482703136, "lines": 8701, "modified_lines": 706.0, "confusion_matrix": [[5099, 2896], [249, 457]], "loss": 0.12838634010404348}, "fusion_validation": null, "training_seconds": 66.02152315992862, "epoch_seconds": 68.76331874309108, "train_components": {"focal": 0.08172544919943903, "rdrop_kl": 0.00917318656865973}}
+{"event": "step", "epoch": 3, "step": 300, "batch": 44, "loss": 0.053328946232795715, "learning_rate": 9.201388888888889e-06, "focal": 0.0523000992834568, "rdrop_kl": 0.010288466699421406}
+
+losver_localizer · Epoch 3 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.05549 │ 128   │ 0.5000    │ —   │ —   │ 0.2214 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 3, "train_loss": 0.05548643518704921, "optimizer_steps": 128, "global_step": 384, "validation_threshold": 0.5, "validation": {"f1": 0.22139435870143692, "weighted_f1": 0.7397713788400402, "precision": 0.1363040629095675, "recall": 0.5892351274787535, "auprc": 0.1569244681994148, "predicted_positive_fraction": 0.3507642799678198, "lines": 8701, "modified_lines": 706.0, "confusion_matrix": [[5359, 2636], [290, 416]], "loss": 0.1441633370704949}, "fusion_validation": null, "training_seconds": 66.17534665809944, "epoch_seconds": 68.81346088508144, "train_components": {"focal": 0.054389235214330256, "rdrop_kl": 0.010971999508910812}}
+{"event": "step", "epoch": 4, "step": 400, "batch": 16, "loss": 0.02791663631796837, "learning_rate": 4.861111111111111e-06, "focal": 0.02686551958322525, "rdrop_kl": 0.010511167347431183}
+{"event": "step", "epoch": 4, "step": 500, "batch": 116, "loss": 0.03834955766797066, "learning_rate": 5.208333333333334e-07, "focal": 0.03720494732260704, "rdrop_kl": 0.01144611369818449}
+
+losver_localizer · Epoch 4 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.03883 │ 128   │ 0.5000    │ —   │ —   │ 0.2288 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 4, "train_loss": 0.03883380904881051, "optimizer_steps": 128, "global_step": 512, "validation_threshold": 0.5, "validation": {"f1": 0.22880324543610547, "weighted_f1": 0.8204836873764794, "precision": 0.160318362706083, "recall": 0.39943342776203966, "auprc": 0.15877406080345619, "predicted_positive_fraction": 0.20216067118721986, "lines": 8701, "modified_lines": 706.0, "confusion_matrix": [[6518, 1477], [424, 282]], "loss": 0.19454841851256788}, "fusion_validation": null, "training_seconds": 60.29435306042433, "epoch_seconds": 62.89702475909144, "train_components": {"focal": 0.037644113930582535, "rdrop_kl": 0.011896951771632303}}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).

@@ -1,0 +1,56 @@
+{
+  "A": {
+    "global_step": 512,
+    "scheduler_epoch": 512,
+    "optimizer_parameter_steps": [
+      512
+    ],
+    "decay": [
+      0.0
+    ],
+    "selected_epoch": 4
+  },
+  "B": {
+    "global_step": 512,
+    "scheduler_epoch": 512,
+    "optimizer_parameter_steps": [
+      512
+    ],
+    "decay": [
+      0.01,
+      0.0
+    ],
+    "selected_epoch": 4
+  },
+  "C": {
+    "global_step": 512,
+    "scheduler_epoch": 512,
+    "optimizer_parameter_steps": [
+      512
+    ],
+    "decay": [
+      0.01,
+      0.0
+    ],
+    "selected_epoch": 4
+  },
+  "rng_equal": {
+    "A_B": {
+      "python": true,
+      "numpy": true,
+      "torch": true,
+      "cuda": false
+    },
+    "B_C": {
+      "python": true,
+      "numpy": true,
+      "torch": true,
+      "cuda": true
+    }
+  },
+  "test_used": false,
+  "B_C_epoch_component_max_error": {
+    "B": 0.0,
+    "C": 3.339664543175469e-10
+  }
+}

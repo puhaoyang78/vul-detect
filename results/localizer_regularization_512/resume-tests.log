@@ -1,0 +1,110 @@
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 1.193195104598999, "learning_rate": 1.8518518518518518e-05, "focal": 1.193195104598999, "rdrop_kl": 0.03436718136072159}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94801 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9480051398277283, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.053196758031845}, "fusion_validation": null, "training_seconds": 1.7386268698610365, "epoch_seconds": 2.232779533136636, "train_components": {"focal": 0.9480051398277283, "rdrop_kl": 0.03184538769225279}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94148 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.9414845705032349, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0428297519683838}, "fusion_validation": null, "training_seconds": 1.7520069363527, "epoch_seconds": 2.2392835961654782, "train_components": {"focal": 0.9414845705032349, "rdrop_kl": 0.030976172847052414}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 1.193195104598999, "learning_rate": 1.8518518518518518e-05, "focal": 1.193195104598999, "rdrop_kl": 0.03436718136072159}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94801 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9480051398277283, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.053196758031845}, "fusion_validation": null, "training_seconds": 1.6867490988224745, "epoch_seconds": 2.1755798757076263, "train_components": {"focal": 0.9480051398277283, "rdrop_kl": 0.03184538769225279}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+/tmp/tmp4nkfq3v7/resumed/primevul_paired/losver_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94148 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.9414845705032349, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0428297519683838}, "fusion_validation": null, "training_seconds": 2.0490409173071384, "epoch_seconds": 2.564723023213446, "train_components": {"focal": 0.9414845705032349, "rdrop_kl": 0.030976172847052414}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 1.1966317892074585, "learning_rate": 1.8518518518518518e-05, "focal": 1.193195104598999, "rdrop_kl": 0.03436718136072159}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.95119 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9511890014012655, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0531935095787048}, "fusion_validation": null, "training_seconds": 1.6845427881926298, "epoch_seconds": 2.1712948568165302, "train_components": {"focal": 0.9480044643084208, "rdrop_kl": 0.03184552304446697}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94458 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.9445780118306478, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.042822927236557}, "fusion_validation": null, "training_seconds": 1.7359893503598869, "epoch_seconds": 2.244134936016053, "train_components": {"focal": 0.9414804180463155, "rdrop_kl": 0.030976024145881336}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 1.1966317892074585, "learning_rate": 1.8518518518518518e-05, "focal": 1.193195104598999, "rdrop_kl": 0.03436718136072159}
+
+losver_localizer · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.95119 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 1, "train_loss": 0.9511890014012655, "optimizer_steps": 3, "global_step": 3, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.0531935095787048}, "fusion_validation": null, "training_seconds": 1.7270358968526125, "epoch_seconds": 2.2235553939826787, "train_components": {"focal": 0.9480044643084208, "rdrop_kl": 0.03184552304446697}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+/tmp/tmp45_ylsqu/resumed/primevul_paired/losver_localizer: resuming epoch 2, optimizer batch 1, step 4
+
+losver_localizer · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1     │
+├─────────┼───────┼───────────┼─────┼─────┼────────┤
+│ 0.94458 │ 3     │ 0.5000    │ —   │ —   │ 0.0000 │
+└─────────┴───────┴───────────┴─────┴─────┴────────┘
+{"event": "epoch", "variant": "losver_localizer", "epoch": 2, "train_loss": 0.9445780118306478, "optimizer_steps": 3, "global_step": 6, "validation_threshold": 0.5, "validation": {"f1": 0.0, "weighted_f1": 0.494949494949495, "precision": 0.0, "recall": 0.0, "auprc": 0.2527146464646465, "predicted_positive_fraction": 0.0, "lines": 11, "modified_lines": 4.0, "confusion_matrix": [[7, 0], [4, 0]], "loss": 1.042822927236557}, "fusion_validation": null, "training_seconds": 2.0615145722404122, "epoch_seconds": 2.5637317299842834, "train_components": {"focal": 0.9414804180463155, "rdrop_kl": 0.030976024145881336}}
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+  return data.pin_memory(device)
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+  return data.pin_memory(device)
+----------------------------------------------------------------------
+Ran 1 test in 25.580s
+
+OK
