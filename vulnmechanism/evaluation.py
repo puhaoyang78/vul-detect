@@ -1580,7 +1580,187 @@ def check_repair_regions(
     return result
 
 
-def paired_report(output_dir, data_dir):
+def diff_neighbour_report(output_dir, data_dir, reference_dir):
+    """Compare matched pilots using saved scores, original Diff and proxy labels."""
+    from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+    from .metrics import paired_metrics
+
+    if reference_dir is None:
+        raise ValueError("diff_neighbour report requires --reference-dir")
+    root = Path(output_dir)
+    supervision = root / "supervision/diff_neighbour"
+    reference = Path(reference_dir) / "primevul_paired"
+    runs = root / "primevul_paired"
+    paths = dict(losver=(reference / "losver_localizer", reference / "losver"),
+                 diff_neighbour=(runs / "diff_neighbour_localizer", runs / "diff_neighbour"))
+    configs = {name: [json.loads((p / "training.metrics.json").read_text()) for p in ps]
+               for name, ps in paths.items()}
+    checks = []
+    for stage in (0, 1):
+        a, b = configs["losver"][stage], configs["diff_neighbour"][stage]
+        fields = ("training_members", "validation_members", "input_mode", "window_micro_batch",
+                  "function_micro_batch", "gradient_accumulation", "parameters", "training_config",
+                  "optimizer_steps", "epochs", "pooling", "weak_supervision", "decision_threshold",
+                  "selection", "model_path", "classifier_head", "precision")
+        mismatches = [k for k in fields if a[k] != b[k]]
+        if mismatches or a["input_mode"] != "512" or a["weak_supervision"]:
+            raise ValueError(f"unmatched diff_neighbour pilot: {mismatches}")
+        if a["train_samples"] >= 8708:
+            raise ValueError("diff_neighbour report is for the requested Train/Valid pilot")
+        checks.append(dict(stage=("localizer", "detector")[stage], compared_fields=list(fields),
+                           optimizer_steps=a["optimizer_steps"], train_functions=a["train_samples"],
+                           valid_functions=a["valid_samples"], matched=True))
+    members = configs["losver"][1]["validation_members"]
+    if any(c["validation_members"] != members for cs in configs.values() for c in cs):
+        raise ValueError("localizer/detector evaluation cohorts differ")
+    annotations = {s: read_jsonl(Path(data_dir) / "primevul_paired" / f"{s}.lines.jsonl")
+                   for s in ("train", "valid")}
+    proxies = {s: {r["sample_key"]: r for r in read_jsonl(supervision / f"{s}.jsonl")}
+               for s in ("train", "valid")}
+    valid = [r for r in annotations["valid"] if r["sample_key"] in set(members)]
+    if [r["sample_key"] for r in valid] != members:
+        raise ValueError("Valid members are not in the original source order")
+    addition = {valid[i]["pair_key"] for i in range(0, len(valid), 2)
+                if not valid[i]["lines_ground_truth"] and valid[i+1]["lines_ground_truth"]}
+    table, localizers, transitions = [], [], []
+    predictions_by_method = {}
+    for name, (locator, detector) in paths.items():
+        predictions = read_jsonl(detector / "valid.predictions.jsonl")
+        bykey = {r["sample_key"]: r for r in predictions}
+        if len(bykey) != len(predictions) or list(bykey) != members:
+            raise ValueError("saved detector predictions do not match the fixed Valid cohort")
+        predictions_by_method[name] = bykey
+        for group in ("all", "pure_addition"):
+            rows = valid if group == "all" else [r for r in valid if r["pair_key"] in addition]
+            table.append(dict(method=name, group=group,
+                              epoch=configs[name][1]["selected_epochs"]["p_c"],
+                              **paired_metrics(rows, [bykey[r["sample_key"]]["probability"] for r in rows])))
+        for split in ("train", "valid"):
+            keys = configs[name][0]["training_members" if split == "train" else "validation_members"]
+            original = {r["sample_key"]: r for r in annotations[split]}
+            scores = read_jsonl(locator / f"{split}.line_scores.jsonl")
+            if len(scores) != len(keys) or [r["sample_key"] for r in scores] != keys:
+                raise ValueError("saved localization scores do not match the source cohort")
+            for label_type in ("original_diff", "proxy_diff_neighbour"):
+                y, p = [], []
+                for r in scores:
+                    row = (original if label_type == "original_diff" else proxies[split])[r["sample_key"]]
+                    gt = set(row["lines_ground_truth"])
+                    if len(r["line_numbers"]) != len(r["line_scores"]):
+                        raise ValueError("localization scores and physical lines differ")
+                    y.extend(int(n in gt) for n in r["line_numbers"])
+                    p.extend(v > 0.5 for v in r["line_scores"])
+                localizers.append(dict(method=name, split=split, labels=label_type,
+                    functions=len(scores), lines=len(y), positive_lines=sum(y), predicted_lines=sum(p),
+                    precision=float(precision_score(y, p, zero_division=0)),
+                    recall=float(recall_score(y, p, zero_division=0)),
+                    f1=float(f1_score(y, p, zero_division=0)),
+                    confusion_matrix=confusion_matrix(y, p, labels=[0, 1]).tolist()))
+    for i in range(0, len(valid), 2):
+        v, p = valid[i:i+2]
+        outcomes = {}
+        for method, pred in predictions_by_method.items():
+            outcomes[method] = (pred[v["sample_key"]]["probability"] > .5
+                                and pred[p["sample_key"]]["probability"] <= .5)
+        transitions.append(dict(pair_key=v["pair_key"], pure_addition=v["pair_key"] in addition,
+                                **outcomes))
+    statistics = json.loads((supervision / "statistics.json").read_text())
+    pilot_coverage = {}
+    for split in ("train", "valid"):
+        keys = set(configs["losver"][0]["training_members" if split == "train" else "validation_members"])
+        audit = [r for r in read_jsonl(supervision / f"{split}.audit.jsonl") if r["sample_key"] in keys]
+        eligible = [r for r in audit if r["eligible"] and r["target"] == 1]
+        pilot_coverage[split] = dict(functions=len(keys), pure_addition_pairs=len(eligible),
+            supplemented=sum(bool(r["added_lines"]) for r in eligible),
+            added_positive_lines=sum(len(r["added_lines"]) for r in eligible),
+            single=sum(r["selection"] == "single" for r in eligible),
+            both=sum(r["selection"] == "both" for r in eligible),
+            none=sum(r["selection"] == "none" for r in eligible))
+    proxy_recovery = []
+    for name in paths:
+        for split in ("train", "valid"):
+            original, proxy = [r for r in localizers if r["method"] == name and r["split"] == split]
+            count = proxy["positive_lines"] - original["positive_lines"]
+            hits = proxy["confusion_matrix"][1][1] - original["confusion_matrix"][1][1]
+            proxy_recovery.append(dict(method=name, split=split, added_lines=count,
+                                       hits=hits, recall=hits/count if count else None))
+    write_json(root / "comparison.json", dict(detectors=table, localizers=localizers,
+               proxy_recovery=proxy_recovery, pilot_coverage=pilot_coverage,
+               protocol_checks=checks, reference_dir=str(reference_dir)))
+    for filename, rows in (("comparison.csv", table), ("localizer_metrics.csv", localizers),
+                           ("pair_transitions.csv", transitions)):
+        with (root / filename).open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+    loc_config, det_config = configs["diff_neighbour"]
+    lines = ["# 512 diff_neighbour pilot", "",
+        "Only line supervision changes. Original LOSVER localizer/Focal loss (alpha=.8, gamma=1.5, pos_weight=5), 5/1 code-token Softmax, UniXcoder, linear detector, source input and >.5 threshold are unchanged. All members remain in training and evaluation. No Unknown/weak-region loss or robust fusion is used.", "",
+        f"Reference: `{reference_dir}`. The existing completed original LOSVER pilot is reused without retraining or overwriting it. Both methods use {loc_config['train_samples']} Train/{loc_config['valid_samples']} Valid functions, localizer/detector epochs={loc_config['epochs']}/{det_config['epochs']}, optimizer steps={loc_config['optimizer_steps']}/{det_config['optimizer_steps']}, training seed {loc_config['training_config']['seed']} and member-sampling seed 42. The localizer selects by ORIGINAL Valid Diff positive F1; detector selects by Valid P-C. Test is not opened or evaluated.", "",
+        "A proxy is added only to a side whose FULL-source original Diff positives are empty. One code line is selected before/after each edit in the same Differ alignment. Each direction crosses at most one blank/comment line; brace-bearing, delimiter-only and preprocessor lines stop selection. The entire opposite nonblank edit and selected neighbours must be completely visible inside 510 source tokens. Identical encoded pairs are unchanged. These nearby lines are proxies, not verified vulnerability locations.", "",
+        "## Supervision coverage", "",
+        "| Scope | Split | Pure-add pairs | Supplemented | Coverage | Added positives | Single / both / none |",
+        "| --- | --- | ---: | ---: | ---: | ---: | --- |"]
+    for split, c in statistics["splits"].items():
+        coverage = c.get('pure_addition_covered',0) / max(1, c.get('pure_addition_pairs',0))
+        lines.append(f"| Full official | {split} | {c.get('pure_addition_pairs',0)} | {c.get('pure_addition_covered',0)} | {coverage:.2%} | {c.get('pure_addition_added_positives',0)} | {c.get('pure_addition_single',0)} / {c.get('pure_addition_both',0)} / {c.get('pure_addition_none',0)} |")
+    for split, c in pilot_coverage.items():
+        coverage = c['supplemented'] / max(1, c['pure_addition_pairs'])
+        lines.append(f"| Fixed pilot | {split} | {c['pure_addition_pairs']} | {c['supplemented']} | {coverage:.2%} | {c['added_positive_lines']} | {c['single']} / {c['both']} / {c['none']} |")
+    lines += ["", "Single/both denotes whether a supplemented function has at least one edit selecting both directions; per-edit counts and explicit rejection reasons are in `supervision/diff_neighbour/statistics.json` and the source-aligned audit tables. Multiple edits are deduplicated.", "",
+        "| Full official 512 input | Visible lines | Original positives | Added positives (both repair types) | New positives |",
+        "| --- | ---: | ---: | ---: | ---: |"]
+    for split, c in statistics["splits"].items():
+        lines.append(f"| {split} | {c['visible_lines']} | {c['original_visible_positives']} | {c['added_positives']} | {c['augmented_visible_positives']} |")
+    lines += ["",
+        "## Valid function classification", "",
+        "| Model | Subset | Pairs | Epoch | P-C | AUC | MCC | F1 | Recall | Patched FPR |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for r in table:
+        lines.append(f"| {r['method']} | {r['group']} | {r['pairs']} | {r['epoch']} | {r['p_c']:.4f} | {r['auc']:.4f} | {r['mcc']:.4f} | {r['f1']:.4f} | {r['recall']:.4f} | {r['patched_fpr']:.4f} |")
+    for group in ("all", "pure_addition"):
+        before = next(r for r in table if r["method"] == "losver" and r["group"] == group)
+        after = next(r for r in table if r["method"] == "diff_neighbour" and r["group"] == group)
+        chosen = [r for r in transitions if group == "all" or r["pure_addition"]]
+        gains = sum(not r["losver"] and r["diff_neighbour"] for r in chosen)
+        losses = sum(r["losver"] and not r["diff_neighbour"] for r in chosen)
+        lines += ["", f"{group}, new minus original: P-C {after['p_c']-before['p_c']:+.4f}, AUC {after['auc']-before['auc']:+.4f}, MCC {after['mcc']-before['mcc']:+.4f}, F1 {after['f1']-before['f1']:+.4f}; newly both-correct pairs={gains}, regressed pairs={losses}, denominator={len(chosen)}."]
+    lines += ["", "Pure addition is defined by the original vulnerable-side Diff labels being empty and patched-side positives being nonempty, before augmentation or model results.", "",
+        "## Line localization: original versus proxy labels", "",
+        "| Model | Split | Labels | Lines | Positive | Predicted | Precision | Recall | F1 |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for r in localizers:
+        lines.append(f"| {r['method']} | {r['split']} | {r['labels']} | {r['lines']} | {r['positive_lines']} | {r['predicted_lines']} | {r['precision']:.4f} | {r['recall']:.4f} | {r['f1']:.4f} |")
+    lines += ["", "Original-Diff and proxy metrics use the SAME visible lines and predictions, with different label sets. Better proxy F1 alone cannot establish better localization or function classification. Full per-function code and labels stay in the local supervision cache; source-free audit records retain zero-based physical line IDs.", "",
+        "| Model | Split | Added proxy lines | Predicted hits | Proxy-only recall |",
+        "| --- | --- | ---: | ---: | ---: |"]
+    for r in proxy_recovery:
+        rate = f"{r['recall']:.4f}" if r["recall"] is not None else "NA"
+        lines.append(f"| {r['method']} | {r['split']} | {r['added_lines']} | {r['hits']} | {rate} |")
+    lines += ["", "This measures recovery of the added adjacency proxies, not semantic vulnerability localization. Train is in-sample for the localizer; Valid is unseen. The original/proxy supervision gap and the classifier changes are observational, not a causal attribution.", "",
+        "## Runtime", "", "| Stage | Train seconds | Logged epoch seconds | Steps |",
+        "| --- | ---: | ---: | ---: |"]
+    for name, ps in paths.items():
+        for stage, path in zip(("localizer", "detector"), ps):
+            events = [r for r in read_jsonl(path / "best.training.jsonl") if r["event"] == "epoch"]
+            lines.append(f"| {name} {stage} | {sum(e['training_seconds'] for e in events):.1f} | {sum(e['epoch_seconds'] for e in events):.1f} | {sum(e['optimizer_steps'] for e in events)} |")
+    lines += ["", "Times include loader/IO and validation effects; they are not isolated GPU benchmarks. These are one-seed pilot results; Test and full-data training are not performed.", "",
+        "## Implementation and verification", "",
+        "- `data.py`: preserve original Differ labels; supplement only fully visible edit-adjacent proxies and record each rejection. `training.py`/CLI: two new method choices in the existing stages; original Focal and selection retained. `evaluation.py`: aligned comparison, original/proxy line metrics and the same fixed source Valid cohort. `model.py` is unchanged.",
+        "- [Data checks](data-checks.json) verify original source/targets/members/order, all original positives and all non-target function labels. [Protocol checks](protocol-checks.json) compare actual saved optimizer/scheduler steps, parameter shapes, input coverage, members and final Python/NumPy/CPU/CUDA RNG states against the reused pilot.",
+        "- [Train review](train_review.md) / [records](train_review.jsonl): Seed42 stratified inspection of 40 Train pair sides, covering supplemented, boundary/visibility rejection, identical-input and pure-deletion cases. These syntactic checks do not certify semantic relevance. `train:5179` contains an added test invocation; `train:1831` selects a signature line; `train:2698` has a signature-only side. Such cases remain, as required by the unchanged data protocol.",
+        "- [GPU smoke](smoke.json): real Train forward/backward, encoder/attention/head gradients, exact save/reload and source-only single-function inference. [Full tests](tests.log), [targeted tests](neighbour-tests.log) and [resume tests](resume-tests.log) retain the actual execution logs. The smoke log preserves an initial diagnostic API-call error and its corrected successful check.",
+        "",
+        "## Interpretation", "",
+        "AUC and P-C measure different behavior. Ranking can improve while two sides remain on the same side of the fixed .5 boundary. Read the pure-add Recall and patched FPR together: fewer false alarms can accompany fewer detected vulnerabilities. Proxy coverage or proxy F1 cannot substitute for both-correct classification.", "",
+        "The Train review confirms that bounded neighbours need not identify the vulnerability operation. Original-Diff localization precision remains low, and hard weighting is intentionally unchanged. These observations are possible limitations, not a demonstrated cause of a classifier difference. The reported metrics have mixed directions and do not establish a stable overall classification gain; no further module, full-data training or Test tuning is launched.", ""]
+    (root / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    return dict(results=table, pilot_coverage=pilot_coverage)
+
+
+def paired_report(output_dir, data_dir, *, reference_dir=None):
+    if (Path(output_dir) / "supervision/diff_neighbour/statistics.json").exists():
+        return diff_neighbour_report(output_dir, data_dir, reference_dir)
     if (Path(output_dir) / "supervision/statistics.json").exists():
         return repair_region_report(output_dir, data_dir)
     from .training import LOSVER_CONFIG

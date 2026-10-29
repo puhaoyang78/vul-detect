@@ -1,0 +1,403 @@
+{
+  "detectors": [
+    {
+      "method": "losver",
+      "group": "all",
+      "epoch": 4,
+      "samples": 256,
+      "pairs": 128,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 13,
+        "p_v": 22,
+        "p_b": 89,
+        "p_r": 4
+      },
+      "p_c": 0.1015625,
+      "p_v": 0.171875,
+      "p_b": 0.6953125,
+      "p_r": 0.03125,
+      "accuracy": 0.53515625,
+      "precision": 0.5737704918032787,
+      "recall": 0.2734375,
+      "f1": 0.37037037037037035,
+      "mcc": 0.08252020273099302,
+      "auc": 0.542388916015625,
+      "auprc": 0.5484535826553412,
+      "pair_ranking_accuracy": 0.4921875,
+      "pair_ranking_ties": 30,
+      "patched_fpr": 0.203125
+    },
+    {
+      "method": "losver",
+      "group": "pure_addition",
+      "epoch": 4,
+      "samples": 48,
+      "pairs": 24,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 5,
+        "p_v": 3,
+        "p_b": 14,
+        "p_r": 2
+      },
+      "p_c": 0.20833333333333334,
+      "p_v": 0.125,
+      "p_b": 0.5833333333333334,
+      "p_r": 0.08333333333333333,
+      "accuracy": 0.5625,
+      "precision": 0.6153846153846154,
+      "recall": 0.3333333333333333,
+      "f1": 0.43243243243243246,
+      "mcc": 0.14064216928154863,
+      "auc": 0.5876736111111112,
+      "auprc": 0.6541229504602917,
+      "pair_ranking_accuracy": 0.4583333333333333,
+      "pair_ranking_ties": 6,
+      "patched_fpr": 0.20833333333333334
+    },
+    {
+      "method": "diff_neighbour",
+      "group": "all",
+      "epoch": 4,
+      "samples": 256,
+      "pairs": 128,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 12,
+        "p_v": 25,
+        "p_b": 88,
+        "p_r": 3
+      },
+      "p_c": 0.09375,
+      "p_v": 0.1953125,
+      "p_b": 0.6875,
+      "p_r": 0.0234375,
+      "accuracy": 0.53515625,
+      "precision": 0.5692307692307692,
+      "recall": 0.2890625,
+      "f1": 0.38341968911917096,
+      "mcc": 0.0807735457106431,
+      "auc": 0.557891845703125,
+      "auprc": 0.5480225615657813,
+      "pair_ranking_accuracy": 0.5078125,
+      "pair_ranking_ties": 30,
+      "patched_fpr": 0.21875
+    },
+    {
+      "method": "diff_neighbour",
+      "group": "pure_addition",
+      "epoch": 4,
+      "samples": 48,
+      "pairs": 24,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 4,
+        "p_v": 2,
+        "p_b": 18,
+        "p_r": 0
+      },
+      "p_c": 0.16666666666666666,
+      "p_v": 0.08333333333333333,
+      "p_b": 0.75,
+      "p_r": 0.0,
+      "accuracy": 0.5833333333333334,
+      "precision": 0.75,
+      "recall": 0.25,
+      "f1": 0.375,
+      "mcc": 0.22360679774997896,
+      "auc": 0.6067708333333334,
+      "auprc": 0.6264619042973985,
+      "pair_ranking_accuracy": 0.5833333333333334,
+      "pair_ranking_ties": 6,
+      "patched_fpr": 0.08333333333333333
+    }
+  ],
+  "localizers": [
+    {
+      "method": "losver",
+      "split": "train",
+      "labels": "original_diff",
+      "functions": 1024,
+      "lines": 37815,
+      "positive_lines": 2685,
+      "predicted_lines": 6371,
+      "precision": 0.4194004080991995,
+      "recall": 0.9951582867783985,
+      "f1": 0.5901060070671378,
+      "confusion_matrix": [
+        [
+          31431,
+          3699
+        ],
+        [
+          13,
+          2672
+        ]
+      ]
+    },
+    {
+      "method": "losver",
+      "split": "train",
+      "labels": "proxy_diff_neighbour",
+      "functions": 1024,
+      "lines": 37815,
+      "positive_lines": 2888,
+      "predicted_lines": 6371,
+      "precision": 0.4259927797833935,
+      "recall": 0.9397506925207756,
+      "f1": 0.5862404147316125,
+      "confusion_matrix": [
+        [
+          31270,
+          3657
+        ],
+        [
+          174,
+          2714
+        ]
+      ]
+    },
+    {
+      "method": "losver",
+      "split": "valid",
+      "labels": "original_diff",
+      "functions": 256,
+      "lines": 8701,
+      "positive_lines": 706,
+      "predicted_lines": 1747,
+      "precision": 0.16027475672581568,
+      "recall": 0.39660056657223797,
+      "f1": 0.2282918874847126,
+      "confusion_matrix": [
+        [
+          6528,
+          1467
+        ],
+        [
+          426,
+          280
+        ]
+      ]
+    },
+    {
+      "method": "losver",
+      "split": "valid",
+      "labels": "proxy_diff_neighbour",
+      "functions": 256,
+      "lines": 8701,
+      "positive_lines": 738,
+      "predicted_lines": 1747,
+      "precision": 0.16542644533485976,
+      "recall": 0.3915989159891599,
+      "f1": 0.23259557344064385,
+      "confusion_matrix": [
+        [
+          6505,
+          1458
+        ],
+        [
+          449,
+          289
+        ]
+      ]
+    },
+    {
+      "method": "diff_neighbour",
+      "split": "train",
+      "labels": "original_diff",
+      "functions": 1024,
+      "lines": 37815,
+      "positive_lines": 2685,
+      "predicted_lines": 7164,
+      "precision": 0.37283640424343945,
+      "recall": 0.9947858472998138,
+      "f1": 0.542390090364504,
+      "confusion_matrix": [
+        [
+          30637,
+          4493
+        ],
+        [
+          14,
+          2671
+        ]
+      ]
+    },
+    {
+      "method": "diff_neighbour",
+      "split": "train",
+      "labels": "proxy_diff_neighbour",
+      "functions": 1024,
+      "lines": 37815,
+      "positive_lines": 2888,
+      "predicted_lines": 7164,
+      "precision": 0.40033500837520936,
+      "recall": 0.9930747922437673,
+      "f1": 0.5706327099084759,
+      "confusion_matrix": [
+        [
+          30631,
+          4296
+        ],
+        [
+          20,
+          2868
+        ]
+      ]
+    },
+    {
+      "method": "diff_neighbour",
+      "split": "valid",
+      "labels": "original_diff",
+      "functions": 256,
+      "lines": 8701,
+      "positive_lines": 706,
+      "predicted_lines": 1985,
+      "precision": 0.15818639798488665,
+      "recall": 0.4447592067988669,
+      "f1": 0.23337049424005946,
+      "confusion_matrix": [
+        [
+          6324,
+          1671
+        ],
+        [
+          392,
+          314
+        ]
+      ]
+    },
+    {
+      "method": "diff_neighbour",
+      "split": "valid",
+      "labels": "proxy_diff_neighbour",
+      "functions": 256,
+      "lines": 8701,
+      "positive_lines": 738,
+      "predicted_lines": 1985,
+      "precision": 0.1672544080604534,
+      "recall": 0.44986449864498645,
+      "f1": 0.24384869629085568,
+      "confusion_matrix": [
+        [
+          6310,
+          1653
+        ],
+        [
+          406,
+          332
+        ]
+      ]
+    }
+  ],
+  "proxy_recovery": [
+    {
+      "method": "losver",
+      "split": "train",
+      "added_lines": 203,
+      "hits": 42,
+      "recall": 0.20689655172413793
+    },
+    {
+      "method": "losver",
+      "split": "valid",
+      "added_lines": 32,
+      "hits": 9,
+      "recall": 0.28125
+    },
+    {
+      "method": "diff_neighbour",
+      "split": "train",
+      "added_lines": 203,
+      "hits": 197,
+      "recall": 0.9704433497536946
+    },
+    {
+      "method": "diff_neighbour",
+      "split": "valid",
+      "added_lines": 32,
+      "hits": 18,
+      "recall": 0.5625
+    }
+  ],
+  "pilot_coverage": {
+    "train": {
+      "functions": 1024,
+      "pure_addition_pairs": 146,
+      "supplemented": 97,
+      "added_positive_lines": 185,
+      "single": 32,
+      "both": 65,
+      "none": 49
+    },
+    "valid": {
+      "functions": 256,
+      "pure_addition_pairs": 24,
+      "supplemented": 17,
+      "added_positive_lines": 32,
+      "single": 5,
+      "both": 12,
+      "none": 7
+    }
+  },
+  "protocol_checks": [
+    {
+      "stage": "localizer",
+      "compared_fields": [
+        "training_members",
+        "validation_members",
+        "input_mode",
+        "window_micro_batch",
+        "function_micro_batch",
+        "gradient_accumulation",
+        "parameters",
+        "training_config",
+        "optimizer_steps",
+        "epochs",
+        "pooling",
+        "weak_supervision",
+        "decision_threshold",
+        "selection",
+        "model_path",
+        "classifier_head",
+        "precision"
+      ],
+      "optimizer_steps": 512,
+      "train_functions": 1024,
+      "valid_functions": 256,
+      "matched": true
+    },
+    {
+      "stage": "detector",
+      "compared_fields": [
+        "training_members",
+        "validation_members",
+        "input_mode",
+        "window_micro_batch",
+        "function_micro_batch",
+        "gradient_accumulation",
+        "parameters",
+        "training_config",
+        "optimizer_steps",
+        "epochs",
+        "pooling",
+        "weak_supervision",
+        "decision_threshold",
+        "selection",
+        "model_path",
+        "classifier_head",
+        "precision"
+      ],
+      "optimizer_steps": 512,
+      "train_functions": 1024,
+      "valid_functions": 256,
+      "matched": true
+    }
+  ],
+  "reference_dir": "results/repair_region_512/pilot"
+}

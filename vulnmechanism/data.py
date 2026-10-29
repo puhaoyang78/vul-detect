@@ -344,21 +344,248 @@ def prepare(raw_root, output, seed=42, datasets=DATASETS):
     return statistics
 
 
-def modified_lines(source, counterpart):
-    """Exact LOSVER Differ rule: nonblank deleted lines, separately on each side."""
+def _line_diff(source, counterpart):
+    """Original LOSVER Differ labels and edit coordinates from the same alignment."""
     import difflib
 
-    result, position = [], 0
+    result, edits, position, other, edit = [], [], 0, 0, None
     for line in difflib.Differ().compare(
         source.splitlines(keepends=True), counterpart.splitlines(keepends=True)
     ):
+        if line.startswith(("- ", "+ ")) and edit is None:
+            edit = dict(start=position, end=position, other_lines=[])
         if line.startswith("- "):
             if line[2:].strip():
                 result.append(position)
             position += 1
+            edit["end"] = position
+        elif line.startswith("+ "):
+            if line[2:].strip():
+                edit["other_lines"].append(other)
+            other += 1
         elif line.startswith("  "):
+            if edit is not None:
+                edits.append(edit)
+                edit = None
             position += 1
-    return result
+            other += 1
+    if edit is not None:
+        edits.append(edit)
+    return result, edits
+
+
+def modified_lines(source, counterpart):
+    """Exact LOSVER Differ rule: nonblank deleted lines, separately on each side."""
+    return _line_diff(source, counterpart)[0]
+
+
+def _neighbour_line_kinds(source):
+    """Lexical boundaries only: comments/literals cannot create fake braces."""
+    from bisect import bisect_right
+    from .syntax import source_token_spans
+
+    lines = source.splitlines(keepends=True)
+    starts, offset = [], 0
+    for line in lines:
+        starts.append(offset)
+        offset += len(line)
+    tokens = [[] for _ in lines]
+    for token, a, b in source_token_spans(source):
+        n = max(0, bisect_right(starts, a) - 1)
+        while n < len(lines) and starts[n] < b:
+            if source[max(a, starts[n]) : min(b, starts[n] + len(lines[n]))].strip():
+                tokens[n].append(token)
+            n += 1
+    kinds, preprocessor = [], False
+    for line, ts in zip(lines, tokens):
+        if preprocessor or line.lstrip().startswith("#"):
+            kinds.append("preprocessor_boundary")
+            preprocessor = line.rstrip("\r\n").endswith("\\")
+        elif not ts:
+            kinds.append("blank_or_comment")
+        elif any(t in ("{", "}") for t in ts):
+            # A brace-bearing line terminates this deliberately local search.
+            kinds.append("block_boundary")
+        elif all(t in ("(", ")", "[", "]", ";", ",", ":", "\\") for t in ts):
+            kinds.append("delimiter")
+        else:
+            kinds.append("code")
+    return kinds
+
+
+def diff_neighbour_supervision(rows, encodings):
+    """Binary Diff labels plus bounded edit-adjacent proxies on a missing side.
+
+    The original positive set must be empty in the FULL source, not just after
+    truncation. A whole opposite edit must be fully visible; a partially visible
+    edit is conservatively ineligible. Each direction can cross one blank/comment
+    physical line, but no brace/preprocessor/delimiter line. No semantic expansion.
+    """
+    if len(rows) != 2 or len(encodings) != 2:
+        raise ValueError("diff_neighbour requires one aligned pair")
+    v, p = rows
+    if v["pair_key"] != p["pair_key"] or [v["target"], p["target"]] != [1, 0]:
+        raise ValueError("unaligned official pair")
+    if any(e["input_mode"] != "512" for e in encodings):
+        raise ValueError("diff_neighbour requires 512 input")
+    identical = encodings[0]["input_ids"] == encodings[1]["input_ids"]
+    result, records = [], []
+    for row, other, e, oe in (
+        (v, p, encodings[0], encodings[1]),
+        (p, v, encodings[1], encodings[0]),
+    ):
+        original, edits = _line_diff(row["func"], other["func"])
+        if original != row["lines_ground_truth"]:
+            raise ValueError("stored Diff labels differ from the original alignment")
+        eligible = not original and bool(other["lines_ground_truth"])
+        record = dict(
+            pair_key=row["pair_key"],
+            sample_key=row["sample_key"],
+            target=row["target"],
+            eligible=eligible,
+            identical_input=identical,
+            events=[],
+        )
+        added = set()
+        if not eligible:
+            record["reason"] = (
+                "original_positive_present" if original else "no_opposite_positive"
+            )
+        elif identical:
+            record["reason"] = "identical_input"
+        else:
+            kinds = _neighbour_line_kinds(row["func"])
+            visible = {n for n, full in zip(e["line_numbers"], e["line_complete"]) if full}
+            opposite_visible = {
+                n for n, full in zip(oe["line_numbers"], oe["line_complete"]) if full
+            }
+            for edit in edits:
+                if not edit["other_lines"]:
+                    continue
+                event = dict(edit, selected={}, rejected={})
+                record["events"].append(event)
+                if not set(edit["other_lines"]).issubset(opposite_visible):
+                    event["reason"] = "opposite_edit_not_fully_visible"
+                    continue
+                for direction, at, step in (
+                    ("before", edit["start"] - 1, -1),
+                    ("after", edit["end"], 1),
+                ):
+                    skipped = 0
+                    while 0 <= at < len(kinds) and kinds[at] == "blank_or_comment":
+                        skipped += 1
+                        if skipped > 1:
+                            break
+                        at += step
+                    reason = None
+                    if skipped > 1:
+                        reason = "more_than_one_blank_or_comment"
+                    elif not 0 <= at < len(kinds):
+                        reason = "source_boundary"
+                    elif kinds[at] != "code":
+                        reason = kinds[at]
+                    elif at not in visible:
+                        reason = "neighbour_not_fully_visible"
+                    if reason:
+                        event["rejected"][direction] = reason
+                    else:
+                        event["selected"][direction] = at
+                        added.add(at)
+                event["reason"] = (
+                    "selected" if event["selected"] else "no_qualified_neighbour"
+                )
+            record["reason"] = "supplemented" if added else "no_qualified_neighbour"
+        record["added_lines"] = sorted(added)
+        record["selection"] = (
+            "both"
+            if any(len(ev["selected"]) == 2 for ev in record["events"])
+            else "single" if added else "none"
+        )
+        result.append(
+            dict(
+                row,
+                lines_original_diff=original,
+                lines_ground_truth=sorted(set(original) | added),
+                neighbour_lines=sorted(added),
+            )
+        )
+        records.append(record)
+    return result, records
+
+
+def prepare_diff_neighbour(data_dir, output_dir, model_path):
+    """Generate only Train/Valid proxies; preserve all original rows and labels."""
+    import time
+    from transformers import RobertaTokenizerFast
+
+    root = Path(output_dir) / "supervision" / "diff_neighbour"
+    if root.exists():
+        raise FileExistsError(f"{root}: supervision already exists")
+    root.mkdir(parents=True)
+    tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
+    statistics = dict(
+        input_mode="512",
+        model_path=str(model_path),
+        splits={},
+        test_supervision_generated=False,
+        rule=(
+            "same LOSVER Differ; one code line before/after each edit; "
+            "at most one blank/comment per direction; braces/delimiters/preprocessor stop; "
+            "complete visibility on both sides; no identical input"
+        ),
+        localizer_selection="original Valid Diff positive F1, not proxy F1",
+    )
+    started = time.monotonic()
+    for split in ("train", "valid"):
+        rows = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl")
+        generated, records, counts = [], [], Counter()
+        for i in range(0, len(rows), 2):
+            pair = rows[i : i + 2]
+            encodings = [paired_encoding(r["func"], tokenizer) for r in pair]
+            supplemented, details = diff_neighbour_supervision(pair, encodings)
+            generated.extend(supplemented)
+            records.extend(details)
+            for row, e, detail in zip(pair, encodings, details):
+                visible = set(e["line_numbers"])
+                counts.update(
+                    functions=1,
+                    visible_lines=len(visible),
+                    original_visible_positives=len(
+                        set(row["lines_ground_truth"]) & visible
+                    ),
+                    added_positives=len(detail["added_lines"]),
+                )
+                if detail["eligible"]:
+                    prefix = "pure_addition" if row["target"] else "pure_deletion"
+                    counts[prefix + "_pairs"] += 1
+                    counts[prefix + "_covered"] += bool(detail["added_lines"])
+                    counts[prefix + "_added_positives"] += len(detail["added_lines"])
+                    counts[prefix + "_" + detail["selection"]] += 1
+        counts["pairs"] = len(rows) // 2
+        counts["augmented_visible_positives"] = (
+            counts["original_visible_positives"] + counts["added_positives"]
+        )
+        statistics["splits"][split] = dict(
+            counts,
+            eligible_reasons=dict(Counter(r["reason"] for r in records if r["eligible"])),
+            rejection_reasons=dict(
+                Counter(
+                    why for r in records for ev in r["events"]
+                    for why in ev["rejected"].values()
+                )
+            ),
+            edit_outcomes=dict(Counter(ev["reason"] for r in records for ev in r["events"])),
+            added_lines_distribution=dict(
+                Counter(len(r["added_lines"]) for r in records if r["eligible"])
+            ),
+            edit_selection=dict(Counter(len(ev["selected"]) for r in records for ev in r["events"])),
+        )
+        write_jsonl(root / f"{split}.jsonl", generated)
+        write_jsonl(root / f"{split}.audit.jsonl", records)
+        print(split, json.dumps(statistics["splits"][split]), flush=True)
+    statistics["seconds"] = time.monotonic() - started
+    write_json(root / "statistics.json", statistics)
+    return statistics
 
 
 def paired_encoding(code, tokenizer, input_mode="512", *, tokenization=None):

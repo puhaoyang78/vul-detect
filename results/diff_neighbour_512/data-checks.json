@@ -1,0 +1,16 @@
+{
+  "train": {
+    "functions": 8708,
+    "pairs": 4354,
+    "changed_functions": 820,
+    "original_positive_functions_unchanged": true,
+    "source_labels_order_metadata_unchanged": true
+  },
+  "valid": {
+    "functions": 1124,
+    "pairs": 562,
+    "changed_functions": 113,
+    "original_positive_functions_unchanged": true,
+    "source_labels_order_metadata_unchanged": true
+  }
+}

@@ -16,15 +16,20 @@ def build_parser():
     p.add_argument("--raw-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, default=Path("data"))
     p.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
-    p.add_argument(
+    supervision = p.add_mutually_exclusive_group()
+    supervision.add_argument(
         "--paired",
         action="store_true",
         help="official PrimeVul original pairs for LOSVER",
     )
-    p.add_argument(
+    supervision.add_argument(
         "--repair-regions",
         action="store_true",
         help="generate Train/Valid weak supervision without touching original data",
+    )
+    supervision.add_argument(
+        "--diff-neighbour", action="store_true",
+        help="supplement empty-side Diff labels with visible edit-adjacent lines",
     )
     p.add_argument(
         "--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine"
@@ -86,6 +91,10 @@ def build_parser():
     p.add_argument("--output-dir", type=Path, default=Path("results"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument(
+        "--reference-dir", type=Path,
+        help="completed original LOSVER pilot for the diff_neighbour comparison",
+    )
+    p.add_argument(
         "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
     )
     p = sub.add_parser("infer")
@@ -130,9 +139,11 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
     if args.command == "prepare":
-        from .data import prepare, prepare_paired, prepare_repair_regions
+        from .data import prepare, prepare_paired, prepare_repair_regions, prepare_diff_neighbour
 
-        if args.repair_regions:
+        if args.diff_neighbour:
+            prepare_diff_neighbour(args.raw_root, args.output_dir, args.model)
+        elif args.repair_regions:
             prepare_repair_regions(args.raw_root, args.output_dir)
         elif args.paired:
             if args.datasets != ["primevul"]:
@@ -225,9 +236,9 @@ def main():
 
         print(
             json.dumps(
-                (paired_report if args.dataset == "primevul_paired" else report)(
-                    args.output_dir, args.data_dir
-                ),
+                paired_report(args.output_dir, args.data_dir, reference_dir=args.reference_dir)
+                if args.dataset == "primevul_paired"
+                else report(args.output_dir, args.data_dir),
                 indent=2,
             )
         )

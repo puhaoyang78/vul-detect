@@ -687,26 +687,13 @@ LOSVER_METHODS = (
     "diff_robust_fusion",
     "repair_region_robust_fusion",
     "neighbour_region_robust_fusion",
+    "diff_neighbour_localizer",
+    "diff_neighbour",
 )
-LOSVER_VARIANTS = dict(
-    zip(
-        LOSVER_METHODS,
-        (
-            "baseline",
-            "localizer",
-            "predicted",
-            "oracle",
-            "localizer",
-            "localizer",
-            "localizer",
-            "predicted",
-            "predicted",
-            "predicted",
-            "predicted",
-            "predicted",
-        ),
-    )
-)
+LOSVER_VARIANTS = {
+    m: "localizer" if m.endswith("_localizer") else "predicted" for m in LOSVER_METHODS
+}
+LOSVER_VARIANTS.update(unixcoder="baseline", losver_oracle="oracle")
 LOSVER_CONFIG = dict(
     seed=123456,
     batch_size=8,
@@ -954,7 +941,14 @@ def train_losver(
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
     supervision, pooling = "diff", "hard_weight"
-    weak = method not in ("unixcoder", "losver_localizer", "losver", "losver_oracle")
+    neighbour = method in ("diff_neighbour_localizer", "diff_neighbour")
+    weak = not neighbour and method not in (
+        "unixcoder", "losver_localizer", "losver", "losver_oracle"
+    )
+    if neighbour:
+        if input_mode != "512":
+            raise ValueError("diff_neighbour currently requires 512 input")
+        supervision = "diff_neighbour"
     if weak:
         if input_mode != "512":
             raise ValueError("repair-region methods currently require 512 input")
@@ -1000,7 +994,14 @@ def train_losver(
         raise FileExistsError(
             f"{run}: training already started; use --resume with last.pt"
         )
-    if weak and variant == "localizer":
+    if neighbour and variant == "localizer":
+        train_rows = read_jsonl(
+            Path(output_dir) / "supervision" / "diff_neighbour" / "train.jsonl"
+        )
+        # Selection remains the ORIGINAL Diff F1. Proxy labels are diagnostics,
+        # never a different selection target for this supervision-only ablation.
+        valid_rows = paired_rows(data_dir, output_dir, variant, "valid")
+    elif weak and variant == "localizer":
         train_rows = read_jsonl(
             Path(output_dir) / "supervision" / supervision / "train.jsonl"
         )
@@ -1112,7 +1113,7 @@ def train_losver(
         classifier_head="code-only pooling + shared Linear(hidden_size, 1)",
         dataset="primevul_paired",
         method=method,
-        supervision=supervision if weak else "original_diff",
+        supervision=supervision if weak or neighbour else "original_diff",
         weak_supervision=model.weak_supervision,
         region_loss=(
             dict(
@@ -1152,7 +1153,7 @@ def train_losver(
         localizer_path=(
             str(
                 root
-                / ((supervision + "_localizer") if weak else "losver_localizer")
+                / ((supervision + "_localizer") if weak or neighbour else "losver_localizer")
                 / "best-f1.pt"
             )
             if variant == "predicted"
@@ -1391,7 +1392,7 @@ def train_losver(
             torch.cuda.empty_cache()
         pilot = train_limit is not None or valid_limit is not None
         for split in (
-            ("valid", "train") if weak or pilot else ("test", "valid", "train")
+            ("valid", "train") if weak or neighbour or pilot else ("test", "valid", "train")
         ):
             localize_paired(
                 data_dir,
@@ -1404,7 +1405,7 @@ def train_losver(
                         r["sample_key"]
                         for r in (valid_rows if split == "valid" else train_rows)
                     }
-                    if weak or pilot
+                    if weak or neighbour or pilot
                     else None
                 ),
             )

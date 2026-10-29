@@ -1,0 +1,52 @@
+[
+  {
+    "reference": "losver_localizer",
+    "method": "diff_neighbour_localizer",
+    "optimizer_steps": 512,
+    "scheduler_steps": 512,
+    "adam_parameter_steps": [
+      [
+        512
+      ],
+      [
+        512
+      ]
+    ],
+    "matching_members_config_inputs_and_parameter_shapes": true,
+    "final_rng_equal": {
+      "python": true,
+      "numpy": true,
+      "torch": true,
+      "active_cuda_generator_0": true
+    },
+    "cuda_generator_counts": [
+      1,
+      1
+    ]
+  },
+  {
+    "reference": "losver",
+    "method": "diff_neighbour",
+    "optimizer_steps": 512,
+    "scheduler_steps": 512,
+    "adam_parameter_steps": [
+      [
+        512
+      ],
+      [
+        512
+      ]
+    ],
+    "matching_members_config_inputs_and_parameter_shapes": true,
+    "final_rng_equal": {
+      "python": true,
+      "numpy": true,
+      "torch": true,
+      "active_cuda_generator_0": true
+    },
+    "cuda_generator_counts": [
+      1,
+      1
+    ]
+  }
+]

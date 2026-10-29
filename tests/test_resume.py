@@ -133,14 +133,16 @@ class ResumeTests(unittest.TestCase):
                             [dict(r, lines_predicted=[1],
                                   line_numbers=paired_encoding(r["func"], Tokens(), mode)["line_numbers"])
                              for r in rows])
-                for supervision in ("diff", "repair_region", "neighbour_region"):
+                for supervision in ("diff", "repair_region", "neighbour_region", "diff_neighbour"):
                     weak = []
                     predicted = []
                     scores = []
                     for row in rows:
                         count = len(row["func"].splitlines())
                         weak.append(
-                            dict(
+                            dict(row, lines_original_diff=row["lines_ground_truth"], neighbour_lines=[])
+                            if supervision == "diff_neighbour"
+                            else dict(
                                 row,
                                 region_labels=[float(i == 1) for i in range(count)],
                                 region_weights=[

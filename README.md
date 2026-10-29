@@ -151,3 +151,18 @@ Pilot统一增加 `--train-limit 1024 --valid-limit 256 --paired-epochs 4`（单
 | Repair-Relation + Robust Fusion | 12.59% | 0.5672 | 0.0946 | 0.5184 |
 
 完整方法未超过Global Mean；其Valid/Test P-C分别为15.12%/12.59%，Valid选择β=0.25。Repair-Relation Localizer的可见Unknown比例为Train 74.53%、Valid 73.62%；33.14%/36.48%的函数没有可见区域正监督，但全部保留函数BCE。自身弱标签F1为0.9724，同时预测了79.11%的Valid行，不能据高F1认定修复定位准确。当前没有证据支持稳定分类收益，未继续增加变体、全覆盖输入或额外模块。权重与含源码的缓存留在本地，不含源码的行概率及检测预测随结果发布。
+
+### Diff 邻接补标（`diff_neighbour`，512 Pilot）
+
+保留原LOSVER二值Diff标签及Focal Loss，仅对完整源码中原始正标签为空的一侧补标。从同次`Differ`的编辑位置向前/后各选至多一条有效代码行，每方向最多跨一行空白或注释；花括号、预处理行和独立分隔符停止搜索。只使用两侧512输入内完整可见的编辑及邻接行，编码相同则不补标。多个位置去重，不作语义或变量扩展；所有函数及分类BCE保留。这些标签是邻接代理，不是漏洞位置真值。
+
+定位器沿用原Focal（α=0.8、γ=1.5、pos_weight=5），按**原始Valid Diff正类F1**选模；补标后的代理指标单列。检测器仍使用预测行、5/1 Softmax和Valid P-C选模，阈值固定0.5。复用已完成的原LOSVER Pilot，与新增实验保持Train 1024/Valid 256函数、每阶段4 Epoch/512步一致；成员抽样Seed42，训练Seed123456。不读取Test。
+
+```bash
+python -m vulnmechanism.cli prepare --diff-neighbour --raw-root data --output-dir results/diff_neighbour_512
+python -m vulnmechanism.cli train --data-dir data --output-dir results/diff_neighbour_512 --dataset primevul_paired --methods diff_neighbour_localizer diff_neighbour --device cuda:0 --paired-input 512 --train-limit 1024 --valid-limit 256 --paired-epochs 4 --resume --save-every 1000
+python -m vulnmechanism.cli evaluate --data-dir data --output-dir results/diff_neighbour_512 --dataset primevul_paired --methods diff_neighbour --device cuda:0 --split valid --clean-only
+python -m vulnmechanism.cli report --data-dir data --output-dir results/diff_neighbour_512 --dataset primevul_paired --reference-dir results/repair_region_512/pilot
+```
+
+训练应在tmux中执行。统计、40个Train抽查案例、真实GPU检查、两种行标签指标和分类对比保存到[实验目录](results/diff_neighbour_512/)。原始数据、历史结果及checkpoint保持不变；含完整源码的监督缓存和模型权重留在本地。
