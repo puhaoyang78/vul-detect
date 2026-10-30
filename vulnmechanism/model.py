@@ -514,8 +514,16 @@ class LOSVERDetector(nn.Module):
         self.window_micro_batch = getattr(args, "window_micro_batch", 8)
         self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
         self.input_mode = "512"
-        self.pooling = "hard_weight"
+        self.pooling = "bounded_attention" if getattr(args, "bounded_attention", False) else "hard_weight"
         self.fusion_beta = 0.25
+        self.attention_region = getattr(args, "attention_region", None)
+        self.force_uniform_attention = False
+        if self.pooling == "bounded_attention":
+            # Preserve encoder/classifier initialization and all sampler RNG.
+            with torch.random.fork_rng(devices=[]):
+                self.line_attention = nn.Linear(config.hidden_size, 1)
+            nn.init.zeros_(self.line_attention.weight)
+            nn.init.zeros_(self.line_attention.bias)
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -550,6 +558,43 @@ class LOSVERDetector(nn.Module):
         result = global_mean + beta * strength * (local - global_mean)
         return torch.where(mass > 0, result, global_mean)
 
+    def bounded_pool(self, states, code_mask, line_token_mask):
+        """One shared encoding; token-count-weighted physical-line MIL, K=5."""
+        membership = (line_token_mask & code_mask[:, None].bool()).to(states.dtype)
+        copies = membership.sum(1)
+        if not torch.equal(copies > 0, code_mask.bool()):
+            raise ValueError("line mapping must cover every valid code token exactly in aggregate")
+        # Existing offset mapping can share a cross-line token. Conserve its
+        # single token mass rather than silently double-counting it. For normal
+        # one-line tokens this is exactly the ordinary mean/count definition.
+        membership = membership / copies.clamp_min(1)[:, None]
+        counts = membership.sum(-1)
+        lines = torch.bmm(membership, states) / counts.clamp_min(1e-12)[..., None]
+        rates = 1 + 4 * self.line_attention(lines).squeeze(-1).sigmoid()
+        if self.force_uniform_attention:
+            rates = torch.ones_like(rates)
+        rates = rates.masked_fill(counts == 0, 0)
+        mass = counts * rates
+        attention = mass / mass.sum(-1, keepdim=True)
+        pooled = (lines * attention[..., None]).sum(1)
+        token_attention = (membership * (attention / counts.clamp_min(1e-12))[..., None]).sum(1)
+        return pooled, dict(line_rates=rates, line_counts=counts,
+                            line_attention=attention, token_attention=token_attention)
+
+    @staticmethod
+    def attention_region_loss(rates, counts, labels):
+        """Mean over eligible functions; zero/all-token regions keep all BCE."""
+        selected = (labels == 1).to(rates.dtype)
+        region = counts * selected
+        background = counts * (1 - selected)
+        nr, nb = region.sum(-1), background.sum(-1)
+        valid = (nr > 0) & (nb > 0)
+        mean_r = (region * rates).sum(-1) / nr.clamp_min(1e-12)
+        mean_b = (background * rates).sum(-1) / nb.clamp_min(1e-12)
+        margin = F.relu(math.log(2) - mean_r.clamp_min(1e-12).log() + mean_b.clamp_min(1e-12).log())
+        loss = margin[valid].mean() if valid.any() else rates.sum() * 0
+        return loss, valid.sum()
+
     def forward(
         self,
         input_ids,
@@ -564,6 +609,7 @@ class LOSVERDetector(nn.Module):
         line_counts=None,
         line_labels=None,
         return_auxiliary=False,
+        return_attention=False,
     ):
         from torch.utils.checkpoint import checkpoint
 
@@ -572,9 +618,16 @@ class LOSVERDetector(nn.Module):
             or self.pooling != "hard_weight" or line_labels is None or labels is None
         ):
             raise ValueError("line auxiliary training requires labeled 512 baseline inputs")
+        bounded = self.pooling == "bounded_attention"
+        if bounded and (self.input_mode != "512" or line_token_mask is None):
+            raise ValueError("bounded attention requires the shared 512 physical-line map")
+        if return_attention and not bounded:
+            raise ValueError("attention diagnostics require bounded attention")
 
         def encode(ids, attention, valid, weights):
             states = self.encoder(ids, attention_mask=attention)[0]
+            if bounded:
+                return states
             occupied = valid.any(-1)
             pooled = states.new_zeros((len(states), states.shape[-1]))
             if occupied.any():
@@ -621,7 +674,13 @@ class LOSVERDetector(nn.Module):
             parts.append(encoded)
         windows = torch.cat(parts)
         function_count = int(window_owners.max()) + 1
-        if len(windows) == function_count and torch.equal(
+        if bounded:
+            if len(windows) != function_count or not torch.equal(
+                window_owners, torch.arange(function_count, device=window_owners.device)
+            ):
+                raise ValueError("bounded attention uses one 512-token window per function")
+            pooled, attention_details = self.bounded_pool(windows, code_mask, line_token_mask)
+        elif len(windows) == function_count and torch.equal(
             window_owners, torch.arange(function_count, device=window_owners.device)
         ):
             pooled = windows
@@ -648,6 +707,18 @@ class LOSVERDetector(nn.Module):
             y = labels.float()
             weights = y * self.class_weight + (1 - y)
             loss = F.binary_cross_entropy_with_logits(logits[:, 0], y, weight=weights)
+            if bounded:
+                region_loss, effective = loss * 0, logits.new_zeros((), dtype=torch.long)
+                if self.attention_region is not None:
+                    if line_labels is None:
+                        raise ValueError("region training requires original or fixed random line labels")
+                    region_loss, effective = self.attention_region_loss(
+                        attention_details["line_rates"], attention_details["line_counts"], line_labels
+                    )
+                attention_details.update(bce=loss, region_loss=region_loss, region_functions=effective,
+                                         logits=logits[:, 0])
+                total = loss + (0.1 * region_loss if self.attention_region is not None else 0)
+                return (total, probability, attention_details) if return_attention else (total, probability)
             if return_auxiliary:
                 states = torch.cat(token_states)
                 membership = line_token_mask.to(states.dtype)
@@ -674,6 +745,8 @@ class LOSVERDetector(nn.Module):
                     line_probabilities=list(z.sigmoid().split(ns)),
                 )
             return loss, probability
+        if bounded and return_attention:
+            return probability, dict(attention_details, logits=logits[:, 0])
         return probability
 
 
@@ -681,18 +754,26 @@ def losver_model(
     model_path, variant, *, window_micro_batch=8, gradient_checkpointing=False,
     dropout_probability=0.0,
     line_auxiliary_weight=None,
+    bounded_attention=False,
+    attention_region=None,
 ):
     """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
     config = RobertaConfig.from_pretrained(model_path)
     tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
     if window_micro_batch < 1:
         raise ValueError("window micro-batch must be positive")
+    if bounded_attention and (variant != "baseline" or line_auxiliary_weight is not None):
+        raise ValueError("bounded attention uses only the original baseline encoder/classifier")
+    if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
+        raise ValueError("region supervision requires bounded attention and diff/random")
     args = SimpleNamespace(
         class_weight=1.0,
         dropout_probability=dropout_probability,
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=gradient_checkpointing,
         line_auxiliary_weight=line_auxiliary_weight,
+        bounded_attention=bounded_attention,
+        attention_region=attention_region,
     )
     encoder = RobertaModel.from_pretrained(
         model_path, config=config, attn_implementation="eager", add_pooling_layer=False

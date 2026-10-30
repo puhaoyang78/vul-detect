@@ -1,0 +1,21 @@
+{
+  "device": "cuda:0",
+  "train_members": [
+    "primevul_paired:train:1",
+    "primevul_paired:train:2",
+    "primevul_paired:train:3",
+    "primevul_paired:train:4"
+  ],
+  "updates": 2,
+  "initialization_and_rng_equal": true,
+  "initial_probability_max_delta": 2.9802322387695312e-08,
+  "initial_region_encoder_gradient": 0.0,
+  "region_encoder_gradient_after_head_update": 0.3088509738445282,
+  "all_gradients_finite": true,
+  "diff_independent_inference": true,
+  "save_reload_equal": true,
+  "seconds": 11.534743084572256,
+  "peak_memory_mib": 4010.44921875,
+  "test_used": false,
+  "full_experiment": false
+}

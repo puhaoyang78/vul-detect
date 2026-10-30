@@ -167,6 +167,8 @@ def train(
     oof_fold=None,
     localizer_dir=None,
     train_localizer_dir=None,
+    bounded_attention=False,
+    attention_region=None,
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
@@ -202,6 +204,8 @@ def train(
             oof_fold=oof_fold,
             localizer_dir=localizer_dir,
             train_localizer_dir=train_localizer_dir,
+            bounded_attention=bounded_attention,
+            attention_region=attention_region,
         )
     if (
         paired_input != "512"
@@ -211,6 +215,7 @@ def train(
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
+        or bounded_attention or attention_region is not None
     ):
         raise ValueError("paired training options apply only to paired methods")
     if dataset not in DATASETS:
@@ -912,7 +917,7 @@ def paired_loader(
 
 
 def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False,
-                   return_auxiliary=False):
+                   return_auxiliary=False, return_attention=False):
     keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
     keys.extend(
         ["line_token_mask", "context_mask", "line_indices", "line_counts"]
@@ -925,6 +930,10 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
             keys.append("label_weights")
     if getattr(model, "pooling", None) == "robust_fusion":
         keys.append("region_scores")
+    if getattr(model, "pooling", None) == "bounded_attention":
+        keys.append("line_token_mask")
+        if with_labels and model.attention_region is not None:
+            keys.append("line_labels")
     args = {key: batch[key].to(device) for key in keys}
     if return_logits:
         if variant != "localizer":
@@ -936,6 +945,8 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         for key in ("line_token_mask", "line_indices", "line_counts", "line_labels"):
             args[key] = batch[key].to(device)
         args["return_auxiliary"] = True
+    if return_attention:
+        args["return_attention"] = True
     return model(**args)
 
 
@@ -1018,6 +1029,8 @@ def train_losver(
     oof_fold=None,
     localizer_dir=None,
     train_localizer_dir=None,
+    bounded_attention=False,
+    attention_region=None,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -1036,6 +1049,11 @@ def train_losver(
     if train_localizer_dir is not None and localizer_dir is None:
         raise ValueError("Train prediction override requires the shared Valid/inference localizer directory")
     joint = line_auxiliary is not None
+    if bounded_attention and (method != "unixcoder" or input_mode != "512" or joint
+                              or line_auxiliary_weight is not None):
+        raise ValueError("bounded attention requires the original 512 unixcoder without line auxiliary")
+    if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
+        raise ValueError("attention region requires bounded attention and diff/random")
     if joint or line_auxiliary_weight is not None:
         if (method != "unixcoder" or input_mode != "512"
                 or line_auxiliary not in ("diff", "random")
@@ -1056,6 +1074,8 @@ def train_losver(
     if localizer_rdrop is not None and (not math.isfinite(localizer_rdrop) or localizer_rdrop < 0):
         raise ValueError("R-Drop coefficient must be finite and nonnegative")
     supervision, pooling = "diff", "hard_weight"
+    if bounded_attention:
+        pooling = "bounded_attention"
     neighbour = method in ("diff_neighbour_localizer", "diff_neighbour")
     weak = not neighbour and method not in (
         "unixcoder", "losver_localizer", "losver", "losver_oracle"
@@ -1109,7 +1129,7 @@ def train_losver(
         raise FileExistsError(
             f"{run}: training already started; use --resume with last.pt"
         )
-    if joint:
+    if joint or bounded_attention:
         train_rows = paired_rows(data_dir, output_dir, "localizer", "train")
         valid_rows = paired_rows(data_dir, output_dir, "localizer", "valid")
     elif neighbour and variant == "localizer":
@@ -1161,6 +1181,7 @@ def train_losver(
         gradient_checkpointing=input_mode == "l1",
         **(dict(dropout_probability=settings["dropout_probability"]) if settings["dropout_probability"] else {}),
         **(dict(line_auxiliary_weight=line_auxiliary_weight) if joint else {}),
+        **(dict(bounded_attention=True, attention_region=attention_region) if bounded_attention else {}),
     )
     model.input_mode = input_mode
     model.weak_supervision = weak and variant == "localizer"
@@ -1184,13 +1205,18 @@ def train_losver(
         batch_size=settings["eval_batch_size"],
         input_mode=input_mode,
     )
-    if line_auxiliary == "random":
+    if line_auxiliary == "random" or attention_region == "random":
         shuffle_line_labels(loader.dataset, settings["seed"])
     if joint:
         write_jsonl(run / "train.line_labels.jsonl", [
             dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"],
                  labels=f["line_labels"])
             for r, f in zip(train_rows, loader.dataset)
+        ])
+    if attention_region is not None:
+        write_jsonl(run / "train.attention_regions.jsonl", [
+            dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"], labels=f["line_labels"])
+            for r,f in zip(train_rows,loader.dataset)
         ])
     from .data import paired_statistics
 
@@ -1346,6 +1372,17 @@ def train_losver(
             zero_visible_positive_functions=sum(1 not in f["line_labels"] for f in loader.dataset),
         )
         metadata["localizer_attention"] = "none; auxiliary linear head on mean source-token states"
+    if bounded_attention:
+        metadata["bounded_attention"] = dict(
+            k=5, head="zero-initialized Linear(hidden_size,1); no global RNG advance",
+            region_supervision=attention_region, region_weight=0.1 if attention_region else 0.0,
+            random_seed=settings["seed"] if attention_region=="random" else None,
+            region_margin="log(2)", region_reduction="eligible functions within effective batch",
+            attention="n_i*(1+4*sigmoid(s_i))/sum_j(n_j*(1+4*sigmoid(s_j)))",
+            inference="single source only; no Diff or independently predicted localizer",
+            cross_line_tokens="conserve one token mass across its physical-line memberships",
+        )
+        metadata["localizer_attention"] = "none; bounded line attention from the shared encoding"
     if pooling == "robust_fusion":
         metadata["validation_rng"] = (
             "beta grid preserves exactly one validation-loader RNG advance"
@@ -1353,7 +1390,7 @@ def train_losver(
     best = (
         {"f1": -1.0}
         if variant == "localizer"
-        else ({"p_c": -1.0} if joint else {"accuracy": -1.0, "f1": -1.0, "p_c": -1.0})
+        else ({"p_c": -1.0} if joint or bounded_attention else {"accuracy": -1.0, "f1": -1.0, "p_c": -1.0})
     )
     chosen = {}
     global_step = 0
@@ -1369,6 +1406,8 @@ def train_losver(
     )
     if joint:
         state["running_components"] = dict(bce=0.0, line_focal=0.0)
+    elif bounded_attention:
+        state["running_components"] = dict(bce=0.0, region_loss=0.0)
     elif localizer_rdrop is not None:
         state["running_components"] = dict(focal=0.0, rdrop_kl=0.0)
     if continuing:
@@ -1434,9 +1473,14 @@ def train_losver(
             ]
             group_loss = 0.0
             group_components = {k: 0.0 for k in components} if components is not None else {}
+            region_total = sum(int(((b["line_labels"]==1).any(-1) &
+                                   ((b["line_labels"]==0) & (b["line_numbers"]>=0)).any(-1)).sum())
+                               for b in group) if attention_region else 0
             for batch, size in zip(group, sizes):
                 if joint:
                     loss, _, parts = paired_forward(model, batch, variant, device, return_auxiliary=True)
+                elif bounded_attention:
+                    loss, _, parts = paired_forward(model, batch, variant, device, return_attention=True)
                 elif localizer_rdrop is None:
                     loss, _ = paired_forward(model, batch, variant, device)
                 else:
@@ -1444,11 +1488,18 @@ def train_losver(
                 if not torch.isfinite(loss):
                     raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
                 coefficient = size / sum(sizes) if sum(sizes) else 1 / len(sizes)
-                (loss * coefficient).backward()
-                group_loss += float(loss.detach()) * coefficient
+                region_coefficient = float(parts["region_functions"]) / region_total if bounded_attention and region_total else 0.0
+                objective = (
+                    parts["bce"] * coefficient + 0.1 * parts["region_loss"] * region_coefficient
+                    if bounded_attention else loss * coefficient
+                )
+                objective.backward()
+                group_loss += float(objective.detach())
                 if components is not None:
                     for key in components:
-                        group_components[key] += float(parts[key].detach()) * coefficient
+                        group_components[key] += float(parts[key].detach()) * (
+                            region_coefficient if key=="region_loss" else coefficient
+                        )
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
             )

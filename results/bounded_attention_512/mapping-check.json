@@ -1,0 +1,22 @@
+{
+  "train": {
+    "functions": 8708,
+    "valid_tokens": 2980340,
+    "line_token_memberships": 2980340,
+    "overlapping_functions": 0,
+    "extra_memberships": 0,
+    "empty_diff": 1306,
+    "seconds": 168.72293854039162,
+    "overlap_examples": []
+  },
+  "valid": {
+    "functions": 1124,
+    "valid_tokens": 378655,
+    "line_token_memberships": 378655,
+    "overlapping_functions": 0,
+    "extra_memberships": 0,
+    "empty_diff": 166,
+    "seconds": 18.634741386398673,
+    "overlap_examples": []
+  }
+}

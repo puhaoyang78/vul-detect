@@ -273,3 +273,38 @@ python -m vulnmechanism.losver_patch_audit slice-report --strategy targeted --sp
 ```
 
 最小真实验证各处理24对（旧8对加Seed42新16对）。新Train/Valid组目标切片各保留5条相关行，但联合复核池的相关行保留率仅6.3%/7.7%，纯新增恢复为1/16、2/16；无法证明整体质量改善，未继续扩大实验或增加规则。原始成员和模型未改，见[完整报告与逐行复核](results/primevul_targeted_slicing/report.md)。
+
+### 补丁引导的有界注意力MIL
+
+直接扩展现有 `unixcoder`，默认Global Mean行为不变。`--bounded-attention`在同一次编码结果上按物理行求均值，增加零初始化 `Linear(768,1)`：`r_i=1+4*sigmoid(s_i)`，`a_i=n_i*r_i/sum(n_j*r_j)`；直接求加权和，不对倍率做Softmax。函数分类仍使用原线性头。等倍率等价于有效代码Token均值，每Token权重比不超过5。
+
+`--attention-region diff`增加固定 `.1*relu(log(2)-log(mean_R)+log(mean_B))`，区域内外均按Token数求平均，按有效函数归一。只取原始双侧Diff的可见行；R为空或覆盖全部Token只跳过区域项，不跳过函数BCE，不补邻接或切片标签。`random`在Train内部使用独立RNG固定打乱行标签，保持正行数量和监督可用性，允许与真实集合偶然相同；Token覆盖率单独报告，不声称严格匹配。
+
+四组均使用完整Train8708/Valid1124函数，Seed123456、512输入、16轮/17424步、Batch8及原学习率/优化器。从同一预训练模型初始化，仅按完整Valid P-C选epoch，平局取较早轮；固定概率>.5。预测与输入完全不读取Diff或配对版本，Valid编辑区域只在预测后用于诊断。没有独立Localizer、Top-k、第二函数分类头或其他辅助任务。
+
+```bash
+python -m unittest tests.test_bounded_attention tests.test_line_auxiliary tests.test_losver tests.test_resume
+python -m vulnmechanism.cli check-paired --bounded-attention --output-dir results/bounded_attention_512 --device cuda:0
+# 在独立tmux会话执行，每个目录只启动一次；--resume复用自身断点。
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/bounded_attention_512/global_mean --device cuda:0 --paired-input 512 --paired-epochs 16 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/bounded_attention_512/attention_bce --device cuda:0 --paired-input 512 --paired-epochs 16 --bounded-attention --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/bounded_attention_512/diff_region --device cuda:1 --paired-input 512 --paired-epochs 16 --bounded-attention --attention-region diff --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/bounded_attention_512/random_region --device cuda:1 --paired-input 512 --paired-epochs 16 --bounded-attention --attention-region random --resume --save-every 1000
+# 四组完整结束后，执行所选checkpoint的Train诊断及C的统一倍率推理干预。
+python -m vulnmechanism.cli report --bounded-attention --dataset primevul_paired --output-dir results/bounded_attention_512 --device cuda:1
+```
+
+四组均已实际完成16轮；以下为各自Valid P-C最佳checkpoint在同一562对上的结果，阈值固定为概率>.5：
+
+|配置|Epoch|P-C|AUC|MCC|F1|
+|---|---:|---:|---:|---:|---:|
+|A Global Mean|13|16.37%|0.5726|0.1141|56.99%|
+|B 有界注意力+BCE|14|15.66%|0.5856|0.1304|45.95%|
+|C 真实Diff区域约束|12|16.01%|0.5873|0.1283|63.26%|
+|D 随机区域约束|13|15.30%|0.5775|0.1013|58.66%|
+
+C未超过A的P-C，未满足预设净分类收益标准。C漏洞Recall为75.98%、修复侧FPR为64.23%，A分别为58.72%、47.33%；不能将F1提高直接解释为成对判别改善。
+
+同一C最佳checkpoint将倍率全部固定为1后，Valid P-C为11.03%、AUC为0.5835：注意力确实影响分类，但完整方案仍未超过独立训练的A。C的编辑区域/背景平均倍率为Train 2.97、Valid 1.76；关注量提高与分类收益分开报告。
+
+实际启动命令及GPU分配保存在 `results/bounded_attention_512/commands.json`。整体/纯新增Valid分类、Train/Valid关注量、随机区域重合及C同checkpoint的 `r_i=1` 干预见[实验报告](results/bounded_attention_512/report.md)；不读取Test或根据结果扩大搜索。零初始化使第一步纯区域梯度对encoder为0，关注头更新后正常进入encoder；函数BCE从第一步训练。模型权重留本地，不纳入Git。

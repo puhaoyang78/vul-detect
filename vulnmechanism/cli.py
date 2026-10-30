@@ -73,6 +73,10 @@ def build_parser():
             p.add_argument("--function-micro-batch", type=int)
             p.add_argument("--line-auxiliary", choices=("diff", "random"))
             p.add_argument("--line-auxiliary-weight", type=float)
+            p.add_argument("--bounded-attention", action="store_true",
+                           help="512 UniXcoder line MIL with token-count weights and fixed K=5")
+            p.add_argument("--attention-region", choices=("diff", "random"),
+                           help="fixed 0.1 log(2) region constraint; requires bounded attention")
             p.add_argument("--oof-fold", type=int, choices=(0, 1),
                            help="held-out Train pair fold; train the original localizer on the other fold")
             p.add_argument("--localizer-dir", type=Path,
@@ -114,6 +118,8 @@ def build_parser():
         help="completed original LOSVER pilot used as the comparison reference",
     )
     p.add_argument("--localizer-regularization", action="store_true")
+    p.add_argument("--bounded-attention",action="store_true")
+    p.add_argument("--device",default="auto")
     p.add_argument(
         "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
     )
@@ -153,6 +159,8 @@ def build_parser():
         action="store_true",
         help="check weak supervision and bounded fusion on source Train",
     )
+    p.add_argument("--bounded-attention",action="store_true",
+                   help="real UniXcoder bounded-pooling/gradient/save-reload checks on Train only")
     return parser
 
 
@@ -218,13 +226,19 @@ def main():
                     oof_fold=args.oof_fold,
                     localizer_dir=args.localizer_dir,
                     train_localizer_dir=args.train_localizer_dir,
+                    bounded_attention=args.bounded_attention,
+                    attention_region=args.attention_region,
                 )
     elif args.command == "check-paired":
-        from .evaluation import check_paired, check_repair_regions
+        from .evaluation import check_paired, check_repair_regions, check_bounded_attention
+
+        if args.repair_regions and args.bounded_attention:
+            raise ValueError("choose one paired check")
 
         print(
             json.dumps(
-                (check_repair_regions if args.repair_regions else check_paired)(
+                (check_bounded_attention if args.bounded_attention else
+                 check_repair_regions if args.repair_regions else check_paired)(
                     args.data_dir,
                     args.output_dir,
                     args.model,
@@ -268,7 +282,8 @@ def main():
         print(
             json.dumps(
                 paired_report(args.output_dir, args.data_dir, reference_dir=args.reference_dir,
-                              localizer_regularization=args.localizer_regularization)
+                              localizer_regularization=args.localizer_regularization,
+                              bounded_attention=args.bounded_attention,device=args.device)
                 if args.dataset == "primevul_paired"
                 else report(args.output_dir, args.data_dir),
                 indent=2,

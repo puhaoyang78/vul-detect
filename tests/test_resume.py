@@ -307,6 +307,31 @@ class ResumeTests(unittest.TestCase):
                 self.compare_runs(a, b, ["best-p_c.pt"])
                 self.assertEqual((a/"train.line_labels.jsonl").read_bytes(), (b/"train.line_labels.jsonl").read_bytes())
 
+    def test_bounded_attention_resume_with_eligible_function_accumulation(self):
+        from tests.test_bounded_attention import detector
+
+        def factory(path,variant,**kwargs):
+            return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region")),Tokens()
+
+        for supervision in (None,"diff","random"):
+            with self.subTest(supervision=supervision),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+                root=Path(tmp);self.paired_fixture(root,"512")
+                path=root/"data/primevul_paired/train.lines.jsonl"
+                rows=read_jsonl(path)
+                for i,r in enumerate(rows):
+                    if i%3==0: r["lines_ground_truth"]=[]
+                    if i%5==0: r["lines_ground_truth"]=list(range(len(r["func"].splitlines())))
+                write_jsonl(path,rows)
+                settings=dict(training.LOSVER_CONFIG,batch_size=4,eval_batch_size=2,
+                              epochs=dict(baseline=2,localizer=2,predicted=2,oracle=2))
+                options=dict(device="cpu",config=settings,input_mode="512",save_every=1,
+                             bounded_attention=True,attention_region=supervision,function_micro_batch=2)
+                training.train_losver(root/"data",root/"control","fixture","unixcoder",**options)
+                with self.interruption(epoch=2,step=4,after_save=True),self.assertRaises(Interrupted):
+                    training.train_losver(root/"data",root/"resumed","fixture","unixcoder",**options)
+                training.train_losver(root/"data",root/"resumed","fixture","unixcoder",resume=True,**options)
+                self.compare_runs(root/"control/primevul_paired/unixcoder",root/"resumed/primevul_paired/unixcoder",["best-p_c.pt"])
+
     def test_atomic_save_preserves_previous_state_and_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)

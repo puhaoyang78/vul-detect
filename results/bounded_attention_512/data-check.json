@@ -1,0 +1,22 @@
+{
+  "train": {
+    "pairs": 4354,
+    "addition_only": 1232,
+    "deletion_only": 74,
+    "unchanged": 0,
+    "functions": 8708,
+    "mismatched": [],
+    "baseline_and_annotated_source_identical": true
+  },
+  "valid": {
+    "pairs": 562,
+    "addition_only": 163,
+    "deletion_only": 3,
+    "unchanged": 0,
+    "functions": 1124,
+    "mismatched": [],
+    "baseline_and_annotated_source_identical": true
+  },
+  "test_read": false,
+  "seconds": 37.50835697585717
+}

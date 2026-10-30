@@ -1,0 +1,12 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.9707234501838684, "learning_rate": 1.1111111111111113e-05, "bce": 0.9014087319374084, "region_loss": 0.6931471824645996}
+
+unixcoder · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.84749 │ 2     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.0000 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "unixcoder", "epoch": 1, "train_loss": 0.8474934101104736, "optimizer_steps": 2, "global_step": 2, "validation_threshold": 0.5, "validation": {"samples": 8, "pairs": 4, "threshold": 0.5, "comparison": ">", "pair_counts": {"p_c": 0, "p_v": 0, "p_b": 4, "p_r": 0}, "p_c": 0.0, "p_v": 0.0, "p_b": 1.0, "p_r": 0.0, "accuracy": 0.5, "precision": 0.0, "recall": 0.0, "f1": 0.0, "mcc": 0.0, "auc": 0.5, "auprc": 0.5416666666666666, "pair_ranking_accuracy": 0.25, "pair_ranking_ties": 2, "patched_fpr": 0.0, "loss": 0.7252095937728882}, "fusion_validation": null, "training_seconds": 32.1790925078094, "epoch_seconds": 32.88025034498423, "train_components": {"bce": 0.7781786918640137, "region_loss": 0.6931471824645996}}
