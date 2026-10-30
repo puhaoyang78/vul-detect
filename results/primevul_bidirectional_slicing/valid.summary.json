@@ -1,0 +1,119 @@
+{
+  "split": "valid",
+  "pairs": 562,
+  "functions": 1124,
+  "both_parsed": 301,
+  "nonempty_v": 297,
+  "nonempty_p": 303,
+  "addition_pairs": 163,
+  "addition_recovered_v": 84,
+  "addition_both_parsed": 88,
+  "addition_without_v_seed": 87,
+  "addition_without_v_seed_recovered": 84,
+  "function_status": {
+    "parse_or_method_unknown": 512,
+    "ok": 612
+  },
+  "header_type_absent": 286,
+  "header_type_absent_and_joern_unknown": 264,
+  "region_lines": {
+    "min": 0.0,
+    "q25": 0.0,
+    "median": 3.0,
+    "q75": 14.0,
+    "q90": 17.0,
+    "max": 101.0
+  },
+  "selected_units": {
+    "min": 0.0,
+    "q25": 0.0,
+    "median": 2.0,
+    "q75": 13.0,
+    "q90": 15.0,
+    "max": 83.0
+  },
+  "limit_reached": 298,
+  "identical_token_seed_units": 248,
+  "parsed_functions_without_native_ddg": 0,
+  "parsed_functions_without_mapped_dependencies": 22,
+  "unknown_path_units": 3319,
+  "failures": {
+    "tree_sitter_parse_unknown": 238,
+    "node_source_start_mismatch": 30668,
+    "dependency_endpoint_unmapped": 221705,
+    "node_outside_atomic_statement": 7230,
+    "native_cdg_zero_or_trivial": 40,
+    "joern_method_unknown": 378,
+    "node_missing_coordinate": 2
+  },
+  "unknown_path_reasons": {
+    "alias_or_memory_state_unknown": 2985,
+    "external_call_summary_unknown": 3294,
+    "global_or_macro_binding_unknown": 158
+  },
+  "new_review_pairs": 8,
+  "new_review_lines": 30,
+  "source_review": [
+    {
+      "method": "original_diff",
+      "scope": "all_selected",
+      "reviewed": 15,
+      "related": 12,
+      "unknown": 1,
+      "unrelated": 2
+    },
+    {
+      "method": "original_diff",
+      "scope": "outside_original_diff",
+      "reviewed": 0
+    },
+    {
+      "method": "static_candidates",
+      "scope": "all_selected",
+      "reviewed": 6,
+      "unrelated": 3,
+      "related": 2,
+      "unknown": 1
+    },
+    {
+      "method": "static_candidates",
+      "scope": "outside_original_diff",
+      "reviewed": 3,
+      "unrelated": 2,
+      "related": 1
+    },
+    {
+      "method": "bidirectional_slice",
+      "scope": "all_selected",
+      "reviewed": 3,
+      "unknown": 1,
+      "related": 1,
+      "unrelated": 1
+    },
+    {
+      "method": "bidirectional_slice",
+      "scope": "outside_original_diff",
+      "reviewed": 2,
+      "unknown": 1,
+      "unrelated": 1
+    },
+    {
+      "method": "losver",
+      "scope": "all_selected",
+      "reviewed": 15,
+      "unrelated": 10,
+      "related": 1,
+      "unknown": 4
+    },
+    {
+      "method": "losver",
+      "scope": "outside_original_diff",
+      "reviewed": 12,
+      "unrelated": 9,
+      "unknown": 3
+    }
+  ],
+  "test_used": false,
+  "training": false,
+  "diff_f1_is_vulnerability_accuracy": false
+}

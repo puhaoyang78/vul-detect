@@ -1,0 +1,17 @@
+{
+  "rules": {
+    "max_hops": 2,
+    "max_extra_statements": 12,
+    "dependencies": "native intra-method Joern REACHING_DEF and CDG; CFG checked, never used as adjacency expansion",
+    "directions": "separate forward and backward traversals; one exact cross-version mapping, then local traversal",
+    "path_semantics": "statement-level may-dependence; no alias/context/taint-semantic state tracking; not reachableByFlows",
+    "alignment": "equal-line anchors plus identical non-comment statement tokens; otherwise unique identical statement tokens",
+    "seeds": "atomic statements/control conditions intersecting real edit hunks, excluding unchanged matched statements",
+    "unknown": "parse/method/coordinate failures, zero or skipped native dataflow, aliases, external call summaries, macros and unresolved cross-function effects",
+    "purpose": "paired Train supervision audit only; never a single-function inference input or vulnerability truth"
+  },
+  "seed": 42,
+  "test_used": false,
+  "raw_members": "unchanged Original 4354/562 pairs",
+  "diff_usage": "paired supervision generation only; not deployable single-function localization"
+}

@@ -1,5 +1,9 @@
 import unittest
 
+from vulnmechanism.syntax import (static_relations, parse_source, statement_units, text,
+    statement_dependence_graph, bounded_dependence_slice, bidirectional_pair_slice,
+    align_statement_units, SLICE_RULES)
+
 from vulnmechanism.data import modified_lines
 from vulnmechanism.losver_patch_audit import (
     apply_commit_patch, candidate_region, edit_hunks, edit_shape,
@@ -90,6 +94,206 @@ class PatchAuditTests(unittest.TestCase):
     def test_comment_lines_and_crlf_are_not_executable_changes(self):
         code='int f(){\r\n/* comment\r\n still comment */\r\n return "// literal";\r\n}\r\n'
         self.assertEqual(lexical_code_lines(code),{0,3,4})
+
+
+class StaticPatternTests(unittest.TestCase):
+    def patterns(self,code):
+        return static_relations(code)["relations"]
+
+    def test_null_branch_and_early_exit_are_not_safety_verdicts(self):
+        good="int f(int *p){ if(!p) return 0; return *p; }"
+        bad="int f(int *p){ if(!p) return *p; return 0; }"
+        a=[r for r in self.patterns(good) if r["pattern"]=="null_check_relation"]
+        b=[r for r in self.patterns(bad) if r["pattern"]=="null_check_relation"]
+        self.assertEqual(a[0]["zero_case"],"excluded")
+        self.assertEqual(b[0]["zero_case"],"allowed")
+        self.assertEqual(a[0]["safety"],"unknown")
+
+    def test_bound_index_requires_same_binding(self):
+        good="int f(int *p,int i){ if(i<0) return 0; return p[i]; }"
+        wrong="int f(int *p,int i,int j){ if(j<0) return 0; return p[i]; }"
+        shadow="int f(int *p,int i){ if(i>0) { int i=9; return p[i]; } return 0; }"
+        self.assertTrue(any(r["pattern"]=="boundary_check_relation" for r in self.patterns(good)))
+        self.assertFalse(any(r["pattern"]=="boundary_check_relation" for r in self.patterns(wrong)))
+        self.assertFalse(any(r["pattern"]=="boundary_check_relation" for r in self.patterns(shadow)))
+
+    def test_mutation_and_address_escape_invalidate_checks(self):
+        for change in ("i=100;","i++;","mutate(&i);"):
+            code=f"int f(int *p,int i){{ if(i<0) return 0; {change} return p[i]; }}"
+            self.assertFalse(any(r["pattern"]=="boundary_check_relation" for r in self.patterns(code)))
+
+    def test_field_paths_are_not_interchangeable(self):
+        code="int f(struct S *s){ if(s->length>0) return use(s->other); return 0; }"
+        self.assertFalse(any(r["pattern"]=="control_call_relation" for r in self.patterns(code)))
+
+    def test_memory_api_alone_does_not_emit_extent(self):
+        a="int f(char *d,char *s,int n){memcpy(d,s,n);return 0;}"
+        b="int f(char *s,int n){char d[16];memcpy(d,s,n);return 0;}"
+        self.assertFalse(any(r["pattern"]=="memory_extent_relation" for r in self.patterns(a)))
+        matched=[r for r in self.patterns(b) if r["pattern"]=="memory_extent_relation"]
+        self.assertEqual(matched[0]["capacity"],"16")
+        self.assertEqual(matched[0]["extent_comparison"],"unknown")
+
+    def test_computed_argument_definition_rejects_conditional_and_stale(self):
+        good="int f(int n){int z=n*2;return use(z);}"
+        bad="int f(int n){int z=n*2;z=1;return use(z);}"
+        conditional="int f(int n){int z; if(n) {z=n*2;} return use(z);}"
+        self.assertTrue(any(r["pattern"]=="call_argument_relation" for r in self.patterns(good)))
+        self.assertFalse(any(r["pattern"]=="call_argument_relation" for r in self.patterns(bad)))
+        self.assertFalse(any(r["pattern"]=="call_argument_relation" for r in self.patterns(conditional)))
+
+    def test_resource_relations_need_object_and_path(self):
+        a="int f(){char *p=malloc(8);free(p);return 0;}"
+        self.assertTrue(any(r["role"]=="allocation_to_release" for r in self.patterns(a)))
+        good="int f(int *p){free(p);return *p;}"
+        self.assertTrue(any(r["role"]=="release_to_access_candidate" for r in self.patterns(good)))
+        for code in ("int f(int *p){free(p);p=0;return *p;}",
+                     "int f(int *p,int c){if(c)free(p);return *p;}"):
+            self.assertFalse(any(r["role"]=="release_to_access_candidate" for r in self.patterns(code)))
+
+    def test_integer_pointer_and_float_are_not_integer_range(self):
+        for kind in ("float","int *"):
+            code=f"int f({kind} n){{if(n>0) return use(n+1);return 0;}}"
+            self.assertFalse(any(r["pattern"]=="integer_range_relation" for r in self.patterns(code)))
+
+    def test_crlf_unicode_and_byte_ranges(self):
+        code="int f(int *p){\r\n// 中文\r\nif(p) return *p;\r\nreturn 0;\r\n}"
+        r=next(r for r in self.patterns(code) if r["pattern"]=="null_check_relation")
+        self.assertEqual(r["operation"]["lines"],[2])
+        span=r["operation"]
+        self.assertEqual(code.encode()[span["start_byte"]:span["end_byte"]].decode(),"*p")
+
+    def test_multidimensional_capacity_keeps_all_dimensions(self):
+        code="int f(){unsigned char ColorMap[3][256];memset(ColorMap,0,3*256);return 0;}"
+        r=next(r for r in self.patterns(code) if r["pattern"]=="memory_extent_relation")
+        self.assertEqual(r["capacity_dimensions"],["3","256"])
+        self.assertEqual(r["capacity"],"3 * 256")
+        self.assertEqual(r["capacity_bytes"],"sizeof(ColorMap)")
+        self.assertEqual(r["capacity_unit"],"elements")
+
+    def test_form_feed_uses_existing_physical_splitlines_coordinates(self):
+        code="int f(int *p){\f if(p) return *p;\nreturn 0;}"
+        r=next(r for r in self.patterns(code) if r["pattern"]=="null_check_relation")
+        self.assertEqual(r["operation"]["lines"],[1])
+        self.assertIn("*p",code.splitlines()[1])
+
+    def test_jump_over_definition_is_unknown(self):
+        code="int f(int n){int z=0;goto done;z=n*2;done:return use(z);}"
+        self.assertFalse(any(r["pattern"]=="call_argument_relation" for r in self.patterns(code)))
+
+    def test_added_bound_check_has_pair_pattern_without_old_diff(self):
+        from vulnmechanism.losver_patch_audit import ast_pattern_changes
+        a="int f(int *p,int i){return p[i];}"
+        b="int f(int *p,int i){if(i<0)return 0;return p[i];}"
+        change=ast_pattern_changes(static_relations(a),static_relations(b),a,b)
+        self.assertIn("boundary_relation_change",change["patterns"])
+        comment=b.replace("return p[i]","/* same */ return p[i]")
+        self.assertFalse(ast_pattern_changes(static_relations(b),static_relations(comment),b,comment)["patterns"])
+
+    def test_parse_failure_and_source_only_signature(self):
+        self.assertEqual(static_relations("int f(")["status"],"parse_unknown")
+        self.assertFalse(static_relations("int f(")["relations"])
+        with self.assertRaises(TypeError):
+            static_relations("int f(){return 0;}",diff=[0])
+
+
+class BidirectionalSliceTests(unittest.TestCase):
+    def graph(self,source,links):
+        parsed=parse_source(source)
+        units,_=statement_units(parsed)
+        nodes={}
+        for i,u in enumerate(units):
+            n=u["node"]
+            line=n.start_point.row+1
+            prefix=parsed["raw"].split(b"\n")[line-1][:n.start_point.column].decode()
+            nodes[str(i)]=dict(kind="CALL",NAME="<operator>.test",CODE=text(n,parsed["raw"]),
+                LINE_NUMBER=line,COLUMN_NUMBER=len(prefix.encode("utf-16-le"))//2+1)
+        edges=[dict(source=str(a),target=str(b),kind=k,variable=var) for a,b,k,var in links]
+        return statement_dependence_graph(source,dict(status="ok",nodes=nodes,edges=edges,counts=dict(CFG=1)))
+
+    def test_pure_addition_maps_controlled_access_and_backward_length(self):
+        old="int f(int *p,int n){\n int len=n*2;\n return p[len];\n}\n"
+        new="int f(int *p,int n){\n int len=n*2;\n if(len<0)return 0;\n return p[len];\n}\n"
+        a=self.graph(old,[(0,1,"REACHING_DEF","len")])
+        b=self.graph(new,[(1,3,"CDG",""),(0,3,"REACHING_DEF","len")])
+        r=bidirectional_pair_slice(old,new,a,b)
+        self.assertEqual(r["v"]["seed_units"],[])
+        self.assertIn(2,r["v"]["region_lines"])
+        self.assertIn(1,r["v"]["region_lines"])
+        self.assertTrue(any(e["kind"]=="VERSION_MAP" for u in r["v"]["selected_units"] for e in u["path"]))
+
+    def test_no_dependence_does_not_fill_neighbour(self):
+        old="int f(int *p){\n log(1);\n return *p;\n}\n"
+        new=old.replace(" log(1);"," if(p==0)return 0;\n log(1);")
+        r=bidirectional_pair_slice(old,new,self.graph(old,[]),self.graph(new,[]))
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_coordinates_crlf_unicode_and_mismatch(self):
+        source='int f(int n){\r\n log("中文"); return n;\r\n}\n'
+        g=self.graph(source,[(0,1,"REACHING_DEF","n")])
+        self.assertEqual(len(g["edges"]),1)
+        self.assertEqual(g["units"][1]["lines"],[1])
+        bad=dict(status="ok",nodes={"0":dict(kind="CALL",CODE="wrong",NAME="wrong",LINE_NUMBER=2,COLUMN_NUMBER=2)},edges=[],counts={})
+        self.assertEqual(statement_dependence_graph(source,bad)["mapped_nodes"],0)
+
+    def test_alias_dependency_is_explicitly_unknown(self):
+        s="int f(int *p){\n p[0]=2;\n return p[0];\n}"
+        g=self.graph(s,[(0,1,"REACHING_DEF","p[0]")])
+        self.assertEqual(g["edges"][0]["certainty"],"unknown")
+        self.assertIn("alias_or_memory_state_unknown",g["edges"][0]["unknown"])
+
+    def test_call_arguments_do_not_hide_unknown_call_summary(self):
+        source="int f(int n){\n int x=read(n);\n return x;\n}"
+        nodes={
+            "call":dict(kind="CALL",NAME="read",CODE="read(n)",LINE_NUMBER=2,COLUMN_NUMBER=8),
+            "arg":dict(kind="IDENTIFIER",NAME="n",CODE="n",LINE_NUMBER=2,COLUMN_NUMBER=13),
+            "ret":dict(kind="IDENTIFIER",NAME="x",CODE="x",LINE_NUMBER=3,COLUMN_NUMBER=9),
+        }
+        g=statement_dependence_graph(source,dict(status="ok",nodes=nodes,
+            edges=[dict(source="arg",target="ret",kind="REACHING_DEF",variable="n")],counts=dict(CFG=1,REACHING_DEF=1)))
+        self.assertIn("external_call_summary_unknown",g["edges"][0]["unknown"])
+
+    def test_backward_does_not_start_from_forward_descendants(self):
+        g=dict(edges=[dict(source=0,target=1,kind="CDG"),dict(source=2,target=1,kind="REACHING_DEF")])
+        r=bounded_dependence_slice(g,[0])
+        self.assertIn(1,r["selected"])
+        self.assertNotIn(2,r["selected"])
+
+    def test_retained_paths_are_not_replaced_or_reexpanded(self):
+        g=dict(edges=[dict(source=i,target=i+1,kind="CDG") for i in range(5)])
+        first=bounded_dependence_slice(g,[0])
+        self.assertEqual(set(first["selected"]),{0,1,2})
+        final=bounded_dependence_slice(g,[0],retained=first["selected"],roots={99:dict(path=[dict(kind="VERSION_MAP")],direction="cross_version")})
+        self.assertTrue(set(first["selected"]).issubset(final["selected"]))
+        self.assertNotIn(3,final["selected"])
+        self.assertEqual(first["selected"][2],final["selected"][2])
+
+    def test_bounds_and_cfg_adjacency_are_not_dependency(self):
+        g=dict(edges=[dict(source=0,target=i,kind="CDG") for i in range(1,50)])
+        r=bounded_dependence_slice(g,[0])
+        self.assertEqual(len(r["selected"]),1+SLICE_RULES["max_extra_statements"])
+        self.assertTrue(r["limit_reached"])
+        g=self.graph("int f(){\n a();\n b();\n}",[(0,1,"CFG","")])
+        self.assertEqual(g["edges"],[])
+
+    def test_duplicate_statements_do_not_map_arbitrarily(self):
+        a="int f(){\n use(1);\n use(1);\n}"
+        b="int f(){\n if(x)use(1);\n}"
+        ga,gb=self.graph(a,[]),self.graph(b,[])
+        self.assertEqual(align_statement_units(a,b,ga,gb),[])
+
+    def test_known_bad_pair_cannot_transfer_supervision(self):
+        a="int f(int *p){\n return p[0];\n}"
+        b=a.replace(" return"," if(!p)return 0;\n return")
+        ga,gb=self.graph(a,[]),self.graph(b,[(0,2,"CDG","")])
+        r=bidirectional_pair_slice(a,b,ga,gb,allow_mapping=False)
+        self.assertFalse(r["mapping_allowed"])
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_unparsed_source_keeps_unknown_not_fallback(self):
+        r=statement_dependence_graph("int f(",dict(status="ok",counts={}))
+        self.assertEqual(r["status"],"parse_or_method_unknown")
+        self.assertEqual(r["units"],[])
 
 
 if __name__ == "__main__":

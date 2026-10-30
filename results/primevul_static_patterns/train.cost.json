@@ -1,0 +1,16 @@
+{
+  "functions": 8708,
+  "pairs": 4354,
+  "seconds": 292.3693401119672,
+  "extraction_seconds": 284.51409183535725,
+  "function_seconds": {
+    "min": 0.00044916290789842606,
+    "q25": 0.006482894183136523,
+    "median": 0.01304080244153738,
+    "q75": 0.027807961218059063,
+    "q90": 0.059582804283127205,
+    "max": 5.9540217579342425
+  },
+  "coordinate_recheck_functions": 2,
+  "coordinate_recheck_seconds": 3.2112967078574
+}

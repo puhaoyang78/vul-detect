@@ -1,0 +1,5 @@
+valid Joern batch 1/5: 216 functions, 46.2s, {'ok': 147, 'joern_method_unknown': 69}
+valid Joern batch 2/5: 212 functions, 63.3s, {'ok': 127, 'joern_method_unknown': 85}
+valid Joern batch 3/5: 218 functions, 42.7s, {'ok': 157, 'joern_method_unknown': 61}
+valid Joern batch 4/5: 254 functions, 49.4s, {'ok': 158, 'joern_method_unknown': 96}
+valid Joern batch 5/5: 224 functions, 41.0s, {'ok': 157, 'joern_method_unknown': 67}

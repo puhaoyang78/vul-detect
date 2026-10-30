@@ -1,0 +1,15 @@
+split,pattern,trigger_operations,matched_operations,relation_instances
+train,boundary_check_relation,42286,11807,13770
+train,null_check_relation,208842,7944,8037
+train,integer_range_relation,13836,4672,6054
+train,memory_extent_relation,3234,286,286
+train,resource_lifetime_relation,,252,252
+train,call_argument_relation,206060,30646,35799
+train,control_call_relation,206060,31956,41050
+valid,boundary_check_relation,4887,1309,1518
+valid,null_check_relation,23451,1079,1093
+valid,integer_range_relation,1447,484,671
+valid,memory_extent_relation,407,43,43
+valid,resource_lifetime_relation,,0,0
+valid,call_argument_relation,24510,3407,4083
+valid,control_call_relation,24510,4132,23566

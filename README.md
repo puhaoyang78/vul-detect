@@ -231,3 +231,34 @@ python -m vulnmechanism.cli report --data-dir data --dataset primevul_paired --o
 | OOF | 9/128（7.03%） | .5348 | .0262 | .3719 | 26.56% |
 
 训练内/OOF/Valid定位AP为.8881/.1288/.1506。OOF的部分预测及聚合分布更接近Valid，但分类P-C、AUC、MCC下降，不能据此认定泛化改善。折模型独立训练样本减半，并在第256/192步选中checkpoint；完整定位器选在第512步。在共同Valid上的折模型F1/AP并未一致明显变差，仍不能单独隔离数据规模与训练内暴露的影响。未继续全量实验；见[完整报告](results/losver_oof_512/report.md)。
+
+### PrimeVul 静态修复模式审计
+
+复用 `losver_patch_audit.py` 与 `syntax.py`，审计原始4354对Train，完成源码复核后再用固定规则检查562对Valid，不读取Test、不改变成员、不训练。配对AST变化只在审计中使用；`syntax.static_relations(source)`的输入只有单个函数源码，输出带UTF-8 byte offset和物理行号的操作—控制条件/词法定义关系。绑定、值写入、字段路径或解析无法确定时拒绝补关系；不做邻近行或同名对象无约束扩展，所有安全性结论保持unknown。
+
+```bash
+python -m vulnmechanism.losver_patch_audit patterns --split train --output-dir results/primevul_static_patterns
+# 核对train.cases.md并完成train.review.jsonl；固定规则后执行Valid。
+python -m vulnmechanism.losver_patch_audit patterns --split valid --output-dir results/primevul_static_patterns
+python -m vulnmechanism.losver_patch_audit pattern-report --output-dir results/primevul_static_patterns
+CUDA_VISIBLE_DEVICES='' python -m unittest tests.test_losver_patch_audit tests.test_surface_vat tests.test_losver -q
+```
+
+规则、模式频次、逐对变化、固定抽样源码及复核意见、失败原因和已有512/L1定位预测的比较保存在[审计目录](results/primevul_static_patterns/)。全函数提取缓存留在本地，可由原始数据重建。静态关系成立、与修复相关、命中Diff、真实漏洞定位是不同结论；Diff重叠仅作为弱标签代理，不能报告为漏洞定位准确率。本轮没有接入新的模型或训练监督。
+
+4354对Train和562对固定规则Valid已完成。候选配对覆盖为66.90%/68.33%；最终抽样中与当前修复可见相关的候选为9/56、6/24，不是总体漏洞定位precision。Valid有C++流插入被当整数移位的反例，资源生命周期规则零覆盖。L1原Diff代理F1为静态候选.1246、现有定位器.2196。当前不建议把这些候选直接当作强漏洞行监督；具体分母、Unknown及失败原因见[报告](results/primevul_static_patterns/report.md)。
+
+### Diff引导双版本切片审计
+
+同一审计入口可批量构建Joern CFG/REACHING_DEF/CDG，再映射到Tree-sitter原子语句。修改语句分别做两跳前向/后向切片，每侧最多新增12条语句；通过相同源码行/唯一相同Token语句做一次版本映射，不按邻近行补区域。解析、别名、调用摘要和宏语义无法确认时保留Unknown。
+
+```bash
+python -m vulnmechanism.losver_patch_audit slice-graphs --split train --batch-size 256 --output-dir results/primevul_bidirectional_slicing
+python -m vulnmechanism.losver_patch_audit slices --split train --output-dir results/primevul_bidirectional_slicing
+python -m vulnmechanism.losver_patch_audit slice-report --split train --output-dir results/primevul_bidirectional_slicing
+# 完成Train源码复核，固定规则后，对valid依次运行以上三个阶段。
+```
+
+Joern路径为`/home/phy/joern`；单任务JVM配置8GB/4核，临时CSV导出使用本机`/tmp`，CPG和原生依赖缓存保留在结果目录。大缓存不纳入Git。此流程需要配对Diff，只用于离线监督审计，不能作为单函数定位器的推理输入；与已有LOSVER的Diff重叠比较不代表真实漏洞定位准确率。
+
+全量4354对Train和562对固定规则Valid已完成。原Diff漏洞侧为空的纯新增组中，候选恢复为657/1232、84/163；两侧图/AST可用配对占54.87%/53.56%。补充穷尽复核旧Valid纯新增组中4个有输出配对的47行候选，26行与可见修复相关、16行无关、5行Unknown，不能外推为全库定位准确率。切片能补回部分旧操作，但新增区域质量尚不足以直接充当强行监督；没有接入模型或训练。完整分母、路径、源码案例、成本和检查见[报告](results/primevul_bidirectional_slicing/report.md)。

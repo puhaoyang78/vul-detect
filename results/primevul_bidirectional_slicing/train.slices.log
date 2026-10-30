@@ -1,0 +1,17 @@
+train: sliced 250/4354 pairs in 25.5s
+train: sliced 500/4354 pairs in 43.2s
+train: sliced 750/4354 pairs in 74.5s
+train: sliced 1000/4354 pairs in 147.0s
+train: sliced 1250/4354 pairs in 187.0s
+train: sliced 1500/4354 pairs in 205.8s
+train: sliced 1750/4354 pairs in 233.8s
+train: sliced 2000/4354 pairs in 262.9s
+train: sliced 2250/4354 pairs in 306.2s
+train: sliced 2500/4354 pairs in 349.7s
+train: sliced 2750/4354 pairs in 382.5s
+train: sliced 3000/4354 pairs in 409.2s
+train: sliced 3250/4354 pairs in 437.9s
+train: sliced 3500/4354 pairs in 493.5s
+train: sliced 3750/4354 pairs in 525.8s
+train: sliced 4000/4354 pairs in 563.3s
+train: sliced 4250/4354 pairs in 582.5s

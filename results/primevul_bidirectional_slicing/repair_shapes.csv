@@ -1,0 +1,9 @@
+split,shape,pairs,both_parsed,nonempty_v,nonempty_p,mapped_v,mapped_p
+train,addition_only,1232,706,657,697,657,0
+train,replacement_only,1671,950,946,943,90,26
+train,deletion_only,74,37,38,32,0,32
+train,mixed,1377,696,726,703,112,48
+valid,addition_only,163,88,84,88,84,0
+valid,replacement_only,231,121,120,121,4,1
+valid,deletion_only,3,1,1,1,0,1
+valid,mixed,165,91,92,93,17,2

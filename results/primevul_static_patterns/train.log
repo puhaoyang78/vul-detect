@@ -1,0 +1,18 @@
+train: 250/4354 AST pairs, 11.6s
+train: 500/4354 AST pairs, 19.8s
+train: 750/4354 AST pairs, 34.0s
+train: 1000/4354 AST pairs, 57.5s
+train: 1250/4354 AST pairs, 73.9s
+train: 1500/4354 AST pairs, 84.4s
+train: 1750/4354 AST pairs, 96.7s
+train: 2000/4354 AST pairs, 109.9s
+train: 2250/4354 AST pairs, 129.0s
+train: 2500/4354 AST pairs, 150.3s
+train: 2750/4354 AST pairs, 169.0s
+train: 3000/4354 AST pairs, 186.4s
+train: 3250/4354 AST pairs, 204.7s
+train: 3500/4354 AST pairs, 231.4s
+train: 3750/4354 AST pairs, 250.3s
+train: 4000/4354 AST pairs, 272.7s
+train: 4250/4354 AST pairs, 286.1s
+{"split": "train", "functions": 8708, "pairs": 4354, "review_samples": 64}

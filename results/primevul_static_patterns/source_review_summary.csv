@@ -1,0 +1,17 @@
+split,pattern,reviewed,confirmed,false_relation,unknown,not_applicable,repair_related,repair_unrelated,repair_unknown
+train,boundary_check_relation,8,8,0,0,0,1,4,3
+train,null_check_relation,8,8,0,0,0,1,7,0
+train,integer_range_relation,8,8,0,0,0,3,4,1
+train,memory_extent_relation,8,6,0,2,0,0,6,2
+train,resource_lifetime_relation,8,5,0,3,0,2,3,3
+train,call_argument_relation,8,6,0,2,0,0,6,2
+train,control_call_relation,8,7,0,1,0,2,3,3
+train,no_candidate,8,0,0,0,8,0,0,8
+valid,boundary_check_relation,4,4,0,0,0,1,3,0
+valid,null_check_relation,4,3,0,1,0,0,3,1
+valid,integer_range_relation,4,3,1,0,0,1,3,0
+valid,memory_extent_relation,4,3,0,1,0,2,1,1
+valid,resource_lifetime_relation,0,0,0,0,0,0,0,0
+valid,call_argument_relation,4,3,0,1,0,1,2,1
+valid,control_call_relation,4,3,0,1,0,1,2,1
+valid,no_candidate,4,0,0,0,4,0,0,4

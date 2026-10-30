@@ -1,0 +1,107 @@
+{
+  "split": "train",
+  "pairs": 4354,
+  "functions": 8708,
+  "both_parsed": 2389,
+  "nonempty_v": 2367,
+  "nonempty_p": 2375,
+  "addition_pairs": 1232,
+  "addition_recovered_v": 657,
+  "addition_both_parsed": 706,
+  "addition_without_v_seed": 694,
+  "addition_without_v_seed_recovered": 657,
+  "function_status": {
+    "ok": 4876,
+    "parse_or_method_unknown": 3832
+  },
+  "header_type_absent": 2167,
+  "header_type_absent_and_joern_unknown": 2004,
+  "region_lines": {
+    "min": 0.0,
+    "q25": 0.0,
+    "median": 4.0,
+    "q75": 14.0,
+    "q90": 19.0,
+    "max": 808.0
+  },
+  "selected_units": {
+    "min": 0.0,
+    "q25": 0.0,
+    "median": 4.0,
+    "q75": 13.0,
+    "q90": 16.0,
+    "max": 1217.0
+  },
+  "limit_reached": 2626,
+  "identical_token_seed_units": 3094,
+  "parsed_functions_without_native_ddg": 12,
+  "parsed_functions_without_mapped_dependencies": 122,
+  "unknown_path_units": 28347,
+  "new_review_pairs": 8,
+  "new_review_lines": 35,
+  "source_review": [
+    {
+      "method": "original_diff",
+      "scope": "all_selected",
+      "reviewed": 17,
+      "related": 14,
+      "unknown": 3
+    },
+    {
+      "method": "original_diff",
+      "scope": "outside_original_diff",
+      "reviewed": 0
+    },
+    {
+      "method": "static_candidates",
+      "scope": "all_selected",
+      "reviewed": 12,
+      "unrelated": 6,
+      "unknown": 3,
+      "related": 3
+    },
+    {
+      "method": "static_candidates",
+      "scope": "outside_original_diff",
+      "reviewed": 10,
+      "unrelated": 6,
+      "unknown": 3,
+      "related": 1
+    },
+    {
+      "method": "bidirectional_slice",
+      "scope": "all_selected",
+      "reviewed": 16,
+      "unknown": 7,
+      "unrelated": 1,
+      "related": 8
+    },
+    {
+      "method": "bidirectional_slice",
+      "scope": "outside_original_diff",
+      "reviewed": 7,
+      "unknown": 5,
+      "unrelated": 1,
+      "related": 1
+    },
+    {
+      "method": "losver",
+      "scope": "all_selected",
+      "reviewed": 23,
+      "unrelated": 2,
+      "related": 17,
+      "unknown": 4
+    },
+    {
+      "method": "losver",
+      "scope": "outside_original_diff",
+      "reviewed": 6,
+      "unrelated": 2,
+      "related": 3,
+      "unknown": 1
+    }
+  ],
+  "test_used": false,
+  "training": false,
+  "diff_f1_is_vulnerability_accuracy": false
+}

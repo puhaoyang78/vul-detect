@@ -8,18 +8,26 @@ from collections import Counter, defaultdict
 import csv
 import difflib
 import json
+import os
 from pathlib import Path
 import random
 import re
+import resource
+import signal
+import subprocess
+import sys
+import tempfile
 import time
 
 from sklearn.metrics import roc_auc_score
 
 from .artifacts import write_json
-from .data import modified_lines, read_jsonl
+from .data import modified_lines, read_jsonl, write_jsonl
 from .losver_diagnosis import annotations, quantiles, selected_mass, write_csv
 from .syntax import (CONTROLS, STATEMENTS, source_lines, parse_source, edit_hunks,
-                     statement_units, parser_for, source_token_spans, text, walk)
+                     statement_units, parser_for, source_token_spans, text, walk,
+                     static_relations, STATIC_RELATION_RULES, SLICE_RULES,
+                     statement_dependence_graph, bidirectional_pair_slice)
 
 
 RAW = Path("/home/PublicData/PHY-data/vul_detect/data/PrimeVul_original")
@@ -771,14 +779,740 @@ def regions(output=OUT):
         unavailable="no alias analysis, interprocedural analysis, CFG dominance/postdominance, or missing caller context"))
 
 
+PATTERN_EDITS = ("boundary_relation_change", "integer_relation_change", "integer_arithmetic_change", "null_relation_change",
+                 "memory_operation_change", "resource_relation_change", "release_call_change",
+                 "call_argument_change", "control_flow_change")
+
+
+def relation_signature(relation, source):
+    raw = source.encode()
+    def tokens(span):
+        return tuple(t[0] for t in source_token_spans(raw[span["start_byte"]:span["end_byte"]].decode()))
+    return (relation["pattern"],tokens(relation["operation"]),tokens(relation["evidence"]),
+            relation["role"],relation.get("argument"),relation.get("branch_truth"),relation.get("zero_case"))
+
+
+def ast_pattern_changes(old, new, source_old, source_new):
+    """Conservative multiset AST/token changes, not a vulnerability taxonomy."""
+    if old["status"]!="ok" or new["status"]!="ok":
+        return dict(status="parse_unknown", patterns=[], counts={}, call_changes=[])
+    before=Counter(relation_signature(r,source_old) for r in old["relations"])
+    after=Counter(relation_signature(r,source_new) for r in new["relations"])
+    delta=(before-after)+(after-before)
+    count=Counter()
+    families=dict(boundary_check_relation="boundary_relation_change", integer_range_relation="integer_relation_change",
+                  null_check_relation="null_relation_change",memory_extent_relation="memory_operation_change",
+                  resource_lifetime_relation="resource_relation_change")
+    for key,n in delta.items():
+        if key[0] in families:
+            count[families[key[0]]]+=n
+    ops=[Counter((r["kind"],r["signature"]) for r in f["ast_operations"]) for f in (old,new)]
+    for (kind,signature),n in ((ops[0]-ops[1])+(ops[1]-ops[0])).items():
+        if kind in {"memory_span","indexed_memory","pointer_access"}:
+            count["memory_operation_change"]+=n
+        if kind=="integer_arithmetic":
+            count["integer_arithmetic_change"]+=n
+    calls=[Counter((c["name"],tuple(c["arguments"])) for c in f["ast_calls"]) for f in (old,new)]
+    unmatched=[calls[0]-calls[1],calls[1]-calls[0]]
+    changes=[]
+    for name in sorted({k[0] for c in unmatched for k in c}):
+        a=[args for (callee,args),n in unmatched[0].items() if callee==name for _ in range(n)]
+        b=[args for (callee,args),n in unmatched[1].items() if callee==name for _ in range(n)]
+        if len(a)==len(b)==1 and a[0]!=b[0]:
+            changes.append(dict(callee=name, before=list(a[0]), after=list(b[0])))
+    count["call_argument_change"]=len(changes)
+    count["release_call_change"]=sum(n for c in unmatched for (name,args),n in c.items() if name in {"free","fclose","close"})
+    units=[Counter((u["kind"],u["signature"]) for u in f["ast_units"] if u["kind"] in {
+        "control_condition","return_statement","goto_statement","break_statement","continue_statement"}) for f in (old,new)]
+    count["control_flow_change"]=sum(((units[0]-units[1])+(units[1]-units[0])).values())
+    return dict(status="ok",patterns=[k for k in PATTERN_EDITS if count[k]],
+                counts={k:count[k] for k in PATTERN_EDITS},call_changes=changes)
+
+
+def pattern_review_sample(functions, split):
+    """Sample functions first, one relation per function; never select by LOSVER."""
+    rng=random.Random(SEED)
+    sample=[]
+    per_side=4 if split=="train" else 2
+    for pattern in STATIC_RELATION_RULES["patterns"]:
+        for target in (1,0):
+            pool=[r for r in functions if r["target"]==target and any(x["pattern"]==pattern for x in r["relations"])]
+            pool.sort(key=lambda r:r["sample_key"])
+            for row in rng.sample(pool,min(per_side,len(pool))):
+                relation=rng.choice([r for r in row["relations"] if r["pattern"]==pattern])
+                rid=f"{row['sample_key']}:{pattern}:{relation['operation']['start_byte']}:{relation['evidence']['start_byte']}:{relation['role']}"
+                sample.append(dict(review_id=rid,sample_key=row["sample_key"],pair_key=row["pair_key"],
+                    target=target,pattern=pattern,relation=relation))
+    for status in ("ok","parse_unknown"):
+        for target in (1,0):
+            pool=[r for r in functions if r["target"]==target and r["status"]==status and not r["relations"]]
+            pool.sort(key=lambda r:r["sample_key"])
+            for row in rng.sample(pool,min(2 if split=="train" else 1,len(pool))):
+                sample.append(dict(review_id=f"{row['sample_key']}:{status}:no_candidate",sample_key=row["sample_key"],
+                    pair_key=row["pair_key"],target=target,pattern="no_candidate",status=status))
+    return sample
+
+
+def pattern_cases(data, sample, output):
+    by_key={r["sample_key"]:r for r in data}
+    pairs={r["pair_key"]:[] for r in data}
+    for r in data:
+        pairs[r["pair_key"]].append(r)
+    lines=["# Fixed source review samples", "", "1-based display lines; stored positions are 0-based. Review is by this assistant, not independent gold annotation.", ""]
+    for case in sample:
+        row=by_key[case["sample_key"]]
+        lines += [f"## {case['review_id']}",f"target={row['target']}, pair={row['pair_key']}"]
+        relation=case.get("relation")
+        if relation:
+            lines.append(json.dumps(relation,ensure_ascii=False))
+            ns=set(relation["operation"]["lines"]+relation["evidence"]["lines"])
+            chosen={j for n in ns for j in range(max(0,n-3),n+4)}
+        else:
+            chosen=set(range(min(35,len(row["func"].splitlines()))))
+        lines += ["```c"]
+        code=row["func"].splitlines()
+        for n in sorted(chosen)[:70]:
+            if n<len(code):
+                lines.append(f"{n+1:5}: {code[n][:500]}")
+        lines += ["```", "Pair edit (structural context only; never extractor input):", "```diff"]
+        v,p=pairs[row["pair_key"]]
+        edit=list(difflib.unified_diff(v["func"].splitlines(),p["func"].splitlines(),n=2,lineterm=""))
+        lines += [s[:500] for s in edit[:70]]
+        if len(edit)>70:
+            lines.append("... display truncated; source retained unchanged ...")
+        lines += ["```", ""]
+    Path(output).write_text("\n".join(lines),encoding="utf-8")
+
+
+def mine_patterns(data_dir, output, split):
+    """All Train first; the identical source-only rules are then evaluated on Valid."""
+    output=Path(output)
+    if output==OUT:
+        raise ValueError("patterns requires a separate output directory; historical patch audit is read-only")
+    output.mkdir(parents=True,exist_ok=True)
+    if split=="valid":
+        config=json.loads((output/"rules.json").read_text())
+        if config["rules"]!=STATIC_RELATION_RULES:
+            raise ValueError("rules differ from completed Train audit; Valid must not select new rules")
+        review=read_jsonl(output/"train.review.jsonl")
+        expected=read_jsonl(output/"train.review_sample.jsonl")
+        if ({r["review_id"] for r in review}!={r["review_id"] for r in expected}
+                or any(r.get("relation_judgment") not in {"confirmed_relation","false_relation","unknown","not_applicable"} for r in review)):
+            raise ValueError("complete Train source review before running Valid")
+    data=read_jsonl(Path(data_dir)/"primevul_paired"/f"{split}.lines.jsonl")
+    raw=read_jsonl(RAW/f"primevul_{split}_paired.jsonl")
+    expected_pairs={"train":4354,"valid":562}[split]
+    if len(data)!=expected_pairs*2 or len(raw)!=len(data):
+        raise ValueError("unchanged official Original pair members required")
+    for r,upstream in zip(data,raw):
+        if r["func"]!=upstream["func"] or r["target"]!=upstream["target"]:
+            raise ValueError("derived source or labels differ from original")
+    with (OUT/"pairs.csv").open() as handle:
+        previous={r["pair_key"]:r for r in csv.DictReader(handle) if r["split"]==split}
+    scores=read_jsonl(Path("results/losver_512/primevul_paired/losver_localizer")/f"{split}.line_scores.jsonl")
+    if [r["sample_key"] for r in scores]!=[r["sample_key"] for r in data]:
+        raise ValueError("full 512 LOSVER scores and official members differ")
+    started=time.perf_counter()
+    functions,pairs,cost=[],[],[]
+    with (output/f"functions.{split}.jsonl").open("w") as handle:
+        for i in range(0,len(data),2):
+            v,p=data[i:i+2]
+            if [v["target"],p["target"]]!=[1,0] or v["pair_key"]!=p["pair_key"]:
+                raise ValueError("unaligned official pair")
+            local=[]
+            for row in (v,p):
+                start=time.perf_counter()
+                result=static_relations(row["func"])
+                cost.append(time.perf_counter()-start)
+                local.append(result)
+                public={k:value for k,value in result.items() if not k.startswith("ast_")}
+                public.update(sample_key=row["sample_key"],pair_key=row["pair_key"],target=row["target"],
+                              split=split,quality_status=previous[row["pair_key"]]["quality_status"])
+                handle.write(json.dumps(public,ensure_ascii=False)+"\n")
+                functions.append(public)
+            delta=ast_pattern_changes(*local,v["func"],p["func"])
+            delta.update(pair_key=v["pair_key"], split=split, shape=previous[v["pair_key"]]["shape"],
+                         quality_status=previous[v["pair_key"]]["quality_status"])
+            pairs.append(delta)
+            if (i//2+1)%250==0:
+                print(f"{split}: {i//2+1}/{expected_pairs} AST pairs, {time.perf_counter()-started:.1f}s",flush=True)
+    write_jsonl(output/f"pairs.{split}.jsonl",pairs)
+    sample=pattern_review_sample(functions,split)
+    write_jsonl(output/f"{split}.review_sample.jsonl",sample)
+    pattern_cases(data,sample,output/f"{split}.cases.md")
+    write_json(output/f"{split}.cost.json",dict(functions=len(data),pairs=expected_pairs,
+        seconds=time.perf_counter()-started,extraction_seconds=sum(cost),function_seconds=quantiles(cost)))
+    if split=="train":
+        write_json(output/"rules.json",dict(rules=STATIC_RELATION_RULES, seed=SEED,
+            source_members="unchanged official Original 4354 Train pairs", original_diff_unchanged=True,
+            stage_order="Train mining and source review before fixed-rule Valid; no Test read",
+            localizer_reference="existing full 512 LOSVER, positive threshold >0.5; no inference rerun",
+            ast_difference="multiset of atomic AST units and non-comment tokens; unique remaining callee matches for argument edits; not optimal tree-edit or semantic equivalence"))
+    return dict(split=split,functions=len(functions),pairs=len(pairs),review_samples=len(sample))
+
+
+def pattern_report(data_dir, output):
+    """Existing LOSVER probabilities and Diff proxies only; no model execution."""
+    output=Path(output)
+    splits=[s for s in ("train","valid") if (output/f"{s}.cost.json").exists()]
+    with (FIRST/"functions.csv").open() as handle:
+        geometry={(r["mode"],r["sample_key"]):r for r in csv.DictReader(handle) if r["split"] in splits}
+    frequency,edits,proxy,transitions,failures,reviews,stages=[],[],[],[],[],[],[]
+    summary={}
+    for split in splits:
+        functions=read_jsonl(output/f"functions.{split}.jsonl")
+        pairs=read_jsonl(output/f"pairs.{split}.jsonl")
+        source=read_jsonl(Path(data_dir)/"primevul_paired"/f"{split}.lines.jsonl")
+        if [r["sample_key"] for r in functions]!=[r["sample_key"] for r in source]:
+            raise ValueError("pattern audit / labels / existing localizer members differ")
+        counts=Counter()
+        for r in functions:
+            counts.update(r["failures"])
+        counts["parse_unknown"]=sum(r["status"]!="ok" for r in functions)
+        failures += [dict(split=split,reason=k,events=n,
+                         functions=sum((r["status"]!="ok") if k=="parse_unknown" else k in r["failures"] for r in functions))
+                     for k,n in sorted(counts.items())]
+        eligible=sum(r["status"]=="ok" for r in pairs)
+        summary[split]=dict(functions=len(functions),pairs=len(pairs),parsed_functions=sum(r["status"]=="ok" for r in functions),
+            parsed_pairs=eligible,matched_functions=sum(bool(r["relations"]) for r in functions),
+            matched_pairs=sum(bool(functions[i]["relations"] or functions[i+1]["relations"]) for i in range(0,len(functions),2)),
+            parse_failures_with_errors=sum(r["status"]!="ok" and r["errors"]>0 for r in functions),
+            parse_failures_without_unique_function=sum(r["status"]!="ok" and r["function_count"]!=1 for r in functions),
+            costs=json.loads((output/f"{split}.cost.json").read_text()),
+            known_wrong_pairs=sum(r["quality_status"]=="verified_error" for r in pairs),
+            unclassified_parsed_pairs=sum(r["status"]=="ok" and not r["patterns"] for r in pairs))
+        for pattern in PATTERN_EDITS:
+            selected=[r for r in pairs if pattern in r["patterns"]]
+            edits.append(dict(split=split,pattern=pattern,pairs=len(selected),all_pairs=len(pairs),
+                coverage=len(selected)/len(pairs),parsed_pairs=eligible,
+                coverage_among_parsed=len(selected)/eligible if eligible else 0,
+                known_wrong_pairs=sum(r["quality_status"]=="verified_error" for r in selected)))
+        for pattern in STATIC_RELATION_RULES["patterns"]:
+            for target in (1,0):
+                fs=[r for r in functions if r["target"]==target]
+                selected=[r for r in fs if any(x["pattern"]==pattern for x in r["relations"])]
+                frequency.append(dict(split=split,pattern=pattern,target=target,functions=len(selected),
+                    total=len(fs),coverage=len(selected)/len(fs),
+                    relations=sum(x["pattern"]==pattern for r in selected for x in r["relations"])))
+            for i in range(0,len(functions),2):
+                a,b=functions[i:i+2]
+                na=sum(x["pattern"]==pattern for x in a["relations"])
+                nb=sum(x["pattern"]==pattern for x in b["relations"])
+                transitions.append(dict(split=split,pattern=pattern,pair_key=a["pair_key"],
+                    vulnerable=na,patched=nb,delta=nb-na,
+                    parsing_known=a["status"]==b["status"]=="ok"))
+        operation_counts=Counter()
+        for f in functions:
+            operation_counts.update(f["operations"])
+        trigger=dict(boundary_check_relation=("indexed_memory","memory_span"),null_check_relation=("indexed_memory","pointer_access"),
+                     integer_range_relation=("integer_arithmetic",),memory_extent_relation=("memory_span",),
+                     call_argument_relation=("call",),control_call_relation=("call",))
+        for pattern in STATIC_RELATION_RULES["patterns"]:
+            stages.append(dict(split=split,pattern=pattern,
+                trigger_operations=sum(operation_counts[k] for k in trigger[pattern]) if pattern in trigger else None,
+                matched_operations=len({(f["sample_key"],r["operation"]["start_byte"]) for f in functions for r in f["relations"] if r["pattern"]==pattern}),
+                relation_instances=sum(r["pattern"]==pattern for f in functions for r in f["relations"])))
+        for mode in ("512","l1"):
+            loc=read_jsonl(Path(f"results/losver_{mode}/primevul_paired/losver_localizer")/f"{split}.line_scores.jsonl")
+            if [r["sample_key"] for r in loc]!=[r["sample_key"] for r in source]:
+                raise ValueError("existing localizer members differ")
+            masks=defaultdict(Counter)
+            for row,fn,lp in zip(source,functions,loc):
+                ns=lp["line_numbers"]
+                if len(ns)!=len(lp["line_scores"]) or len(ns)!=len(set(ns)):
+                    raise ValueError("invalid existing localizer line map")
+                g=geometry[mode,row["sample_key"]]
+                code=row["func"].splitlines()
+                if int(g["physical_lines"])!=len(code):
+                    raise ValueError("historical source geometry differs")
+                common=set(ns)
+                complete=set(ns[:-1] if mode=="512" and g["truncated"]=="1" else ns)
+                nonempty={i for i,line in enumerate(code) if line.strip()}
+                full,prefix=set(),set()
+                for r in fn["relations"]:
+                    region=set(r["operation"]["lines"]+r["evidence"]["lines"])&nonempty
+                    full.update(region)
+                    if region.issubset(complete):
+                        prefix.update(region)
+                gt=set(row["lines_ground_truth"])&common
+                selected=dict(static_full_source_projected=full,
+                    losver={n for n,p in zip(ns,lp["line_scores"]) if p>.5})
+                if mode=="512":
+                    selected["static_prefix_evidence_only"]=prefix
+                for name,mask in selected.items():
+                    selected_lines=mask&common
+                    for side in ("all","vulnerable" if row["target"] else "patched"):
+                        masks[name,side].update(functions=1,nonempty=bool(selected_lines),lines=len(common),
+                            positive_lines=len(gt),selected_lines=len(selected_lines),tp=len(gt&selected_lines))
+            for (name,side),acc in masks.items():
+                tp,npred,positive=acc["tp"],acc["selected_lines"],acc["positive_lines"]
+                proxy.append(dict(split=split,mode=mode,method=name,side=side,functions=acc["functions"],
+                    covered_functions=acc["nonempty"],lines=acc["lines"],positive_lines=positive,selected_lines=npred,
+                    tp=tp,fp=npred-tp,fn=positive-tp,precision=tp/npred if npred else 0.,
+                    recall=tp/positive if positive else 0.,f1=2*tp/(npred+positive) if npred+positive else 0.,
+                    selected_fraction=npred/acc["lines"],meaning="original Diff proxy, NOT vulnerability-location accuracy"))
+        rp=output/f"{split}.review.jsonl"
+        if rp.exists():
+            manual=read_jsonl(rp)
+            expected=read_jsonl(output/f"{split}.review_sample.jsonl")
+            if {r["review_id"] for r in manual}!={r["review_id"] for r in expected} or len(manual)!=len(expected):
+                raise ValueError("source review sample keys/denominator differ")
+            by_id={r["review_id"]:r for r in expected}
+            for pattern in STATIC_RELATION_RULES["patterns"]+["no_candidate"]:
+                selected=[r for r in manual if by_id[r["review_id"]]["pattern"]==pattern]
+                c=Counter(r["relation_judgment"] for r in selected)
+                rel=Counter(r["repair_relevance"] for r in selected)
+                reviews.append(dict(split=split,pattern=pattern,reviewed=len(selected),
+                    confirmed=c["confirmed_relation"],false_relation=c["false_relation"],unknown=c["unknown"],
+                    not_applicable=c["not_applicable"],repair_related=rel["related"],repair_unrelated=rel["unrelated"],repair_unknown=rel["unknown"]))
+    changes=[]
+    for split in splits:
+        for pattern in STATIC_RELATION_RULES["patterns"]:
+            selected=[r for r in transitions if r["split"]==split and r["pattern"]==pattern and r["parsing_known"]]
+            changes.append(dict(split=split,pattern=pattern,parsed_pairs=len(selected),
+                more_in_patched=sum(r["delta"]>0 for r in selected),fewer_in_patched=sum(r["delta"]<0 for r in selected),
+                same_nonempty=sum(r["delta"]==0 and r["vulnerable"]>0 for r in selected),
+                absent_both=sum(r["vulnerable"]==r["patched"]==0 for r in selected),
+                patched_only=sum(r["vulnerable"]==0 and r["patched"]>0 for r in selected),
+                vulnerable_only=sum(r["vulnerable"]>0 and r["patched"]==0 for r in selected)))
+    for name,rows in (("pattern_frequency.csv",frequency),("ast_repair_changes.csv",edits),
+                      ("diff_proxy_comparison.csv",proxy),("pair_pattern_changes.csv",transitions),("failures.csv",failures)):
+        write_csv(output/name,rows)
+    write_csv(output/"pair_pattern_change_summary.csv",changes)
+    write_csv(output/"extraction_stages.csv",stages)
+    if reviews:
+        write_csv(output/"source_review_summary.csv",reviews)
+    write_json(output/"summary.json",dict(splits=summary,source_reviews=reviews,
+        no_training=True,no_model_execution=True,test_used=False,rules=STATIC_RELATION_RULES))
+    print(json.dumps(summary,ensure_ascii=False,indent=2),flush=True)
+
+
+def read_slice_export(directory):
+    """Reuse the historical Joern neo4jcsv contract, retaining native evidence."""
+    csv.field_size_limit(sys.maxsize)
+    nodes,edges={},[]
+    for header in sorted(Path(directory).glob("nodes_*_header.csv")):
+        columns=next(csv.reader(header.open()))
+        if columns[:2]!=[":ID",":LABEL"]:
+            raise ValueError(f"unexpected Joern node header: {header}")
+        with header.with_name(header.name.replace("_header","_data")).open(newline="") as handle:
+            for values in csv.reader(handle):
+                if len(values)!=len(columns):
+                    raise ValueError(f"malformed Joern node: {header}")
+                row=dict(kind=values[1])
+                for name,value in zip(columns[2:],values[2:]):
+                    name=name.partition(":")[0]
+                    if name in {"LINE_NUMBER","LINE_NUMBER_END","COLUMN_NUMBER","COLUMN_NUMBER_END","OFFSET","OFFSET_END"}:
+                        row[name]=int(value) if value else None
+                    elif name in {"CODE","NAME","FILENAME"}:
+                        row[name]=value.replace("\\\\","\\")
+                    elif name=="IS_EXTERNAL":
+                        row[name]=value=="true"
+                nodes[values[0]]=row
+    for kind in ("AST","CFG","CDG","REACHING_DEF"):
+        header=Path(directory)/f"edges_{kind}_header.csv"
+        if not header.exists():
+            # neo4jcsv omits zero-edge labels (e.g. no recognized method).
+            # Per-method CFG/edge counts below retain this as unknown/zero.
+            continue
+        columns=next(csv.reader(header.open()))
+        with header.with_name(header.name.replace("_header","_data")).open(newline="") as handle:
+            for row in csv.reader(handle):
+                if len(row)!=len(columns) or row[2]!=kind:
+                    raise ValueError(f"malformed native {kind} edge")
+                edges.append(dict(source=row[0],target=row[1],kind=kind,
+                    variable=row[3].replace("\\\\","\\") if kind=="REACHING_DEF" else ""))
+    if not nodes:
+        raise ValueError("empty Joern export")
+    return nodes,edges
+
+
+def split_slice_export(directory, records, filenames):
+    nodes,edges=read_slice_export(directory)
+    ast=defaultdict(list); outgoing=defaultdict(list)
+    methods=defaultdict(list)
+    for key,n in nodes.items():
+        if n["kind"]=="METHOD" and not n.get("IS_EXTERNAL") and n.get("NAME")!="<global>" and n.get("LINE_NUMBER"):
+            methods[Path(n.get("FILENAME","")).name].append(key)
+    for edge in edges:
+        outgoing[edge["source"]].append(edge)
+        if edge["kind"]=="AST":
+            ast[edge["source"]].append(edge["target"])
+    result=[]
+    for row,filename in zip(records,filenames):
+        ids=methods[filename]
+        r=dict(sample_key=row["sample_key"],pair_key=row["pair_key"],status="ok",nodes={},edges=[],counts={})
+        if len(ids)!=1:
+            r.update(status="joern_method_unknown",methods=len(ids));result.append(r);continue
+        pending=[ids[0]];owned=set()
+        while pending:
+            key=pending.pop()
+            if key in owned or (key!=ids[0] and nodes[key]["kind"]=="METHOD"):
+                continue
+            owned.add(key);pending.extend(ast[key])
+        r["nodes"]={k:nodes[k] for k in sorted(owned)}
+        r["edges"]=[e for key in sorted(owned) for e in outgoing[key]
+                    if e["target"] in owned and e["kind"]!="AST"]
+        r["counts"]=dict(Counter(e["kind"] for e in r["edges"]))
+        if not r["counts"].get("CFG"):
+            r["status"]="joern_cfg_missing"
+        result.append(r)
+    return result
+
+
+def run_slice_process(command, log, *, timeout=600):
+    """One bounded JVM task; terminate all descendants on timeout/interruption."""
+    env=dict(os.environ,JAVA_OPTS="-Xmx8g -Xms256m -XX:ActiveProcessorCount=4")
+    started=time.perf_counter()
+    with Path(log).open("w") as handle:
+        proc=subprocess.Popen(command,stdout=handle,stderr=subprocess.STDOUT,env=env,start_new_session=True)
+        try:
+            code=proc.wait(timeout=timeout)
+        except BaseException:
+            try:
+                os.killpg(proc.pid,signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            # A wrapper can exit before its Java descendants; clean the group.
+            try:
+                os.killpg(proc.pid,signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+            raise
+    if code:
+        raise RuntimeError(f"Joern exited {code}; inspect {log}")
+    return dict(seconds=time.perf_counter()-started,
+                max_child_rss_kib=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+
+
+def slice_graphs(data_dir, output, split, keys=None, batch_size=128):
+    """Batch unchanged function files; persist per-file native graph caches."""
+    output=Path(output)
+    rows=read_jsonl(Path(data_dir)/"primevul_paired"/f"{split}.lines.jsonl")
+    languages={r["sample_key"]:r["language"] for r in read_jsonl(
+        Path("results/primevul_static_patterns")/f"functions.{split}.jsonl")}
+    if keys:
+        requested=set(keys);rows=[r for r in rows if r["pair_key"] in requested]
+        if {r["pair_key"] for r in rows}!=requested:
+            raise ValueError("unknown pair keys")
+    if batch_size<2 or batch_size%2:
+        raise ValueError("batch size must be a positive even number")
+    root=output/"graphs"/split;root.mkdir(parents=True,exist_ok=True)
+    batches=[];batch=[];size=0
+    for i in range(0,len(rows),2):
+        pair=rows[i:i+2];n=sum(len(r["func"].encode()) for r in pair)
+        if batch and (len(batch)+2>batch_size or size+n>1_000_000):
+            batches.append(batch);batch=[];size=0
+        batch.extend(pair);size+=n
+    if batch:
+        batches.append(batch)
+    costs=[]
+    for index,batch in enumerate(batches):
+        work=root/f"batch_{index:04d}";src=work/"src";src.mkdir(parents=True,exist_ok=True)
+        filenames=[]
+        for row in batch:
+            filename=row["sample_key"].replace(":","_")+(".c" if languages[row["sample_key"]]=="c" else ".cpp")
+            path=src/filename
+            if path.exists() and path.read_bytes()!=row["func"].encode():
+                raise ValueError(f"changed source in existing Joern cache: {path}")
+            if not path.exists():
+                path.write_bytes(row["func"].encode())
+            filenames.append(filename)
+        cache=work/"functions.jsonl"
+        if cache.exists():
+            existing=read_jsonl(cache)
+            if [r["sample_key"] for r in existing]!=[r["sample_key"] for r in batch]:
+                raise ValueError("cached Joern members differ; do not reuse a different batch size/scope")
+            costs.append(json.loads((work/"cost.json").read_text()));continue
+        started=time.perf_counter();cpg=work/"cpg.bin"
+        parse_stats=work/"parse.cost.json"
+        if not parse_stats.exists():
+            stats=run_slice_process(["/home/phy/joern/joern-parse",str(src.resolve()),"--output",str(cpg.resolve())],work/"parse.log")
+            if not cpg.is_file():
+                raise RuntimeError("Joern did not write CPG")
+            write_json(parse_stats,stats)
+        else:
+            stats=json.loads(parse_stats.read_text())
+        export_stats=work/"export.cost.json"
+        if not export_stats.exists():
+            # Thousands of small CSV writes on the shared filesystem dominated
+            # the measured pilot. Keep the CPG and reduced native graph, not CSV.
+            with tempfile.TemporaryDirectory(prefix="primevul-slice-export-") as tmp:
+                graph=Path(tmp)/"graph"
+                exported=run_slice_process(["/home/phy/joern/joern-export","--repr","all","--format","neo4jcsv",
+                    "--out",str(graph),str(cpg.resolve())],work/"export.log")
+                result=split_slice_export(graph,batch,filenames)
+                write_jsonl(cache,result)
+            exported["temporary_export"]="local /tmp; CPG and reduced native evidence retained"
+            write_json(export_stats,exported)
+        else:
+            exported=json.loads(export_stats.read_text())
+            result=split_slice_export(work/"graph",batch,filenames)
+            write_jsonl(cache,result)
+        cost=dict(batch=index,functions=len(batch),source_bytes=sum(len(r["func"].encode()) for r in batch),
+                  seconds=time.perf_counter()-started,parse=stats,export=exported,
+                  statuses=dict(Counter(r["status"] for r in result)))
+        write_json(work/"cost.json",cost);costs.append(cost)
+        print(f"{split} Joern batch {index+1}/{len(batches)}: {len(batch)} functions, {cost['seconds']:.1f}s, {cost['statuses']}",flush=True)
+    write_json(output/f"{split}.graph_cost.json",dict(functions=len(rows),batches=len(batches),costs=costs,
+        java_opts="-Xmx8g -Xms256m -XX:ActiveProcessorCount=4",unchanged_source=True))
+
+
+def extract_slices(data_dir, output, split):
+    output=Path(output)
+    if split=="valid" and json.loads((output/"rules.json").read_text())["rules"]!=SLICE_RULES:
+        raise ValueError("complete Train development before fixed-rule Valid")
+    if split=="valid":
+        expected=read_jsonl(output/"train.review_sample.jsonl")
+        reviewed=read_jsonl(output/"train.review.jsonl")
+        if (len(reviewed)!=len(expected) or {r["review_id"] for r in reviewed}!={r["review_id"] for r in expected}
+                or any(r["judgment"] not in {"related","unrelated","unknown"} for r in reviewed)):
+            raise ValueError("complete the fixed Train source review before Valid")
+    rows=read_jsonl(Path(data_dir)/"primevul_paired"/f"{split}.lines.jsonl")
+    old={r["pair_key"]:r for r in csv.DictReader((OUT/"pairs.csv").open()) if r["split"]==split}
+    raw=read_jsonl(RAW/f"primevul_{split}_paired.jsonl")
+    if len(rows)!=2*{"train":4354,"valid":562}[split] or len(raw)!=len(rows) or any(
+            r["func"]!=s["func"] or r["target"]!=s["target"] for r,s in zip(rows,raw)):
+        raise ValueError("slicing requires all unchanged official Original functions and labels")
+    graphs={}
+    for file in sorted((output/"graphs"/split).glob("batch_*/functions.jsonl")):
+        for r in read_jsonl(file):
+            if r["sample_key"] in graphs:
+                raise ValueError("duplicate cached graph member")
+            graphs[r["sample_key"]]=r
+    if set(graphs)!={r["sample_key"] for r in rows}:
+        raise ValueError("complete native graphs required for every unchanged member")
+    started=time.perf_counter();cost=[];result=[]
+    for i in range(0,len(rows),2):
+        v,p=rows[i:i+2];t=time.perf_counter()
+        if [v["target"],p["target"]]!=[1,0] or v["pair_key"]!=p["pair_key"]:
+            raise ValueError("official pair order differs")
+        gv,gp=[statement_dependence_graph(r["func"],graphs[r["sample_key"]]) for r in (v,p)]
+        meta=old[v["pair_key"]]
+        pair=bidirectional_pair_slice(v["func"],p["func"],gv,gp,
+            allow_mapping=meta["quality_status"]!="verified_error")
+        pair.update(pair_key=v["pair_key"],split=split,shape=meta["shape"],quality_status=meta["quality_status"])
+        for side,row,g in (("v",v,gv),("p",p,gp)):
+            pair[side].update(sample_key=row["sample_key"],total_units=len(g["units"]),
+                all_code_lines=sorted({n for u in g["units"] for n in u["lines"]}),
+                edge_counts=dict(Counter(e["kind"] for e in g["edges"])))
+        result.append(pair);cost.append(time.perf_counter()-t)
+        if (i//2+1)%250==0:
+            print(f"{split}: sliced {i//2+1}/{len(rows)//2} pairs in {time.perf_counter()-started:.1f}s",flush=True)
+    write_jsonl(output/f"pairs.{split}.jsonl",result)
+    write_json(output/f"{split}.slice_cost.json",dict(pairs=len(result),seconds=time.perf_counter()-started,pair_seconds=quantiles(cost)))
+    if split=="train":
+        write_json(output/"rules.json",dict(rules=SLICE_RULES,seed=SEED,test_used=False,
+            raw_members="unchanged Original 4354/562 pairs",diff_usage="paired supervision generation only; not deployable single-function localization"))
+
+
+def slicing_masks(row, result, static, prediction):
+    return dict(original_diff=set(row["lines_ground_truth"]),
+        static_candidates={n for r in static["relations"] for field in ("operation","evidence") for n in r[field]["lines"]},
+        bidirectional_slice=set(result["region_lines"]),
+        losver={n for n,p in zip(prediction["line_numbers"],prediction["line_scores"]) if p>.5})
+
+
+def slicing_review_sample(source, pairs, masks, split):
+    """The same fixed historical cohort for early source review and final tables."""
+    rng=random.Random(SEED)
+    cohort=list(csv.DictReader((OUT/"review_sample.csv").open()))
+    chosen=[]
+    for shape in SHAPES:
+        pool=sorted(r["pair_key"] for r in cohort if r["split"]==split and r["stratum"]==shape)
+        chosen+=rng.sample(pool,min(2,len(pool)))
+    if not set(chosen).issubset(pairs):
+        raise ValueError("all fixed review pairs must have completed extraction")
+    sample=[]
+    for row in source:
+        if row["pair_key"] not in chosen:
+            continue
+        key=row["sample_key"];code=row["func"].splitlines();pair=pairs[row["pair_key"]]
+        executable=lexical_code_lines(row["func"])-{i for i,line in enumerate(code) if re.fullmatch(r"[\s{}();,]+",line)}
+        selected=set()
+        for name,mask in masks[key].items():
+            pool=sorted(mask&executable)
+            if pool:
+                selected.add(rng.choice(pool))
+        for line in sorted(selected):
+            sample.append(dict(review_id=f"{key}:line:{line}",sample_key=key,pair_key=row["pair_key"],line=line,
+                target=row["target"],shape=pair["shape"],
+                slice_status=pair["v" if row["target"] else "p"]["status"],quality_status=pair["quality_status"],
+                methods=[name for name,mask in masks[key].items() if line in mask],code=code[line]))
+    return sample,chosen
+
+
+def slice_report(data_dir, output, split):
+    """Fixed old review cohorts and original Diff proxies; no model or Test read."""
+    output=Path(output)
+    source=read_jsonl(Path(data_dir)/"primevul_paired"/f"{split}.lines.jsonl")
+    rows={r["sample_key"]:r for r in source}
+    pairs={r["pair_key"]:r for r in read_jsonl(output/f"pairs.{split}.jsonl")}
+    static={r["sample_key"]:r for r in read_jsonl(Path("results/primevul_static_patterns")/f"functions.{split}.jsonl")}
+    localizers={mode:{r["sample_key"]:r for r in read_jsonl(Path(f"results/losver_{mode}/primevul_paired/losver_localizer")/f"{split}.line_scores.jsonl")}
+                for mode in ("512","l1")}
+    if set(pairs)!={r["pair_key"] for r in source} or set(static)!=set(rows) or any(set(p)!=set(rows) for p in localizers.values()):
+        raise ValueError("slice / old patterns / localizer members differ")
+    masks={};stats=[];proxy=defaultdict(Counter);failures=Counter();path_unknown=Counter()
+    for row in source:
+        key=row["sample_key"];pair=pairs[row["pair_key"]];side="v" if row["target"] else "p";result=pair[side]
+        if key!=result["sample_key"]:
+            raise ValueError("slice side / labels differ")
+        masks[key]=slicing_masks(row,result,static[key],localizers["l1"][key])
+        selected=result["selected_units"]
+        failures.update(result["unknown"])
+        for u in selected:
+            for e in u["path"]:
+                path_unknown.update(e.get("unknown",[]))
+        stats.append(dict(sample_key=key,pair_key=row["pair_key"],target=row["target"],shape=pair["shape"],
+            quality_status=pair["quality_status"],status=result["status"],source_lines=len(row["func"].splitlines()),
+            joern_status=result["parse_details"]["joern_status"],
+            header_type_absent=result["parse_details"]["header_type_absent"],
+            tree_sitter_errors=result["parse_details"]["tree_sitter_errors"],
+            total_units=result["total_units"],selected_units=len(selected),seed_units=len(result["seed_units"]),
+            identical_token_seed_units=len(result["identical_token_seed_units"]),
+            diff_lines=len(row["lines_ground_truth"]),region_lines=len(result["region_lines"]),
+            added_non_diff_lines=len(set(result["region_lines"])-set(row["lines_ground_truth"])),
+            selected_fraction=len(selected)/result["total_units"] if result["total_units"] else 0,
+            mapped_roots=result["mapped_roots"],limit_reached=result["limit_reached"],
+            unknown_path_units=sum(any(e.get("certainty")=="unknown" for e in u["path"]) for u in selected),
+            native_cfg=result["native"].get("CFG",0),native_ddg=result["native"].get("REACHING_DEF",0),native_cdg=result["native"].get("CDG",0),
+            statement_ddg=result["edge_counts"].get("REACHING_DEF",0),statement_cdg=result["edge_counts"].get("CDG",0)))
+        for mode in ("512","l1"):
+            lp=localizers[mode][key];common=set(lp["line_numbers"])
+            if len(common)!=len(lp["line_numbers"]) or len(common)!=len(lp["line_scores"]):
+                raise ValueError("invalid original localizer coordinates")
+            gt=set(row["lines_ground_truth"])&common
+            selected_masks=slicing_masks(row,result,static[key],lp)
+            for method,mask in selected_masks.items():
+                predicted=mask&common
+                for group in ("all",side,"addition_only" if pair["shape"]=="addition_only" else "other"):
+                    proxy[mode,method,group].update(functions=1,covered=bool(predicted),lines=len(common),positive_lines=len(gt),
+                        selected_lines=len(predicted),tp=len(predicted & gt))
+    proxy_rows=[]
+    for (mode,method,group),a in proxy.items():
+        tp,n,p=a["tp"],a["selected_lines"],a["positive_lines"]
+        proxy_rows.append(dict(split=split,mode=mode,method=method,group=group,**a,
+            precision=tp/n if n else 0.,recall=tp/p if p else 0.,f1=2*tp/(n+p) if n+p else 0.))
+    # Reuse all 56/24 previously inspected relation anchors, including Unknown.
+    old_samples=read_jsonl(Path("results/primevul_static_patterns")/f"{split}.review_sample.jsonl")
+    old_judgments={r["review_id"]:r for r in read_jsonl(Path("results/primevul_static_patterns")/f"{split}.review.jsonl")}
+    statuses={r["sample_key"]:r["status"] for r in stats}
+    anchors=[]
+    for s in old_samples:
+        if "relation" not in s:
+            continue
+        key=s["sample_key"];line=s["relation"]["operation"]["lines"][0]
+        judgment=old_judgments[s["review_id"]]
+        anchors.append(dict(review_id=s["review_id"],sample_key=key,line=line+1,
+            relation_judgment=judgment["relation_judgment"],repair_relevance=judgment["repair_relevance"],
+            slice_status=statuses[key],
+            **{name:line in mask for name,mask in masks[key].items()}))
+    old_lines=[]
+    if split=="train":
+        for r in csv.DictReader((OUT/"region_line_review.csv").open()):
+            line=int(r["line"])-1
+            old_lines.append(dict(sample_key=r["sample_key"],line=line+1,judgment=r["judgment"],
+                slice_status=statuses[r["sample_key"]],
+                **{name:line in mask for name,mask in masks[r["sample_key"]].items()}))
+    sample,chosen=slicing_review_sample(source,pairs,masks,split)
+    expected=output/f"{split}.review_sample.jsonl"
+    if expected.exists() and read_jsonl(expected)!=sample:
+        raise ValueError("fixed source review changed; inspect coordinate/member differences")
+    write_jsonl(expected,sample)
+    display=["# Fixed slicing source review", "", "0-based stored / 1-based displayed physical rows. Assistant review, not independent vulnerability gold."]
+    for key in chosen:
+        members=[r for r in source if r["pair_key"]==key]
+        display += ["",f"## {key} / {pairs[key]['shape']} / {pairs[key]['quality_status']}","```diff"]
+        diff=list(difflib.unified_diff(members[0]["func"].splitlines(),members[1]["func"].splitlines(),n=2,lineterm=""))
+        display += [s[:350] for s in diff[:100]]+["```"]
+        if len(diff)>100:
+            display.append("Diff display truncated; source unchanged and available in original data.")
+        for r in members:
+            display += [f"### {r['sample_key']}","```c"]
+            cases=[s for s in sample if s["sample_key"]==r["sample_key"]]
+            ns={i for s in cases for i in range(max(0,s["line"]-3),s["line"]+4)}
+            code=r["func"].splitlines()
+            display += [f"{i+1:5}: {code[i][:450]}" for i in sorted(ns) if i<len(code)]+["```"]
+            display += [json.dumps(s,ensure_ascii=False) for s in cases]
+    (output/f"{split}.cases.md").write_text("\n".join(display),encoding="utf-8")
+    reviewed=[]
+    review_file=output/f"{split}.review.jsonl"
+    if review_file.exists():
+        judgments=read_jsonl(review_file)
+        if (len(judgments)!=len(sample) or {r["review_id"] for r in judgments}!={r["review_id"] for r in sample}
+                or any(r["judgment"] not in {"related","unrelated","unknown"} for r in judgments)):
+            raise ValueError("incomplete fixed slicing source review")
+        by_id={r["review_id"]:r for r in judgments}
+        for method in masks[source[0]["sample_key"]]:
+            for scope in ("all_selected","outside_original_diff"):
+                selected=[by_id[r["review_id"]]["judgment"] for r in sample if method in r["methods"]
+                          and (scope=="all_selected" or "original_diff" not in r["methods"])]
+                reviewed.append(dict(method=method,scope=scope,reviewed=len(selected),**dict(Counter(selected))))
+    pair_stats=[]
+    for p in pairs.values():
+        pair_stats.append(dict(pair_key=p["pair_key"],shape=p["shape"],quality_status=p["quality_status"],
+            both_parse=p["v"]["status"]==p["p"]["status"]=="ok",mapping_allowed=p["mapping_allowed"],
+            alignment_count=p["alignment_count"],v_lines=len(p["v"]["region_lines"]),p_lines=len(p["p"]["region_lines"]),
+            v_seed_units=len(p["v"]["seed_units"]),p_seed_units=len(p["p"]["seed_units"]),
+            recovered_v=bool(p["v"]["mapped_roots"] and p["v"]["region_lines"]),
+            recovered_p=bool(p["p"]["mapped_roots"] and p["p"]["region_lines"])))
+    addition=[r for r in pair_stats if r["shape"]=="addition_only"]
+    summary=dict(split=split,pairs=len(pairs),functions=len(source),both_parsed=sum(r["both_parse"] for r in pair_stats),
+        nonempty_v=sum(r["v_lines"]>0 for r in pair_stats),nonempty_p=sum(r["p_lines"]>0 for r in pair_stats),
+        addition_pairs=len(addition),addition_recovered_v=sum(r["recovered_v"] for r in addition),
+        addition_both_parsed=sum(r["both_parse"] for r in addition),
+        addition_without_v_seed=sum(r["both_parse"] and r["v_seed_units"]==0 and r["p_seed_units"]>0 for r in addition),
+        addition_without_v_seed_recovered=sum(r["both_parse"] and r["v_seed_units"]==0 and r["p_seed_units"]>0 and r["recovered_v"] for r in addition),
+        function_status=dict(Counter(r["status"] for r in stats)),
+        header_type_absent=sum(r["header_type_absent"] is True for r in stats),
+        header_type_absent_and_joern_unknown=sum(r["header_type_absent"] is True and r["joern_status"]!="ok" for r in stats),
+        region_lines=quantiles([r["region_lines"] for r in stats]),
+        selected_units=quantiles([r["selected_units"] for r in stats]),
+        limit_reached=sum(r["limit_reached"] for r in stats),
+        identical_token_seed_units=sum(r["identical_token_seed_units"] for r in stats),
+        parsed_functions_without_native_ddg=sum(r["status"]=="ok" and not r["native_ddg"] for r in stats),
+        parsed_functions_without_mapped_dependencies=sum(r["status"]=="ok" and not (r["statement_ddg"] or r["statement_cdg"]) for r in stats),
+        unknown_path_units=sum(r["unknown_path_units"] for r in stats),
+        failures=dict(failures),unknown_path_reasons=dict(path_unknown),
+        new_review_pairs=len(chosen),new_review_lines=len(sample),source_review=reviewed,
+        test_used=False,training=False,diff_f1_is_vulnerability_accuracy=False)
+    for name,table in (("functions",stats),("pairs",pair_stats),("diff_proxy",proxy_rows),("old_relation_review",anchors),("old_line_review",old_lines)):
+        if table:
+            write_csv(output/f"{split}.{name}.csv",table)
+    write_json(output/f"{split}.summary.json",summary)
+    print(json.dumps({k:v for k,v in summary.items() if k not in {"failures","unknown_path_reasons"}},ensure_ascii=False,indent=2),flush=True)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("stage", choices=("collect", "inspect", "upstream", "regions", "correspondence", "source-witnesses", "summarize"))
+    p.add_argument("stage", choices=("collect", "inspect", "upstream", "regions", "correspondence", "source-witnesses", "summarize", "patterns", "pattern-report", "slice-graphs", "slices", "slice-report"))
     p.add_argument("--output-dir", type=Path, default=OUT)
     p.add_argument("--keys", nargs="+")
     p.add_argument("--files", type=Path)
+    p.add_argument("--data-dir",type=Path,default=Path("data"))
+    p.add_argument("--split",choices=("train","valid"),default="train")
+    p.add_argument("--batch-size",type=int,default=128)
     args = p.parse_args()
-    if args.stage == "collect":
+    if args.stage in {"slice-graphs","slices","slice-report"}:
+        if args.output_dir in {OUT,Path("results/primevul_static_patterns")}:
+            p.error("slicing requires its own results directory; existing audits remain unchanged")
+        if args.stage=="slice-graphs":
+            slice_graphs(args.data_dir,args.output_dir,args.split,args.keys,args.batch_size)
+        elif args.stage=="slices":
+            extract_slices(args.data_dir,args.output_dir,args.split)
+        else:
+            slice_report(args.data_dir,args.output_dir,args.split)
+    elif args.stage == "patterns":
+        print(json.dumps(mine_patterns(args.data_dir,args.output_dir,args.split)),flush=True)
+    elif args.stage == "pattern-report":
+        pattern_report(args.data_dir,args.output_dir)
+    elif args.stage == "collect":
         collect(args.output_dir)
     elif args.stage == "inspect":
         inspect(args.keys or [])

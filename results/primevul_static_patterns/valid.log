@@ -1,0 +1,3 @@
+valid: 250/562 AST pairs, 13.9s
+valid: 500/562 AST pairs, 31.2s
+{"split": "valid", "functions": 1124, "pairs": 562, "review_samples": 28}

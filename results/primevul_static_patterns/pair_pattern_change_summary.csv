@@ -1,0 +1,15 @@
+split,pattern,parsed_pairs,more_in_patched,fewer_in_patched,same_nonempty,absent_both,patched_only,vulnerable_only
+train,boundary_check_relation,3248,146,48,867,2187,50,18
+train,null_check_relation,3248,130,38,690,2390,54,13
+train,integer_range_relation,3248,101,41,529,2577,52,15
+train,memory_extent_relation,3248,0,4,99,3145,0,4
+train,resource_lifetime_relation,3248,4,4,41,3199,3,3
+train,call_argument_relation,3248,382,197,1589,1080,79,44
+train,control_call_relation,3248,569,153,1644,882,94,27
+valid,boundary_check_relation,440,24,7,114,295,7,2
+valid,null_check_relation,440,14,8,79,339,4,4
+valid,integer_range_relation,440,10,6,78,346,4,4
+valid,memory_extent_relation,440,1,1,10,428,1,1
+valid,resource_lifetime_relation,440,0,0,0,440,0,0
+valid,call_argument_relation,440,60,21,195,164,7,2
+valid,control_call_relation,440,87,24,199,130,16,4

@@ -1,0 +1,277 @@
+{
+  "splits": {
+    "train": {
+      "functions": 8708,
+      "pairs": 4354,
+      "parsed_functions": 6586,
+      "parsed_pairs": 3248,
+      "matched_functions": 5661,
+      "matched_pairs": 2913,
+      "parse_failures_with_errors": 2075,
+      "parse_failures_without_unique_function": 300,
+      "costs": {
+        "functions": 8708,
+        "pairs": 4354,
+        "seconds": 292.3693401119672,
+        "extraction_seconds": 284.51409183535725,
+        "function_seconds": {
+          "min": 0.00044916290789842606,
+          "q25": 0.006482894183136523,
+          "median": 0.01304080244153738,
+          "q75": 0.027807961218059063,
+          "q90": 0.059582804283127205,
+          "max": 5.9540217579342425
+        },
+        "coordinate_recheck_functions": 2,
+        "coordinate_recheck_seconds": 3.2112967078574
+      },
+      "known_wrong_pairs": 29,
+      "unclassified_parsed_pairs": 517
+    },
+    "valid": {
+      "functions": 1124,
+      "pairs": 562,
+      "parsed_functions": 886,
+      "parsed_pairs": 440,
+      "matched_functions": 747,
+      "matched_pairs": 384,
+      "parse_failures_with_errors": 232,
+      "parse_failures_without_unique_function": 26,
+      "costs": {
+        "functions": 1124,
+        "pairs": 562,
+        "seconds": 33.71908233920112,
+        "extraction_seconds": 32.134971015155315,
+        "function_seconds": {
+          "min": 0.0005869939923286438,
+          "q25": 0.006072542513720691,
+          "median": 0.012560214381664991,
+          "q75": 0.02563220774754882,
+          "q90": 0.04797691898420455,
+          "max": 2.2518453989177942
+        }
+      },
+      "known_wrong_pairs": 6,
+      "unclassified_parsed_pairs": 87
+    }
+  },
+  "source_reviews": [
+    {
+      "split": "train",
+      "pattern": "boundary_check_relation",
+      "reviewed": 8,
+      "confirmed": 8,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 0,
+      "repair_related": 1,
+      "repair_unrelated": 4,
+      "repair_unknown": 3
+    },
+    {
+      "split": "train",
+      "pattern": "null_check_relation",
+      "reviewed": 8,
+      "confirmed": 8,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 0,
+      "repair_related": 1,
+      "repair_unrelated": 7,
+      "repair_unknown": 0
+    },
+    {
+      "split": "train",
+      "pattern": "integer_range_relation",
+      "reviewed": 8,
+      "confirmed": 8,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 0,
+      "repair_related": 3,
+      "repair_unrelated": 4,
+      "repair_unknown": 1
+    },
+    {
+      "split": "train",
+      "pattern": "memory_extent_relation",
+      "reviewed": 8,
+      "confirmed": 6,
+      "false_relation": 0,
+      "unknown": 2,
+      "not_applicable": 0,
+      "repair_related": 0,
+      "repair_unrelated": 6,
+      "repair_unknown": 2
+    },
+    {
+      "split": "train",
+      "pattern": "resource_lifetime_relation",
+      "reviewed": 8,
+      "confirmed": 5,
+      "false_relation": 0,
+      "unknown": 3,
+      "not_applicable": 0,
+      "repair_related": 2,
+      "repair_unrelated": 3,
+      "repair_unknown": 3
+    },
+    {
+      "split": "train",
+      "pattern": "call_argument_relation",
+      "reviewed": 8,
+      "confirmed": 6,
+      "false_relation": 0,
+      "unknown": 2,
+      "not_applicable": 0,
+      "repair_related": 0,
+      "repair_unrelated": 6,
+      "repair_unknown": 2
+    },
+    {
+      "split": "train",
+      "pattern": "control_call_relation",
+      "reviewed": 8,
+      "confirmed": 7,
+      "false_relation": 0,
+      "unknown": 1,
+      "not_applicable": 0,
+      "repair_related": 2,
+      "repair_unrelated": 3,
+      "repair_unknown": 3
+    },
+    {
+      "split": "train",
+      "pattern": "no_candidate",
+      "reviewed": 8,
+      "confirmed": 0,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 8,
+      "repair_related": 0,
+      "repair_unrelated": 0,
+      "repair_unknown": 8
+    },
+    {
+      "split": "valid",
+      "pattern": "boundary_check_relation",
+      "reviewed": 4,
+      "confirmed": 4,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 0,
+      "repair_related": 1,
+      "repair_unrelated": 3,
+      "repair_unknown": 0
+    },
+    {
+      "split": "valid",
+      "pattern": "null_check_relation",
+      "reviewed": 4,
+      "confirmed": 3,
+      "false_relation": 0,
+      "unknown": 1,
+      "not_applicable": 0,
+      "repair_related": 0,
+      "repair_unrelated": 3,
+      "repair_unknown": 1
+    },
+    {
+      "split": "valid",
+      "pattern": "integer_range_relation",
+      "reviewed": 4,
+      "confirmed": 3,
+      "false_relation": 1,
+      "unknown": 0,
+      "not_applicable": 0,
+      "repair_related": 1,
+      "repair_unrelated": 3,
+      "repair_unknown": 0
+    },
+    {
+      "split": "valid",
+      "pattern": "memory_extent_relation",
+      "reviewed": 4,
+      "confirmed": 3,
+      "false_relation": 0,
+      "unknown": 1,
+      "not_applicable": 0,
+      "repair_related": 2,
+      "repair_unrelated": 1,
+      "repair_unknown": 1
+    },
+    {
+      "split": "valid",
+      "pattern": "resource_lifetime_relation",
+      "reviewed": 0,
+      "confirmed": 0,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 0,
+      "repair_related": 0,
+      "repair_unrelated": 0,
+      "repair_unknown": 0
+    },
+    {
+      "split": "valid",
+      "pattern": "call_argument_relation",
+      "reviewed": 4,
+      "confirmed": 3,
+      "false_relation": 0,
+      "unknown": 1,
+      "not_applicable": 0,
+      "repair_related": 1,
+      "repair_unrelated": 2,
+      "repair_unknown": 1
+    },
+    {
+      "split": "valid",
+      "pattern": "control_call_relation",
+      "reviewed": 4,
+      "confirmed": 3,
+      "false_relation": 0,
+      "unknown": 1,
+      "not_applicable": 0,
+      "repair_related": 1,
+      "repair_unrelated": 2,
+      "repair_unknown": 1
+    },
+    {
+      "split": "valid",
+      "pattern": "no_candidate",
+      "reviewed": 4,
+      "confirmed": 0,
+      "false_relation": 0,
+      "unknown": 0,
+      "not_applicable": 4,
+      "repair_related": 0,
+      "repair_unrelated": 0,
+      "repair_unknown": 4
+    }
+  ],
+  "no_training": true,
+  "no_model_execution": true,
+  "test_used": false,
+  "rules": {
+    "scope": "one unmodified C/C++ function; strict parse and scope-resolved local/parameter bindings",
+    "patterns": [
+      "boundary_check_relation",
+      "null_check_relation",
+      "integer_range_relation",
+      "memory_extent_relation",
+      "resource_lifetime_relation",
+      "call_argument_relation",
+      "control_call_relation"
+    ],
+    "guards": "enclosing if/for/while branch, or same-block prior if with unconditional return/throw; shared bound value required",
+    "definitions": "latest enclosing lexical definition; reject intervening assignment, update, address escape, goto/label/case; not a CFG dominance proof",
+    "fields": "exact access path, never all fields sharing an object; intervening calls invalidate field-state checks",
+    "memory": "memcpy/memmove/memset/strncpy with destination array/allocation definition and explicit length argument",
+    "capacity": "all nested array dimensions, in elements; sizeof(array) in bytes; symbolic lengths stay unknown",
+    "resources": "malloc/calloc/realloc definition to free/fclose/close; or same-block free/release to dereference, with no intervening write/goto",
+    "unknown": "no alias, global binding, macro recovery, type-width proof, call summary, CFG/DDG/CDG or vulnerability verdict",
+    "lines": "zero-based physical lines and UTF-8 byte offsets; presentation may use one-based lines",
+    "development_split": "train",
+    "test_used": false
+  }
+}

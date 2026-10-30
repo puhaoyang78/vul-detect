@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "scope": "one unmodified C/C++ function; strict parse and scope-resolved local/parameter bindings",
+    "patterns": [
+      "boundary_check_relation",
+      "null_check_relation",
+      "integer_range_relation",
+      "memory_extent_relation",
+      "resource_lifetime_relation",
+      "call_argument_relation",
+      "control_call_relation"
+    ],
+    "guards": "enclosing if/for/while branch, or same-block prior if with unconditional return/throw; shared bound value required",
+    "definitions": "latest enclosing lexical definition; reject intervening assignment, update, address escape, goto/label/case; not a CFG dominance proof",
+    "fields": "exact access path, never all fields sharing an object; intervening calls invalidate field-state checks",
+    "memory": "memcpy/memmove/memset/strncpy with destination array/allocation definition and explicit length argument",
+    "capacity": "all nested array dimensions, in elements; sizeof(array) in bytes; symbolic lengths stay unknown",
+    "resources": "malloc/calloc/realloc definition to free/fclose/close; or same-block free/release to dereference, with no intervening write/goto",
+    "unknown": "no alias, global binding, macro recovery, type-width proof, call summary, CFG/DDG/CDG or vulnerability verdict",
+    "lines": "zero-based physical lines and UTF-8 byte offsets; presentation may use one-based lines",
+    "development_split": "train",
+    "test_used": false
+  },
+  "seed": 42,
+  "source_members": "unchanged official Original 4354 Train pairs",
+  "original_diff_unchanged": true,
+  "stage_order": "Train mining and source review before fixed-rule Valid; no Test read",
+  "localizer_reference": "existing full 512 LOSVER, positive threshold >0.5; no inference rerun",
+  "ast_difference": "multiset of atomic AST units and non-comment tokens; unique remaining callee matches for argument edits; not optimal tree-edit or semantic equivalence"
+}

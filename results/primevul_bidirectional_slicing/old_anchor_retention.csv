@@ -1,0 +1,17 @@
+split,subset,method,pool,selected,selected_related,selected_unrelated,selected_unknown,available_related,available_unrelated,available_unknown
+train,all_members,original_diff,56,5,3,1,1,9,33,14
+train,all_members,static_candidates,56,56,9,33,14,9,33,14
+train,all_members,bidirectional_slice,56,15,4,8,3,9,33,14
+train,all_members,losver,56,9,4,3,2,9,33,14
+train,native_and_ast_available,original_diff,43,2,1,0,1,5,26,12
+train,native_and_ast_available,static_candidates,43,43,5,26,12,5,26,12
+train,native_and_ast_available,bidirectional_slice,43,15,4,8,3,5,26,12
+train,native_and_ast_available,losver,43,5,1,2,2,5,26,12
+valid,all_members,original_diff,24,4,3,0,1,6,14,4
+valid,all_members,static_candidates,24,24,6,14,4,6,14,4
+valid,all_members,bidirectional_slice,24,9,5,3,1,6,14,4
+valid,all_members,losver,24,6,3,2,1,6,14,4
+valid,native_and_ast_available,original_diff,14,3,2,0,1,5,7,2
+valid,native_and_ast_available,static_candidates,14,14,5,7,2,5,7,2
+valid,native_and_ast_available,bidirectional_slice,14,9,5,3,1,5,7,2
+valid,native_and_ast_available,losver,14,5,3,1,1,5,7,2

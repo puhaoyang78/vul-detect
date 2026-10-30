@@ -1,0 +1,956 @@
+{
+  "functions": 8708,
+  "batches": 50,
+  "costs": [
+    {
+      "batch": 0,
+      "functions": 224,
+      "source_bytes": 962045,
+      "seconds": 101.88758137915283,
+      "parse": {
+        "seconds": 22.285656694788486,
+        "max_child_rss_kib": 655660
+      },
+      "export": {
+        "seconds": 76.85441819112748,
+        "max_child_rss_kib": 655660
+      },
+      "statuses": {
+        "ok": 114,
+        "joern_method_unknown": 110
+      }
+    },
+    {
+      "batch": 1,
+      "functions": 184,
+      "source_bytes": 998500,
+      "seconds": 12.136592003982514,
+      "parse": {
+        "seconds": 26.25568063184619,
+        "max_child_rss_kib": 884380
+      },
+      "export": {
+        "seconds": 8.639649578835815,
+        "max_child_rss_kib": 447552,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 69,
+        "ok": 115
+      }
+    },
+    {
+      "batch": 2,
+      "functions": 256,
+      "source_bytes": 726918,
+      "seconds": 36.083203959744424,
+      "parse": {
+        "seconds": 24.42810858692974,
+        "max_child_rss_kib": 745288
+      },
+      "export": {
+        "seconds": 8.100996233988553,
+        "max_child_rss_kib": 745288,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 153,
+        "joern_method_unknown": 103
+      }
+    },
+    {
+      "batch": 3,
+      "functions": 256,
+      "source_bytes": 596382,
+      "seconds": 32.61679595382884,
+      "parse": {
+        "seconds": 21.596962206065655,
+        "max_child_rss_kib": 745288
+      },
+      "export": {
+        "seconds": 7.738185895141214,
+        "max_child_rss_kib": 745288,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 186,
+        "joern_method_unknown": 70
+      }
+    },
+    {
+      "batch": 4,
+      "functions": 256,
+      "source_bytes": 984395,
+      "seconds": 47.877447590231895,
+      "parse": {
+        "seconds": 31.701223901007324,
+        "max_child_rss_kib": 1396088
+      },
+      "export": {
+        "seconds": 10.395558826625347,
+        "max_child_rss_kib": 1396088,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 165,
+        "joern_method_unknown": 91
+      }
+    },
+    {
+      "batch": 5,
+      "functions": 252,
+      "source_bytes": 993778,
+      "seconds": 46.47058281395584,
+      "parse": {
+        "seconds": 29.854173586238176,
+        "max_child_rss_kib": 1396088
+      },
+      "export": {
+        "seconds": 10.543740288820118,
+        "max_child_rss_kib": 1396088,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 72,
+        "ok": 180
+      }
+    },
+    {
+      "batch": 6,
+      "functions": 94,
+      "source_bytes": 793542,
+      "seconds": 36.52992677409202,
+      "parse": {
+        "seconds": 26.036519487854093,
+        "max_child_rss_kib": 1396088
+      },
+      "export": {
+        "seconds": 7.399776082020253,
+        "max_child_rss_kib": 1396088,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 66,
+        "ok": 28
+      }
+    },
+    {
+      "batch": 7,
+      "functions": 150,
+      "source_bytes": 991056,
+      "seconds": 51.73510125512257,
+      "parse": {
+        "seconds": 35.509239505045116,
+        "max_child_rss_kib": 1396088
+      },
+      "export": {
+        "seconds": 10.492787180002779,
+        "max_child_rss_kib": 1396088,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 121,
+        "joern_method_unknown": 29
+      }
+    },
+    {
+      "batch": 8,
+      "functions": 118,
+      "source_bytes": 777327,
+      "seconds": 39.59922914998606,
+      "parse": {
+        "seconds": 27.262627316173166,
+        "max_child_rss_kib": 1396088
+      },
+      "export": {
+        "seconds": 8.152363510336727,
+        "max_child_rss_kib": 1396088,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 84,
+        "joern_method_unknown": 34
+      }
+    },
+    {
+      "batch": 9,
+      "functions": 56,
+      "source_bytes": 998003,
+      "seconds": 77.88664944609627,
+      "parse": {
+        "seconds": 60.95822126092389,
+        "max_child_rss_kib": 1396088
+      },
+      "export": {
+        "seconds": 10.892774413805455,
+        "max_child_rss_kib": 1396088,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 42,
+        "joern_method_unknown": 14
+      }
+    },
+    {
+      "batch": 10,
+      "functions": 174,
+      "source_bytes": 999706,
+      "seconds": 62.45270600775257,
+      "parse": {
+        "seconds": 41.332994958851486,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 12.665426847990602,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 36,
+        "ok": 138
+      }
+    },
+    {
+      "batch": 11,
+      "functions": 256,
+      "source_bytes": 754452,
+      "seconds": 38.69984044600278,
+      "parse": {
+        "seconds": 25.679036871995777,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 8.737833692226559,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 101,
+        "ok": 155
+      }
+    },
+    {
+      "batch": 12,
+      "functions": 130,
+      "source_bytes": 959475,
+      "seconds": 72.77023114124313,
+      "parse": {
+        "seconds": 51.05970618780702,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 13.20018788985908,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 98,
+        "joern_method_unknown": 32
+      }
+    },
+    {
+      "batch": 13,
+      "functions": 176,
+      "source_bytes": 935642,
+      "seconds": 39.851470932830125,
+      "parse": {
+        "seconds": 26.645205500070006,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 8.978813244961202,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 101,
+        "joern_method_unknown": 75
+      }
+    },
+    {
+      "batch": 14,
+      "functions": 256,
+      "source_bytes": 822418,
+      "seconds": 49.82122790487483,
+      "parse": {
+        "seconds": 34.87559024989605,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.843253813218325,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 236,
+        "joern_method_unknown": 20
+      }
+    },
+    {
+      "batch": 15,
+      "functions": 256,
+      "source_bytes": 523708,
+      "seconds": 32.220702204853296,
+      "parse": {
+        "seconds": 21.397937445901334,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 7.651006558910012,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 249,
+        "joern_method_unknown": 7
+      }
+    },
+    {
+      "batch": 16,
+      "functions": 256,
+      "source_bytes": 682370,
+      "seconds": 40.70406118687242,
+      "parse": {
+        "seconds": 26.94668433489278,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.137292186263949,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 243,
+        "joern_method_unknown": 13
+      }
+    },
+    {
+      "batch": 17,
+      "functions": 186,
+      "source_bytes": 998511,
+      "seconds": 53.9732626597397,
+      "parse": {
+        "seconds": 35.903969215229154,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 11.160139827989042,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 152,
+        "joern_method_unknown": 34
+      }
+    },
+    {
+      "batch": 18,
+      "functions": 148,
+      "source_bytes": 950397,
+      "seconds": 48.93469335464761,
+      "parse": {
+        "seconds": 34.06555118318647,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.598030064255,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 102,
+        "joern_method_unknown": 46
+      }
+    },
+    {
+      "batch": 19,
+      "functions": 250,
+      "source_bytes": 987589,
+      "seconds": 48.89609275897965,
+      "parse": {
+        "seconds": 32.919843662995845,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 10.392423967830837,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 199,
+        "joern_method_unknown": 51
+      }
+    },
+    {
+      "batch": 20,
+      "functions": 174,
+      "source_bytes": 987521,
+      "seconds": 53.11084161279723,
+      "parse": {
+        "seconds": 38.753498021978885,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.5594775211066,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 128,
+        "joern_method_unknown": 46
+      }
+    },
+    {
+      "batch": 21,
+      "functions": 184,
+      "source_bytes": 999936,
+      "seconds": 49.32207244215533,
+      "parse": {
+        "seconds": 32.406165279913694,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 10.801400907803327,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 31,
+        "ok": 153
+      }
+    },
+    {
+      "batch": 22,
+      "functions": 208,
+      "source_bytes": 991820,
+      "seconds": 49.85312046809122,
+      "parse": {
+        "seconds": 32.31399648496881,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 11.005174701102078,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 157,
+        "joern_method_unknown": 51
+      }
+    },
+    {
+      "batch": 23,
+      "functions": 198,
+      "source_bytes": 993258,
+      "seconds": 51.46900635026395,
+      "parse": {
+        "seconds": 32.69382791686803,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 11.79788269707933,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 158,
+        "joern_method_unknown": 40
+      }
+    },
+    {
+      "batch": 24,
+      "functions": 150,
+      "source_bytes": 969513,
+      "seconds": 51.906271890271455,
+      "parse": {
+        "seconds": 34.09255994204432,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 11.296352706849575,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 118,
+        "joern_method_unknown": 32
+      }
+    },
+    {
+      "batch": 25,
+      "functions": 184,
+      "source_bytes": 956400,
+      "seconds": 52.79602258792147,
+      "parse": {
+        "seconds": 34.669225106947124,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 11.34934017714113,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 47,
+        "ok": 137
+      }
+    },
+    {
+      "batch": 26,
+      "functions": 162,
+      "source_bytes": 998386,
+      "seconds": 72.88046283880249,
+      "parse": {
+        "seconds": 55.75834157783538,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 10.896174171939492,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 125,
+        "joern_method_unknown": 37
+      }
+    },
+    {
+      "batch": 27,
+      "functions": 164,
+      "source_bytes": 998790,
+      "seconds": 51.23044303804636,
+      "parse": {
+        "seconds": 34.53436892805621,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 10.592537765856832,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 118,
+        "joern_method_unknown": 46
+      }
+    },
+    {
+      "batch": 28,
+      "functions": 198,
+      "source_bytes": 993159,
+      "seconds": 46.307778047863394,
+      "parse": {
+        "seconds": 31.483948840759695,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.54033828433603,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 121,
+        "joern_method_unknown": 77
+      }
+    },
+    {
+      "batch": 29,
+      "functions": 174,
+      "source_bytes": 987859,
+      "seconds": 47.313182631041855,
+      "parse": {
+        "seconds": 32.0621146960184,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 10.004918300081044,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 123,
+        "joern_method_unknown": 51
+      }
+    },
+    {
+      "batch": 30,
+      "functions": 170,
+      "source_bytes": 984820,
+      "seconds": 41.75862272782251,
+      "parse": {
+        "seconds": 29.04096237011254,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 8.437736780382693,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 82,
+        "ok": 88
+      }
+    },
+    {
+      "batch": 31,
+      "functions": 176,
+      "source_bytes": 987462,
+      "seconds": 37.64161093486473,
+      "parse": {
+        "seconds": 26.15523235220462,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 8.001131540164351,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 106,
+        "joern_method_unknown": 70
+      }
+    },
+    {
+      "batch": 32,
+      "functions": 136,
+      "source_bytes": 991182,
+      "seconds": 95.48763785278425,
+      "parse": {
+        "seconds": 80.32261806214228,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.944381788838655,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 42,
+        "ok": 94
+      }
+    },
+    {
+      "batch": 33,
+      "functions": 176,
+      "source_bytes": 997747,
+      "seconds": 39.17961981706321,
+      "parse": {
+        "seconds": 26.0281892279163,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 8.79096490656957,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 110,
+        "joern_method_unknown": 66
+      }
+    },
+    {
+      "batch": 34,
+      "functions": 182,
+      "source_bytes": 949119,
+      "seconds": 44.13324877014384,
+      "parse": {
+        "seconds": 30.642585868015885,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 9.100788369309157,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 61,
+        "ok": 121
+      }
+    },
+    {
+      "batch": 35,
+      "functions": 2,
+      "source_bytes": 86569,
+      "seconds": 23.88014949625358,
+      "parse": {
+        "seconds": 18.460249346215278,
+        "max_child_rss_kib": 2047048
+      },
+      "export": {
+        "seconds": 4.5787442130967975,
+        "max_child_rss_kib": 2047048,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 2
+      }
+    },
+    {
+      "batch": 36,
+      "functions": 14,
+      "source_bytes": 994661,
+      "seconds": 577.1585131161846,
+      "parse": {
+        "seconds": 550.9101254739799,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 14.806731724180281,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 10,
+        "joern_method_unknown": 4
+      }
+    },
+    {
+      "batch": 37,
+      "functions": 196,
+      "source_bytes": 928210,
+      "seconds": 33.78760406235233,
+      "parse": {
+        "seconds": 22.724962116684765,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 7.533935985062271,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 122,
+        "joern_method_unknown": 74
+      }
+    },
+    {
+      "batch": 38,
+      "functions": 126,
+      "source_bytes": 985092,
+      "seconds": 42.891069954726845,
+      "parse": {
+        "seconds": 29.4074316509068,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 8.887162231374532,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 80,
+        "joern_method_unknown": 46
+      }
+    },
+    {
+      "batch": 39,
+      "functions": 192,
+      "source_bytes": 999785,
+      "seconds": 49.95673013990745,
+      "parse": {
+        "seconds": 34.377810900099576,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 9.963316682260484,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 132,
+        "joern_method_unknown": 60
+      }
+    },
+    {
+      "batch": 40,
+      "functions": 182,
+      "source_bytes": 999749,
+      "seconds": 43.554860102944076,
+      "parse": {
+        "seconds": 29.487305339891464,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 9.239508510101587,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 108,
+        "joern_method_unknown": 74
+      }
+    },
+    {
+      "batch": 41,
+      "functions": 140,
+      "source_bytes": 985454,
+      "seconds": 43.50008230563253,
+      "parse": {
+        "seconds": 29.637201806064695,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 9.391839928925037,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 85,
+        "joern_method_unknown": 55
+      }
+    },
+    {
+      "batch": 42,
+      "functions": 134,
+      "source_bytes": 988649,
+      "seconds": 49.559964750893414,
+      "parse": {
+        "seconds": 33.3010185318999,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 10.149577400181442,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 90,
+        "joern_method_unknown": 44
+      }
+    },
+    {
+      "batch": 43,
+      "functions": 184,
+      "source_bytes": 996709,
+      "seconds": 41.71111605595797,
+      "parse": {
+        "seconds": 28.885818636976182,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 8.682634191121906,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 75,
+        "ok": 109
+      }
+    },
+    {
+      "batch": 44,
+      "functions": 102,
+      "source_bytes": 988387,
+      "seconds": 44.935124687384814,
+      "parse": {
+        "seconds": 31.860904044937342,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 8.74416851112619,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 38,
+        "ok": 64
+      }
+    },
+    {
+      "batch": 45,
+      "functions": 72,
+      "source_bytes": 995618,
+      "seconds": 53.10673030233011,
+      "parse": {
+        "seconds": 37.80947044491768,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 9.890195162035525,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 42,
+        "joern_method_unknown": 30
+      }
+    },
+    {
+      "batch": 46,
+      "functions": 150,
+      "source_bytes": 999070,
+      "seconds": 35.884474185761064,
+      "parse": {
+        "seconds": 24.777082877233624,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 7.69967081816867,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 68,
+        "ok": 82
+      }
+    },
+    {
+      "batch": 47,
+      "functions": 256,
+      "source_bytes": 743386,
+      "seconds": 42.68519097613171,
+      "parse": {
+        "seconds": 29.598910238128155,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 8.684637343045324,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 161,
+        "joern_method_unknown": 95
+      }
+    },
+    {
+      "batch": 48,
+      "functions": 208,
+      "source_bytes": 967531,
+      "seconds": 34.877166744787246,
+      "parse": {
+        "seconds": 23.12917481502518,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 8.136596829164773,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "joern_method_unknown": 77,
+        "ok": 131
+      }
+    },
+    {
+      "batch": 49,
+      "functions": 180,
+      "source_bytes": 752903,
+      "seconds": 38.11341529991478,
+      "parse": {
+        "seconds": 24.879794321022928,
+        "max_child_rss_kib": 2777364
+      },
+      "export": {
+        "seconds": 8.800159903243184,
+        "max_child_rss_kib": 2777364,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 146,
+        "joern_method_unknown": 34
+      }
+    }
+  ],
+  "java_opts": "-Xmx8g -Xms256m -XX:ActiveProcessorCount=4",
+  "unchanged_source": true
+}

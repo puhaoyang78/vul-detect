@@ -1,0 +1,103 @@
+{
+  "functions": 1124,
+  "batches": 5,
+  "costs": [
+    {
+      "batch": 0,
+      "functions": 216,
+      "source_bytes": 999531,
+      "seconds": 46.184629476163536,
+      "parse": {
+        "seconds": 31.62107970006764,
+        "max_child_rss_kib": 1443680
+      },
+      "export": {
+        "seconds": 9.742623523809016,
+        "max_child_rss_kib": 1443680,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 147,
+        "joern_method_unknown": 69
+      }
+    },
+    {
+      "batch": 1,
+      "functions": 212,
+      "source_bytes": 994298,
+      "seconds": 63.25388612085953,
+      "parse": {
+        "seconds": 47.537024011369795,
+        "max_child_rss_kib": 1486728
+      },
+      "export": {
+        "seconds": 10.143738139886409,
+        "max_child_rss_kib": 1486728,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 127,
+        "joern_method_unknown": 85
+      }
+    },
+    {
+      "batch": 2,
+      "functions": 218,
+      "source_bytes": 992813,
+      "seconds": 42.67712450120598,
+      "parse": {
+        "seconds": 28.888618798926473,
+        "max_child_rss_kib": 1486728
+      },
+      "export": {
+        "seconds": 9.096912374254316,
+        "max_child_rss_kib": 1486728,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 157,
+        "joern_method_unknown": 61
+      }
+    },
+    {
+      "batch": 3,
+      "functions": 254,
+      "source_bytes": 992428,
+      "seconds": 49.41074085980654,
+      "parse": {
+        "seconds": 33.15540287923068,
+        "max_child_rss_kib": 1486728
+      },
+      "export": {
+        "seconds": 10.493395472876728,
+        "max_child_rss_kib": 1486728,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 158,
+        "joern_method_unknown": 96
+      }
+    },
+    {
+      "batch": 4,
+      "functions": 224,
+      "source_bytes": 912767,
+      "seconds": 40.98722703475505,
+      "parse": {
+        "seconds": 26.909175544045866,
+        "max_child_rss_kib": 1486728
+      },
+      "export": {
+        "seconds": 9.406751230824739,
+        "max_child_rss_kib": 1486728,
+        "temporary_export": "local /tmp; CPG and reduced native evidence retained"
+      },
+      "statuses": {
+        "ok": 157,
+        "joern_method_unknown": 67
+      }
+    }
+  ],
+  "java_opts": "-Xmx8g -Xms256m -XX:ActiveProcessorCount=4",
+  "unchanged_source": true
+}

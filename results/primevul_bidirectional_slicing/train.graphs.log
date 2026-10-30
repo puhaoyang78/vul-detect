@@ -1,0 +1,70 @@
+train Joern batch 1/50: 224 functions, 101.9s, {'ok': 114, 'joern_method_unknown': 110}
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/losver_patch_audit.py", line 1328, in <module>
+    selected=result["selected_units"]
+^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/losver_patch_audit.py", line 1302, in main
+    
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/losver_patch_audit.py", line 1234, in slice_graphs
+    if not parse_stats.exists():
+                 ^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/losver_patch_audit.py", line 1167, in run_slice_process
+    with Path(log).open("w") as handle:
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 2047, in _wait
+    time.sleep(delay)
+KeyboardInterrupt
+train Joern batch 2/50: 184 functions, 12.1s, {'joern_method_unknown': 69, 'ok': 115}
+train Joern batch 3/50: 256 functions, 36.1s, {'ok': 153, 'joern_method_unknown': 103}
+train Joern batch 4/50: 256 functions, 32.6s, {'ok': 186, 'joern_method_unknown': 70}
+train Joern batch 5/50: 256 functions, 47.9s, {'ok': 165, 'joern_method_unknown': 91}
+train Joern batch 6/50: 252 functions, 46.5s, {'joern_method_unknown': 72, 'ok': 180}
+train Joern batch 7/50: 94 functions, 36.5s, {'joern_method_unknown': 66, 'ok': 28}
+train Joern batch 8/50: 150 functions, 51.7s, {'ok': 121, 'joern_method_unknown': 29}
+train Joern batch 9/50: 118 functions, 39.6s, {'ok': 84, 'joern_method_unknown': 34}
+train Joern batch 10/50: 56 functions, 77.9s, {'ok': 42, 'joern_method_unknown': 14}
+train Joern batch 11/50: 174 functions, 62.5s, {'joern_method_unknown': 36, 'ok': 138}
+train Joern batch 12/50: 256 functions, 38.7s, {'joern_method_unknown': 101, 'ok': 155}
+train Joern batch 13/50: 130 functions, 72.8s, {'ok': 98, 'joern_method_unknown': 32}
+train Joern batch 14/50: 176 functions, 39.9s, {'ok': 101, 'joern_method_unknown': 75}
+train Joern batch 15/50: 256 functions, 49.8s, {'ok': 236, 'joern_method_unknown': 20}
+train Joern batch 16/50: 256 functions, 32.2s, {'ok': 249, 'joern_method_unknown': 7}
+train Joern batch 17/50: 256 functions, 40.7s, {'ok': 243, 'joern_method_unknown': 13}
+train Joern batch 18/50: 186 functions, 54.0s, {'ok': 152, 'joern_method_unknown': 34}
+train Joern batch 19/50: 148 functions, 48.9s, {'ok': 102, 'joern_method_unknown': 46}
+train Joern batch 20/50: 250 functions, 48.9s, {'ok': 199, 'joern_method_unknown': 51}
+train Joern batch 21/50: 174 functions, 53.1s, {'ok': 128, 'joern_method_unknown': 46}
+train Joern batch 22/50: 184 functions, 49.3s, {'joern_method_unknown': 31, 'ok': 153}
+train Joern batch 23/50: 208 functions, 49.9s, {'ok': 157, 'joern_method_unknown': 51}
+train Joern batch 24/50: 198 functions, 51.5s, {'ok': 158, 'joern_method_unknown': 40}
+train Joern batch 25/50: 150 functions, 51.9s, {'ok': 118, 'joern_method_unknown': 32}
+train Joern batch 26/50: 184 functions, 52.8s, {'joern_method_unknown': 47, 'ok': 137}
+train Joern batch 27/50: 162 functions, 72.9s, {'ok': 125, 'joern_method_unknown': 37}
+train Joern batch 28/50: 164 functions, 51.2s, {'ok': 118, 'joern_method_unknown': 46}
+train Joern batch 29/50: 198 functions, 46.3s, {'ok': 121, 'joern_method_unknown': 77}
+train Joern batch 30/50: 174 functions, 47.3s, {'ok': 123, 'joern_method_unknown': 51}
+train Joern batch 31/50: 170 functions, 41.8s, {'joern_method_unknown': 82, 'ok': 88}
+train Joern batch 32/50: 176 functions, 37.6s, {'ok': 106, 'joern_method_unknown': 70}
+train Joern batch 33/50: 136 functions, 95.5s, {'joern_method_unknown': 42, 'ok': 94}
+train Joern batch 34/50: 176 functions, 39.2s, {'ok': 110, 'joern_method_unknown': 66}
+train Joern batch 35/50: 182 functions, 44.1s, {'joern_method_unknown': 61, 'ok': 121}
+train Joern batch 36/50: 2 functions, 23.9s, {'ok': 2}
+train Joern batch 37/50: 14 functions, 577.2s, {'ok': 10, 'joern_method_unknown': 4}
+train Joern batch 38/50: 196 functions, 33.8s, {'ok': 122, 'joern_method_unknown': 74}
+train Joern batch 39/50: 126 functions, 42.9s, {'ok': 80, 'joern_method_unknown': 46}
+train Joern batch 40/50: 192 functions, 50.0s, {'ok': 132, 'joern_method_unknown': 60}
+train Joern batch 41/50: 182 functions, 43.6s, {'ok': 108, 'joern_method_unknown': 74}
+train Joern batch 42/50: 140 functions, 43.5s, {'ok': 85, 'joern_method_unknown': 55}
+train Joern batch 43/50: 134 functions, 49.6s, {'ok': 90, 'joern_method_unknown': 44}
+train Joern batch 44/50: 184 functions, 41.7s, {'joern_method_unknown': 75, 'ok': 109}
+train Joern batch 45/50: 102 functions, 44.9s, {'joern_method_unknown': 38, 'ok': 64}
+train Joern batch 46/50: 72 functions, 53.1s, {'ok': 42, 'joern_method_unknown': 30}
+train Joern batch 47/50: 150 functions, 35.9s, {'joern_method_unknown': 68, 'ok': 82}
+train Joern batch 48/50: 256 functions, 42.7s, {'ok': 161, 'joern_method_unknown': 95}
+train Joern batch 49/50: 208 functions, 34.9s, {'joern_method_unknown': 77, 'ok': 131}
+train Joern batch 50/50: 180 functions, 38.1s, {'ok': 146, 'joern_method_unknown': 34}
