@@ -869,6 +869,15 @@ def statement_units(parsed):
                         kind="control_condition",
                     )
                 )
+            if n.type == "for_statement":
+                # The updater (and expression initializer) is executable code,
+                # not part of the condition or body. Native DDG/CFG endpoints
+                # on i++ previously had no atomic AST unit at all.
+                for field in ("initializer", "update"):
+                    expression = n.child_by_field_name(field)
+                    if expression is not None and expression.type not in STATEMENTS:
+                        units.append(dict(node=expression, lines=source_lines(expression),
+                                          kind="for_" + field))
     units.sort(key=lambda u: (u["node"].start_byte, u["node"].end_byte))
     bindings = function_bindings(function, parsed["raw"])
     by_name = defaultdict(list)
@@ -902,6 +911,47 @@ def statement_units(parsed):
     return units, by_name
 
 
+def _unwrap_expression(node):
+    while node is not None and node.type in {"parenthesized_expression", "condition_clause", "cast_expression"}:
+        children=node.named_children
+        node=node.child_by_field_name("value") or (children[-1] if children else None)
+    return node
+
+
+def _bound_access(node, raw, names):
+    """A scope-resolved binding or exact field path; never an alias inference."""
+    node=_unwrap_expression(node)
+    if node is None:
+        return None
+    if node.type=="identifier":
+        choices=names.get(text(node,raw),[])
+        binding=next((b for b in choices if b["declaration"]==node),None)
+        binding=binding or resolve_local_binding(node,choices,raw)
+        return ("binding",binding["name"],binding["declaration"].start_byte) if binding else None
+    if node.type=="field_expression":
+        base=_bound_access(node.child_by_field_name("argument"),raw,names)
+        field=node.child_by_field_name("field")
+        signature=" ".join(t[0] for t in source_token_spans(text(field,raw))) if field else ""
+        return ("field",base,signature) if base and field else None
+    return None
+
+
+def _bound_references(node, raw, names, *, skip=()):
+    found=set();stack=[node] if node is not None else []
+    while stack:
+        child=stack.pop()
+        if child.type in {"sizeof_expression","lambda_expression"} or child.type in skip:
+            continue
+        if child.type in {"identifier","field_expression"}:
+            key=_bound_access(child,raw,names)
+            if key:
+                found.add(key)
+            if child.type=="field_expression":
+                continue
+        stack.extend(child.named_children)
+    return frozenset(found)
+
+
 SLICE_RULES = dict(
     max_hops=2, max_extra_statements=12,
     dependencies="native intra-method Joern REACHING_DEF and CDG; CFG checked, never used as adjacency expansion",
@@ -925,7 +975,8 @@ def statement_dependence_graph(source, cpg):
     details=dict(tree_sitter_errors=parsed["errors"],tree_sitter_functions=parsed["function_count"],
         tree_sitter_language=parsed["language"],joern_status=cpg.get("status"),
         header_type_absent=(parsed["function"].child_by_field_name("type") is None) if parsed["function"] is not None else None)
-    result = dict(status="ok", units=[], edges=[], unknown={}, native=cpg.get("counts", {}),parse_details=details)
+    result = dict(status="ok", units=[], edges=[], unknown={}, native=cpg.get("counts", {}),parse_details=details,
+                  node_units={}, node_positions={}, mapping_stats={}, mapping_examples=[])
     if not parsed["strict"] or cpg.get("status") != "ok":
         reasons=Counter()
         if not parsed["strict"]:
@@ -959,26 +1010,26 @@ def statement_dependence_graph(source, cpg):
         unknown["native_ddg_zero_or_skipped"]+=1
     if not cpg.get("counts",{}).get("CDG"):
         unknown["native_cdg_zero_or_trivial"]+=1
-    mapping={}
+    mapping={}; rejected={}; positions={}
     for key,n in cpg["nodes"].items():
-        if n["kind"] in {"METHOD","METHOD_RETURN","BLOCK","CONTROL_STRUCTURE","LOCAL","METHOD_PARAMETER_IN"}:
-            continue
+        if n["kind"] in {"METHOD","METHOD_RETURN","BLOCK","CONTROL_STRUCTURE","LOCAL","METHOD_PARAMETER_IN","METHOD_PARAMETER_OUT"}:
+            rejected[key]="non_atomic_boundary_or_metadata";continue
         line,col=n.get("LINE_NUMBER"),n.get("COLUMN_NUMBER")
         if not isinstance(line,int) or not isinstance(col,int) or not 1<=line<=len(lf_lines):
-            unknown["node_missing_coordinate"]+=1;continue
+            unknown["node_missing_coordinate"]+=1;rejected[key]="node_missing_coordinate";continue
         if line not in columns:
             offsets={1:0}; utf16=1; byte=0
             for char in lf_lines[line-1]:
                 utf16+=len(char.encode("utf-16-le"))//2;byte+=len(char.encode());offsets[utf16]=byte
             columns[line]=offsets
         if col not in columns[line]:
-            unknown["node_invalid_utf16_column"]+=1;continue
+            unknown["node_invalid_utf16_column"]+=1;rejected[key]="node_invalid_utf16_column";continue
         pos=lf_bytes[line-1]+columns[line][col]
         code=n.get("CODE","")
         # Joern truncates display CODE at 1000 characters; require its real prefix.
         prefix=code[:-3] if len(code)==1000 and code.endswith("...") else code
         if not prefix or not raw.startswith(prefix.encode(),pos):
-            unknown["node_source_start_mismatch"]+=1;continue
+            unknown["node_source_start_mismatch"]+=1;rejected[key]="node_source_start_mismatch";continue
         candidates=[];j=bisect_right(starts,pos)-1
         while j>=0 and max_end[j]>pos:
             u=result["units"][j]
@@ -987,20 +1038,34 @@ def statement_dependence_graph(source, cpg):
             j-=1
         if candidates:
             mapping[key]=min(candidates,key=lambda u:u["end_byte"]-u["start_byte"])["id"]
+            positions[key]=[pos,pos+len(prefix.encode())]
         else:
             unknown["node_outside_atomic_statement"]+=1
+            rejected[key]="node_outside_atomic_statement"
     call_units={u for key,u in mapping.items() if cpg["nodes"][key]["kind"]=="CALL"
                 and not cpg["nodes"][key].get("NAME","").startswith("<operator>")}
     memory_units={u for key,u in mapping.items() if cpg["nodes"][key].get("NAME") in {
         "<operator>.fieldAccess","<operator>.indirectFieldAccess","<operator>.indirection","<operator>.indexAccess"}}
-    found={}
+    found={}; mapping_stats=Counter(); examples=[]
     for e in cpg["edges"]:
         if e["kind"] not in {"REACHING_DEF","CDG"}:
             continue
         a,b=mapping.get(e["source"]),mapping.get(e["target"])
+        mapping_stats[e["kind"]+":native"]+=1
         if a is None or b is None:
-            unknown["dependency_endpoint_unmapped"]+=1;continue
+            unknown["dependency_endpoint_unmapped"]+=1
+            reasons=sorted({rejected.get(n,"unknown") for n in (e["source"],e["target"]) if n not in mapping})
+            mapping_stats[e["kind"]+(":boundary_unmapped" if reasons==["non_atomic_boundary_or_metadata"] else ":internal_unmapped")]+=1
+            for reason in reasons:
+                mapping_stats[e["kind"]+":lost:"+reason]+=1
+            if len(examples)<12 and "non_atomic_boundary_or_metadata" not in reasons:
+                examples.append(dict(edge=e,reasons=reasons,nodes=[cpg["nodes"][n] for n in (e["source"],e["target"])]))
+            continue
+        mapping_stats[e["kind"]+":mapped_endpoints"]+=1
+        if any(result["units"][i]["kind"].startswith("for_") for i in (a,b)):
+            mapping_stats[e["kind"]+":for_header_recovered_endpoints"]+=1
         if a==b:
+            mapping_stats[e["kind"]+":within_statement"]+=1
             continue
         variable=e.get("variable","")
         key=(a,b,e["kind"],variable)
@@ -1017,7 +1082,9 @@ def statement_dependence_graph(source, cpg):
         found.setdefault(key,dict(source=a,target=b,kind=e["kind"],variable=variable,
             origin="joern_native",joern_nodes=[e["source"],e["target"]],
             certainty="unknown" if reasons else "native_may_dependence",unknown=sorted(set(reasons))))
-    result.update(edges=list(found.values()),unknown=dict(unknown),mapped_nodes=len(mapping))
+    for e in found.values():mapping_stats[e["kind"]+":distinct_statement_edges"]+=1
+    result.update(edges=list(found.values()),unknown=dict(unknown),mapped_nodes=len(mapping),
+                  node_units=mapping,node_positions=positions,mapping_stats=dict(mapping_stats),mapping_examples=examples)
     return result
 
 
@@ -1126,6 +1193,330 @@ def bidirectional_pair_slice(before, after, graph_before, graph_after, *, allow_
                 mapping_allowed=allow_mapping,changed_lines={k:sorted(v) for k,v in changed.items()})
 
 
+TARGETED_SLICE_RULES = dict(
+    scope="pure additions with a newly added if condition; other repairs are out of scope",
+    max_hops=2, max_extra_statements=12,
+    targets="bound array indices, null-checked dereferences, integer calculations with a native memory-consumer value path, explicit memory length operands",
+    control="native CDG path through conditions only plus native CFG dominance; no forward sibling expansion",
+    data="backward native REACHING_DEF, exact bound operand and actual write required",
+    alignment="identical atomic statement, corresponding parameter/declaration bindings and unchanged control context",
+    budget="complete target/control/data paths, ordered by uncertainty and path length; never partial paths",
+    unknown="unresolved binding, alias, macro, call effect, ambiguous correspondence or missing native evidence",
+    checked_values="array-element predicates and opaque call results stay unknown; their address indices/arguments are not the checked values",
+    development_split="train", test_used=False, strong_labels_generated=False,
+)
+
+
+def _targeted_facts(source, graph):
+    parsed=parse_source(source)
+    if not parsed["strict"]:
+        return None
+    units,names=statement_units(parsed);raw=parsed["raw"]
+    def refs(n):
+        return _bound_references(n,raw,names)
+    def sig(n):
+        return tuple(t[0] for t in source_token_spans(text(n,raw))) if n else ()
+    def containing(n):
+        candidates=[i for i,u in enumerate(units) if u["node"].start_byte<=n.start_byte and n.end_byte<=u["node"].end_byte]
+        return min(candidates,key=lambda i:units[i]["node"].end_byte-units[i]["node"].start_byte) if candidates else None
+    def context(n, ignored=()):
+        chain=[];child=n;parent=n.parent
+        while parent and parent!=parsed["function"]:
+            if parent.type in CONTROLS and parent.start_byte not in ignored:
+                cond=parent.child_by_field_name("condition") or parent.child_by_field_name("right")
+                # The condition's own if is not an enclosing control context.
+                if cond is None or not (cond.start_byte<=n.start_byte and n.end_byte<=cond.end_byte):
+                    role=next((f for f in ("consequence","alternative","body")
+                               if parent.child_by_field_name(f)==child),"body")
+                    chain.append((parent.type,sig(cond),role))
+            if parent.type.startswith("preproc_") or parent.type in {"case_statement","labeled_statement"}:
+                chain.append((parent.type,sig(parent.child_by_field_name("condition")),"unknown"))
+            child=parent;parent=parent.parent
+        return tuple(reversed(chain))
+    facts=[]
+    for u in units:
+        node=u["node"];writes=set();spellings={};escapes=set()
+        for n in walk(node):
+            if n.type in {"identifier","field_expression"}:
+                key=_bound_access(n,raw,names)
+                if key:
+                    spellings["".join(sig(n))]=key
+            if n.type in {"assignment_expression","update_expression"}:
+                key=_bound_access(n.child_by_field_name("left") or n.child_by_field_name("argument"),raw,names)
+                if key:
+                    writes.add(key)
+            if n.type=="init_declarator":
+                key=_bound_access(declarator_identifier(n.child_by_field_name("declarator")),raw,names)
+                if key:
+                    writes.add(key)
+            if n.type=="pointer_expression" and text(n.child_by_field_name("operator"),raw)=="&":
+                escapes.update(refs(n.child_by_field_name("argument")))
+        facts.append(dict(node=node,reads=refs(node),writes=writes,spellings=spellings,escapes=escapes,
+                          calls=[n for n in walk(node) if n.type=="call_expression"]))
+    checks=[];operations=[]
+    def null_refs(n):
+        n=_unwrap_expression(n)
+        if n is None:
+            return frozenset()
+        op=n.child_by_field_name("operator")
+        op=text(op,raw) if op else ""
+        if n.type=="unary_expression" and op=="!":
+            key=_bound_access(n.child_by_field_name("argument"),raw,names)
+            return frozenset({key}) if key else frozenset()
+        if n.type=="binary_expression":
+            a,b=n.child_by_field_name("left"),n.child_by_field_name("right")
+            if op in {"==","!="}:
+                key=_bound_access(a,raw,names) if sig(_unwrap_expression(b)) in {("0",),("NULL",),("nullptr",)} else _bound_access(b,raw,names) if sig(_unwrap_expression(a)) in {("0",),("NULL",),("nullptr",)} else None
+                return frozenset({key}) if key else frozenset()
+            if op in {"&&","||"}:
+                return null_refs(a)|null_refs(b)
+        return frozenset()
+    integral=re.compile(r"(?:u?int(?:8|16|32|64)_t|size_t|ssize_t|unsigned(?:\s+(?:int|long|short|char))*|signed(?:\s+(?:int|long|short|char))*|int|long(?:\s+(?:long|int))*|short(?:\s+int)?|char)")
+    def integer_destination(n):
+        parent=n.parent
+        while parent and parent.type not in {"assignment_expression","init_declarator"} | STATEMENTS:
+            parent=parent.parent
+        if parent is None:
+            return False
+        lhs=parent.child_by_field_name("left") if parent.type=="assignment_expression" else declarator_identifier(parent.child_by_field_name("declarator")) if parent.type=="init_declarator" else None
+        key=_bound_access(lhs,raw,names)
+        if key is None or key[0]!="binding":
+            return False
+        binding=next((b for b in names.get(key[1],[]) if b["declaration"].start_byte==key[2]),None)
+        typ=binding["statement"].child_by_field_name("type") if binding else None
+        return typ is not None and integral.fullmatch(text(typ,raw).strip()) is not None
+    for n in walk(parsed["function"]):
+        uid=containing(n)
+        if n.type=="if_statement":
+            cond=n.child_by_field_name("condition")
+            if cond:
+                checks.append(dict(node=n,condition=cond,unit=containing(cond),
+                    refs=_bound_references(cond,raw,names,skip={"subscript_expression","call_expression"}),
+                    null_refs=null_refs(cond)))
+        kind=None;operands=frozenset();null_operands=frozenset()
+        if n.type=="subscript_expression":
+            kind="array_access"
+            index=n.child_by_field_name("index") or next((c for c in n.named_children if c.type=="subscript_argument_list"),None)
+            operands=refs(index);null_operands=refs(n.child_by_field_name("argument"))
+        elif n.type=="pointer_expression" and text(n.child_by_field_name("operator"),raw)=="*":
+            kind="dereference";operands=refs(n.child_by_field_name("argument"))
+        elif n.type=="field_expression" and text(n.child_by_field_name("operator"),raw)=="->":
+            kind="dereference";operands=refs(n.child_by_field_name("argument"))
+        elif n.type=="binary_expression" and text(n.child_by_field_name("operator"),raw) in {"+","-","*","/","%","<<"} and integer_destination(n):
+            kind="integer_calculation";operands=refs(n)
+        elif n.type=="call_expression":
+            callee="".join(sig(n.child_by_field_name("function")))
+            args=n.child_by_field_name("arguments")
+            args=list(args.named_children) if args else []
+            # Explicit length-argument contracts, never an API-presence match.
+            position={"memcpy":2,"memmove":2,"memset":2,"strncpy":2,
+                      "malloc":0,"calloc":0,"realloc":1,"kmalloc":0}.get(callee)
+            if position is not None and len(args)>position:
+                kind="memory_length";operands=refs(args[position])
+        if kind and uid is not None and (operands or null_operands):
+            operations.append(dict(unit=uid,node=n,kind=kind,refs=operands,null_refs=null_operands))
+    return dict(parsed=parsed,units=facts,names=names,checks=checks,operations=operations,
+                context=context,signature=sig)
+
+
+def targeted_pair_slice(before, after, graph_before, graph_after, cpg_before, cpg_after, *, allow_mapping=True):
+    """Conservative training-time repair candidates, not strong location labels.
+
+    Only targets constrained by an added check are transferred. The graph is
+    never expanded to all statements controlled by that check.
+    """
+    from collections import deque
+    graphs=dict(v=graph_before,p=graph_after);cpgs=dict(v=cpg_before,p=cpg_after)
+    changed={s:set() for s in graphs}
+    for h in edit_hunks(before,after):
+        changed["v"].update(range(h["v_start"],h["v_end"]))
+        changed["p"].update(range(h["p_start"],h["p_end"]))
+    result=dict(status="unknown",reasons={},targets=[],mapping_allowed=allow_mapping)
+    for side,g in graphs.items():
+        result[side]=dict(status=g["status"],region_lines=[],selected_units=[],unknown_dependency_lines=[],limit_reached=False)
+    old_changed="\n".join(line for i,line in enumerate(before.splitlines()) if i in changed["v"])
+    if source_token_spans(old_changed) or not changed["p"]:
+        result.update(status="out_of_scope",reasons={"not_pure_addition":1});return result
+    if not allow_mapping or any(g["status"]!="ok" for g in graphs.values()):
+        result["reasons"]={"pair_or_parse_unknown":1};return result
+    facts={s:_targeted_facts(src,graphs[s]) for s,src in (("v",before),("p",after))}
+    fp,fv=facts["p"],facts["v"]
+    checks=[c for c in fp["checks"] if c["unit"] is not None and changed["p"] & set(graph_after["units"][c["unit"]]["lines"])]
+    gates={c["node"].start_byte for c in checks}
+    if not checks:
+        result.update(status="out_of_scope",reasons={"no_added_if_condition":1});return result
+    matches=align_statement_units(before,after,graph_before,graph_after)
+    # Bindings must correspond independently of the target's text position.
+    bindings={}
+    for bs in fv["names"].values():
+        for old in bs:
+            pool=[b for b in fp["names"].get(old["name"],[]) if
+                  b["parameter_index"]==old["parameter_index"] and
+                  fv["signature"](old["statement"])==fp["signature"](b["statement"]) and
+                  fv["context"](old["statement"])==fp["context"](b["statement"],gates)]
+            if len(pool)==1:
+                bindings[("binding",old["name"],old["declaration"].start_byte)]=("binding",pool[0]["name"],pool[0]["declaration"].start_byte)
+    def translated(key):
+        return bindings.get(key) if key[0]=="binding" else ("field",translated(key[1]),key[2]) if translated(key[1]) else None
+    aligned={}
+    for m in matches:
+        a,b=fv["units"][m["v"]],fp["units"][m["p"]]
+        old_refs={translated(k) for k in a["reads"]|a["writes"]}
+        if None not in old_refs and old_refs==set(b["reads"]|b["writes"]) and fv["context"](a["node"])==fp["context"](b["node"],gates):
+            aligned[m["p"]]=m["v"]
+    reasons=Counter();selected={s:{} for s in graphs};budget=TARGETED_SLICE_RULES["max_extra_statements"]
+    reasons["added_checks_without_resolved_tested_value"]=sum(not c["refs"] for c in checks)
+    if not fp["operations"]:
+        reasons["no_supported_bound_memory_operation"]=1
+    seeds={u["id"] for u in graph_after["units"] if changed["p"]&set(u["lines"])}
+    for i in seeds:
+        selected["p"][i]=dict(role="direct_edit",unknown=[],paths=[])
+    cdg=defaultdict(list);incoming={s:defaultdict(list) for s in graphs}
+    for s,g in graphs.items():
+        for e in g["edges"]:
+            incoming[s][e["target"]].append(e)
+            if s=="p" and e["kind"]=="CDG":
+                cdg[e["source"]].append(e)
+    cfg=defaultdict(list)
+    for e in cpg_after["edges"]:
+        if e["kind"]=="CFG":
+            cfg[e["source"]].append(e["target"])
+    entries=[k for k,n in cpg_after["nodes"].items() if n["kind"]=="METHOD"]
+    def reachable(blocked=()):
+        seen=set();pending=list(entries);blocked=set(blocked)
+        while pending:
+            i=pending.pop()
+            if i in seen or i in blocked:
+                continue
+            seen.add(i);pending.extend(cfg[i])
+        return seen
+    full_reach=reachable();without={}
+    def control_path(a,b):
+        queue=deque([(a,[])]);seen={a}
+        while queue:
+            i,path=queue.popleft()
+            if len(path)>=TARGETED_SLICE_RULES["max_hops"]:
+                continue
+            for e in cdg[i]:
+                j=e["target"];new=path+[e]
+                if j==b:
+                    return new
+                if j not in seen and graph_after["units"][j]["kind"]=="control_condition":
+                    seen.add(j);queue.append((j,new))
+        return []
+    def data_sources(side, uid, needed, depth=0, visited=frozenset()):
+        paths=[]
+        if depth>=TARGETED_SLICE_RULES["max_hops"]:
+            return paths
+        for e in incoming[side][uid]:
+            if e["kind"]!="REACHING_DEF" or e["source"] in visited:
+                continue
+            source,target=facts[side]["units"][e["source"]],facts[side]["units"][uid]
+            key=target["spellings"].get("".join(t[0] for t in source_token_spans(e.get("variable",""))))
+            if key not in needed or key not in source["writes"]:
+                continue
+            # Native call summaries and possible memory aliases are not value definitions.
+            if e.get("certainty")=="unknown":
+                # Statement lifting can flag an otherwise exact scalar argument
+                # or index because another expression in that unit is a call/
+                # memory access. Verify the actual native use endpoint instead.
+                native=cpgs[side]["nodes"].get(e.get("joern_nodes",[None,None])[1],{})
+                exact_scalar=(key[0]=="binding" and not source["calls"] and
+                    native.get("kind")=="IDENTIFIER" and native.get("CODE")==key[1] and native.get("NAME")==key[1])
+                if not exact_scalar:
+                    reasons["data_definition_alias_or_call_unknown"]+=1;continue
+            paths.append([e])
+            paths.extend(path+[e] for path in data_sources(side,e["source"],source["reads"],depth+1,visited|{uid}))
+        return paths
+    proposals=[]
+    for check in checks:
+        ci=check["unit"]
+        blocked={n for n,u in graph_after["node_units"].items() if u==ci}
+        without[ci]=reachable(blocked)
+        for operation in fp["operations"]:
+            ti=operation["unit"]
+            if ti in seeds:
+                continue
+            if operation["kind"]=="dereference" and not (operation["refs"]&check["null_refs"]):
+                continue
+            reasons["operation_candidates"]+=1
+            operands=operation["refs"]|(operation["null_refs"]&check["null_refs"])
+            if operation["kind"]=="integer_calculation" and not any(
+                    other["kind"] in {"array_access","memory_length"} and
+                    any(p[0]["source"]==ti for p in data_sources("p",other["unit"],other["refs"]))
+                    for other in fp["operations"] if other["unit"]!=ti):
+                reasons["integer_calculation_without_memory_value_path"]+=1;continue
+            overlap=check["refs"]&operands
+            derived=data_sources("p",ti,operation["refs"])
+            derived=[p for p in derived if fp["units"][p[0]["source"]]["reads"]&check["refs"]]
+            if not overlap and not derived:
+                reasons["no_bound_operand_or_value_path"]+=1;continue
+            path=control_path(ci,ti)
+            if not path:
+                reasons["no_target_control_dependence"]+=1;continue
+            opnodes={k for k,span in graph_after["node_positions"].items()
+                     if operation["node"].start_byte<=span[0] and span[1]<=operation["node"].end_byte and k in full_reach}
+            if not opnodes or opnodes&without[ci]:
+                reasons["cfg_dominance_not_established"]+=1;continue
+            shared=overlap or fp["units"][derived[0][0]["source"]]["reads"]&check["refs"]
+            between=[u for u in fp["units"] if check["condition"].end_byte<u["node"].start_byte<operation["node"].start_byte and u is not fp["units"][ti]]
+            if any(shared&(u["writes"]|u["escapes"]) for u in between):
+                reasons["checked_value_changed_or_escaped"]+=1;continue
+            if any(k[0]=="field" for k in shared) and any(u["calls"] for u in between):
+                reasons["intervening_call_field_state_unknown"]+=1;continue
+            if ti not in aligned:
+                reasons["target_binding_or_context_correspondence_unknown"]+=1;continue
+            if any(k[0]=="field" for k in shared):
+                unknown=["field_alias_state_not_proved"]
+            else:
+                unknown=[]
+            chain=[] if overlap else min(derived,key=lambda p:(len(p),p[0]["source"]))
+            proposals.append(dict(p=ti,v=aligned[ti],kind=operation["kind"],check=ci,
+                control_path=path,data_path=chain,unknown=unknown,
+                correspondence=dict(origin="identical_statement_bound_operands_and_control_context",
+                    vulnerable_span=[graph_before["units"][aligned[ti]][k] for k in ("start_byte","end_byte")],
+                    patched_span=[graph_after["units"][ti][k] for k in ("start_byte","end_byte")]),
+                cfg=dict(condition_nodes=sorted(blocked),operation_nodes=sorted(opnodes),dominates=True)))
+    # Rank complete relation packages, not the order of unrelated graph nodes.
+    seen_targets=set()
+    for proposal in sorted(proposals,key=lambda p:(len(p["unknown"]),len(p["control_path"])+len(p["data_path"]),p["kind"],p["p"])):
+        identity=(proposal["check"],proposal["p"],proposal["v"])
+        if identity in seen_targets:
+            continue
+        seen_targets.add(identity)
+        core={"p":{proposal["p"]}|{e["source"] for e in proposal["control_path"]}|{e["source"] for e in proposal["data_path"]},"v":{proposal["v"]}}
+        if any(len((set(selected[s])|core[s])-(seeds if s=="p" else set()))>budget for s in graphs):
+            reasons["complete_target_path_exceeds_budget"]+=1
+            for s in graphs: result[s]["limit_reached"]=True
+            continue
+        result["targets"].append(proposal)
+        for side,ids in core.items():
+            for i in ids:
+                selected[side].setdefault(i,dict(role="target_relation",unknown=proposal["unknown"],paths=[]))
+                selected[side][i]["unknown"]=sorted(set(selected[side][i]["unknown"])|set(proposal["unknown"]))
+                selected[side][i]["paths"].append(dict(kind="target",target=identity,side=side))
+        # Sources and necessary conditions of the chosen target only; no CDG siblings.
+        for side in ("v","p"):
+            uid=proposal[side];f=facts[side]["units"][uid]
+            supports=data_sources(side,uid,f["reads"])
+            supports += [[e] for e in incoming[side][uid] if e["kind"]=="CDG" and graphs[side]["units"][e["source"]]["kind"]=="control_condition"]
+            for path in sorted(supports,key=lambda p:(len(p),p[0]["source"])):
+                ids={e["source"] for e in path}|{e["target"] for e in path}
+                if len((set(selected[side])|ids)-(seeds if side=="p" else set()))>budget:
+                    result[side]["limit_reached"]=True;reasons["complete_support_path_exceeds_budget"]+=1;continue
+                for i in ids:
+                    selected[side].setdefault(i,dict(role="target_source_or_condition",unknown=[],paths=[]))
+                    selected[side][i]["unknown"]=sorted(set(selected[side][i]["unknown"])|set(proposal["unknown"]))
+                    selected[side][i]["paths"].append(dict(kind="support",target=uid,edges=path))
+    for side,g in graphs.items():
+        result[side].update(region_lines=sorted({n for i in selected[side] for n in g["units"][i]["lines"]}),
+            selected_units=[dict(g["units"][i],**selected[side][i]) for i in sorted(selected[side])],
+            unknown_dependency_lines=sorted({n for i,c in selected[side].items() if c["unknown"] for n in g["units"][i]["lines"]}))
+    result.update(status="ok" if result["targets"] else "unknown",reasons=dict(reasons),
+                  added_checks=len(checks),strict_correspondences=len(aligned))
+    return result
+
+
 STATIC_RELATION_RULES = dict(
     scope="one unmodified C/C++ function; strict parse and scope-resolved local/parameter bindings",
     patterns=["boundary_check_relation", "null_check_relation", "integer_range_relation",
@@ -1169,11 +1560,7 @@ def static_relations(source):
     units, names = statement_units(parsed)
     bindings = [b for bs in names.values() for b in bs]
 
-    def unwrap(n):
-        while n is not None and n.type in {"parenthesized_expression", "condition_clause", "cast_expression"}:
-            children = n.named_children
-            n = n.child_by_field_name("value") or (children[-1] if children else None)
-        return n
+    unwrap = _unwrap_expression
 
     def signature(n):
         return " ".join(t[0] for t in source_token_spans(text(n, raw))) if n else ""
@@ -1185,40 +1572,13 @@ def static_relations(source):
                     code=text(n, raw)[:300], ast_type=n.type)
 
     def atom(n):
-        n = unwrap(n)
-        if n is None:
-            return None
-        if n.type == "identifier":
-            b = next((b for b in names.get(text(n,raw),[]) if b["declaration"] == n), None)
-            b = b or resolve_local_binding(n, names.get(text(n,raw),[]), raw)
-            return ("binding", b["name"], b["declaration"].start_byte) if b else None
-        if n.type == "field_expression":
-            base = atom(n.child_by_field_name("argument"))
-            field = n.child_by_field_name("field")
-            return ("field", base, signature(field)) if base and field else None
-        return None
+        return _bound_access(n,raw,names)
 
     reference_cache = {}
     def refs(n):
         if n in reference_cache:
             return reference_cache[n]
-        found = set()
-        if n is None:
-            return found
-        stack = [n]
-        while stack:
-            child = stack.pop()
-            if child.type in {"sizeof_expression", "lambda_expression"}:
-                continue
-            if child.type in {"identifier", "field_expression"}:
-                key = atom(child)
-                if key:
-                    found.add(key)
-                # A field is an exact access path, not all fields of its object.
-                if child.type == "field_expression":
-                    continue
-            stack.extend(child.named_children)
-        reference_cache[n] = frozenset(found)
+        reference_cache[n] = _bound_references(n,raw,names)
         return reference_cache[n]
 
     def block(n):

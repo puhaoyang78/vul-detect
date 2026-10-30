@@ -1,0 +1,656 @@
+train primevul_paired:train:1190: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1214: ok, targets=2, vulnerable lines=5
+train primevul_paired:train:1227: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1229: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1517: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1539: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1589: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1595: out_of_scope, targets=0, vulnerable lines=0
+train primevul_paired:train:1641: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1651: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1815: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:1830: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2349: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2396: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2426: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2455: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2532: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2548: out_of_scope, targets=0, vulnerable lines=0
+train primevul_paired:train:2721: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:2752: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:3735: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:641: ok, targets=2, vulnerable lines=3
+train primevul_paired:train:664: unknown, targets=0, vulnerable lines=0
+train primevul_paired:train:937: unknown, targets=0, vulnerable lines=0
+{
+  "quality": [
+    {
+      "split": "train",
+      "cohort": "historical_discussed",
+      "method": "historical",
+      "reviewed_selected_lines": 48,
+      "related": 21,
+      "unrelated": 17,
+      "unknown": 10,
+      "reviewed_related_pool": 21,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3541666666666667,
+      "unknown_fraction": 0.20833333333333334
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 47,
+      "related": 21,
+      "unrelated": 17,
+      "unknown": 9,
+      "reviewed_related_pool": 21,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3617021276595745,
+      "unknown_fraction": 0.19148936170212766
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed",
+      "method": "targeted",
+      "reviewed_selected_lines": 3,
+      "related": 3,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 21,
+      "related_retention": 0.14285714285714285,
+      "unrelated_fraction": 0.0,
+      "unknown_fraction": 0.0
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "historical",
+      "reviewed_selected_lines": 35,
+      "related": 13,
+      "unrelated": 12,
+      "unknown": 10,
+      "reviewed_related_pool": 13,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.34285714285714286,
+      "unknown_fraction": 0.2857142857142857
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 34,
+      "related": 13,
+      "unrelated": 12,
+      "unknown": 9,
+      "reviewed_related_pool": 13,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.35294117647058826,
+      "unknown_fraction": 0.2647058823529412
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "targeted",
+      "reviewed_selected_lines": 3,
+      "related": 3,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 13,
+      "related_retention": 0.23076923076923078,
+      "unrelated_fraction": 0.0,
+      "unknown_fraction": 0.0
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample",
+      "method": "historical",
+      "reviewed_selected_lines": 185,
+      "related": 78,
+      "unrelated": 71,
+      "unknown": 36,
+      "reviewed_related_pool": 79,
+      "related_retention": 0.9873417721518988,
+      "unrelated_fraction": 0.3837837837837838,
+      "unknown_fraction": 0.1945945945945946
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 179,
+      "related": 72,
+      "unrelated": 71,
+      "unknown": 36,
+      "reviewed_related_pool": 79,
+      "related_retention": 0.9113924050632911,
+      "unrelated_fraction": 0.39664804469273746,
+      "unknown_fraction": 0.2011173184357542
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample",
+      "method": "targeted",
+      "reviewed_selected_lines": 5,
+      "related": 5,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 79,
+      "related_retention": 0.06329113924050633,
+      "unrelated_fraction": 0.0,
+      "unknown_fraction": 0.0
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "historical",
+      "reviewed_selected_lines": 185,
+      "related": 78,
+      "unrelated": 71,
+      "unknown": 36,
+      "reviewed_related_pool": 79,
+      "related_retention": 0.9873417721518988,
+      "unrelated_fraction": 0.3837837837837838,
+      "unknown_fraction": 0.1945945945945946
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 179,
+      "related": 72,
+      "unrelated": 71,
+      "unknown": 36,
+      "reviewed_related_pool": 79,
+      "related_retention": 0.9113924050632911,
+      "unrelated_fraction": 0.39664804469273746,
+      "unknown_fraction": 0.2011173184357542
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "targeted",
+      "reviewed_selected_lines": 5,
+      "related": 5,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 79,
+      "related_retention": 0.06329113924050633,
+      "unrelated_fraction": 0.0,
+      "unknown_fraction": 0.0
+    }
+  ],
+  "coverage": [
+    {
+      "split": "train",
+      "cohort": "historical_discussed",
+      "method": "historical",
+      "pairs": 8,
+      "both_parsed": 5,
+      "recovered_pairs": 4,
+      "physical_candidate_lines": 48,
+      "path_unknown_lines": 29,
+      "path_unknown_fraction": 0.6041666666666666
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed",
+      "method": "mapped_bidirectional",
+      "pairs": 8,
+      "both_parsed": 5,
+      "recovered_pairs": 4,
+      "physical_candidate_lines": 47,
+      "path_unknown_lines": 29,
+      "path_unknown_fraction": 0.6170212765957447
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed",
+      "method": "targeted",
+      "pairs": 8,
+      "both_parsed": 5,
+      "recovered_pairs": 1,
+      "physical_candidate_lines": 3,
+      "path_unknown_lines": 3,
+      "path_unknown_fraction": 1.0
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "historical",
+      "pairs": 3,
+      "both_parsed": 3,
+      "recovered_pairs": 3,
+      "physical_candidate_lines": 35,
+      "path_unknown_lines": 18,
+      "path_unknown_fraction": 0.5142857142857142
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "pairs": 3,
+      "both_parsed": 3,
+      "recovered_pairs": 3,
+      "physical_candidate_lines": 34,
+      "path_unknown_lines": 18,
+      "path_unknown_fraction": 0.5294117647058824
+    },
+    {
+      "split": "train",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "targeted",
+      "pairs": 3,
+      "both_parsed": 3,
+      "recovered_pairs": 1,
+      "physical_candidate_lines": 3,
+      "path_unknown_lines": 3,
+      "path_unknown_fraction": 1.0
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample",
+      "method": "historical",
+      "pairs": 16,
+      "both_parsed": 13,
+      "recovered_pairs": 13,
+      "physical_candidate_lines": 185,
+      "path_unknown_lines": 68,
+      "path_unknown_fraction": 0.3675675675675676
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample",
+      "method": "mapped_bidirectional",
+      "pairs": 16,
+      "both_parsed": 13,
+      "recovered_pairs": 13,
+      "physical_candidate_lines": 179,
+      "path_unknown_lines": 64,
+      "path_unknown_fraction": 0.3575418994413408
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample",
+      "method": "targeted",
+      "pairs": 16,
+      "both_parsed": 13,
+      "recovered_pairs": 1,
+      "physical_candidate_lines": 5,
+      "path_unknown_lines": 0,
+      "path_unknown_fraction": 0.0
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "historical",
+      "pairs": 13,
+      "both_parsed": 13,
+      "recovered_pairs": 13,
+      "physical_candidate_lines": 185,
+      "path_unknown_lines": 68,
+      "path_unknown_fraction": 0.3675675675675676
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "pairs": 13,
+      "both_parsed": 13,
+      "recovered_pairs": 13,
+      "physical_candidate_lines": 179,
+      "path_unknown_lines": 64,
+      "path_unknown_fraction": 0.3575418994413408
+    },
+    {
+      "split": "train",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "targeted",
+      "pairs": 13,
+      "both_parsed": 13,
+      "recovered_pairs": 1,
+      "physical_candidate_lines": 5,
+      "path_unknown_lines": 0,
+      "path_unknown_fraction": 0.0
+    }
+  ],
+  "reasons": {
+    "added_checks_without_resolved_tested_value": 8,
+    "operation_candidates": 259,
+    "no_bound_operand_or_value_path": 214,
+    "integer_calculation_without_memory_value_path": 41,
+    "pair_or_parse_unknown": 6,
+    "no_supported_bound_memory_operation": 1,
+    "no_added_if_condition": 2
+  }
+}
+train boundary-only diagnostic classification corrected; every candidate/path and review byte-identical
+valid primevul_paired:valid:104: ok, targets=2, vulnerable lines=4
+valid primevul_paired:valid:107: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:114: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:118: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:135: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:175: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:178: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:203: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:211: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:216: ok, targets=1, vulnerable lines=1
+valid primevul_paired:valid:238: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:298: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:307: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:31: out_of_scope, targets=0, vulnerable lines=0
+valid primevul_paired:valid:315: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:333: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:340: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:353: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:371: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:377: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:40: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:419: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:53: unknown, targets=0, vulnerable lines=0
+valid primevul_paired:valid:54: out_of_scope, targets=0, vulnerable lines=0
+{
+  "quality": [
+    {
+      "split": "valid",
+      "cohort": "historical_discussed",
+      "method": "historical",
+      "reviewed_selected_lines": 47,
+      "related": 26,
+      "unrelated": 16,
+      "unknown": 5,
+      "reviewed_related_pool": 26,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3404255319148936,
+      "unknown_fraction": 0.10638297872340426
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 47,
+      "related": 26,
+      "unrelated": 16,
+      "unknown": 5,
+      "reviewed_related_pool": 26,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3404255319148936,
+      "unknown_fraction": 0.10638297872340426
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed",
+      "method": "targeted",
+      "reviewed_selected_lines": 0,
+      "related": 0,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 26,
+      "related_retention": 0.0,
+      "unrelated_fraction": null,
+      "unknown_fraction": null
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "historical",
+      "reviewed_selected_lines": 24,
+      "related": 8,
+      "unrelated": 14,
+      "unknown": 2,
+      "reviewed_related_pool": 8,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.5833333333333334,
+      "unknown_fraction": 0.08333333333333333
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 24,
+      "related": 8,
+      "unrelated": 14,
+      "unknown": 2,
+      "reviewed_related_pool": 8,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.5833333333333334,
+      "unknown_fraction": 0.08333333333333333
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "targeted",
+      "reviewed_selected_lines": 0,
+      "related": 0,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 8,
+      "related_retention": 0.0,
+      "unrelated_fraction": null,
+      "unknown_fraction": null
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample",
+      "method": "historical",
+      "reviewed_selected_lines": 136,
+      "related": 65,
+      "unrelated": 46,
+      "unknown": 25,
+      "reviewed_related_pool": 65,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3382352941176471,
+      "unknown_fraction": 0.18382352941176472
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 136,
+      "related": 65,
+      "unrelated": 46,
+      "unknown": 25,
+      "reviewed_related_pool": 65,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3382352941176471,
+      "unknown_fraction": 0.18382352941176472
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample",
+      "method": "targeted",
+      "reviewed_selected_lines": 5,
+      "related": 5,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 65,
+      "related_retention": 0.07692307692307693,
+      "unrelated_fraction": 0.0,
+      "unknown_fraction": 0.0
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "historical",
+      "reviewed_selected_lines": 136,
+      "related": 65,
+      "unrelated": 46,
+      "unknown": 25,
+      "reviewed_related_pool": 65,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3382352941176471,
+      "unknown_fraction": 0.18382352941176472
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "reviewed_selected_lines": 136,
+      "related": 65,
+      "unrelated": 46,
+      "unknown": 25,
+      "reviewed_related_pool": 65,
+      "related_retention": 1.0,
+      "unrelated_fraction": 0.3382352941176471,
+      "unknown_fraction": 0.18382352941176472
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "targeted",
+      "reviewed_selected_lines": 5,
+      "related": 5,
+      "unrelated": 0,
+      "unknown": 0,
+      "reviewed_related_pool": 65,
+      "related_retention": 0.07692307692307693,
+      "unrelated_fraction": 0.0,
+      "unknown_fraction": 0.0
+    }
+  ],
+  "coverage": [
+    {
+      "split": "valid",
+      "cohort": "historical_discussed",
+      "method": "historical",
+      "pairs": 8,
+      "both_parsed": 4,
+      "recovered_pairs": 4,
+      "physical_candidate_lines": 47,
+      "path_unknown_lines": 27,
+      "path_unknown_fraction": 0.574468085106383
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed",
+      "method": "mapped_bidirectional",
+      "pairs": 8,
+      "both_parsed": 4,
+      "recovered_pairs": 4,
+      "physical_candidate_lines": 47,
+      "path_unknown_lines": 27,
+      "path_unknown_fraction": 0.574468085106383
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed",
+      "method": "targeted",
+      "pairs": 8,
+      "both_parsed": 4,
+      "recovered_pairs": 0,
+      "physical_candidate_lines": 0,
+      "path_unknown_lines": 0,
+      "path_unknown_fraction": null
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "historical",
+      "pairs": 2,
+      "both_parsed": 2,
+      "recovered_pairs": 2,
+      "physical_candidate_lines": 24,
+      "path_unknown_lines": 9,
+      "path_unknown_fraction": 0.375
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "pairs": 2,
+      "both_parsed": 2,
+      "recovered_pairs": 2,
+      "physical_candidate_lines": 24,
+      "path_unknown_lines": 9,
+      "path_unknown_fraction": 0.375
+    },
+    {
+      "split": "valid",
+      "cohort": "historical_discussed/parsed_added_check",
+      "method": "targeted",
+      "pairs": 2,
+      "both_parsed": 2,
+      "recovered_pairs": 0,
+      "physical_candidate_lines": 0,
+      "path_unknown_lines": 0,
+      "path_unknown_fraction": null
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample",
+      "method": "historical",
+      "pairs": 16,
+      "both_parsed": 12,
+      "recovered_pairs": 12,
+      "physical_candidate_lines": 136,
+      "path_unknown_lines": 54,
+      "path_unknown_fraction": 0.39705882352941174
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample",
+      "method": "mapped_bidirectional",
+      "pairs": 16,
+      "both_parsed": 12,
+      "recovered_pairs": 12,
+      "physical_candidate_lines": 136,
+      "path_unknown_lines": 53,
+      "path_unknown_fraction": 0.3897058823529412
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample",
+      "method": "targeted",
+      "pairs": 16,
+      "both_parsed": 12,
+      "recovered_pairs": 2,
+      "physical_candidate_lines": 5,
+      "path_unknown_lines": 1,
+      "path_unknown_fraction": 0.2
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "historical",
+      "pairs": 12,
+      "both_parsed": 12,
+      "recovered_pairs": 12,
+      "physical_candidate_lines": 136,
+      "path_unknown_lines": 54,
+      "path_unknown_fraction": 0.39705882352941174
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "mapped_bidirectional",
+      "pairs": 12,
+      "both_parsed": 12,
+      "recovered_pairs": 12,
+      "physical_candidate_lines": 136,
+      "path_unknown_lines": 53,
+      "path_unknown_fraction": 0.3897058823529412
+    },
+    {
+      "split": "valid",
+      "cohort": "seed42_check_sample/parsed_added_check",
+      "method": "targeted",
+      "pairs": 12,
+      "both_parsed": 12,
+      "recovered_pairs": 2,
+      "physical_candidate_lines": 5,
+      "path_unknown_lines": 1,
+      "path_unknown_fraction": 0.2
+    }
+  ],
+  "reasons": {
+    "added_checks_without_resolved_tested_value": 4,
+    "operation_candidates": 39,
+    "no_target_control_dependence": 4,
+    "no_bound_operand_or_value_path": 19,
+    "pair_or_parse_unknown": 8,
+    "integer_calculation_without_memory_value_path": 13,
+    "no_added_if_condition": 2
+  }
+}
+valid boundary-only diagnostic classification corrected; every candidate/path and review byte-identical

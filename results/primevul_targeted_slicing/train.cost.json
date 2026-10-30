@@ -1,0 +1,9 @@
+{
+  "pairs": 24,
+  "native_cache_batches": 12,
+  "cache_load_seconds": 1.7455057348124683,
+  "processing_seconds": 11.091485424898565,
+  "joern_runs": 0,
+  "test_used": false,
+  "model_training": false
+}

@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "scope": "pure additions with a newly added if condition; other repairs are out of scope",
+    "max_hops": 2,
+    "max_extra_statements": 12,
+    "targets": "bound array indices, null-checked dereferences, integer calculations with a native memory-consumer value path, explicit memory length operands",
+    "control": "native CDG path through conditions only plus native CFG dominance; no forward sibling expansion",
+    "data": "backward native REACHING_DEF, exact bound operand and actual write required",
+    "alignment": "identical atomic statement, corresponding parameter/declaration bindings and unchanged control context",
+    "budget": "complete target/control/data paths, ordered by uncertainty and path length; never partial paths",
+    "unknown": "unresolved binding, alias, macro, call effect, ambiguous correspondence or missing native evidence",
+    "checked_values": "array-element predicates and opaque call results stay unknown; their address indices/arguments are not the checked values",
+    "development_split": "train",
+    "test_used": false,
+    "strong_labels_generated": false
+  },
+  "seed": 42,
+  "cohort": "all eight historical addition pairs plus 16 Seed42 sampled AST-added-if pairs; no outcome filtering",
+  "review": "all executable vulnerable-side lines in union of historical, mapped-control and targeted outputs",
+  "test_used": false,
+  "model_training": false
+}

@@ -183,3 +183,12 @@ __pycache__/
 !/results/primevul_bidirectional_slicing/*.log
 !/results/primevul_bidirectional_slicing/*.review.jsonl
 !/results/primevul_bidirectional_slicing/*.review_sample.jsonl
+!/results/primevul_targeted_slicing/
+!/results/primevul_targeted_slicing/*.json
+!/results/primevul_targeted_slicing/*.csv
+!/results/primevul_targeted_slicing/*.md
+!/results/primevul_targeted_slicing/*.log
+!/results/primevul_targeted_slicing/*.mapping.jsonl
+!/results/primevul_targeted_slicing/pairs.*.jsonl
+!/results/primevul_targeted_slicing/*.review.jsonl
+!/results/primevul_targeted_slicing/*.review_sample.jsonl

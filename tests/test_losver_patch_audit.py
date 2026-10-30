@@ -1,8 +1,8 @@
 import unittest
 
-from vulnmechanism.syntax import (static_relations, parse_source, statement_units, text,
+from vulnmechanism.syntax import (static_relations, parse_source, statement_units, text, walk,
     statement_dependence_graph, bounded_dependence_slice, bidirectional_pair_slice,
-    align_statement_units, SLICE_RULES)
+    align_statement_units, SLICE_RULES, targeted_pair_slice)
 
 from vulnmechanism.data import modified_lines
 from vulnmechanism.losver_patch_audit import (
@@ -294,6 +294,145 @@ class BidirectionalSliceTests(unittest.TestCase):
         r=statement_dependence_graph("int f(",dict(status="ok",counts={}))
         self.assertEqual(r["status"],"parse_or_method_unknown")
         self.assertEqual(r["units"],[])
+
+
+class TargetedSliceTests(unittest.TestCase):
+    def native(self,source,links):
+        """Small explicit native graph fixture, with original byte coordinates."""
+        parsed=parse_source(source);units,_=statement_units(parsed);nodes={}
+        for i,u in enumerate(units):
+            n=u["node"]
+            # Model native expression endpoints, including operands in returns.
+            children=[c for c in walk(n) if c.type in {"identifier","subscript_expression","binary_expression","pointer_expression"}]
+            n=next((c for c in children if c.type in {"subscript_expression","binary_expression","pointer_expression"}),n)
+            prefix=parsed["raw"].split(b"\n")[n.start_point.row][:n.start_point.column].decode()
+            nodes[str(i)]=dict(kind="CALL",NAME="<operator>.fixture",CODE=text(n,parsed["raw"]),
+                LINE_NUMBER=n.start_point.row+1,COLUMN_NUMBER=len(prefix.encode("utf-16-le"))//2+1)
+        nodes["entry"]=dict(kind="METHOD",CODE=source)
+        edges=[dict(source=str(a),target=str(b),kind=k,variable=var) for a,b,k,var in links]
+        edges += [dict(source="entry",target="0",kind="CFG",variable="")]
+        edges += [dict(source=str(i),target=str(i+1),kind="CFG",variable="") for i in range(len(units)-1)]
+        cpg=dict(status="ok",nodes=nodes,edges=edges,counts=dict(CFG=len(units),REACHING_DEF=sum(e["kind"]=="REACHING_DEF" for e in edges),CDG=sum(e["kind"]=="CDG" for e in edges)))
+        return statement_dependence_graph(source,cpg),cpg
+
+    def pair(self,old,new,links=(),old_links=(),bypass=False):
+        gv,cv=self.native(old,old_links);gp,cp=self.native(new,links)
+        if bypass:
+            cp["edges"].append(dict(source="entry",target=str(len(gp["units"])-1),kind="CFG",variable=""))
+        return targeted_pair_slice(old,new,gv,gp,cv,cp)
+
+    def test_for_header_endpoints_get_exact_units(self):
+        source="int f(int n){\n int i;\n for(i=0;i<n;i++){n+=i;}\n return n;\n}"
+        g,c=self.native(source,[])
+        kinds=[u["kind"] for u in g["units"]]
+        self.assertIn("for_initializer",kinds)
+        self.assertIn("for_update",kinds)
+        update=next(u for u in g["units"] if u["kind"]=="for_update")
+        self.assertEqual(source.encode()[update["start_byte"]:update["end_byte"]],b"i++")
+
+    def test_parameter_output_loss_is_a_boundary_not_bad_code_mapping(self):
+        source="int f(int n){\n return n;\n}"
+        _,cpg=self.native(source,[])
+        cpg["nodes"]["out"]=dict(kind="METHOD_PARAMETER_OUT",CODE="int n",LINE_NUMBER=1,COLUMN_NUMBER=7)
+        cpg["edges"].append(dict(source="0",target="out",kind="REACHING_DEF",variable="n"))
+        g=statement_dependence_graph(source,cpg)
+        self.assertEqual(g["mapping_stats"]["REACHING_DEF:boundary_unmapped"],1)
+        self.assertEqual(g["mapping_stats"].get("REACHING_DEF:internal_unmapped",0),0)
+
+    def test_target_retains_access_not_unrelated_cdg_sibling(self):
+        a="int f(int*p,int i,int j){\n log(j);\n return p[i];\n}"
+        b=a.replace(" log(j);"," if(i<0)return 0;\n log(j);")
+        r=self.pair(a,b,[(0,2,"CDG",""),(0,3,"CDG","")])
+        self.assertEqual(r["status"],"ok")
+        self.assertIn(2,r["v"]["region_lines"])
+        self.assertNotIn(1,r["v"]["region_lines"])
+        self.assertTrue(r["targets"][0]["cfg"]["dominates"])
+
+    def test_control_without_matching_operand_is_unknown(self):
+        a="int f(int*p,int i,int j){\n return p[i];\n}"
+        b=a.replace(" return"," if(j<0)return 0;\n return")
+        r=self.pair(a,b,[(0,2,"CDG","")])
+        self.assertEqual(r["v"]["region_lines"],[])
+        self.assertGreater(r["reasons"]["no_bound_operand_or_value_path"],0)
+
+    def test_same_array_base_is_not_an_index_check(self):
+        a="int f(int*p,int i){\n return p[i];\n}"
+        b=a.replace(" return"," if(p[0]<0)return 0;\n return")
+        r=self.pair(a,b,[(0,2,"CDG","")])
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_checked_element_does_not_check_shared_address_index(self):
+        # Train 2721 counterexample: counts[i] and offsets[i] are different
+        # values. A native control edge and the spelling i do not link them.
+        a="int f(struct S*s,int i){\n return s->offsets[i];\n}"
+        b=a.replace(" return", " if(s->counts[i]>100)return 0;\n return")
+        r=self.pair(a,b,[(0,2,"CDG","")])
+        self.assertEqual(r["v"]["region_lines"],[])
+        self.assertEqual(r["reasons"]["added_checks_without_resolved_tested_value"],1)
+
+    def test_opaque_check_call_does_not_validate_its_argument(self):
+        a="int f(int*p,int i){\n return p[i];\n}"
+        b=a.replace(" return", " if(check(i))return 0;\n return")
+        self.assertEqual(self.pair(a,b,[(0,2,"CDG","")])["v"]["region_lines"],[])
+
+    def test_integer_work_without_memory_consumer_is_not_a_target(self):
+        a="int f(int n){\n int x=n*2;\n return x;\n}"
+        b=a.replace(" int x"," if(n<0)return 0;\n int x")
+        r=self.pair(a,b,[(0,2,"CDG","")])
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_shadowed_target_binding_does_not_transfer(self):
+        a="int f(int*p,int n){\n {\n return p[n];\n }\n}"
+        b="int f(int*p,int n){\n {\n int n=4;\n if(n<0)return 0;\n return p[n];\n }\n}"
+        r=self.pair(a,b,[(1,3,"CDG","")])
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_cfg_bypass_rejects_apparent_cdg(self):
+        a="int f(int*p,int i){\n return p[i];\n}"
+        b=a.replace(" return"," if(i<0)return 0;\n return")
+        r=self.pair(a,b,[(0,2,"CDG","")],bypass=True)
+        self.assertEqual(r["v"]["region_lines"],[])
+        self.assertIn("cfg_dominance_not_established",r["reasons"])
+
+    def test_changed_operand_and_field_paths_are_rejected(self):
+        a="int f(int*p,int i){\n i=9;\n return p[i];\n}"
+        b=a.replace(" i=9;"," if(i<0)return 0;\n i=9;")
+        self.assertEqual(self.pair(a,b,[(0,3,"CDG","")])["v"]["region_lines"],[])
+        a="int f(struct S*s,int*p){\n return p[s->other];\n}"
+        b=a.replace(" return"," if(s->length<0)return 0;\n return")
+        self.assertEqual(self.pair(a,b,[(0,2,"CDG","")])["v"]["region_lines"],[])
+
+    def test_backward_sources_need_actual_matching_definition(self):
+        a="int f(int*p,int n){\n int i=n*2;\n return p[i];\n}"
+        b=a.replace(" int i", " if(n<0)return 0;\n int i")
+        r=self.pair(a,b,[(0,3,"CDG",""),(2,3,"REACHING_DEF","i")],[(0,1,"REACHING_DEF","i")])
+        self.assertEqual(r["status"],"ok")
+        self.assertEqual(set(r["v"]["region_lines"]),{1,2})
+        self.assertTrue(any(p["kind"]=="support" and any(e["kind"]=="REACHING_DEF" for e in p["edges"])
+                            for u in r["v"]["selected_units"] for p in u["paths"]))
+
+    def test_duplicate_or_different_context_has_no_correspondence(self):
+        a="int f(int*p,int n,int x){\n if(x){return p[n];}\n return 0;\n}"
+        b="int f(int*p,int n,int x){\n if(n<0)return 0;\n if(!x){return p[n];}\n return 0;\n}"
+        r=self.pair(a,b,[(0,3,"CDG","")])
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_missing_graph_or_known_bad_pair_never_adds_labels(self):
+        a="int f(){\nreturn 0;\n}";b=a.replace("return","if(1)return 1;\nreturn")
+        gv,cv=self.native(a,[]);gp,cp=self.native(b,[])
+        r=targeted_pair_slice(a,b,gv,gp,cv,cp,allow_mapping=False)
+        self.assertEqual(r["status"],"unknown")
+        self.assertEqual(r["v"]["region_lines"],[])
+
+    def test_budget_keeps_complete_targets_without_cdg_siblings(self):
+        a="int f(int*p,int i){\n"+"\n".join(f" int x{j}=p[i];" for j in range(18))+"\nreturn 0;\n}"
+        b=a.replace("\n int x0", "\n if(i<0)return 0;\n int x0")
+        r=self.pair(a,b,[(0,j+2,"CDG","") for j in range(18)])
+        self.assertEqual(len(r["v"]["selected_units"]),12)
+        self.assertTrue(r["v"]["limit_reached"])
+        selected={u["id"] for u in r["p"]["selected_units"]}
+        for target in r["targets"]:
+            self.assertTrue({e[k] for e in target["control_path"] for k in ("source","target")}<=selected)
 
 
 if __name__ == "__main__":

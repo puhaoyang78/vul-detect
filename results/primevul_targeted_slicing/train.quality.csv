@@ -1,0 +1,13 @@
+split,cohort,method,reviewed_selected_lines,related,unrelated,unknown,reviewed_related_pool,related_retention,unrelated_fraction,unknown_fraction
+train,historical_discussed,historical,48,21,17,10,21,1.0,0.3541666666666667,0.20833333333333334
+train,historical_discussed,mapped_bidirectional,47,21,17,9,21,1.0,0.3617021276595745,0.19148936170212766
+train,historical_discussed,targeted,3,3,0,0,21,0.14285714285714285,0.0,0.0
+train,historical_discussed/parsed_added_check,historical,35,13,12,10,13,1.0,0.34285714285714286,0.2857142857142857
+train,historical_discussed/parsed_added_check,mapped_bidirectional,34,13,12,9,13,1.0,0.35294117647058826,0.2647058823529412
+train,historical_discussed/parsed_added_check,targeted,3,3,0,0,13,0.23076923076923078,0.0,0.0
+train,seed42_check_sample,historical,185,78,71,36,79,0.9873417721518988,0.3837837837837838,0.1945945945945946
+train,seed42_check_sample,mapped_bidirectional,179,72,71,36,79,0.9113924050632911,0.39664804469273746,0.2011173184357542
+train,seed42_check_sample,targeted,5,5,0,0,79,0.06329113924050633,0.0,0.0
+train,seed42_check_sample/parsed_added_check,historical,185,78,71,36,79,0.9873417721518988,0.3837837837837838,0.1945945945945946
+train,seed42_check_sample/parsed_added_check,mapped_bidirectional,179,72,71,36,79,0.9113924050632911,0.39664804469273746,0.2011173184357542
+train,seed42_check_sample/parsed_added_check,targeted,5,5,0,0,79,0.06329113924050633,0.0,0.0

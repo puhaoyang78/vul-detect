@@ -1,0 +1,13 @@
+split,cohort,method,pairs,both_parsed,recovered_pairs,physical_candidate_lines,path_unknown_lines,path_unknown_fraction
+valid,historical_discussed,historical,8,4,4,47,27,0.574468085106383
+valid,historical_discussed,mapped_bidirectional,8,4,4,47,27,0.574468085106383
+valid,historical_discussed,targeted,8,4,0,0,0,
+valid,historical_discussed/parsed_added_check,historical,2,2,2,24,9,0.375
+valid,historical_discussed/parsed_added_check,mapped_bidirectional,2,2,2,24,9,0.375
+valid,historical_discussed/parsed_added_check,targeted,2,2,0,0,0,
+valid,seed42_check_sample,historical,16,12,12,136,54,0.39705882352941174
+valid,seed42_check_sample,mapped_bidirectional,16,12,12,136,53,0.3897058823529412
+valid,seed42_check_sample,targeted,16,12,2,5,1,0.2
+valid,seed42_check_sample/parsed_added_check,historical,12,12,12,136,54,0.39705882352941174
+valid,seed42_check_sample/parsed_added_check,mapped_bidirectional,12,12,12,136,53,0.3897058823529412
+valid,seed42_check_sample/parsed_added_check,targeted,12,12,2,5,1,0.2

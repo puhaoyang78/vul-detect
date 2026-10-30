@@ -262,3 +262,14 @@ python -m vulnmechanism.losver_patch_audit slice-report --split train --output-d
 Joern路径为`/home/phy/joern`；单任务JVM配置8GB/4核，临时CSV导出使用本机`/tmp`，CPG和原生依赖缓存保留在结果目录。大缓存不纳入Git。此流程需要配对Diff，只用于离线监督审计，不能作为单函数定位器的推理输入；与已有LOSVER的Diff重叠比较不代表真实漏洞定位准确率。
 
 全量4354对Train和562对固定规则Valid已完成。原Diff漏洞侧为空的纯新增组中，候选恢复为657/1232、84/163；两侧图/AST可用配对占54.87%/53.56%。补充穷尽复核旧Valid纯新增组中4个有输出配对的47行候选，26行与可见修复相关、16行无关、5行Unknown，不能外推为全库定位准确率。切片能补回部分旧操作，但新增区域质量尚不足以直接充当强行监督；没有接入模型或训练。完整分母、路径、源码案例、成本和检查见[报告](results/primevul_bidirectional_slicing/report.md)。
+
+同一入口增加 `--strategy targeted`：新增检查必须通过精确绑定/字段路径或原生值依赖关联目标操作，并通过CDG和CFG支配验证；仅回溯目标的数据来源与必要条件。两侧仍最多增加12条语句。保留 `bidirectional` 作为同预算对照，不重建CPG。
+
+```bash
+python -m vulnmechanism.losver_patch_audit slices --strategy targeted --split train --output-dir results/primevul_targeted_slicing
+# 完成固定train.review_sample.jsonl的源码复核，保存train.review.jsonl。
+python -m vulnmechanism.losver_patch_audit slice-report --strategy targeted --split train --output-dir results/primevul_targeted_slicing
+# 规则固定后，对valid执行以上两阶段；已讨论样本单列，Test不参与。
+```
+
+最小真实验证各处理24对（旧8对加Seed42新16对）。新Train/Valid组目标切片各保留5条相关行，但联合复核池的相关行保留率仅6.3%/7.7%，纯新增恢复为1/16、2/16；无法证明整体质量改善，未继续扩大实验或增加规则。原始成员和模型未改，见[完整报告与逐行复核](results/primevul_targeted_slicing/report.md)。

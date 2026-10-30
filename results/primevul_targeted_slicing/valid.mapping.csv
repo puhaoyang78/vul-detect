@@ -1,0 +1,3 @@
+split,kind,native_edges,boundary_only_unmapped,internal_unmapped,within_statement,cross_statement_native_edges,previous_distinct_statement_edges,current_distinct_statement_edges,for_header_recovered_native_endpoints
+valid,REACHING_DEF,18345,3805,946,5421,8173,5064,5727,968
+valid,CDG,6323,33,1179,263,4848,1034,1074,158

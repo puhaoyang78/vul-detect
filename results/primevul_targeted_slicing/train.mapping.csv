@@ -1,0 +1,3 @@
+split,kind,native_edges,boundary_only_unmapped,internal_unmapped,within_statement,cross_statement_native_edges,previous_distinct_statement_edges,current_distinct_statement_edges,for_header_recovered_native_endpoints
+train,REACHING_DEF,56434,8425,5007,14859,28143,20649,21152,782
+train,CDG,19373,300,4214,608,14251,2933,3017,252
