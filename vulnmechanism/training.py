@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import copy
 import json
 import math
 from pathlib import Path
@@ -67,7 +68,7 @@ def restore_rng(state):
         torch.cuda.set_rng_state_all(state["cuda"])
 
 
-def save_training_state(run, model, optimizer, metadata, loop, *, scheduler=None):
+def save_training_state(run, model, optimizer, metadata, loop, *, scheduler=None, ema=None):
     """Only called at optimizer boundaries; an interrupted write keeps last.pt intact."""
     run = Path(run)
     checkpoint = dict(
@@ -82,16 +83,18 @@ def save_training_state(run, model, optimizer, metadata, loop, *, scheduler=None
         rng=rng_state(),
         log_positions={
             name: (run / name).stat().st_size
-            for name in ("best.training.jsonl", "training.candidates.jsonl")
+            for name in ("best.training.jsonl", "training.candidates.jsonl", "attention.diagnostics.jsonl")
             if (run / name).exists()
         },
     )
+    if ema is not None:
+        checkpoint["attention_ema"] = ema.state_dict()
     temporary = run / "last.pt.tmp"
     torch.save(checkpoint, temporary)
     temporary.replace(run / "last.pt")
 
 
-def load_training_state(run, model, optimizer, metadata, *, scheduler=None):
+def load_training_state(run, model, optimizer, metadata, *, scheduler=None, ema=None):
     run = Path(run)
     cp = torch.load(run / "last.pt", map_location="cpu", weights_only=False)
     expected = {
@@ -101,12 +104,14 @@ def load_training_state(run, model, optimizer, metadata, *, scheduler=None):
     if cp["config"] != expected:
         raise ValueError(f"{run}: resume configuration or data members differ")
     model.load_state_dict(cp["model"])
+    if ema is not None:
+        ema.load_state_dict(cp["attention_ema"], strict=True)
     optimizer.load_state_dict(cp["optimizer"])
     if scheduler is not None:
         scheduler.load_state_dict(cp["scheduler"])
     # Work after the last committed optimizer step will be replayed, including
     # validation and candidate selection. Discard its incomplete/duplicate logs.
-    for name in ("best.training.jsonl", "training.candidates.jsonl"):
+    for name in ("best.training.jsonl", "training.candidates.jsonl", "attention.diagnostics.jsonl"):
         path = run / name
         position = cp["log_positions"].get(name, 0)
         if position and (not path.exists() or path.stat().st_size < position):
@@ -169,6 +174,9 @@ def train(
     train_localizer_dir=None,
     bounded_attention=False,
     attention_region=None,
+    attention_suppression=None,
+    attention_ema=False,
+    attention_diagnostics=False,
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
@@ -206,6 +214,9 @@ def train(
             train_localizer_dir=train_localizer_dir,
             bounded_attention=bounded_attention,
             attention_region=attention_region,
+            attention_suppression=attention_suppression,
+            attention_ema=attention_ema,
+            attention_diagnostics=attention_diagnostics,
         )
     if (
         paired_input != "512"
@@ -215,7 +226,8 @@ def train(
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
-        or bounded_attention or attention_region is not None
+        or bounded_attention or attention_region is not None or attention_suppression is not None
+        or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
     if dataset not in DATASETS:
@@ -917,7 +929,7 @@ def paired_loader(
 
 
 def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False,
-                   return_auxiliary=False, return_attention=False):
+                   return_auxiliary=False, return_attention=False, suppression_mask=None):
     keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
     keys.extend(
         ["line_token_mask", "context_mask", "line_indices", "line_counts"]
@@ -947,7 +959,57 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         args["return_auxiliary"] = True
     if return_attention:
         args["return_attention"] = True
+    if suppression_mask is not None:
+        args["suppression_mask"] = suppression_mask.to(device)
     return model(**args)
+
+
+def random_attention_suppression(batch, rng):
+    """Independent Python RNG; sampling never consumes model/sampler randomness."""
+    valid = batch["line_numbers"] >= 0
+    mask = torch.zeros_like(valid)
+    for i, row in enumerate(valid):
+        indices = row.nonzero().flatten().tolist()
+        mask[i, rng.sample(indices, len(indices) // 10)] = True
+    return mask
+
+
+def make_attention_ema(model):
+    return torch.nn.ModuleDict({
+        name: copy.deepcopy(getattr(model, name)) for name in ("encoder", "line_attention")
+    }).requires_grad_(False).eval()
+
+
+@torch.no_grad()
+def update_attention_ema(ema, model):
+    """Exactly one unconditional update per successful optimizer step."""
+    for name in ("encoder", "line_attention"):
+        for target, source in zip(ema[name].parameters(), getattr(model, name).parameters(), strict=True):
+            target.mul_(.99).add_(source.detach(), alpha=.01)
+        for target, source in zip(ema[name].buffers(), getattr(model, name).buffers(), strict=True):
+            if target.is_floating_point():
+                target.mul_(.99).add_(source.detach(), alpha=.01)
+            else:
+                target.copy_(source)
+
+
+def attention_ema_loss(model, ema, batch, online_attention, device):
+    """KL(reference || online) on valid count-normalized line attention."""
+    with torch.no_grad():
+        ema.eval()
+        ids, attention, code, membership = (
+            batch[k].to(device) for k in ("input_ids", "attention_mask", "code_mask", "line_token_mask")
+        )
+        states = torch.cat([
+            ema["encoder"](ids[i:i+model.window_micro_batch],
+                           attention_mask=attention[i:i+model.window_micro_batch])[0]
+            for i in range(0, len(ids), model.window_micro_batch)
+        ])
+        _, reference = model.bounded_pool(states, code, membership, attention_head=ema["line_attention"])
+        target = reference["line_attention"].detach()
+        valid = reference["line_counts"] > 0
+    kl = torch.nn.functional.kl_div(online_attention.clamp_min(1e-12).log(), target, reduction="none")
+    return kl.masked_fill(~valid, 0).sum(-1).mean()
 
 
 def paired_rdrop_loss(model, batch, device, coefficient):
@@ -1031,6 +1093,9 @@ def train_losver(
     train_localizer_dir=None,
     bounded_attention=False,
     attention_region=None,
+    attention_suppression=None,
+    attention_ema=False,
+    attention_diagnostics=False,
 ):
     """Train corrected LOSVER on all unchanged official paired members."""
     from .model import losver_model
@@ -1054,6 +1119,11 @@ def train_losver(
         raise ValueError("bounded attention requires the original 512 unixcoder without line auxiliary")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("attention region requires bounded attention and diff/random")
+    if attention_suppression is not None or attention_ema or attention_diagnostics:
+        if not bounded_attention or attention_region != "diff":
+            raise ValueError("attention regularization/diagnostics require bounded attention with original Diff")
+        if attention_suppression not in (None, "random", "high") or (attention_suppression and attention_ema):
+            raise ValueError("run random suppression, high suppression and EMA separately")
     if joint or line_auxiliary_weight is not None:
         if (method != "unixcoder" or input_mode != "512"
                 or line_auxiliary not in ("diff", "random")
@@ -1120,8 +1190,16 @@ def train_losver(
     run = root / method
     run.mkdir(parents=True, exist_ok=True)
     if resume and (run / "training.metrics.json").exists():
+        completed=json.loads((run / "training.metrics.json").read_text())
+        saved=completed.get("attention_regularization",{})
+        if (saved.get("suppression")!=attention_suppression
+                or bool(saved.get("ema_components"))!=attention_ema
+                or ("attention_diagnostics" in completed)!=attention_diagnostics
+                or ("bounded_attention" in completed)!=bounded_attention
+                or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
+            raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
-        return json.loads((run / "training.metrics.json").read_text())
+        return completed
     continuing = resume and (run / "last.pt").exists()
     if not continuing and (
         (run / "best.training.jsonl").exists() or (run / "last.pt").exists()
@@ -1182,6 +1260,7 @@ def train_losver(
         **(dict(dropout_probability=settings["dropout_probability"]) if settings["dropout_probability"] else {}),
         **(dict(line_auxiliary_weight=line_auxiliary_weight) if joint else {}),
         **(dict(bounded_attention=True, attention_region=attention_region) if bounded_attention else {}),
+        **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
     model.weak_supervision = weak and variant == "localizer"
@@ -1190,6 +1269,8 @@ def train_losver(
     if pooling == "robust_fusion" and input_mode != "512":
         raise ValueError("robust fusion requires 512 input")
     model.to(device)
+    ema = make_attention_ema(model) if attention_ema else None
+    suppression_rng = random.Random(settings["seed"]) if attention_suppression == "random" else None
     loader = paired_loader(
         train_rows,
         tokenizer,
@@ -1218,6 +1299,20 @@ def train_losver(
             dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"], labels=f["line_labels"])
             for r,f in zip(train_rows,loader.dataset)
         ])
+    diagnostic_loaders, diagnostic_rows = {}, {}
+    if attention_diagnostics:
+        from torch.utils.data import DataLoader
+
+        for split, rows, source_loader in (("train", train_rows, loader), ("valid", valid_rows, valid_loader)):
+            keys = sorted({r["pair_key"] for r in rows})
+            selected = set(random.Random(settings["seed"]).sample(keys, min(128, len(keys))))
+            indices = [i for i, r in enumerate(rows) if r["pair_key"] in selected]
+            diagnostic_rows[split] = [rows[i] for i in indices]
+            diagnostic_loaders[split] = DataLoader(
+                [source_loader.dataset[i] for i in indices], batch_size=settings["eval_batch_size"],
+                collate_fn=paired_collate, num_workers=0,
+                generator=torch.Generator().manual_seed(settings["seed"]),
+            )
     from .data import paired_statistics
 
     input_coverage = {}
@@ -1383,6 +1478,24 @@ def train_losver(
             cross_line_tokens="conserve one token mass across its physical-line memberships",
         )
         metadata["localizer_attention"] = "none; bounded line attention from the shared encoding"
+    if attention_suppression or attention_ema:
+        metadata["attention_regularization"] = dict(
+            suppression=attention_suppression, suppression_fraction=.1 if attention_suppression else None,
+            suppression_rate=1 if attention_suppression else None,
+            suppression_selection="detached r_i; stable physical-line ties" if attention_suppression == "high" else
+                                  "independent Python RNG" if attention_suppression == "random" else None,
+            bce="mean of normal/suppressed aggregation from one encoding" if attention_suppression else "normal",
+            ema_decay=.99 if attention_ema else None, ema_kl_weight=.1 if attention_ema else 0.,
+            ema_components=["encoder", "line_attention"] if attention_ema else [],
+            inference="online model only; no suppression, EMA or Diff",
+        )
+    if attention_diagnostics:
+        metadata["attention_diagnostics"] = dict(
+            seed=settings["seed"], mode="eval; RNG preserved; no selection",
+            members={s:[r["sample_key"] for r in rs] for s,rs in diagnostic_rows.items()},
+            uniform_reference="n_i/sum(n_j); equal token weights, not equal line weights",
+            jsd="natural logarithm; consecutive epochs; first epoch undefined",
+        )
     if pooling == "robust_fusion":
         metadata["validation_rng"] = (
             "beta grid preserves exactly one validation-loader RNG advance"
@@ -1408,8 +1521,18 @@ def train_losver(
         state["running_components"] = dict(bce=0.0, line_focal=0.0)
     elif bounded_attention:
         state["running_components"] = dict(bce=0.0, region_loss=0.0)
+        if attention_suppression:
+            state["running_components"].update(bce_normal=0., bce_suppressed=0.)
+        if attention_ema:
+            state["running_components"]["attention_kl"] = 0.
     elif localizer_rdrop is not None:
         state["running_components"] = dict(focal=0.0, rdrop_kl=0.0)
+    if ema is not None:
+        state["ema_updates"] = 0
+    if suppression_rng is not None:
+        state["suppression_rng"] = suppression_rng.getstate()
+    if attention_diagnostics:
+        state["attention_previous"] = {}
     if continuing:
         state, saved_rng = load_training_state(
             run,
@@ -1417,8 +1540,13 @@ def train_losver(
             optimizer,
             metadata,
             scheduler=scheduler,
+            ema=ema,
         )
         best, chosen, global_step = state["best"], state["chosen"], state["global_step"]
+        if ema is not None and state["ema_updates"] != global_step:
+            raise ValueError("EMA update count differs from completed optimizer steps")
+        if suppression_rng is not None:
+            suppression_rng.setstate(state["suppression_rng"])
         restore_rng(saved_rng)
         print(
             f"{run}: resuming epoch {state['epoch']}, optimizer batch "
@@ -1426,7 +1554,7 @@ def train_losver(
             flush=True,
         )
     if not continuing:
-        save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
+        save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler, ema=ema)
     history = TrainingProgress(run / "best.pt", resume=continuing)
     write_json(run / "config.json", metadata)
     model.zero_grad()
@@ -1480,7 +1608,12 @@ def train_losver(
                 if joint:
                     loss, _, parts = paired_forward(model, batch, variant, device, return_auxiliary=True)
                 elif bounded_attention:
-                    loss, _, parts = paired_forward(model, batch, variant, device, return_attention=True)
+                    mask = random_attention_suppression(batch, suppression_rng) if suppression_rng is not None else None
+                    loss, _, parts = paired_forward(model, batch, variant, device, return_attention=True,
+                                                     suppression_mask=mask)
+                    if ema is not None:
+                        parts["attention_kl"] = attention_ema_loss(model, ema, batch, parts["line_attention"], device)
+                        loss = loss + .1 * parts["attention_kl"]
                 elif localizer_rdrop is None:
                     loss, _ = paired_forward(model, batch, variant, device)
                 else:
@@ -1490,7 +1623,8 @@ def train_losver(
                 coefficient = size / sum(sizes) if sum(sizes) else 1 / len(sizes)
                 region_coefficient = float(parts["region_functions"]) / region_total if bounded_attention and region_total else 0.0
                 objective = (
-                    parts["bce"] * coefficient + 0.1 * parts["region_loss"] * region_coefficient
+                    (parts["bce"] + (.1 * parts["attention_kl"] if ema is not None else 0)) * coefficient
+                    + 0.1 * parts["region_loss"] * region_coefficient
                     if bounded_attention else loss * coefficient
                 )
                 objective.backward()
@@ -1504,9 +1638,14 @@ def train_losver(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
             )
             optimizer.step()
+            if ema is not None:
+                update_attention_ema(ema, model)
+                state["ema_updates"] += 1
             optimizer.zero_grad()
             scheduler.step()
             global_step += 1
+            if suppression_rng is not None:
+                state["suppression_rng"] = suppression_rng.getstate()
             running += group_loss
             if components is not None:
                 for key, value in group_components.items():
@@ -1536,7 +1675,7 @@ def train_losver(
                     training_seconds=previous_seconds + time.monotonic() - started,
                 )
                 save_training_state(
-                    run, model, optimizer, metadata, state, scheduler=scheduler
+                    run, model, optimizer, metadata, state, scheduler=scheduler, ema=ema
                 )
         train_seconds = previous_seconds + time.monotonic() - started
         grid = []
@@ -1581,6 +1720,15 @@ def train_losver(
         )
         if components is not None:
             event["train_components"] = {k: v / steps_per_epoch for k, v in components.items()}
+        if attention_diagnostics:
+            from .evaluation import attention_epoch_diagnostics
+
+            diagnostic_started = time.monotonic()
+            event["attention_diagnostics"], state["attention_previous"] = attention_epoch_diagnostics(
+                model, diagnostic_rows, diagnostic_loaders, tokenizer, device, epoch,
+                state["attention_previous"], run / "attention.diagnostics.jsonl",
+            )
+            event["diagnostic_seconds"] = time.monotonic() - diagnostic_started
         history.add(event)
         print(json.dumps(event), flush=True)
         for key in best:
@@ -1623,7 +1771,7 @@ def train_losver(
         )
         if components is not None:
             state["running_components"] = {k: 0.0 for k in components}
-        save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler)
+        save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler, ema=ema)
     required = "f1" if variant == "localizer" else "p_c"
     if required not in chosen:
         raise RuntimeError(f"{method}: no finite validation checkpoint was selected")

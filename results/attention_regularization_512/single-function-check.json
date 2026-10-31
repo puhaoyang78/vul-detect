@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "test_used": false,
+  "checks": [
+    {
+      "model": "high_suppression",
+      "sample_key": "primevul_paired:valid:1",
+      "saved_probability": 0.9958012700080872,
+      "source_only_probability": 0.9958012700080872,
+      "absolute_delta": 0.0,
+      "threshold": 0.5,
+      "prediction": 1,
+      "diff_supplied": false,
+      "ema_supplied": false
+    },
+    {
+      "model": "ema_attention",
+      "sample_key": "primevul_paired:valid:1",
+      "saved_probability": 0.9986892342567444,
+      "source_only_probability": 0.9986892342567444,
+      "absolute_delta": 0.0,
+      "threshold": 0.5,
+      "prediction": 1,
+      "diff_supplied": false,
+      "ema_supplied": false
+    }
+  ]
+}

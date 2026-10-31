@@ -308,3 +308,37 @@ C未超过A的P-C，未满足预设净分类收益标准。C漏洞Recall为75.98
 同一C最佳checkpoint将倍率全部固定为1后，Valid P-C为11.03%、AUC为0.5835：注意力确实影响分类，但完整方案仍未超过独立训练的A。C的编辑区域/背景平均倍率为Train 2.97、Valid 1.76；关注量提高与分类收益分开报告。
 
 实际启动命令及GPU分配保存在 `results/bounded_attention_512/commands.json`。整体/纯新增Valid分类、Train/Valid关注量、随机区域重合及C同checkpoint的 `r_i=1` 干预见[实验报告](results/bounded_attention_512/report.md)；不读取Test或根据结果扩大搜索。零初始化使第一步纯区域梯度对encoder为0，关注头更新后正常进入encoder；函数BCE从第一步训练。模型权重留本地，不纳入Git。
+
+### 有界注意力的独立正则化对照
+
+复用 `bounded_attention + diff_region` 的512输入、K=5、原始双侧Diff和 `.1*L_region`。`--attention-suppression random|high` 在一次编码后计算正常/抑制两次聚合，两项函数BCE取平均；每函数只将 `floor(.1*N)` 条有效行的倍率置1，保留全部代码和原区域损失。high按detach后的倍率排序，平局按物理行；random使用独立可恢复的Python RNG。没有额外Softmax、表示置零或放大。
+
+`--attention-ema` 独立复制encoder和attention head作为eval/no_grad参照，添加 `.1*KL(a_ema || a_online)`，有效行求和后按函数平均。EMA在每个实际optimizer.step后以.99更新一次，随 `last.pt` 保存恢复；不参与推理，也不复制函数分类头。抑制与EMA分别实验，不组合。
+
+四组都添加 `--attention-diagnostics`：固定Train/Valid各128对，每轮eval记录编辑区域/背景倍率、相邻epoch注意力JSD、相对Token均值分布的JSD及倍率CV。诊断保留训练RNG，不参与选模；均匀参照是 `n_i/Σn_j`，不是每行等权。完整官方Train/Valid、Seed123456、16轮、17424步、Batch8、原优化器和Valid P-C选模保持一致，阈值为概率>.5。本轮不读取Test。
+
+```bash
+python -m unittest tests.test_bounded_attention tests.test_line_auxiliary tests.test_losver tests.test_resume
+python -m vulnmechanism.cli check-paired --bounded-attention --attention-regularization --output-dir results/attention_regularization_512 --device cuda:0
+# 每组在独立tmux会话执行，训练输出目录互不覆盖。
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-region diff --attention-diagnostics --output-dir results/attention_regularization_512/diff_region --device cuda:0 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-region diff --attention-diagnostics --attention-suppression random --output-dir results/attention_regularization_512/random_suppression --device cuda:0 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-region diff --attention-diagnostics --attention-suppression high --output-dir results/attention_regularization_512/high_suppression --device cuda:1 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-region diff --attention-diagnostics --attention-ema --output-dir results/attention_regularization_512/ema_attention --device cuda:1 --resume --save-every 1000
+python -m vulnmechanism.cli report --dataset primevul_paired --attention-regularization --output-dir results/attention_regularization_512 --device cuda:1
+```
+
+实际命令、检查、逐轮诊断、最佳checkpoint完整Train/Valid关注量和分类结果保存在 `results/attention_regularization_512/`。旧对照环境及预算核验后，因仅保留最佳/最后权重、不能补齐相邻epoch诊断，四组统一重跑。关注量或稳定性变化不能单独证明分类改善；最终以[完整实验报告](results/attention_regularization_512/report.md)的真实分类指标为准。
+
+四组均已实际完成16轮/17424步；同一完整Valid562对上的结果如下：
+
+|配置|Epoch|P-C|AUC|MCC|F1|漏洞Recall|修复侧FPR|
+|---|---:|---:|---:|---:|---:|---:|---:|
+|当前diff_region|12|16.01%|0.5873|0.1283|63.26%|75.98%|64.23%|
+|random抑制|12|15.12%|0.5834|0.1144|59.60%|65.48%|54.27%|
+|high抑制|14|17.26%|0.5853|0.1107|53.53%|51.25%|40.21%|
+|仅EMA|16|16.90%|0.5845|0.1220|58.70%|62.46%|50.36%|
+
+high、EMA的P-C分别多判对7对、5对，但三种新正则的AUC、MCC均下降，召回与误报也同时下降。本轮没有观察到一致的分类泛化收益，不追加组合、模块或参数搜索。新对照16轮的六项分类指标与旧实验逐轮完全一致；相关检查为52项测试加1项诊断隔离测试，恢复配置校验另行复验通过，且全部实验未读取Test。
+
+固定Valid成员、同轮对齐的第2–16轮平均相邻注意力JSD：对照0.008533、random 0.009114、high 0.010566、EMA 0.006407。EMA降低约24.9%，但分类AUC/MCC未改善；不能以JSD下降单独宣布成功。完整最佳checkpoint的Train/Valid编辑区域倍率及纯新增子集结果见报告。

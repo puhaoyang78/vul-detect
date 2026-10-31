@@ -2294,7 +2294,7 @@ def oof_report(output_dir, data_dir):
     return comparison
 
 
-def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input_mode="512"):
+def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input_mode="512",regularization=False):
     """Actual pretrained encoder, Train examples, two updates; no experiment claim."""
     import tempfile
     import time
@@ -2315,7 +2315,8 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
     features=[];selected=[]
     for r in records:
         f=paired_features(r,tokenizer,"baseline")
-        if 0<sum(f["line_labels"])<len(f["line_labels"]):
+        if (0<sum(f["line_labels"])<len(f["line_labels"])
+                and (not regularization or len(f["line_numbers"])>=10)):
             features.append(f);selected.append(r["sample_key"])
         if len(features)==4:
             break
@@ -2368,12 +2369,56 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         with torch.no_grad():
             reloaded=paired_forward(restored,batch,"baseline",device,with_labels=False)
         torch.testing.assert_close(probability,reloaded,rtol=0,atol=0)
+    regularization_checks={}
+    if regularization:
+        import random
+        from .training import random_attention_suppression,make_attention_ema,attention_ema_loss,update_attention_ema
+
+        for mode in ("random","high"):
+            restored.attention_suppression=mode;restored.train()
+            mask=random_attention_suppression(batch,random.Random(123456)) if mode=="random" else None
+            loss,_,d=paired_forward(restored,batch,"baseline",device,return_attention=True,suppression_mask=mask)
+            valid=batch["code_mask"].to(device)
+            token=d["suppressed_token_attention"]
+            ratios=[float(x.max()/x.min()) for x in (t[v] for t,v in zip(token,valid))]
+            assert bool((token[valid]>0).all()) and not bool(token[~valid].any()) and max(ratios)<=5+1e-6
+            torch.testing.assert_close(d["bce"],(d["bce_normal"]+d["bce_suppressed"])/2)
+            loss.backward()
+            assert all(p.grad is None or bool(torch.isfinite(p.grad).all()) for p in restored.parameters())
+            restored.zero_grad();restored.eval()
+            with torch.no_grad():
+                p=paired_forward(restored,batch,"baseline",device,with_labels=False)
+                torch.testing.assert_close(p,probability,rtol=0,atol=0)
+            regularization_checks[mode]=dict(selected_lines=d["suppression_mask"].sum(-1).tolist(),
+                all_valid_tokens_positive=True,max_token_weight_ratio=max(ratios),inference_unchanged=True)
+            del d,loss
+        restored.attention_suppression=None
+        ema=make_attention_ema(restored)
+        # Controlled nonzero discrepancy checks gradients; not a learned result.
+        with torch.no_grad():
+            restored.line_attention.weight.add_(torch.linspace(-.01,.01,restored.line_attention.weight.numel(),
+                device=device).reshape_as(restored.line_attention.weight))
+        _,d=paired_forward(restored,batch,"baseline",device,with_labels=False,return_attention=True)
+        kl=attention_ema_loss(restored,ema,batch,d["line_attention"],device)
+        kl.backward()
+        eg=float(restored.encoder.embeddings.word_embeddings.weight.grad.abs().sum())
+        hg=float(restored.line_attention.weight.grad.abs().sum())
+        assert eg>0 and hg>0 and all(p.grad is None for p in ema.parameters())
+        assert all(p.grad is None or bool(torch.isfinite(p.grad).all()) for p in restored.parameters())
+        before=ema["line_attention"].weight.detach().clone()
+        LOSVERAdamW(restored.parameters(),lr=2e-5).step()
+        update_attention_ema(ema,restored)
+        torch.testing.assert_close(ema["line_attention"].weight,.99*before+.01*restored.line_attention.weight.detach())
+        regularization_checks["ema"]=dict(kl=float(kl.detach()),encoder_gradient=eg,attention_gradient=hg,
+            reference_has_no_gradient=True,healthy_parameter_update=True,controlled_head_perturbation=True)
     result=dict(device=str(device),train_members=selected,updates=2,initialization_and_rng_equal=True,
                 initial_probability_max_delta=delta,initial_region_encoder_gradient=initial_encoder_gradient,
                 region_encoder_gradient_after_head_update=encoder_gradient,all_gradients_finite=True,
                 diff_independent_inference=True,save_reload_equal=True,seconds=time.perf_counter()-started,
                 peak_memory_mib=torch.cuda.max_memory_allocated(device)/1024**2 if device.type=="cuda" else None,
                 test_used=False,full_experiment=False)
+    if regularization:
+        result["attention_regularization"]=regularization_checks
     write_json(Path(output_dir)/"gpu-smoke.json",result)
     return result
 
@@ -2403,6 +2448,71 @@ def bounded_region_record(annotation,prediction,labels=None):
                 attention_enrichment=region_mass/(nr/total) if nr>0 else None,
                 mean_rate_ratio=ratio,eligible=nr>0 and nb>0,
                 region_margin=max(0.,math.log(2)-math.log(ratio)) if ratio is not None else None)
+
+
+def attention_distribution_record(annotation, prediction, previous=None):
+    """Post-prediction JSD; uniform means equal per-token weights."""
+    import math
+
+    def distribution(r):
+        mass = [n*v for n,v in zip(r["line_token_counts"],r["line_rates"])]
+        return [x/sum(mass) for x in mass]
+
+    def jsd(p, q):
+        middle = [(a+b)/2 for a,b in zip(p,q)]
+        return sum(a*math.log(a/m)+b*math.log(b/m) for a,b,m in zip(p,q,middle))/2
+
+    record = bounded_region_record(annotation, prediction)
+    a = distribution(prediction)
+    counts, rates = prediction["line_token_counts"], prediction["line_rates"]
+    mean_rate = sum(rates)/len(rates)
+    consecutive = None
+    if previous is not None:
+        if any(previous[k]!=prediction[k] for k in ("sample_key","line_numbers","line_token_counts")):
+            raise ValueError("consecutive attention diagnostics changed input coordinates")
+        consecutive = jsd(a,distribution(previous))
+    record.update(
+        consecutive_jsd=consecutive,
+        token_mean_jsd=jsd(a,[n/sum(counts) for n in counts]),
+        normalized_line_entropy=-sum(x*math.log(x) for x in a)/math.log(len(a)) if len(a)>1 else 1.,
+        rate_cv=(sum((x-mean_rate)**2 for x in rates)/len(rates))**.5/mean_rate,
+    )
+    return record
+
+
+def attention_epoch_diagnostics(model, rows, loaders, tokenizer, device, epoch, previous, output):
+    """Fixed source-only eval cohorts. No effect on training RNG or model mode."""
+    from statistics import mean
+    from .training import rng_state,restore_rng
+
+    before, mode = rng_state(), model.training
+    summaries, current, records = {}, {}, []
+    try:
+        model.eval()
+        for split in ("train","valid"):
+            _, predictions = validate_paired(model,rows[split],tokenizer,"baseline",device,loader=loaders[split])
+            old = {r["sample_key"]:r for r in previous.get(split,[])}
+            if old and set(old)!={r["sample_key"] for r in predictions}:
+                raise ValueError("fixed attention diagnostic members changed")
+            stats = [attention_distribution_record(ann,pred,old.get(pred["sample_key"]))
+                     for ann,pred in zip(rows[split],predictions)]
+            current[split] = predictions
+            summary = dict(functions=len(stats),eligible=sum(r["eligible"] for r in stats))
+            for key in ("mean_rate_ratio","attention_enrichment","consecutive_jsd","token_mean_jsd",
+                        "normalized_line_entropy","rate_cv"):
+                values = [r[key] for r in stats if r[key] is not None]
+                summary[key] = mean(values) if values else None
+            summary["max_token_weight_ratio"] = max(r["token_weight_ratio"] for r in stats)
+            summaries[split] = summary
+            records.extend({**prediction,**stat,"epoch":epoch,"split":split}
+                           for prediction,stat in zip(predictions,stats))
+    finally:
+        restore_rng(before)
+        model.train(mode)
+    with Path(output).open("a",encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record,ensure_ascii=False)+"\n")
+    return summaries,current
 
 
 def bounded_attention_report(output_dir,data_dir,*,device="auto"):
@@ -2632,8 +2742,219 @@ def bounded_attention_report(output_dir,data_dir,*,device="auto"):
     return evidence
 
 
+def attention_regularization_report(output_dir, data_dir, *, device="auto"):
+    """Four fixed-budget runs, source-only best-checkpoint inference and epoch diagnostics."""
+    from statistics import mean
+    from .training import paired_loader
+    from .metrics import paired_metrics
+    from .losver_diagnosis import write_csv
+
+    root=Path(output_dir)
+    names=("diff_region","random_suppression","high_suppression","ema_attention")
+    paths={n:root/n/"primevul_paired/unixcoder" for n in names}
+    configs={n:json.loads((p/"training.metrics.json").read_text()) for n,p in paths.items()}
+    base=configs[names[0]]
+    if (base["train_samples"],base["valid_samples"],base["epochs"],base["optimizer_steps"])!=(8708,1124,16,17424):
+        raise ValueError("regularization comparison requires four complete official 16-epoch runs")
+    common=("training_config","training_members","validation_members","environment","input_coverage",
+            "input_mode","model_path","parameters","function_micro_batch","window_micro_batch",
+            "gradient_accumulation","bounded_attention","attention_diagnostics")
+    annotations={s:read_jsonl(Path(data_dir)/"primevul_paired"/f"{s}.lines.jsonl") for s in ("train","valid")}
+    if base["training_config"]["seed"]!=123456 or base["bounded_attention"]["region_supervision"]!="diff":
+        raise ValueError("unchanged seed and original Diff are required")
+    for split,field in (("train","training_members"),("valid","validation_members")):
+        if [r["sample_key"] for r in annotations[split]]!=base[field]:
+            raise ValueError("official source order or members changed")
+        if len(base["attention_diagnostics"]["members"][split])!=256:
+            raise ValueError("the four fixed diagnostic cohorts must each contain 256 functions")
+    valid={};train={};loaders={};epochs=[];states=[];cuda_states=[]
+    reference_masks=read_jsonl(paths[names[0]]/"train.attention_regions.jsonl")
+    if len(reference_masks)!=8708:
+        raise ValueError("every Train function must retain its original Diff mask")
+    for ann,mask in zip(annotations["train"],reference_masks):
+        if ann["sample_key"]!=mask["sample_key"] or mask["labels"]!=[
+            int(n in ann["lines_ground_truth"]) for n in mask["line_numbers"]
+        ]:
+            raise ValueError("region supervision differs from original physical Diff lines")
+    device=core.resolve_device(device)
+    for name,p in paths.items():
+        c=configs[name]
+        if any(c[k]!=base[k] for k in common) or (c["completed_epochs"],c["optimizer_steps"])!=(16,17424):
+            raise ValueError(f"unmatched data, initialization protocol, environment or full budget: {name}")
+        if c["decision_threshold"]!=.5 or c["comparison"]!=">" or c["input_mode"]!="512":
+            raise ValueError("keep original 512 input and strict probability >.5")
+        reg=c.get("attention_regularization",{})
+        suppression={"random_suppression":"random","high_suppression":"high"}.get(name)
+        if reg.get("suppression")!=suppression or bool(reg.get("ema_components"))!=(name=="ema_attention"):
+            raise ValueError("run suppression and EMA independently")
+        if suppression and (reg["suppression_fraction"]!=.1 or reg["suppression_rate"]!=1):
+            raise ValueError("unexpected suppression settings")
+        if name=="ema_attention" and (reg["ema_decay"],reg["ema_kl_weight"],reg["ema_components"])!=(.99,.1,["encoder","line_attention"]):
+            raise ValueError("EMA must include the encoder and attention head")
+        if read_jsonl(p/"train.attention_regions.jsonl")!=reference_masks:
+            raise ValueError("regularization changed original Diff masks")
+        history=[r for r in read_jsonl(p/"best.training.jsonl") if r.get("event")=="epoch"]
+        chosen=max(history,key=lambda r:(round(r["validation"]["p_c"],4),-r["epoch"]))
+        if len(history)!=16 or chosen["epoch"]!=c["selected_epochs"]["p_c"]:
+            raise ValueError("selection must use only Valid P-C with earlier-epoch ties")
+        for h in history:
+            for split,summary in h["attention_diagnostics"].items():
+                epochs.append(dict(model=name,epoch=h["epoch"],split=split,**summary,
+                    diagnostic_seconds=h["diagnostic_seconds"],train_loss=h["train_loss"],
+                    **{k:h["train_components"].get(k) for k in (
+                        "bce","region_loss","bce_normal","bce_suppressed","attention_kl")}))
+        records=read_jsonl(p/"attention.diagnostics.jsonl")
+        for epoch in range(1,17):
+            for split in ("train","valid"):
+                selected=[r for r in records if r["epoch"]==epoch and r["split"]==split]
+                if [r["sample_key"] for r in selected]!=c["attention_diagnostics"]["members"][split]:
+                    raise ValueError("epoch diagnostics changed fixed members")
+                if any((r["consecutive_jsd"] is None)!=(epoch==1) for r in selected):
+                    raise ValueError("consecutive-epoch attention state was lost")
+        valid[name]=read_jsonl(p/"valid.best-p_c.predictions.jsonl")
+        cache=p/"train.selected.metrics.json"
+        if cache.exists():
+            if json.loads(cache.read_text())["selected_epoch"]!=chosen["epoch"]:
+                raise ValueError("cached Train diagnostics use a different checkpoint")
+            train[name]=read_jsonl(p/"train.selected.predictions.jsonl")
+        else:
+            model,tokenizer=load_paired(torch.load(p/"best-p_c.pt",map_location="cpu",weights_only=False),device)
+            if not loaders:
+                loaders["train"]=paired_loader(annotations["train"],tokenizer,"baseline",batch_size=8)
+            value,pred=validate_paired(model,annotations["train"],tokenizer,"baseline",device,loader=loaders["train"])
+            train[name]=pred
+            write_jsonl(p/"train.selected.predictions.jsonl",pred)
+            write_json(cache,dict(selected_epoch=chosen["epoch"],metrics=value))
+            del model
+            if device.type=="cuda":torch.cuda.empty_cache()
+        last=torch.load(p/"last.pt",map_location="cpu",weights_only=False,mmap=True)
+        states.append(last["rng"]["torch"])
+        cuda_states.append(last["rng"]["cuda"])
+        if name=="ema_attention":
+            if last["loop"]["ema_updates"]!=17424 or "attention_ema" not in last:
+                raise ValueError("EMA state or per-optimizer-step updates missing")
+            ema_updates=last["loop"]["ema_updates"]
+            ema_parameter_deltas={k:float((last["attention_ema"][k]-last["model"][k]).norm())
+                for k in ("line_attention.weight","encoder.encoder.layer.0.attention.self.query.weight")}
+        if name=="random_suppression" and "suppression_rng" not in last["loop"]:
+            raise ValueError("independent suppression RNG was not checkpointed")
+        del last
+    sampling_rng_equal=all(torch.equal(s,states[0]) for s in states[1:])
+    if not sampling_rng_equal:
+        raise ValueError("end-of-training sampler RNG differs; investigate diagnostic RNG preservation")
+    cuda_rng_equal=all(len(s)==len(cuda_states[0]) and all(torch.equal(a,b) for a,b in zip(s,cuda_states[0]))
+                       for s in cuda_states[1:])
+    if not cuda_rng_equal:
+        raise ValueError("online dropout RNG states differ; investigate extra stochastic forwards")
+    pure={annotations["valid"][i]["pair_key"] for i in range(0,len(annotations["valid"]),2)
+          if not annotations["valid"][i]["lines_ground_truth"] and annotations["valid"][i+1]["lines_ground_truth"]}
+    table=[];diagnostics=[];summaries=[]
+    for name in names:
+        for split,storage in (("train",train),("valid",valid)):
+            expected=[(r["sample_key"],r["pair_key"],r["target"]) for r in annotations[split]]
+            if [(r["sample_key"],r["pair_key"],r["target"]) for r in storage[name]]!=expected:
+                raise ValueError("best-checkpoint diagnostic predictions have mismatched members")
+            coordinates=lambda n:[(r["line_numbers"],r["line_token_counts"]) for r in storage[n]]
+            if coordinates(name)!=coordinates(names[0]):
+                raise ValueError("models use different code tokens or physical-line coordinates")
+            rs=[bounded_region_record(ann,pred) for ann,pred in zip(annotations[split],storage[name])]
+            diagnostics.extend(dict(model=name,split=split,**r) for r in rs)
+            for target in (None,0,1):
+                subset=[r for r in rs if target is None or r["target"]==target]
+                eligible=[r for r in subset if r["eligible"]]
+                summaries.append(dict(model=name,split=split,target="all" if target is None else target,
+                    functions=len(subset),eligible=len(eligible),empty=sum(r["region_tokens"]==0 for r in subset),
+                    full=sum(r["region_tokens"]==r["code_tokens"] for r in subset),
+                    mean_rate_ratio=mean(r["mean_rate_ratio"] for r in eligible),
+                    attention_enrichment=mean(r["attention_enrichment"] for r in eligible),
+                    max_token_weight_ratio=max(r["token_weight_ratio"] for r in subset),
+                    token_coverage_micro=sum(r["region_tokens"] for r in subset)/sum(r["code_tokens"] for r in subset)))
+        for group,rows in (("all",annotations["valid"]),("addition_only",[r for r in annotations["valid"] if r["pair_key"] in pure])):
+            by_key={r["sample_key"]:r for r in valid[name]}
+            metrics=paired_metrics(rows,[by_key[r["sample_key"]]["probability"] for r in rows])
+            table.append(dict(model=name,group=group,epoch=configs[name]["selected_epochs"]["p_c"],**metrics))
+    all_results={r["model"]:r for r in table if r["group"]=="all"}
+    deltas={n:{k:all_results[n][k]-all_results[names[0]][k] for k in ("p_c","auc","mcc","f1","recall","patched_fpr")}
+            for n in names[1:]}
+    write_csv(root/"comparison.csv",table);write_csv(root/"region_statistics.csv",diagnostics)
+    write_csv(root/"region_summary.csv",summaries);write_csv(root/"attention_epochs.csv",epochs)
+    suppression_coverage={split:dict(functions=len(storage[names[0]]),
+        suppressible_functions=sum(len(r["line_numbers"])>=10 for r in storage[names[0]]),
+        selected_lines_per_pass=sum(len(r["line_numbers"])//10 for r in storage[names[0]]))
+        for split,storage in (("train",train),("valid",valid))}
+    matched=[]
+    for name in names:
+        for split in ("train","valid"):
+            transitions=[r for r in epochs if r["model"]==name and r["split"]==split and r["epoch"]>=2]
+            if len(transitions)!=15:
+                raise ValueError("matched diagnostics require all 15 consecutive-epoch transitions")
+            matched.append(dict(model=name,split=split,transitions=15,
+                mean_consecutive_jsd=mean(r["consecutive_jsd"] for r in transitions),
+                mean_token_mean_jsd=mean(r["token_mean_jsd"] for r in transitions),
+                mean_rate_cv=mean(r["rate_cv"] for r in transitions)))
+    write_csv(root/"attention_stability.csv",matched)
+    result=dict(test_used=False,full_runs_completed=4,epochs_per_run=16,optimizer_steps_per_run=17424,
+                sampling_rng_equal=sampling_rng_equal,cuda_rng_equal=cuda_rng_equal,
+                ema_updates=ema_updates,ema_parameter_deltas=ema_parameter_deltas,
+                suppression_coverage=suppression_coverage,results=table,
+                deltas=deltas,region_summaries=summaries,epoch_diagnostics=epochs,
+                matched_epoch_diagnostics=matched)
+    write_json(root/"comparison.json",result)
+    lines=["# 有界注意力泛化：独立正则化对照","",
+        "Train4354对/8708函数，Valid562对/1124函数，512 Token，Seed123456；每组完整16轮/17424步。Test未读取。",
+        "四组均从同一预训练UniXcoder初始化，K=5、原始双侧Diff、区域损失权重.1、函数分类头与优化器保持一致。",
+        "只按完整Valid P-C选模（四位小数严格改善，平局保留较早epoch），概率>.5。没有搜索参数或组合正则。", "",
+        "|方法|子集|Epoch|Pairs|P-C|AUC|MCC|F1|漏洞Recall|修复侧FPR|",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['group']}|{r['epoch']}|{r['pairs']}|{r['p_c']:.4f}|{r['auc']:.4f}|{r['mcc']:.4f}|{r['f1']:.4f}|{r['recall']:.4f}|{r['patched_fpr']:.4f}|" for r in table)
+    lines += ["", "纯新增按完整原始Diff旧侧无删除、新侧有新增定义，保留旧侧无区域监督；不补邻接或切片标签。", "",
+        "## 实现与公平性","",
+        "random/high只把floor(.1*N)条有效行倍率改为1，同一次编码的正常与抑制聚合BCE取平均；原区域损失始终取正常倍率。high按detach的r_i排序，平局按物理行；random使用独立、可恢复的Python RNG。不删除Token，不缩放其余行。",
+        "EMA复制encoder+attention head，eval/no_grad；每个实际optimizer.step后无条件更新.99一次。KL(reference||online)按有效行求和、函数平均，.1*KL明确加入实际累积objective。best checkpoint及正常推理仅包含在线模型。",
+        "四组都重跑；旧对照只存最佳/最后权重，无法恢复逐epoch诊断。输入、环境、初始化规则、训练预算和诊断成员均已核对。EMA更新17424次，独立随机状态与EMA随last.pt保存，结束时四组CPU采样RNG一致。", "",
+        "## 最佳checkpoint完整Train/Valid关注量","",
+        "|方法|Split|有效区域函数|区域/背景倍率|关注富集|编辑Token比例|",
+        "|---|---|---:|---:|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['split']}|{r['eligible']}/{r['functions']}|{r['mean_rate_ratio']:.4f}|{r['attention_enrichment']:.4f}|{r['token_coverage_micro']:.4f}|" for r in summaries if r["target"]=="all")
+    lines += ["", "这些统计来自所选在线checkpoint的eval单函数预测，再对照Diff计算；完整Train/Valid关注量不代替分类结果。",
+        f"按输入结构，Train中{suppression_coverage['train']['suppressible_functions']}/{suppression_coverage['train']['functions']}函数满足N≥10、可执行非空抑制。Valid对应{suppression_coverage['valid']['suppressible_functions']}/{suppression_coverage['valid']['functions']}，仅用于长度诊断，推理不启用抑制。", "",
+        "## 固定成员的逐epoch诊断","",
+        "每组相同Train256/Valid256函数（各128对），只用于eval诊断，不用于选择epoch。成员见各config.json；逐函数概率、行倍率、坐标、JSD保存在attention.diagnostics.jsonl，汇总见[attention_epochs.csv](attention_epochs.csv)。",
+        "JSD使用自然对数，第一轮相邻epoch JSD为null。均匀参照为n_i/Σn_j，表示每Token等权；同时报告行注意力熵和倍率CV，不能把行等权误当Token均值。诊断保存/恢复Python、NumPy、Torch与CUDA随机状态，恢复保留前一epoch分布及日志边界。", "",
+        "以下汇总全部15个相邻过渡（第2–16轮），固定成员和学习率阶段对齐。最佳checkpoint的epoch不同，其单轮JSD不能直接归因于正则差异。", "",
+        "|方法|Split|平均相邻JSD|平均到Token均值JSD|平均倍率CV|",
+        "|---|---|---:|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['split']}|{r['mean_consecutive_jsd']:.6f}|{r['mean_token_mean_jsd']:.6f}|{r['mean_rate_cv']:.6f}|" for r in matched)
+    stable={r["model"]:r for r in matched if r["split"]=="valid"}
+    lines += ["", f"同轮对齐的Valid平均相邻JSD相对对照变化：random {stable['random_suppression']['mean_consecutive_jsd']/stable['diff_region']['mean_consecutive_jsd']-1:+.2%}，high {stable['high_suppression']['mean_consecutive_jsd']/stable['diff_region']['mean_consecutive_jsd']-1:+.2%}，EMA {stable['ema_attention']['mean_consecutive_jsd']/stable['diff_region']['mean_consecutive_jsd']-1:+.2%}。不能以较晚最佳epoch的较小JSD直接声称抑制提高稳定性。",
+        f"EMA的平均到Token均值JSD为{stable['ema_attention']['mean_token_mean_jsd']:.6f}、倍率CV为{stable['ema_attention']['mean_rate_cv']:.6f}；这些值描述注意力与等权的距离，不能代替分类指标。"]
+    lines += ["", "下表列出各自最佳epoch及最终epoch的固定成员统计（相同epoch只列一次）：", "",
+        "|方法|Epoch|Split|区域/背景倍率|相邻epoch JSD|到Token均值JSD|倍率CV|",
+        "|---|---:|---|---:|---:|---:|---:|"]
+    fmt=lambda v:"—" if v is None else f"{v:.6f}"
+    lines.extend(f"|{r['model']}|{r['epoch']}|{r['split']}|{fmt(r['mean_rate_ratio'])}|{fmt(r['consecutive_jsd'])}|{fmt(r['token_mean_jsd'])}|{fmt(r['rate_cv'])}|"
+                 for r in epochs if r["epoch"] in (configs[r["model"]]["selected_epochs"]["p_c"],16))
+    lines += ["", "## 分类差值与结论", ""]
+    lines.extend(f"{n}减当前方法：P-C {d['p_c']:+.6f}，AUC {d['auc']:+.6f}，MCC {d['mcc']:+.6f}，Recall {d['recall']:+.6f}，修复侧FPR {d['patched_fpr']:+.6f}。" for n,d in deltas.items())
+    additions={r["model"]:r for r in table if r["group"]=="addition_only"}
+    lines += ["", f"纯新增{additions['diff_region']['pairs']}对的P-C正确对数：对照{additions['diff_region']['pair_counts']['p_c']}，random {additions['random_suppression']['pair_counts']['p_c']}，high {additions['high_suppression']['pair_counts']['p_c']}，EMA {additions['ema_attention']['pair_counts']['p_c']}。该子集不能由整体P-C改善代替解释。"]
+    lines += ["", ("三种新正则的AUC、MCC均低于对照。部分P-C上升伴随漏洞Recall与修复侧FPR下降，不能将其等同于一致的分类泛化收益。本轮停止，不追加模块或参数搜索。"
+                  if all(d["auc"]<0 and d["mcc"]<0 for d in deltas.values()) else
+                  "存在Valid P-C改善的配置，需结合AUC、MCC及误报变化解释；这仍是单Seed Valid对照，不以注意力稳定性宣称分类成功。"
+                  if any(d["p_c"]>0 for d in deltas.values()) else
+                  "三种正则均未超过当前方法的Valid P-C，本轮未验证净分类收益，按负结果停止，不追加模块或搜索参数。"),"",
+        "Train倍率下降、Train/Valid差距缩小、相邻epoch JSD下降或趋于均匀，均不能单独证明分类泛化改善。新增正则只改变训练；推理不读取Diff、不依赖EMA或抑制。", "",
+        "[相关测试](tests.log)、[诊断隔离](diagnostic-isolation-test.log)、[恢复配置复验](resume-config-test.log)、[真实GPU检查](gpu-smoke.json)、[正式入口smoke](training-smoke.json)、[旧对照核验](reference-check.json)及[四组命令](commands.json)保留实际记录。smoke明确不是完整实验结果。权重保留本地，不上传。训练时间包含两卡并发影响，不能据此直接宣称单独运行加速。", ""]
+    (root/"report.md").write_text("\n".join(lines),encoding="utf-8")
+    return result
+
+
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False,
-                  bounded_attention=False,device="auto"):
+                  bounded_attention=False, attention_regularization=False, device="auto"):
+    if attention_regularization:
+        if localizer_regularization:
+            raise ValueError("choose one experiment report")
+        return attention_regularization_report(output_dir,data_dir,device=device)
     if bounded_attention:
         return bounded_attention_report(output_dir,data_dir,device=device)
     if (Path(output_dir) / "oof.json").exists():

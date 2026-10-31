@@ -517,6 +517,7 @@ class LOSVERDetector(nn.Module):
         self.pooling = "bounded_attention" if getattr(args, "bounded_attention", False) else "hard_weight"
         self.fusion_beta = 0.25
         self.attention_region = getattr(args, "attention_region", None)
+        self.attention_suppression = getattr(args, "attention_suppression", None)
         self.force_uniform_attention = False
         if self.pooling == "bounded_attention":
             # Preserve encoder/classifier initialization and all sampler RNG.
@@ -558,7 +559,8 @@ class LOSVERDetector(nn.Module):
         result = global_mean + beta * strength * (local - global_mean)
         return torch.where(mass > 0, result, global_mean)
 
-    def bounded_pool(self, states, code_mask, line_token_mask):
+    def bounded_pool(self, states, code_mask, line_token_mask, *, attention_head=None,
+                     suppress=False, suppression_mask=None):
         """One shared encoding; token-count-weighted physical-line MIL, K=5."""
         membership = (line_token_mask & code_mask[:, None].bool()).to(states.dtype)
         copies = membership.sum(1)
@@ -570,7 +572,8 @@ class LOSVERDetector(nn.Module):
         membership = membership / copies.clamp_min(1)[:, None]
         counts = membership.sum(-1)
         lines = torch.bmm(membership, states) / counts.clamp_min(1e-12)[..., None]
-        rates = 1 + 4 * self.line_attention(lines).squeeze(-1).sigmoid()
+        head = self.line_attention if attention_head is None else attention_head
+        rates = 1 + 4 * head(lines).squeeze(-1).sigmoid()
         if self.force_uniform_attention:
             rates = torch.ones_like(rates)
         rates = rates.masked_fill(counts == 0, 0)
@@ -578,8 +581,33 @@ class LOSVERDetector(nn.Module):
         attention = mass / mass.sum(-1, keepdim=True)
         pooled = (lines * attention[..., None]).sum(1)
         token_attention = (membership * (attention / counts.clamp_min(1e-12))[..., None]).sum(1)
-        return pooled, dict(line_rates=rates, line_counts=counts,
-                            line_attention=attention, token_attention=token_attention)
+        details = dict(line_rates=rates, line_counts=counts,
+                       line_attention=attention, token_attention=token_attention)
+        if suppress:
+            valid = counts > 0
+            if self.attention_suppression == "high":
+                suppression_mask = torch.zeros_like(valid)
+                for i in range(len(rates)):
+                    indices = valid[i].nonzero().flatten()
+                    k = len(indices) // 10
+                    order = rates[i, indices].detach().argsort(descending=True, stable=True)
+                    suppression_mask[i, indices[order[:k]]] = True
+            elif self.attention_suppression != "random" or suppression_mask is None:
+                raise ValueError("random suppression requires an independent-RNG line mask")
+            if (suppression_mask.shape != valid.shape or suppression_mask.dtype != torch.bool
+                    or (suppression_mask & ~valid).any()
+                    or not torch.equal(suppression_mask.sum(-1), valid.sum(-1) // 10)):
+                raise ValueError("suppress exactly floor(.1*N) valid lines per function")
+            perturbed = rates.masked_fill(suppression_mask, 1)
+            perturbed_mass = counts * perturbed
+            perturbed_attention = perturbed_mass / perturbed_mass.sum(-1, keepdim=True)
+            details.update(
+                suppression_mask=suppression_mask, suppressed_rates=perturbed,
+                suppressed_pooled=(lines * perturbed_attention[..., None]).sum(1),
+                suppressed_token_attention=(membership * (
+                    perturbed_attention / counts.clamp_min(1e-12))[..., None]).sum(1),
+            )
+        return pooled, details
 
     @staticmethod
     def attention_region_loss(rates, counts, labels):
@@ -608,6 +636,7 @@ class LOSVERDetector(nn.Module):
         line_indices=None,
         line_counts=None,
         line_labels=None,
+        suppression_mask=None,
         return_auxiliary=False,
         return_attention=False,
     ):
@@ -679,7 +708,11 @@ class LOSVERDetector(nn.Module):
                 window_owners, torch.arange(function_count, device=window_owners.device)
             ):
                 raise ValueError("bounded attention uses one 512-token window per function")
-            pooled, attention_details = self.bounded_pool(windows, code_mask, line_token_mask)
+            pooled, attention_details = self.bounded_pool(
+                windows, code_mask, line_token_mask,
+                suppress=self.training and labels is not None and self.attention_suppression is not None,
+                suppression_mask=suppression_mask,
+            )
         elif len(windows) == function_count and torch.equal(
             window_owners, torch.arange(function_count, device=window_owners.device)
         ):
@@ -708,6 +741,11 @@ class LOSVERDetector(nn.Module):
             weights = y * self.class_weight + (1 - y)
             loss = F.binary_cross_entropy_with_logits(logits[:, 0], y, weight=weights)
             if bounded:
+                if "suppressed_pooled" in attention_details:
+                    suppressed_logits = self.classifier(attention_details.pop("suppressed_pooled"))[:, 0]
+                    suppressed_loss = F.binary_cross_entropy_with_logits(suppressed_logits, y, weight=weights)
+                    attention_details.update(bce_normal=loss, bce_suppressed=suppressed_loss)
+                    loss = (loss + suppressed_loss) / 2
                 region_loss, effective = loss * 0, logits.new_zeros((), dtype=torch.long)
                 if self.attention_region is not None:
                     if line_labels is None:
@@ -756,6 +794,7 @@ def losver_model(
     line_auxiliary_weight=None,
     bounded_attention=False,
     attention_region=None,
+    attention_suppression=None,
 ):
     """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
     config = RobertaConfig.from_pretrained(model_path)
@@ -766,6 +805,10 @@ def losver_model(
         raise ValueError("bounded attention uses only the original baseline encoder/classifier")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("region supervision requires bounded attention and diff/random")
+    if attention_suppression is not None and (
+        not bounded_attention or attention_region != "diff" or attention_suppression not in ("random", "high")
+    ):
+        raise ValueError("attention suppression requires bounded attention with original Diff")
     args = SimpleNamespace(
         class_weight=1.0,
         dropout_probability=dropout_probability,
@@ -774,6 +817,7 @@ def losver_model(
         line_auxiliary_weight=line_auxiliary_weight,
         bounded_attention=bounded_attention,
         attention_region=attention_region,
+        attention_suppression=attention_suppression,
     )
     encoder = RobertaModel.from_pretrained(
         model_path, config=config, attn_implementation="eager", add_pooling_layer=False

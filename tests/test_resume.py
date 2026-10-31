@@ -47,6 +47,11 @@ class ResumeTests(unittest.TestCase):
         b = torch.load(resumed / "last.pt", weights_only=False)
         for name in ("model", "optimizer", "scheduler", "rng"):
             self.assert_state_equal(a[name], b[name])
+        if "attention_ema" in a:
+            self.assert_state_equal(a["attention_ema"], b["attention_ema"])
+        for name in ("ema_updates", "suppression_rng", "attention_previous"):
+            if name in a["loop"]:
+                self.assert_state_equal(a["loop"][name], b["loop"][name])
         for name in best_names:
             ac = torch.load(control / name, weights_only=False)
             bc = torch.load(resumed / name, weights_only=False)
@@ -62,7 +67,7 @@ class ResumeTests(unittest.TestCase):
         for x, y in zip(aa, bb):
             keys = {k for k in x if not k.endswith("seconds")}
             self.assert_state_equal({k: x[k] for k in keys}, {k: y[k] for k in keys})
-        for name in ("training.candidates.jsonl",):
+        for name in ("training.candidates.jsonl", "attention.diagnostics.jsonl"):
             if (control / name).exists():
                 self.assertEqual((control / name).read_bytes(), (resumed / name).read_bytes())
 
@@ -331,6 +336,97 @@ class ResumeTests(unittest.TestCase):
                     training.train_losver(root/"data",root/"resumed","fixture","unixcoder",**options)
                 training.train_losver(root/"data",root/"resumed","fixture","unixcoder",resume=True,**options)
                 self.compare_runs(root/"control/primevul_paired/unixcoder",root/"resumed/primevul_paired/unixcoder",["best-p_c.pt"])
+
+    def test_attention_regularization_resume_including_epoch_diagnostics(self):
+        from tests.test_bounded_attention import detector
+
+        def factory(path,variant,**kwargs):
+            return detector(True,"diff",kwargs.get("attention_suppression")),Tokens()
+
+        for mode in ("none","random","high","ema"):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+                root=Path(tmp);self.paired_fixture(root,"512")
+                for split in ("train","valid"):
+                    path=root/"data/primevul_paired"/f"{split}.lines.jsonl"
+                    rows=read_jsonl(path)
+                    for i,r in enumerate(rows):
+                        r["func"]="\n".join(f"x += {j+i};" for j in range(20))
+                        r["lines_ground_truth"]=[] if i%3==0 else list(range(20)) if i%5==0 else [2,3]
+                    write_jsonl(path,rows)
+                settings=dict(training.LOSVER_CONFIG,batch_size=4,eval_batch_size=2,
+                              epochs=dict(baseline=2,localizer=2,predicted=2,oracle=2))
+                options=dict(device="cpu",config=settings,save_every=1,bounded_attention=True,
+                    attention_region="diff",function_micro_batch=2,attention_diagnostics=True,
+                    attention_suppression=mode if mode in ("random","high") else None,attention_ema=mode=="ema")
+                training.train_losver(root/"data",root/"control","fixture","unixcoder",**options)
+                with self.interruption(epoch=2,step=4,after_save=True),self.assertRaises(Interrupted):
+                    training.train_losver(root/"data",root/"resumed","fixture","unixcoder",**options)
+                path=root/"resumed/primevul_paired/unixcoder/attention.diagnostics.jsonl"
+                with path.open("a") as handle: handle.write('uncommitted diagnostic\n')
+                training.train_losver(root/"data",root/"resumed","fixture","unixcoder",resume=True,**options)
+                self.compare_runs(root/"control/primevul_paired/unixcoder",root/"resumed/primevul_paired/unixcoder",["best-p_c.pt"])
+                cp=torch.load(root/"control/primevul_paired/unixcoder/last.pt",weights_only=False)
+                if mode=="ema": self.assertEqual(cp["loop"]["ema_updates"],6)
+                if mode=="random": self.assertIn("suppression_rng",cp["loop"])
+                changed=dict(options,attention_suppression=None,attention_ema=mode!="ema")
+                with self.assertRaisesRegex(ValueError,"completed training configuration"):
+                    training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,**changed)
+
+    def test_attention_regularization_accumulation_and_actual_ema_objective(self):
+        from tests.test_bounded_attention import detector
+
+        def factory(path,variant,**kwargs):
+            m=detector(True,"diff",kwargs.get("attention_suppression"))
+            for module in m.modules():
+                if isinstance(module,torch.nn.Dropout): module.p=0.
+            # FP64 isolates reduction/normalization from FP32 kernel roundoff.
+            return m.double(),Tokens()
+
+        for mode in ("random","high","ema"):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+                root=Path(tmp);self.paired_fixture(root,"512")
+                path=root/"data/primevul_paired/train.lines.jsonl"
+                rows=read_jsonl(path)
+                for i,r in enumerate(rows):
+                    r["func"]="\n".join(f"x += {j+i};" for j in range(12))
+                    r["lines_ground_truth"]=[] if i%3==0 else [2,3]
+                write_jsonl(path,rows)
+                settings=dict(training.LOSVER_CONFIG,batch_size=4,eval_batch_size=2,learning_rate=.005,
+                              epochs=dict(baseline=2,localizer=2,predicted=2,oracle=2))
+                options=dict(device="cpu",config=settings,save_every=3,bounded_attention=True,attention_region="diff",
+                    attention_suppression=mode if mode in ("random","high") else None,attention_ema=mode=="ema")
+                for micro in (4,2):
+                    training.train_losver(root/"data",root/f"micro{micro}","fixture","unixcoder",function_micro_batch=micro,**options)
+                a,b=(torch.load(root/f"micro{m}/primevul_paired/unixcoder/last.pt",weights_only=False) for m in (4,2))
+                for k in a["model"]: torch.testing.assert_close(a["model"][k],b["model"][k],rtol=1e-8,atol=1e-9)
+                if mode=="ema":
+                    self.assertEqual(a["loop"]["ema_updates"],6)
+                    self.assertEqual(b["loop"]["ema_updates"],6)
+                    events=[r for r in read_jsonl(root/"micro2/primevul_paired/unixcoder/best.training.jsonl") if r["event"]=="epoch"]
+                    self.assertGreater(events[-1]["train_components"]["attention_kl"],0.)
+                    for r in events:
+                        c=r["train_components"]
+                        self.assertAlmostEqual(r["train_loss"],c["bce"]+.1*c["region_loss"]+.1*c["attention_kl"],places=8)
+
+    def test_attention_diagnostics_preserve_training_rng_weights_and_selection(self):
+        from tests.test_bounded_attention import detector
+
+        def factory(path,variant,**kwargs):
+            return detector(True,"diff"),Tokens()
+
+        with tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+            root=Path(tmp);self.paired_fixture(root,"512")
+            settings=dict(training.LOSVER_CONFIG,batch_size=4,eval_batch_size=2,
+                          epochs=dict(baseline=2,localizer=2,predicted=2,oracle=2))
+            options=dict(device="cpu",config=settings,bounded_attention=True,attention_region="diff",function_micro_batch=2)
+            for flag in (False,True):
+                training.train_losver(root/"data",root/str(flag),"fixture","unixcoder",attention_diagnostics=flag,**options)
+            paths=[root/str(f)/"primevul_paired/unixcoder" for f in (False,True)]
+            a,b=(torch.load(p/"last.pt",weights_only=False) for p in paths)
+            for k in ("model","optimizer","scheduler","rng"):
+                self.assert_state_equal(a[k],b[k])
+            for k in ("best","chosen"):
+                self.assert_state_equal(a["loop"][k],b["loop"][k])
 
     def test_atomic_save_preserves_previous_state_and_cli(self):
         with tempfile.TemporaryDirectory() as tmp:

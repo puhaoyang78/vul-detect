@@ -1,0 +1,53 @@
+{
+  "reference": "results/bounded_attention_512/diff_region/primevul_paired/unixcoder",
+  "old_environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "device": "NVIDIA GeForce RTX 4090"
+  },
+  "current_environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "device": "NVIDIA GeForce RTX 4090"
+  },
+  "recorded_environment_equal": true,
+  "training_config_equal": true,
+  "member_order_equal": true,
+  "data_counts": {
+    "train": {
+      "functions": 8708,
+      "pairs": 4354,
+      "positive": 4354,
+      "negative": 4354
+    },
+    "valid": {
+      "functions": 1124,
+      "pairs": 562,
+      "positive": 562,
+      "negative": 562
+    }
+  },
+  "available_reference_checkpoints": [
+    "best-p_c.pt",
+    "last.pt"
+  ],
+  "reference_checkpoint_reused": false,
+  "reason": "Rerun all four configurations: old run only has best/last weights and cannot supply all adjacent-epoch attention diagnostics.",
+  "test_used": false,
+  "completed_control_comparison": {
+    "epochs": 16,
+    "max_absolute_metric_differences": {
+      "p_c": 0.0,
+      "auc": 0.0,
+      "mcc": 0.0,
+      "f1": 0.0,
+      "recall": 0.0,
+      "patched_fpr": 0.0
+    },
+    "all_six_metrics_equal_all_epochs": true
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "device": "cuda:0",
+  "train_members": [
+    "primevul_paired:train:3",
+    "primevul_paired:train:4",
+    "primevul_paired:train:6",
+    "primevul_paired:train:7"
+  ],
+  "updates": 2,
+  "initialization_and_rng_equal": true,
+  "initial_probability_max_delta": 2.9802322387695312e-08,
+  "initial_region_encoder_gradient": 0.0,
+  "region_encoder_gradient_after_head_update": 0.2245551198720932,
+  "all_gradients_finite": true,
+  "diff_independent_inference": true,
+  "save_reload_equal": true,
+  "seconds": 12.301316965837032,
+  "peak_memory_mib": 4010.552734375,
+  "test_used": false,
+  "full_experiment": false,
+  "attention_regularization": {
+    "random": {
+      "selected_lines": [
+        2,
+        2,
+        2,
+        4
+      ],
+      "all_valid_tokens_positive": true,
+      "max_token_weight_ratio": 3.0183780193328857,
+      "inference_unchanged": true
+    },
+    "high": {
+      "selected_lines": [
+        2,
+        2,
+        2,
+        4
+      ],
+      "all_valid_tokens_positive": true,
+      "max_token_weight_ratio": 3.0120437145233154,
+      "inference_unchanged": true
+    },
+    "ema": {
+      "kl": 0.0011570716742426157,
+      "encoder_gradient": 0.5404202938079834,
+      "attention_gradient": 2.5257203578948975,
+      "reference_has_no_gradient": true,
+      "healthy_parameter_update": true,
+      "controlled_head_perturbation": true
+    }
+  }
+}

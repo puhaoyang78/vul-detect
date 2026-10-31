@@ -14,15 +14,19 @@ from transformers import RobertaModel
 from tests.test_losver import Tokens, config
 from vulnmechanism.data import paired_features
 from vulnmechanism.model import LOSVERDetector, predict_checkpoint
-from vulnmechanism.training import paired_collate, paired_forward, shuffle_line_labels
+from vulnmechanism.training import (
+    paired_collate, paired_forward, shuffle_line_labels, random_attention_suppression,
+    make_attention_ema, update_attention_ema, attention_ema_loss,
+)
 from vulnmechanism.evaluation import validate_paired
-from vulnmechanism.evaluation import bounded_region_record
+from vulnmechanism.evaluation import bounded_region_record, attention_distribution_record, attention_epoch_diagnostics
 
 
-def detector(bounded=True, region=None):
+def detector(bounded=True, region=None, suppression=None):
     c = config()
     return LOSVERDetector(RobertaModel(c,add_pooling_layer=False),c,
-        SimpleNamespace(class_weight=1.,bounded_attention=bounded,attention_region=region))
+        SimpleNamespace(class_weight=1.,bounded_attention=bounded,attention_region=region,
+                        attention_suppression=suppression))
 
 
 def rows():
@@ -191,6 +195,113 @@ class BoundedAttentionTests(unittest.TestCase):
             r=bounded_region_record(dict(annotation,lines_ground_truth=selected),prediction)
             self.assertFalse(r["eligible"])
             self.assertIsNone(r["mean_rate_ratio"])
+
+    def test_high_suppresses_rates_not_length_weighted_attention(self):
+        model=detector(region="diff",suppression="high")
+        states=torch.zeros(1,49,16,requires_grad=True)
+        states.data[0,0,0]=4.
+        states.data[0,9:,0]=.5
+        membership=torch.zeros(1,10,49,dtype=torch.bool)
+        for i in range(9): membership[0,i,i]=True
+        membership[0,9,9:]=True
+        model.line_attention.weight.data.zero_();model.line_attention.weight.data[0,0]=1.
+        _,d=model.bounded_pool(states,torch.ones(1,49,dtype=torch.bool),membership,suppress=True)
+        self.assertEqual(int(d["line_attention"].argmax(-1)),9)
+        self.assertEqual(d["suppression_mask"].nonzero().tolist(),[[0,0]])
+        self.assertEqual(float(d["suppressed_rates"][0,0]),1.)
+        self.assertTrue((d["suppressed_token_attention"]>0).all())
+        self.assertLessEqual(float(d["suppressed_token_attention"].max()/d["suppressed_token_attention"].min()),5.+1e-6)
+        torch.testing.assert_close(d["suppressed_token_attention"].sum(),torch.tensor(1.))
+
+    def test_random_suppression_rng_counts_padding_and_small_functions(self):
+        data=dict(line_numbers=torch.tensor([list(range(23))+[-1]*3,list(range(9))+[-1]*17]))
+        py,th=random.getstate(),torch.get_rng_state()
+        a=random_attention_suppression(data,random.Random(123456))
+        b=random_attention_suppression(data,random.Random(123456))
+        torch.testing.assert_close(a,b)
+        self.assertEqual(a.sum(-1).tolist(),[2,0])
+        self.assertFalse((a & (data["line_numbers"]<0)).any())
+        self.assertEqual(random.getstate(),py)
+        torch.testing.assert_close(torch.get_rng_state(),th,rtol=0,atol=0)
+
+    def test_suppression_two_bce_one_encoder_original_region_and_inference(self):
+        records=rows();records[0]["func"]="\n".join(f"x += {i};" for i in range(12))
+        data=batch(records)
+        for mode in ("random","high"):
+            with self.subTest(mode=mode):
+                model=detector(region="diff",suppression=mode).train()
+                mask=random_attention_suppression(data,random.Random(4)) if mode=="random" else None
+                with patch.object(model.encoder,"forward",wraps=model.encoder.forward) as enc:
+                    loss,p,d=paired_forward(model,data,"baseline","cpu",return_attention=True,suppression_mask=mask)
+                self.assertEqual(enc.call_count,1)
+                torch.testing.assert_close(d["bce"],(d["bce_normal"]+d["bce_suppressed"])/2)
+                expected,n=model.attention_region_loss(d["line_rates"],d["line_counts"],data["line_labels"])
+                torch.testing.assert_close(loss,d["bce"]+.1*expected)
+                self.assertEqual(int(n),int(d["region_functions"]))
+                self.assertEqual(d["suppression_mask"].sum(-1).tolist(),[1,0])
+                loss.backward()
+                self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()))
+                model.eval()
+                with torch.no_grad():
+                    p,d=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+                    self.assertNotIn("suppressed_rates",d)
+                    model.attention_suppression=None
+                    q=paired_forward(model,dict(data,line_labels=1-data["line_labels"]),"baseline","cpu",with_labels=False)
+                torch.testing.assert_close(p,q,rtol=0,atol=0)
+
+    def test_ema_full_encoder_update_kl_gradients_and_padding(self):
+        model=detector(region="diff").train()
+        model.line_attention.weight.data.normal_(std=.2)
+        py,th=random.getstate(),torch.get_rng_state()
+        ema=make_attention_ema(model)
+        self.assertEqual(set(ema),{"encoder","line_attention"})
+        self.assertFalse(ema.training);self.assertTrue(all(not p.requires_grad for p in ema.parameters()))
+        self.assertEqual(random.getstate(),py)
+        torch.testing.assert_close(torch.get_rng_state(),th,rtol=0,atol=0)
+        before={k:v.clone() for k,v in ema.state_dict().items()}
+        model.line_attention.weight.data.add_(.3)
+        model.encoder.embeddings.word_embeddings.weight.data[5:25].add_(.2)
+        data=batch()
+        _,_,d=paired_forward(model,data,"baseline","cpu",return_attention=True)
+        kl=attention_ema_loss(model,ema,data,d["line_attention"],"cpu")
+        self.assertGreater(float(kl.detach()),0.)
+        padded=dict(data,line_token_mask=torch.cat([data["line_token_mask"],torch.zeros(len(data["labels"]),2,512,dtype=torch.bool)],1))
+        padded_kl=attention_ema_loss(model,ema,padded,torch.cat([d["line_attention"],torch.zeros(len(data["labels"]),2)],1),"cpu")
+        torch.testing.assert_close(kl,padded_kl)
+        kl.backward()
+        self.assertGreater(float(model.line_attention.weight.grad.abs().sum()),0.)
+        self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()),0.)
+        self.assertTrue(all(p.grad is None for p in ema.parameters()))
+        update_attention_ema(ema,model)
+        for k,v in ema.state_dict().items():
+            online=dict(encoder=model.encoder,line_attention=model.line_attention)[k.split('.')[0]].state_dict()[k.split('.',1)[1]]
+            expected=before[k]*.99+online.detach()*.01 if v.is_floating_point() else online
+            torch.testing.assert_close(v,expected)
+        self.assertTrue(any(not torch.equal(v,before[k]) for k,v in ema.state_dict().items() if k.startswith("encoder.")))
+
+    def test_diagnostics_uniform_token_reference_and_rng_preservation(self):
+        ann=dict(sample_key="x",pair_key="p",target=1,lines_ground_truth=[1])
+        pred=dict(sample_key="x",line_numbers=[0,1],line_token_counts=[3,1],line_rates=[2.,2.])
+        first=attention_distribution_record(ann,pred)
+        self.assertAlmostEqual(first["token_mean_jsd"],0.)
+        self.assertLess(first["normalized_line_entropy"],1.)
+        self.assertIsNone(first["consecutive_jsd"])
+        other=dict(pred,line_rates=[1.,3.])
+        second=attention_distribution_record(ann,other,pred)
+        self.assertGreater(second["consecutive_jsd"],0.)
+        self.assertGreater(second["token_mean_jsd"],0.)
+        model=detector(region="diff").train();data=batch()
+        py,th=random.getstate(),torch.get_rng_state()
+        with tempfile.TemporaryDirectory() as tmp:
+            summary,previous=attention_epoch_diagnostics(model,{s:rows() for s in ("train","valid")},
+                {s:[data] for s in ("train","valid")},Tokens(),"cpu",1,{},Path(tmp)/"diag.jsonl")
+            again,_=attention_epoch_diagnostics(model,{s:rows() for s in ("train","valid")},
+                {s:[data] for s in ("train","valid")},Tokens(),"cpu",2,previous,Path(tmp)/"diag.jsonl")
+        self.assertTrue(model.training)
+        self.assertEqual(random.getstate(),py)
+        torch.testing.assert_close(torch.get_rng_state(),th,rtol=0,atol=0)
+        self.assertIsNone(summary["valid"]["consecutive_jsd"])
+        self.assertAlmostEqual(again["valid"]["consecutive_jsd"],0.)
 
 
 if __name__=="__main__":
