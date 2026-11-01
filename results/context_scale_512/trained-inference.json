@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "model": "context_scale_diff",
+      "selected_epoch": 15,
+      "sample_key": "primevul_paired:valid:1",
+      "saved_probability": 0.045189473778009415,
+      "source_only_probability": 0.04518953710794449,
+      "max_delta": 6.332993507385254e-08,
+      "checkpoint_restored": true,
+      "diff_inputs_supplied": false
+    },
+    {
+      "model": "context_scale_random",
+      "selected_epoch": 14,
+      "sample_key": "primevul_paired:valid:1",
+      "saved_probability": 0.4598621129989624,
+      "source_only_probability": 0.45986223220825195,
+      "max_delta": 1.1920928955078125e-07,
+      "checkpoint_restored": true,
+      "diff_inputs_supplied": false
+    }
+  ],
+  "test_used": false
+}

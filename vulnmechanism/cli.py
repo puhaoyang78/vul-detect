@@ -79,6 +79,8 @@ def build_parser():
                            help="condition bounded line scores on the valid code-token mean, rank 32")
             p.add_argument("--attention-local", action="store_true",
                            help="add learned physical-line neighbors within +/-3; requires attention context")
+            p.add_argument("--attention-context-scale", action="store_true",
+                           help="function-adaptive context_scale: 2*sigmoid(Linear(non-affine LayerNorm(g)))")
             p.add_argument("--attention-region", choices=("diff", "random"),
                            help="fixed 0.1 log(2) region constraint; requires bounded attention")
             p.add_argument("--attention-suppression", choices=("random", "high"),
@@ -131,6 +133,7 @@ def build_parser():
     p.add_argument("--bounded-attention",action="store_true")
     p.add_argument("--attention-context",action="store_true")
     p.add_argument("--attention-local",action="store_true")
+    p.add_argument("--attention-context-scale",action="store_true")
     p.add_argument("--attention-regularization",action="store_true")
     p.add_argument("--device",default="auto")
     p.add_argument(
@@ -178,6 +181,8 @@ def build_parser():
                    help="also check rank-32 context interaction and its initialization")
     p.add_argument("--attention-local",action="store_true",
                    help="also check local/global attention and physical-line neighborhoods")
+    p.add_argument("--attention-context-scale",action="store_true",
+                   help="also check context_scale initialization, gradients and fixed-alpha inference")
     p.add_argument("--attention-regularization",action="store_true",
                    help="also check real suppression and full-encoder EMA gradients")
     return parser
@@ -248,6 +253,7 @@ def main():
                     bounded_attention=args.bounded_attention,
                     attention_context=args.attention_context,
                     attention_local=args.attention_local,
+                    attention_context_scale=args.attention_context_scale,
                     attention_region=args.attention_region,
                     attention_suppression=args.attention_suppression,
                     attention_ema=args.attention_ema,
@@ -264,6 +270,8 @@ def main():
             raise ValueError("context checks require bounded attention without other regularization")
         if args.attention_local and not args.attention_context:
             raise ValueError("local checks require attention context")
+        if args.attention_context_scale and (not args.attention_context or args.attention_local):
+            raise ValueError("context_scale checks require context attention without local attention")
 
         print(
             json.dumps(
@@ -275,7 +283,8 @@ def main():
                     device=args.device,
                     input_mode=args.paired_input,
                     **(dict(regularization=args.attention_regularization,
-                            context=args.attention_context, local=args.attention_local) if args.bounded_attention else {}),
+                            context=args.attention_context, local=args.attention_local,
+                            context_scale=args.attention_context_scale) if args.bounded_attention else {}),
                 ),
                 indent=2,
             )
@@ -318,6 +327,7 @@ def main():
                               bounded_attention=args.bounded_attention,
                               attention_context=args.attention_context,
                               attention_local=args.attention_local,
+                              attention_context_scale=args.attention_context_scale,
                               attention_regularization=args.attention_regularization,device=args.device)
                 if args.dataset == "primevul_paired"
                 else report(args.output_dir, args.data_dir),

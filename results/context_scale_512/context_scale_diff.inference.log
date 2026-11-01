@@ -1,0 +1,7 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"model": "context_scale_diff", "split": "train", "mode": "learned", "functions": 8708}
+{"model": "context_scale_diff", "split": "train", "mode": "context_scale_one", "functions": 8708, "p_c": 0.6334405144694534}
+{"model": "context_scale_diff", "split": "valid", "mode": "context_scale_one", "functions": 1124, "p_c": 0.1583629893238434}
+{"model": "context_scale_diff", "selected_epoch": 15, "context_scale_weight_norm": 0.2251731902360916, "context_scale_bias": 0.008959462866187096, "source_only": true}

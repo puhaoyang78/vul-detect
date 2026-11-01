@@ -317,10 +317,12 @@ class ResumeTests(unittest.TestCase):
 
         def factory(path,variant,**kwargs):
             return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region"),
-                            context=kwargs.get("attention_context",False),local=kwargs.get("attention_local",False)),Tokens()
+                            context=kwargs.get("attention_context",False),local=kwargs.get("attention_local",False),
+                            context_scale=kwargs.get("attention_context_scale",False)),Tokens()
 
-        for supervision,context,local in ((s,c,l) for s in (None,"diff","random") for c,l in ((False,False),(True,False),(True,True))):
-            with self.subTest(supervision=supervision,context=context,local=local),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+        for supervision,context,local,context_scale in ((s,c,l,a) for s in (None,"diff","random")
+                for c,l,a in ((False,False,False),(True,False,False),(True,True,False),(True,False,True))):
+            with self.subTest(supervision=supervision,context=context,local=local,context_scale=context_scale),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
                 root=Path(tmp);self.paired_fixture(root,"512")
                 path=root/"data/primevul_paired/train.lines.jsonl"
                 rows=read_jsonl(path)
@@ -333,6 +335,7 @@ class ResumeTests(unittest.TestCase):
                 options=dict(device="cpu",config=settings,input_mode="512",save_every=1,
                              bounded_attention=True,attention_region=supervision,attention_context=context,
                              attention_local=local,
+                             attention_context_scale=context_scale,
                              function_micro_batch=2)
                 training.train_losver(root/"data",root/"control","fixture","unixcoder",**options)
                 with self.interruption(epoch=2,step=4,after_save=True),self.assertRaises(Interrupted):
@@ -341,11 +344,15 @@ class ResumeTests(unittest.TestCase):
                 self.compare_runs(root/"control/primevul_paired/unixcoder",root/"resumed/primevul_paired/unixcoder",["best-p_c.pt"])
                 with self.assertRaisesRegex(ValueError,"completed training configuration"):
                     training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
-                                         **dict(options,attention_context=not context,attention_local=False))
+                                         **dict(options,attention_context=not context,attention_local=False,attention_context_scale=False))
                 if context:
                     with self.assertRaisesRegex(ValueError,"completed training configuration"):
                         training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
-                                             **dict(options,attention_local=not local))
+                                             **dict(options,attention_local=not local,attention_context_scale=False))
+                    if not local:
+                        with self.assertRaisesRegex(ValueError,"completed training configuration"):
+                            training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
+                                                 **dict(options,attention_context_scale=not context_scale))
 
     def test_attention_regularization_resume_including_epoch_diagnostics(self):
         from tests.test_bounded_attention import detector

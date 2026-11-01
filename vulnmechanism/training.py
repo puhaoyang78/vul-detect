@@ -175,6 +175,7 @@ def train(
     bounded_attention=False,
     attention_context=False,
     attention_local=False,
+    attention_context_scale=False,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -217,6 +218,7 @@ def train(
             bounded_attention=bounded_attention,
             attention_context=attention_context,
             attention_local=attention_local,
+            attention_context_scale=attention_context_scale,
             attention_region=attention_region,
             attention_suppression=attention_suppression,
             attention_ema=attention_ema,
@@ -230,7 +232,8 @@ def train(
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
-        or bounded_attention or attention_context or attention_local or attention_region is not None or attention_suppression is not None
+        or bounded_attention or attention_context or attention_local or attention_context_scale
+        or attention_region is not None or attention_suppression is not None
         or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
@@ -1100,6 +1103,7 @@ def train_losver(
     bounded_attention=False,
     attention_context=False,
     attention_local=False,
+    attention_context_scale=False,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -1129,6 +1133,8 @@ def train_losver(
         raise ValueError("context attention requires bounded attention without suppression or EMA")
     if attention_local and not attention_context:
         raise ValueError("local attention requires context attention")
+    if attention_context_scale and (not attention_context or attention_local):
+        raise ValueError("context_scale requires context attention without local attention")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("attention region requires bounded attention and diff/random")
     if attention_suppression is not None or attention_ema or attention_diagnostics:
@@ -1210,6 +1216,7 @@ def train_losver(
                 or ("bounded_attention" in completed)!=bounded_attention
                 or bool(completed.get("bounded_attention",{}).get("context"))!=attention_context
                 or bool(completed.get("bounded_attention",{}).get("local"))!=attention_local
+                or bool(completed.get("bounded_attention",{}).get("context_scale"))!=attention_context_scale
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
             raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
@@ -1276,6 +1283,7 @@ def train_losver(
         **(dict(bounded_attention=True, attention_region=attention_region) if bounded_attention else {}),
         **(dict(attention_context=True) if attention_context else {}),
         **(dict(attention_local=True) if attention_local else {}),
+        **(dict(attention_context_scale=True) if attention_context_scale else {}),
         **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
@@ -1509,6 +1517,13 @@ def train_losver(
                 representation="l_i=sum_j attention_ij*h_j",
                 score="W(h_i) + dot(U(h_i), V(g)+T(l_i))/sqrt(32)",
                 initialization="T=0; no global RNG advance",
+            )
+        if attention_context_scale:
+            metadata["bounded_attention"]["context_scale"] = dict(
+                alpha="2*sigmoid(Linear(LayerNorm(g)))", layer_norm_affine=False,
+                output_dimension=1, initialization="weight=0; bias=0; alpha=1; no global RNG advance",
+                score="W(h_i) + alpha(g)*dot(U(h_i), V(g))/sqrt(32)",
+                inference="single source only; optional fixed alpha=1 intervention",
             )
     if attention_suppression or attention_ema:
         metadata["attention_regularization"] = dict(

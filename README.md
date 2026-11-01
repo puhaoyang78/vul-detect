@@ -390,3 +390,23 @@ python -m vulnmechanism.cli report --dataset primevul_paired --bounded-attention
 实际命令、相关测试、GPU smoke、完整分类指标、所选checkpoint的Train/Valid编辑区域倍率和局部交互统计保存在[双尺度实验报告](results/attention_local_512/report.md)。局部贡献通过T参数范数、局部分数及同一行表示上移除局部项后的倍率变化记录；这些诊断不参与选模。Test不读取，权重留本地。
 
 两组均已完成16轮/17424步。双尺度真实Diff的最佳轮为13，Valid P-C为16.37%、AUC为0.5827、MCC为0.1238；随机Diff的最佳轮为14，P-C为14.95%。真实Diff超过随机Diff，但相对原 `context_diff`（P-C 17.79%）少判对8对，P-C下降1.42个百分点，AUC/MCC也下降，修复侧FPR由52.31%升至57.47%。本轮未验证双尺度的净分类收益。
+
+### 函数自适应上下文调节（context_scale）
+
+在原 `--bounded-attention --attention-context` 上增加 `--attention-context-scale`，与局部双尺度互斥。`g`仍为有效代码Token均值，`alpha(g)=2*sigmoid(Linear(LayerNorm(g)))`，LayerNorm无可训练参数，Linear输出1维，权重与偏置均零初始化。仅新增769个参数，alpha初始严格为1，保留原参数、初始化输出及采样RNG。分数为 `W(h_i)+alpha(g)*dot(U(h_i),V(g))/sqrt(32)`，有界MIL、函数BCE及固定 `.1*L_region` 不变。
+
+关闭开关不新增checkpoint字段或参数，已有Context checkpoint仍可严格加载；单函数推理从checkpoint恢复配置，Diff只用于训练损失及预测后的区域统计。两组采用完整官方Train8708/Valid1124函数、512输入、Seed123456、16轮/17424步、原优化器和固定概率>.5；仅按完整Valid P-C选模，不读取Test、不搜索参数。
+
+```bash
+python -m unittest tests.test_bounded_attention tests.test_line_auxiliary tests.test_losver tests.test_resume
+python -m vulnmechanism.cli check-paired --bounded-attention --attention-context --attention-context-scale --output-dir results/context_scale_512 --device cuda:0
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-context-scale --attention-region diff --output-dir results/context_scale_512/context_scale_diff --device cuda:0 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-context-scale --attention-region random --output-dir results/context_scale_512/context_scale_random --device cuda:1 --resume --save-every 1000
+python -m vulnmechanism.cli report --dataset primevul_paired --bounded-attention --attention-context --attention-context-scale --output-dir results/context_scale_512 --reference-dir results/attention_context_512 --device cuda:0
+```
+
+报告复用已有三组Context对照，统计完整Train/Valid的alpha均值、总体标准差、分位数、固定直方图及修改区域倍率。对每个所选checkpoint将alpha固定为1做Train/Valid推理，不重训练、不重新选epoch。`learned_minus_one`度量同权重调节作用，`one_minus_control`保留新旧训练参数和选模的差异；两者相加为总差值。命令、检查及数据见[context_scale实验报告](results/context_scale_512/report.md)，权重留本地。
+
+两组均已完成16轮/17424步。`context_scale_diff`所选epoch为15，Valid P-C为15.84%、AUC为0.5824、MCC为0.1201；`context_scale_random`所选epoch为14，P-C为15.30%。真实Diff比随机Diff多判对3对，但比原 `context_diff` 少11对，P-C下降1.96个百分点，AUC/MCC也下降；修复侧FPR由52.31%降至50.18%，漏洞Recall同时由66.37%降至62.10%。本轮没有净分类提升。
+
+真实Diff的Train/Valid alpha为1.7845±0.2072、1.8337±0.1803，随机Diff为1.8131±0.1540、1.8202±0.1391；完整分位数和直方图已保存。真实Diff区域倍率为3.2495/1.8224（原Context为3.1495/1.7831）。同一checkpoint固定alpha=1后，真实Diff P-C仍为15.84%，随机Diff反而升至16.01%，未观察到调节项的P-C收益；不能将独立训练所得差异归因于推理时alpha。66项相关测试、真实GPU smoke和[训练后单函数源码推理](results/context_scale_512/trained-inference.json)均通过；不追加变体。

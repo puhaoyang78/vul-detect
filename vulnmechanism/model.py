@@ -520,11 +520,15 @@ class LOSVERDetector(nn.Module):
         self.attention_suppression = getattr(args, "attention_suppression", None)
         self.attention_context = getattr(args, "attention_context", False)
         self.attention_local = getattr(args, "attention_local", False)
+        self.attention_context_scale = getattr(args, "attention_context_scale", False)
         if self.attention_context and self.pooling != "bounded_attention":
             raise ValueError("context attention requires bounded attention")
         if self.attention_local and not self.attention_context:
             raise ValueError("local attention requires context attention")
+        if self.attention_context_scale and (not self.attention_context or self.attention_local):
+            raise ValueError("context_scale requires context attention without local attention")
         self.force_uniform_attention = False
+        self.force_context_scale_one = False
         if self.pooling == "bounded_attention":
             # Preserve encoder/classifier initialization and all sampler RNG.
             with torch.random.fork_rng(devices=[]):
@@ -537,10 +541,16 @@ class LOSVERDetector(nn.Module):
                     self.context_v = nn.Linear(config.hidden_size, 32, bias=False)
                     if self.attention_local:
                         self.context_t = nn.Linear(config.hidden_size, 32, bias=False)
+                    if self.attention_context_scale:
+                        self.context_scale_norm = nn.LayerNorm(config.hidden_size, elementwise_affine=False)
+                        self.context_scale = nn.Linear(config.hidden_size, 1)
                 # U must be nonzero so V receives a gradient on the first step.
                 nn.init.zeros_(self.context_v.weight)
                 if self.attention_local:
                     nn.init.zeros_(self.context_t.weight)
+                if self.attention_context_scale:
+                    nn.init.zeros_(self.context_scale.weight)
+                    nn.init.zeros_(self.context_scale.bias)
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -619,7 +629,14 @@ class LOSVERDetector(nn.Module):
                                      global_scores=global_scores,
                                      rates_without_local=1 + 4 * (scores + global_scores).sigmoid())
                 context = context + projected
-            scores = scores + (queries * context).sum(-1) / math.sqrt(32)
+            interaction = (queries * context).sum(-1) / math.sqrt(32)
+            if self.attention_context_scale:
+                alpha = 2 * self.context_scale(self.context_scale_norm(global_mean)).sigmoid().squeeze(-1)
+                if self.force_context_scale_one:
+                    alpha = torch.ones_like(alpha)
+                local_details["context_scale_alpha"] = alpha
+                interaction = alpha[:, None] * interaction
+            scores = scores + interaction
         rates = 1 + 4 * scores.sigmoid()
         if self.force_uniform_attention:
             rates = torch.ones_like(rates)
@@ -844,6 +861,7 @@ def losver_model(
     bounded_attention=False,
     attention_context=False,
     attention_local=False,
+    attention_context_scale=False,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -858,6 +876,8 @@ def losver_model(
         raise ValueError("context attention requires bounded attention without suppression")
     if attention_local and not attention_context:
         raise ValueError("local attention requires context attention")
+    if attention_context_scale and (not attention_context or attention_local):
+        raise ValueError("context_scale requires context attention without local attention")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("region supervision requires bounded attention and diff/random")
     if attention_suppression is not None and (
@@ -873,6 +893,7 @@ def losver_model(
         bounded_attention=bounded_attention,
         attention_context=attention_context,
         attention_local=attention_local,
+        attention_context_scale=attention_context_scale,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )

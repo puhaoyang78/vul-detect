@@ -22,11 +22,12 @@ from vulnmechanism.evaluation import validate_paired
 from vulnmechanism.evaluation import bounded_region_record, attention_distribution_record, attention_epoch_diagnostics
 
 
-def detector(bounded=True, region=None, suppression=None, *, context=False, local=False):
+def detector(bounded=True, region=None, suppression=None, *, context=False, local=False, context_scale=False):
     c = config()
     return LOSVERDetector(RobertaModel(c,add_pooling_layer=False),c,
         SimpleNamespace(class_weight=1.,bounded_attention=bounded,attention_region=region,
-                        attention_suppression=suppression,attention_context=context,attention_local=local))
+                        attention_suppression=suppression,attention_context=context,attention_local=local,
+                        attention_context_scale=context_scale))
 
 
 def rows():
@@ -44,6 +45,116 @@ def batch(records=None):
 class BoundedAttentionTests(unittest.TestCase):
     def setUp(self):
         torch.set_num_threads(2)
+
+    def test_context_scale_initialization_rng_and_two_step_gradients(self):
+        torch.manual_seed(123456)
+        original=detector(region="diff",context=True).eval()
+        state=torch.get_rng_state();order=torch.randperm(30)
+        torch.manual_seed(123456)
+        model=detector(region="diff",context=True,context_scale=True).eval()
+        torch.testing.assert_close(torch.get_rng_state(),state,rtol=0,atol=0)
+        torch.testing.assert_close(torch.randperm(30),order,rtol=0,atol=0)
+        self.assertEqual(set(model.state_dict())-set(original.state_dict()),
+                         {"context_scale.weight","context_scale.bias"})
+        self.assertFalse(list(model.context_scale_norm.parameters()))
+        self.assertFalse(model.context_scale_norm.elementwise_affine)
+        for name,value in original.state_dict().items():
+            torch.testing.assert_close(value,model.state_dict()[name],rtol=0,atol=0)
+        data=batch()
+        expected=paired_forward(original,data,"baseline","cpu",with_labels=False)
+        actual,d=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+        torch.testing.assert_close(actual,expected,rtol=0,atol=0)
+        torch.testing.assert_close(d["context_scale_alpha"],torch.ones(2),rtol=0,atol=0)
+        optimizer=torch.optim.SGD(model.parameters(),lr=.01)
+        for step in range(2):
+            _,_,d=paired_forward(model,data,"baseline","cpu",return_attention=True)
+            d["region_loss"].backward()
+            gradient=sum(float(p.grad.abs().sum()) for p in model.context_scale.parameters())
+            if step==0:self.assertEqual(gradient,0.)
+            else:
+                self.assertGreater(gradient,0.)
+                self.assertGreater(float(model.context_u.weight.grad.abs().sum()),0.)
+                self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()),0.)
+            self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()))
+            optimizer.step();optimizer.zero_grad()
+        _,d=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+        self.assertTrue((d["context_scale_alpha"]!=1).any())
+        self.assertTrue(model.context_scale.weight.any())
+
+    def test_context_scale_formula_padding_cross_line_and_function_independence(self):
+        model=detector(context=True,context_scale=True).eval()
+        model.context_scale.weight.data.normal_(std=.1);model.context_scale.bias.data.fill_(.2)
+        model.context_v.weight.data.normal_(std=.1)
+        states=torch.randn(2,6,16,requires_grad=True)
+        valid=torch.tensor([[False,True,True,True,True,False]]).expand(2,-1)
+        membership=torch.tensor([[[True,True,True,False,False,False],
+                                  [False,False,True,True,True,True],
+                                  [False,False,False,False,False,False]]]).expand(2,-1,-1)
+        pooled,d=model.bounded_pool(states,valid,membership)
+        g=states[:,1:5].mean(1)
+        normalized=torch.nn.functional.layer_norm(g,(16,),eps=model.context_scale_norm.eps)
+        alpha=2*torch.nn.functional.linear(normalized,model.context_scale.weight,model.context_scale.bias).sigmoid().squeeze(-1)
+        lines=torch.stack([(states[:,1]+.5*states[:,2])/1.5,
+                           (.5*states[:,2]+states[:,3]+states[:,4])/2.5],1)
+        score=model.line_attention(lines).squeeze(-1)+alpha[:,None]*(model.context_u(lines)*model.context_v(g)[:,None]).sum(-1)/(32**.5)
+        torch.testing.assert_close(d["context_scale_alpha"],alpha)
+        torch.testing.assert_close(d["line_rates"][:,:2],1+4*score.sigmoid())
+        torch.testing.assert_close(d["line_counts"],torch.tensor([[1.5,2.5,0.]]).expand(2,-1))
+        torch.testing.assert_close(d["token_attention"].sum(-1),torch.ones(2))
+        self.assertFalse(d["token_attention"][~valid].any())
+        changed=states.detach().clone();changed[:,[0,5]]=1000
+        other,od=model.bounded_pool(changed,valid,membership)
+        torch.testing.assert_close(pooled,other,rtol=0,atol=0)
+        torch.testing.assert_close(alpha,od["context_scale_alpha"],rtol=0,atol=0)
+        changed[1,:,0]+=4
+        _,od=model.bounded_pool(changed,valid,membership)
+        torch.testing.assert_close(alpha[0],od["context_scale_alpha"][0],rtol=0,atol=0)
+        self.assertNotEqual(float(alpha[1].detach()),float(od["context_scale_alpha"][1].detach()))
+        pooled.sum().backward()
+        self.assertFalse(states.grad[:,[0,5]].any())
+        self.assertTrue(torch.isfinite(states.grad).all())
+
+    def test_context_scale_initial_and_fixed_one_equal_learned_context(self):
+        original=detector(region="diff",context=True).eval()
+        original.context_v.weight.data.normal_(std=.1)
+        original.line_attention.weight.data.normal_(std=.1)
+        model=detector(region="diff",context=True,context_scale=True).eval()
+        shared=model.state_dict();shared.update(original.state_dict());model.load_state_dict(shared,strict=True)
+        data=batch()
+        expected=paired_forward(original,data,"baseline","cpu",with_labels=False)
+        torch.testing.assert_close(paired_forward(model,data,"baseline","cpu",with_labels=False),expected,rtol=0,atol=0)
+        model.context_scale.weight.data.normal_(std=.3);model.context_scale.bias.data.fill_(.2)
+        learned,d=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+        self.assertFalse(torch.equal(learned,expected))
+        self.assertGreater(float(d["context_scale_alpha"].detach().std()),0.)
+        model.force_context_scale_one=True
+        fixed,fd=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+        torch.testing.assert_close(fixed,expected,rtol=0,atol=0)
+        torch.testing.assert_close(fd["context_scale_alpha"],torch.ones(2),rtol=0,atol=0)
+        model.force_context_scale_one=False
+        torch.testing.assert_close(paired_forward(model,data,"baseline","cpu",with_labels=False),learned,rtol=0,atol=0)
+
+    def test_context_scale_checkpoint_source_only_inference_and_configuration(self):
+        model=detector(region="diff",context=True,context_scale=True).eval()
+        model.context_v.weight.data.normal_(std=.1);model.context_scale.weight.data.normal_(std=.1)
+        data=batch();expected=paired_forward(model,data,"baseline","cpu",with_labels=False)
+        changed=dict(data,line_labels=1-data["line_labels"],labels=1-data["labels"])
+        torch.testing.assert_close(paired_forward(model,changed,"baseline","cpu",with_labels=False),expected,rtol=0,atol=0)
+        cp=dict(protocol="losver",line_mapping="source_offsets",model_path="fixture",variant="baseline",
+                input_mode="512",pooling="bounded_attention",state_dict=model.state_dict(),
+                bounded_attention=dict(region_supervision="diff",context=dict(dimension=32),
+                                       context_scale=dict(layer_norm_affine=False,output_dimension=1)))
+        def factory(path,variant,**kwargs):
+            return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region"),
+                            context=kwargs.get("attention_context",False),context_scale=kwargs.get("attention_context_scale",False)),Tokens()
+        with tempfile.TemporaryDirectory() as tmp,patch("vulnmechanism.model.losver_model",side_effect=factory):
+            path=Path(tmp)/"model.pt";torch.save(cp,path)
+            actual=predict_checkpoint(path,[dict(raw_source=rows()[0]["func"])],device="cpu")
+        torch.testing.assert_close(actual.sigmoid(),expected[0].reshape(1),rtol=1e-6,atol=1e-7)
+        from vulnmechanism.training import train_losver
+        for extra in ({"bounded_attention":True},{"bounded_attention":True,"attention_context":True,"attention_local":True}):
+            with self.subTest(extra=extra),self.assertRaisesRegex(ValueError,"context_scale requires"):
+                train_losver("unused","unused","unused","unixcoder",attention_context_scale=True,**extra)
 
     def test_local_initialization_rng_and_two_step_gradients(self):
         torch.manual_seed(123456)
