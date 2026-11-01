@@ -519,8 +519,11 @@ class LOSVERDetector(nn.Module):
         self.attention_region = getattr(args, "attention_region", None)
         self.attention_suppression = getattr(args, "attention_suppression", None)
         self.attention_context = getattr(args, "attention_context", False)
+        self.attention_local = getattr(args, "attention_local", False)
         if self.attention_context and self.pooling != "bounded_attention":
             raise ValueError("context attention requires bounded attention")
+        if self.attention_local and not self.attention_context:
+            raise ValueError("local attention requires context attention")
         self.force_uniform_attention = False
         if self.pooling == "bounded_attention":
             # Preserve encoder/classifier initialization and all sampler RNG.
@@ -532,8 +535,12 @@ class LOSVERDetector(nn.Module):
                 with torch.random.fork_rng(devices=[]):
                     self.context_u = nn.Linear(config.hidden_size, 32, bias=False)
                     self.context_v = nn.Linear(config.hidden_size, 32, bias=False)
+                    if self.attention_local:
+                        self.context_t = nn.Linear(config.hidden_size, 32, bias=False)
                 # U must be nonzero so V receives a gradient on the first step.
                 nn.init.zeros_(self.context_v.weight)
+                if self.attention_local:
+                    nn.init.zeros_(self.context_t.weight)
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -568,7 +575,7 @@ class LOSVERDetector(nn.Module):
         result = global_mean + beta * strength * (local - global_mean)
         return torch.where(mass > 0, result, global_mean)
 
-    def bounded_pool(self, states, code_mask, line_token_mask, *, attention_head=None,
+    def bounded_pool(self, states, code_mask, line_token_mask, *, line_numbers=None, attention_head=None,
                      suppress=False, suppression_mask=None):
         """One shared encoding; token-count-weighted physical-line MIL, K=5."""
         membership = (line_token_mask & code_mask[:, None].bool()).to(states.dtype)
@@ -583,14 +590,36 @@ class LOSVERDetector(nn.Module):
         lines = torch.bmm(membership, states) / counts.clamp_min(1e-12)[..., None]
         head = self.line_attention if attention_head is None else attention_head
         scores = head(lines).squeeze(-1)
+        local_details = {}
         if self.attention_context:
             valid = code_mask.to(states.dtype)
             if not (valid.sum(-1) > 0).all():
                 raise ValueError("context attention requires valid code tokens")
             global_mean = (states * valid[..., None]).sum(1) / valid.sum(-1, keepdim=True)
-            scores = scores + (
-                self.context_u(lines) * self.context_v(global_mean)[:, None]
-            ).sum(-1) / math.sqrt(32)
+            queries = self.context_u(lines)
+            context = self.context_v(global_mean)[:, None]
+            if self.attention_local:
+                valid_lines = counts > 0
+                if (line_numbers is None or line_numbers.shape != counts.shape
+                        or (line_numbers[valid_lines] < 0).any()):
+                    raise ValueError("local attention requires physical line numbers for every valid line")
+                distance = (line_numbers[:, :, None] - line_numbers[:, None, :]).abs()
+                neighbors = ((distance > 0) & (distance <= 3)
+                             & valid_lines[:, :, None] & valid_lines[:, None, :])
+                similarities = torch.bmm(queries, queries.transpose(1, 2)) / math.sqrt(32)
+                # An empty neighborhood has exactly zero mass, without an all--inf softmax.
+                masked = similarities.masked_fill(~neighbors, float("-inf"))
+                masked = torch.where(neighbors.any(-1, keepdim=True), masked, 0.)
+                weights = masked.softmax(-1).masked_fill(~neighbors, 0.)
+                local = torch.bmm(weights, lines)
+                projected = self.context_t(local)
+                local_scores = (queries * projected).sum(-1) / math.sqrt(32)
+                global_scores = (queries * context).sum(-1) / math.sqrt(32)
+                local_details = dict(neighbor_attention=weights, neighbor_mask=neighbors, local_scores=local_scores,
+                                     global_scores=global_scores,
+                                     rates_without_local=1 + 4 * (scores + global_scores).sigmoid())
+                context = context + projected
+            scores = scores + (queries * context).sum(-1) / math.sqrt(32)
         rates = 1 + 4 * scores.sigmoid()
         if self.force_uniform_attention:
             rates = torch.ones_like(rates)
@@ -600,7 +629,7 @@ class LOSVERDetector(nn.Module):
         pooled = (lines * attention[..., None]).sum(1)
         token_attention = (membership * (attention / counts.clamp_min(1e-12))[..., None]).sum(1)
         details = dict(line_rates=rates, line_counts=counts,
-                       line_attention=attention, token_attention=token_attention)
+                       line_attention=attention, token_attention=token_attention, **local_details)
         if suppress:
             valid = counts > 0
             if self.attention_suppression == "high":
@@ -653,6 +682,7 @@ class LOSVERDetector(nn.Module):
         line_token_mask=None,
         line_indices=None,
         line_counts=None,
+        line_numbers=None,
         line_labels=None,
         suppression_mask=None,
         return_auxiliary=False,
@@ -728,6 +758,7 @@ class LOSVERDetector(nn.Module):
                 raise ValueError("bounded attention uses one 512-token window per function")
             pooled, attention_details = self.bounded_pool(
                 windows, code_mask, line_token_mask,
+                line_numbers=line_numbers,
                 suppress=self.training and labels is not None and self.attention_suppression is not None,
                 suppression_mask=suppression_mask,
             )
@@ -812,6 +843,7 @@ def losver_model(
     line_auxiliary_weight=None,
     bounded_attention=False,
     attention_context=False,
+    attention_local=False,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -824,6 +856,8 @@ def losver_model(
         raise ValueError("bounded attention uses only the original baseline encoder/classifier")
     if attention_context and (not bounded_attention or attention_suppression is not None):
         raise ValueError("context attention requires bounded attention without suppression")
+    if attention_local and not attention_context:
+        raise ValueError("local attention requires context attention")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("region supervision requires bounded attention and diff/random")
     if attention_suppression is not None and (
@@ -838,6 +872,7 @@ def losver_model(
         line_auxiliary_weight=line_auxiliary_weight,
         bounded_attention=bounded_attention,
         attention_context=attention_context,
+        attention_local=attention_local,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )

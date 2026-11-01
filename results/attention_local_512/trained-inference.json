@@ -1,0 +1,21 @@
+{
+  "test_used": false,
+  "results": {
+    "dual_diff": {
+      "selected_epoch": 13,
+      "sample_key": "primevul_paired:valid:1",
+      "saved_probability": 0.26849496364593506,
+      "source_only_probability": 0.2684953212738037,
+      "max_delta": 3.5762786865234375e-07,
+      "decision_equal": true
+    },
+    "dual_random": {
+      "selected_epoch": 14,
+      "sample_key": "primevul_paired:valid:1",
+      "saved_probability": 0.515596330165863,
+      "source_only_probability": 0.5155963897705078,
+      "max_delta": 5.960464477539063e-08,
+      "decision_equal": true
+    }
+  }
+}

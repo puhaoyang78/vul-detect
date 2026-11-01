@@ -174,6 +174,7 @@ def train(
     train_localizer_dir=None,
     bounded_attention=False,
     attention_context=False,
+    attention_local=False,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -215,6 +216,7 @@ def train(
             train_localizer_dir=train_localizer_dir,
             bounded_attention=bounded_attention,
             attention_context=attention_context,
+            attention_local=attention_local,
             attention_region=attention_region,
             attention_suppression=attention_suppression,
             attention_ema=attention_ema,
@@ -228,7 +230,7 @@ def train(
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
-        or bounded_attention or attention_context or attention_region is not None or attention_suppression is not None
+        or bounded_attention or attention_context or attention_local or attention_region is not None or attention_suppression is not None
         or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
@@ -946,6 +948,8 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         keys.append("region_scores")
     if getattr(model, "pooling", None) == "bounded_attention":
         keys.append("line_token_mask")
+        if model.attention_local:
+            keys.append("line_numbers")
         if with_labels and model.attention_region is not None:
             keys.append("line_labels")
     args = {key: batch[key].to(device) for key in keys}
@@ -1095,6 +1099,7 @@ def train_losver(
     train_localizer_dir=None,
     bounded_attention=False,
     attention_context=False,
+    attention_local=False,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -1122,6 +1127,8 @@ def train_losver(
         raise ValueError("bounded attention requires the original 512 unixcoder without line auxiliary")
     if attention_context and (not bounded_attention or attention_suppression is not None or attention_ema):
         raise ValueError("context attention requires bounded attention without suppression or EMA")
+    if attention_local and not attention_context:
+        raise ValueError("local attention requires context attention")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("attention region requires bounded attention and diff/random")
     if attention_suppression is not None or attention_ema or attention_diagnostics:
@@ -1202,6 +1209,7 @@ def train_losver(
                 or ("attention_diagnostics" in completed)!=attention_diagnostics
                 or ("bounded_attention" in completed)!=bounded_attention
                 or bool(completed.get("bounded_attention",{}).get("context"))!=attention_context
+                or bool(completed.get("bounded_attention",{}).get("local"))!=attention_local
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
             raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
@@ -1267,6 +1275,7 @@ def train_losver(
         **(dict(line_auxiliary_weight=line_auxiliary_weight) if joint else {}),
         **(dict(bounded_attention=True, attention_region=attention_region) if bounded_attention else {}),
         **(dict(attention_context=True) if attention_context else {}),
+        **(dict(attention_local=True) if attention_local else {}),
         **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
@@ -1491,6 +1500,15 @@ def train_losver(
                 score="W(h_i) + dot(U(h_i), V(g))/sqrt(32)",
                 global_mean="valid code tokens; cross-line tokens counted once",
                 initialization="W=0; U=random; V=0; no global RNG advance",
+            )
+        if attention_local:
+            metadata["bounded_attention"]["local"] = dict(
+                dimension=32, bias=False, radius=3,
+                neighbors="physical line distance 1..3; valid source-token lines only",
+                weights="softmax(dot(U(h_i), U(h_j))/sqrt(32)) over neighbors; empty=0",
+                representation="l_i=sum_j attention_ij*h_j",
+                score="W(h_i) + dot(U(h_i), V(g)+T(l_i))/sqrt(32)",
+                initialization="T=0; no global RNG advance",
             )
     if attention_suppression or attention_ema:
         metadata["attention_regularization"] = dict(

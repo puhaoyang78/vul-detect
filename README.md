@@ -372,3 +372,21 @@ python -m vulnmechanism.cli report --dataset primevul_paired --bounded-attention
 |Context+随机Diff|15|16.37%|0.5754|0.1014|54.95%|54.80%|44.66%|1.27/1.16|
 
 在该固定Seed的Valid上，Context+真实Diff较Context+随机Diff多判对8对，较原真实Diff多10对，P-C分别提高1.42、1.78个百分点；也高于原Global Mean的16.37%。相对原真实Diff，AUC/MCC上升，F1/Recall下降、修复侧FPR下降。Context+BCE的P-C、AUC、MCC均低于原attention_bce，条件化本身未显示普遍收益。三组与旧对照的完整成员、环境、输入覆盖、最终CPU采样及CUDA dropout RNG、真实/随机Diff掩码均核对一致；没有读取Test或追加搜索。全部七组对照、逐轮指标及完整关注统计见[报告](results/attention_context_512/report.md)。
+
+### 局部—全局双尺度有界注意力
+
+在 `--bounded-attention --attention-context` 上增加 `--attention-local`。复用当前物理行表示 `h_i` 和32维U/V，候选邻居为物理行号距离1至3且有有效代码Token的行。邻居权重为 `softmax(dot(U(h_i),U(h_j))/sqrt(32))`，局部表示为邻居行表示的加权和 `l_i`；无邻居时为0。分数扩展为 `W(h_i)+dot(U(h_i),V(g)+T(l_i))/sqrt(32)`，仅增加无偏置 `T(768,32)` 的24576个参数。T零初始化，保持原参数、采样RNG及初始输出；关闭开关时不增加参数或checkpoint字段，原Context checkpoint可严格加载。推理从checkpoint恢复开关，仅输入单函数源码。
+
+沿用512输入、完整官方Train8708/Valid1124函数、Seed123456、16轮、Batch8、原优化器、函数BCE及固定 `.1*L_region`，只按完整Valid P-C选模、固定概率>.5。不按Diff筛选邻居。真实Diff与固定随机Diff分别训练，已有Context三组作为对照。
+
+```bash
+python -m unittest tests.test_bounded_attention tests.test_line_auxiliary tests.test_losver tests.test_resume
+python -m vulnmechanism.cli check-paired --bounded-attention --attention-context --attention-local --output-dir results/attention_local_512 --device cuda:0
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-local --attention-region diff --output-dir results/attention_local_512/dual_diff --device cuda:0 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-local --attention-region random --output-dir results/attention_local_512/dual_random --device cuda:1 --resume --save-every 1000
+python -m vulnmechanism.cli report --dataset primevul_paired --bounded-attention --attention-context --attention-local --output-dir results/attention_local_512 --reference-dir results/attention_context_512 --device cuda:0
+```
+
+实际命令、相关测试、GPU smoke、完整分类指标、所选checkpoint的Train/Valid编辑区域倍率和局部交互统计保存在[双尺度实验报告](results/attention_local_512/report.md)。局部贡献通过T参数范数、局部分数及同一行表示上移除局部项后的倍率变化记录；这些诊断不参与选模。Test不读取，权重留本地。
+
+两组均已完成16轮/17424步。双尺度真实Diff的最佳轮为13，Valid P-C为16.37%、AUC为0.5827、MCC为0.1238；随机Diff的最佳轮为14，P-C为14.95%。真实Diff超过随机Diff，但相对原 `context_diff`（P-C 17.79%）少判对8对，P-C下降1.42个百分点，AUC/MCC也下降，修复侧FPR由52.31%升至57.47%。本轮未验证双尺度的净分类收益。

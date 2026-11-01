@@ -754,10 +754,17 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
             value = torch.nn.functional.binary_cross_entropy_with_logits(
                 details["logits"],batch["labels"].float().to(device)
             )
-            for numbers,rates,counts in zip(batch["line_numbers"],details["line_rates"],details["line_counts"]):
+            for i,(numbers,rates,counts) in enumerate(zip(batch["line_numbers"],details["line_rates"],details["line_counts"])):
                 n = int((numbers>=0).sum())
                 attention_predictions.append(dict(line_numbers=numbers[:n].tolist(),
                     line_rates=rates[:n].cpu().tolist(),line_token_counts=counts[:n].cpu().tolist()))
+                if model.attention_local:
+                    attention_predictions[-1].update(
+                        local_scores=details["local_scores"][i,:n].cpu().tolist(),
+                        global_scores=details["global_scores"][i,:n].cpu().tolist(),
+                        line_rates_without_local=details["rates_without_local"][i,:n].cpu().tolist(),
+                        neighbor_counts=details["neighbor_mask"][i,:n].sum(-1).cpu().tolist(),
+                    )
         elif joint:
             value, prob, details = paired_forward(model, batch, variant, device, return_auxiliary=True)
             for labels, numbers, p in zip(batch["line_labels"], batch["line_numbers"], details["line_probabilities"]):
@@ -875,6 +882,7 @@ def load_paired(checkpoint, device):
                 attention_region=checkpoint["bounded_attention"]["region_supervision"])
            if "bounded_attention" in checkpoint else {}),
         **(dict(attention_context=True) if checkpoint.get("bounded_attention", {}).get("context") else {}),
+        **(dict(attention_local=True) if checkpoint.get("bounded_attention", {}).get("local") else {}),
     )
     model.input_mode = checkpoint["input_mode"]
     model.weak_supervision = checkpoint.get("weak_supervision", False)
@@ -2295,7 +2303,7 @@ def oof_report(output_dir, data_dir):
     return comparison
 
 
-def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input_mode="512",regularization=False,context=False):
+def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input_mode="512",regularization=False,context=False,local=False):
     """Actual pretrained encoder, Train examples, two updates; no experiment claim."""
     import tempfile
     import time
@@ -2305,15 +2313,17 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         raise ValueError("bounded attention checks require 512")
     if context and regularization:
         raise ValueError("check context attention separately from other regularization")
+    if local and not context:
+        raise ValueError("local checks require context attention")
     device=core.resolve_device(device)
     started=time.perf_counter()
     core.seed_everything(123456)
-    baseline,tokenizer=core.losver_model(model_path,"baseline",bounded_attention=context)
+    baseline,tokenizer=core.losver_model(model_path,"baseline",bounded_attention=context,attention_context=local)
     initial_rng=torch.get_rng_state()
     initial_cuda_rng=torch.cuda.get_rng_state_all() if device.type=="cuda" else []
     core.seed_everything(123456)
     model,_=core.losver_model(model_path,"baseline",bounded_attention=True,attention_region="diff",
-                             attention_context=context)
+                             attention_context=context,attention_local=local)
     assert torch.equal(torch.get_rng_state(),initial_rng)
     assert all(torch.equal(a,b) for a,b in zip(initial_cuda_rng,
         torch.cuda.get_rng_state_all() if device.type=="cuda" else [],strict=True))
@@ -2355,6 +2365,9 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         context_checks.update(first_u_gradient=float(model.context_u.weight.grad.abs().sum()),
                               first_v_gradient=float(model.context_v.weight.grad.abs().sum()))
         assert context_checks["first_u_gradient"]==0 and context_checks["first_v_gradient"]>0
+    if local:
+        context_checks["first_t_gradient"]=float(model.context_t.weight.grad.abs().sum())
+        assert context_checks["first_t_gradient"]>0 and not bool(model.context_t.weight.any())
     optimizer.step();optimizer.zero_grad()
     _,_,parts=paired_forward(model,batch,"baseline",device,return_attention=True)
     parts["region_loss"].backward()
@@ -2364,6 +2377,9 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         context_checks.update(second_u_gradient=float(model.context_u.weight.grad.abs().sum()),
                               second_v_gradient=float(model.context_v.weight.grad.abs().sum()))
         assert context_checks["second_u_gradient"]>0 and context_checks["second_v_gradient"]>0
+    if local:
+        context_checks["second_t_gradient"]=float(model.context_t.weight.grad.abs().sum())
+        assert context_checks["second_t_gradient"]>0
     optimizer.zero_grad()
     model.train()
     loss,_,parts=paired_forward(model,batch,"baseline",device,return_attention=True)
@@ -2377,10 +2393,25 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         if context:
             states=model.encoder(batch["input_ids"].to(device),attention_mask=batch["attention_mask"].to(device))[0]
             membership=batch["line_token_mask"].to(device)
-            _,d=model.bounded_pool(states,mask,membership)
+            coordinates=dict(line_numbers=batch["line_numbers"].to(device)) if local else {}
+            _,d=model.bounded_pool(states,mask,membership,**coordinates)
+            if local:
+                numbers=coordinates["line_numbers"]
+                distance=(numbers[:,:,None]-numbers[:,None,:]).abs()
+                valid_lines=d["line_counts"]>0
+                neighbors=((distance>0)&(distance<=3)&valid_lines[:,:,None]&valid_lines[:,None,:])
+                weights=d["neighbor_attention"]
+                assert not bool(weights[~neighbors].any())
+                torch.testing.assert_close(weights.sum(-1),neighbors.any(-1).float())
+                context_checks.update(neighborhood_mask_correct=True,
+                    neighbor_normalization_max_error=float((weights.sum(-1)-neighbors.any(-1).float()).abs().max()),
+                    local_score_abs_max=float(d["local_scores"].abs().max()),
+                    learned_local_rate_delta=float((d["line_rates"]-d["rates_without_local"]).masked_fill(~valid_lines,0).abs().max()),
+                    t_weight_norm=float(model.context_t.weight.norm()))
+                assert context_checks["local_score_abs_max"]>0 and context_checks["learned_local_rate_delta"]>0
             v=model.context_v.weight.clone()
             model.context_v.weight.zero_()
-            _,without=model.bounded_pool(states,mask,membership)
+            _,without=model.bounded_pool(states,mask,membership,**coordinates)
             model.context_v.weight.copy_(v)
             context_checks["learned_interaction_rate_delta"]=float((d["line_rates"]-without["line_rates"]).abs().max())
             assert context_checks["learned_interaction_rate_delta"]>0
@@ -2388,18 +2419,19 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
             # surrounding code. The learned U/V interaction must change its rate.
             surrounding=mask & ~membership[:,0]
             perturbed=states+surrounding[...,None]*.1
-            _,other=model.bounded_pool(perturbed,mask,membership)
+            _,other=model.bounded_pool(perturbed,mask,membership,**coordinates)
             context_checks["unchanged_line_context_rate_delta"]=float((d["line_rates"][:,0]-other["line_rates"][:,0]).abs().max())
             assert context_checks["unchanged_line_context_rate_delta"]>0
             padding=states.masked_fill(~mask[...,None],1000)
-            _,padded=model.bounded_pool(padding,mask,membership)
+            _,padded=model.bounded_pool(padding,mask,membership,**coordinates)
             torch.testing.assert_close(d["line_rates"],padded["line_rates"],rtol=0,atol=0)
             assert not bool(d["token_attention"][~mask].any())
             # Exercise shared physical-line membership on the actual GPU.
             synthetic=states[:1,:5]
             valid=torch.tensor([[False,True,True,True,False]],device=device)
             cross=torch.tensor([[[True,True,True,False,False],[False,False,True,True,True]]],device=device)
-            _,cross_details=model.bounded_pool(synthetic,valid,cross)
+            _,cross_details=model.bounded_pool(synthetic,valid,cross,
+                **(dict(line_numbers=torch.tensor([[0,3]],device=device)) if local else {}))
             torch.testing.assert_close(cross_details["line_counts"].sum(),torch.tensor(3.,device=device))
             torch.testing.assert_close(cross_details["token_attention"].sum(),torch.tensor(1.,device=device))
             context_checks.update(padding_excluded=True,cross_line_mass_conserved=True,cuda_rng_preserved=True)
@@ -2409,6 +2441,8 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
             state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()})
     if context:
         cp["bounded_attention"]["context"]=dict(dimension=32)
+    if local:
+        cp["bounded_attention"]["local"]=dict(dimension=32,radius=3)
     with tempfile.TemporaryDirectory(prefix="bounded-mil-check-") as tmp:
         path=Path(tmp)/"check.pt";torch.save(cp,path)
         del model,optimizer,parts
@@ -2475,6 +2509,8 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         result["attention_regularization"]=regularization_checks
     if context:
         result["attention_context"]=context_checks
+    if local:
+        result["attention_local"]=True
     write_json(Path(output_dir)/"gpu-smoke.json",result)
     return result
 
@@ -3005,8 +3041,8 @@ def attention_regularization_report(output_dir, data_dir, *, device="auto"):
     return result
 
 
-def attention_context_report(output_dir, data_dir, reference_dir, *, device="auto"):
-    """Three context runs against persisted matched controls; Train/Valid only."""
+def attention_context_report(output_dir, data_dir, reference_dir, *, device="auto", local=False):
+    """Context/local runs against persisted matched controls; Train/Valid only."""
     from statistics import mean
     from .training import paired_loader
     from .metrics import paired_metrics
@@ -3015,12 +3051,17 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
     if reference_dir is None:
         raise ValueError("context comparison requires --reference-dir with completed bounded-attention controls")
     root, reference = Path(output_dir), Path(reference_dir)
-    controls = ("global_mean", "attention_bce", "diff_region", "random_region")
-    contexts = ("context_bce", "context_diff", "context_random")
+    controls = (("context_bce", "context_diff", "context_random") if local else
+                ("global_mean", "attention_bce", "diff_region", "random_region"))
+    contexts = ("dual_diff", "dual_random") if local else ("context_bce", "context_diff", "context_random")
     paths = {n: (reference if n in controls else root)/n/"primevul_paired/unixcoder"
              for n in (*controls, *contexts)}
     configs = {n: json.loads((p/"training.metrics.json").read_text()) for n,p in paths.items()}
-    base = configs["attention_bce"]
+    coordinate_name = "context_bce" if local else "attention_bce"
+    diff_name = "dual_diff" if local else "context_diff"
+    random_name = "dual_random" if local else "context_random"
+    old_diff = "context_diff" if local else "diff_region"
+    base = configs[coordinate_name]
     common = ("training_config", "training_members", "validation_members", "environment", "input_coverage",
               "input_mode", "model_path", "function_micro_batch", "window_micro_batch", "gradient_accumulation")
     annotations = {s: read_jsonl(Path(data_dir)/"primevul_paired"/f"{s}.lines.jsonl") for s in ("train", "valid")}
@@ -3029,6 +3070,7 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
             raise ValueError("official Train/Valid members or order differ")
     device = core.resolve_device(device)
     loaders, predictions, table, summaries, diagnostics, epochs, states, cuda_states = {}, {}, [], [], [], [], [], []
+    local_parameters = {}
     for name,p in paths.items():
         c = configs[name]
         if (any(c[k] != base[k] for k in common) or
@@ -3040,14 +3082,20 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
             raise ValueError("context comparison must not combine other training modules")
         if name != "global_mean":
             cfg = c["bounded_attention"]
-            expected_region = "random" if name in ("random_region","context_random") else "diff" if name in ("diff_region","context_diff") else None
+            expected_region = "random" if name.endswith("random") or name=="random_region" else "diff" if name.endswith("diff") or name=="diff_region" else None
+            expected_context = local or name in contexts
+            added_parameters = 768*32 if local and name in contexts else 2*768*32 if not local and name in contexts else 0
             if (cfg["k"] != 5 or cfg["region_supervision"] != expected_region or
                 cfg["region_weight"] != (.1 if expected_region else 0) or
-                bool(cfg.get("context")) != (name in contexts) or
-                c["parameters"] != base["parameters"] + (2*768*32 if name in contexts else 0)):
+                bool(cfg.get("context")) != expected_context or
+                bool(cfg.get("local")) != (local and name in contexts) or
+                c["parameters"] != base["parameters"] + added_parameters):
                 raise ValueError(f"unexpected attention architecture or region loss: {name}")
-            if name in contexts and (cfg["context"]["dimension"] != 32 or cfg["context"]["bias"]):
+            if expected_context and (cfg["context"]["dimension"] != 32 or cfg["context"]["bias"]):
                 raise ValueError("context U/V must be bias-free rank-32 projections")
+            if local and name in contexts and (cfg["context"] != base["bounded_attention"]["context"] or
+                    cfg["local"]["dimension"] != 32 or cfg["local"]["bias"] or cfg["local"]["radius"] != 3):
+                raise ValueError("local attention must reuse U/V and only add bias-free T with physical radius 3")
         history = [h for h in read_jsonl(p/"best.training.jsonl") if h.get("event") == "epoch"]
         chosen = max(history,key=lambda h:(round(h["validation"]["p_c"],4),-h["epoch"]))
         if len(history) != 16 or chosen["epoch"] != c["selected_epochs"]["p_c"]:
@@ -3085,17 +3133,24 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
         last = torch.load(p/"last.pt",map_location="cpu",weights_only=False,mmap=True)
         states.append(last["rng"]["torch"]); cuda_states.append(last["rng"]["cuda"])
         del last
+        if local and name in contexts:
+            selected = torch.load(p/"best-p_c.pt",map_location="cpu",weights_only=False,mmap=True)
+            t = selected["state_dict"]["context_t.weight"]
+            local_parameters[name] = dict(t_weight_norm=float(t.norm()),t_weight_abs_max=float(t.abs().max()),
+                                          t_nonzero_parameters=int(t.count_nonzero()))
+            del selected,t
     if not all(torch.equal(s,states[0]) for s in states[1:]):
         raise ValueError("training sampler RNG differs from matched controls")
     if not all(len(s)==len(cuda_states[0]) and all(torch.equal(a,b) for a,b in zip(s,cuda_states[0])) for s in cuda_states[1:]):
         raise ValueError("encoder dropout RNG differs from matched controls")
     # Reuse the original controls and their real/random masks without rewriting them.
-    for new,old in (("context_diff","diff_region"),("context_random","random_region")):
+    mask_pairs = (("dual_diff","context_diff"),("dual_random","context_random")) if local else (("context_diff","diff_region"),("context_random","random_region"))
+    for new,old in mask_pairs:
         if read_jsonl(paths[new]/"train.attention_regions.jsonl") != read_jsonl(paths[old]/"train.attention_regions.jsonl"):
             raise ValueError("context training changed real or fixed-random region labels")
     for name in paths:
         for split in ("train","valid"):
-            coordinates = predictions["attention_bce"][split]
+            coordinates = predictions[coordinate_name][split]
             if name == "global_mean":
                 rows = [dict(r,line_rates=[1.]*len(r["line_numbers"])) for r in coordinates]
             else:
@@ -3114,31 +3169,66 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
                 mean_rate_ratio=mean(r["mean_rate_ratio"] for r in eligible),
                 token_coverage_micro=sum(r["region_tokens"] for r in rs)/sum(r["code_tokens"] for r in rs)))
     by_name = {r["model"]:r for r in table}
-    deltas = {n:{m:by_name["context_diff"][m]-by_name[n][m]
+    deltas = {n:{m:by_name[diff_name][m]-by_name[n][m]
                 for m in ("p_c","auc","mcc","f1","recall","patched_fpr")}
-              for n in ("context_bce","context_random","global_mean","attention_bce","diff_region","random_region")}
+              for n in paths if n != diff_name}
     result = dict(test_used=False,reference_dir=str(reference),sampling_rng_equal=True,dropout_rng_equal=True,
-                  results=table,region_summaries=summaries,context_diff_deltas=deltas,
-                  completed_context_epochs=48,optimizer_steps_per_run=17424)
+                  results=table,region_summaries=summaries,optimizer_steps_per_run=17424)
+    result.update({"dual_diff_deltas" if local else "context_diff_deltas":deltas,
+                   "completed_local_epochs" if local else "completed_context_epochs":16*len(contexts)})
+    interactions = []
+    if local:
+        for name in contexts:
+            for split in ("train","valid"):
+                rows = predictions[name][split]
+                scores = [s for r in rows for s in r["local_scores"]]
+                global_scores = [s for r in rows for s in r["global_scores"]]
+                changes = [abs(a-b) for r in rows for a,b in zip(r["line_rates"],r["line_rates_without_local"])]
+                neighbors = [n for r in rows for n in r["neighbor_counts"]]
+                interactions.append(dict(model=name,split=split,lines=len(scores),
+                    local_abs_mean=mean(abs(s) for s in scores),local_rms=mean(s*s for s in scores)**.5,
+                    local_abs_max=max(abs(s) for s in scores),local_nonzero_fraction=mean(s!=0 for s in scores),
+                    global_abs_mean=mean(abs(s) for s in global_scores),
+                    rate_change_abs_mean=mean(changes),rate_change_abs_max=max(changes),
+                    neighbor_query_fraction=mean(n>0 for n in neighbors),mean_neighbors=mean(neighbors),
+                    **local_parameters[name]))
+        result["local_interaction_summaries"]=interactions
+        write_csv(root/"local_interaction.csv",interactions)
     write_json(root/"comparison.json",result)
     for filename,rows in (("comparison.csv",table),("region_summary.csv",summaries),
                           ("region_statistics.csv",diagnostics),("training.csv",epochs)):
         write_csv(root/filename,rows)
-    lines = ["# 上下文条件化有界注意力：完整512实验", "",
-        "官方Train 8708函数/4354对、Valid 1124函数/562对。三组新增Context训练均完整16轮/17424步，Seed123456，Batch8，原优化器与固定概率>.5。复用同协议非Context对照。Test未读取。",
+    lines = ["# 局部—全局双尺度注意力：完整512实验" if local else "# 上下文条件化有界注意力：完整512实验", "",
+        ("官方Train 8708函数/4354对、Valid 1124函数/562对。两组新增双尺度训练均完整16轮/17424步，Seed123456，Batch8，原优化器与固定概率>.5。复用同协议Context对照。Test未读取。" if local else
+         "官方Train 8708函数/4354对、Valid 1124函数/562对。三组新增Context训练均完整16轮/17424步，Seed123456，Batch8，原优化器与固定概率>.5。复用同协议非Context对照。Test未读取。"),
         "仅按完整Valid P-C选epoch，四位小数严格改善、并列取较早轮；不搜索超参数。",
-        "g为有效代码Token均值；s_i=W(h_i)+dot(U(h_i),V(g))/sqrt(32)。W零初始化、U随机、V零初始化，新增初始化保留原模型与采样RNG；U/V无偏置。保持K=5、MIL、函数BCE及固定.1区域损失。", "",
+        ("复用物理行表示及U/V，在物理行号距离1至3的有效行上对dot(U(h_i),U(h_j))/sqrt(32)做邻居Softmax，l_i为邻居行表示加权和；空邻域为0。s_i=W(h_i)+dot(U(h_i),V(g)+T(l_i))/sqrt(32)。仅新增无偏置T(hidden,32)，零初始化且不推进原RNG。保持K=5、MIL、函数BCE及固定.1区域损失。" if local else
+         "g为有效代码Token均值；s_i=W(h_i)+dot(U(h_i),V(g))/sqrt(32)。W零初始化、U随机、V零初始化，新增初始化保留原模型与采样RNG；U/V无偏置。保持K=5、MIL、函数BCE及固定.1区域损失。"), "",
         "|配置|Epoch|P-C|AUC|MCC|F1|漏洞Recall|修复侧FPR|",
         "|---|---:|---:|---:|---:|---:|---:|---:|"]
     lines.extend(f"|{r['model']}|{r['epoch']}|{r['p_c']:.4f}|{r['auc']:.4f}|{r['mcc']:.4f}|{r['f1']:.4f}|{r['recall']:.4f}|{r['patched_fpr']:.4f}|" for r in table)
     lines += ["", "所选checkpoint在完整Train/Valid上的编辑区域/背景平均倍率；先单函数预测，再对照原始Diff统计，仅对非平凡可见区域取函数平均。", "",
               "|配置|Split|有效函数|空区域|全区域|修改区域倍率|", "|---|---|---:|---:|---:|---:|"]
     lines.extend(f"|{r['model']}|{r['split']}|{r['eligible']}/{r['functions']}|{r['empty']}|{r['full']}|{r['mean_rate_ratio']:.4f}|" for r in summaries)
-    lines += ["", "Context+真实Diff相对其他配置的差值：", "",
+    lines += ["", "双尺度+真实Diff相对其他配置的差值：" if local else "Context+真实Diff相对其他配置的差值：", "",
               "|对照|P-C|AUC|MCC|F1|Recall|修复侧FPR|", "|---|---:|---:|---:|---:|---:|---:|"]
     lines.extend(f"|{n}|"+"|".join(f"{d[m]:+.6f}" for m in ("p_c","auc","mcc","f1","recall","patched_fpr"))+"|" for n,d in deltas.items())
-    wins_random = deltas["context_random"]["p_c"] > 0
-    wins_original = deltas["diff_region"]["p_c"] > 0
+    wins_random = deltas[random_name]["p_c"] > 0
+    wins_original = deltas[old_diff]["p_c"] > 0
+    if local:
+        pair_delta = by_name[diff_name]['pair_counts']['p_c']-by_name[old_diff]['pair_counts']['p_c']
+        lines += ["", "所选checkpoint的局部交互项；倍率变化是在同一行表示上去掉局部项计算，关闭局部项不改变编码。", "",
+                  "|配置|Split|T范数|局部分数绝对均值|全局分数绝对均值|倍率绝对变化均值|有邻居行占比|",
+                  "|---|---|---:|---:|---:|---:|---:|"]
+        lines.extend(f"|{r['model']}|{r['split']}|{r['t_weight_norm']:.6f}|{r['local_abs_mean']:.6f}|{r['global_abs_mean']:.6f}|{r['rate_change_abs_mean']:.6f}|{r['neighbor_query_fraction']:.4f}|" for r in interactions)
+        lines += ["", f"按完整Valid P-C，双尺度+真实Diff{'超过' if wins_random else '未超过'}双尺度+随机Diff，{'超过' if wins_original else '未超过'}Context+真实Diff。",
+                  f"相对Context+真实Diff，{'多' if pair_delta>=0 else '少'}判对{abs(pair_delta)}对。",
+                  "本固定Seed观察到P-C改善，其他分类指标的变化见上表。" if wins_original else
+                  "本轮没有超过现有context_diff的P-C，按无净提升报告。局部项学习或关注倍率提高不能替代分类收益。",
+                  "已核对所有组的数据、环境、训练配置、可见行、CPU采样和CUDA dropout RNG；两组区域掩码分别与原Context对照完全一致。",
+                  "检查见[tests.log](tests.log)、[gpu-smoke.json](gpu-smoke.json)，命令见[commands.json](commands.json)。权重保留本地。", ""]
+        (root/"report.md").write_text("\n".join(lines),encoding="utf-8")
+        return result
     lines += ["", f"按Valid P-C，Context+真实Diff{'超过' if wins_random else '未超过'}Context+随机Diff，{'超过' if wins_original else '未超过'}原非Context真实Diff方案。",
         ("本轮没有同时验证真实位置监督及相对原方案的净分类收益，按负结果报告。" if not (wins_random and wins_original)
          else "本固定Seed下观察到P-C提升；结合AUC、MCC、Recall和修复侧FPR解释，关注倍率不能代替分类收益。"),
@@ -3155,11 +3245,14 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
 
 
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False,
-                  bounded_attention=False, attention_regularization=False, attention_context=False, device="auto"):
+                  bounded_attention=False, attention_regularization=False, attention_context=False,
+                  attention_local=False, device="auto"):
+    if attention_local and not attention_context:
+        raise ValueError("local report requires attention context")
     if attention_context:
         if not bounded_attention or attention_regularization or localizer_regularization:
             raise ValueError("context report requires bounded attention without other modules")
-        return attention_context_report(output_dir,data_dir,reference_dir,device=device)
+        return attention_context_report(output_dir,data_dir,reference_dir,device=device,local=attention_local)
     if attention_regularization:
         if localizer_regularization:
             raise ValueError("choose one experiment report")

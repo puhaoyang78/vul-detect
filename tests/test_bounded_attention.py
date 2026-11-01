@@ -22,11 +22,11 @@ from vulnmechanism.evaluation import validate_paired
 from vulnmechanism.evaluation import bounded_region_record, attention_distribution_record, attention_epoch_diagnostics
 
 
-def detector(bounded=True, region=None, suppression=None, *, context=False):
+def detector(bounded=True, region=None, suppression=None, *, context=False, local=False):
     c = config()
     return LOSVERDetector(RobertaModel(c,add_pooling_layer=False),c,
         SimpleNamespace(class_weight=1.,bounded_attention=bounded,attention_region=region,
-                        attention_suppression=suppression,attention_context=context))
+                        attention_suppression=suppression,attention_context=context,attention_local=local))
 
 
 def rows():
@@ -44,6 +44,131 @@ def batch(records=None):
 class BoundedAttentionTests(unittest.TestCase):
     def setUp(self):
         torch.set_num_threads(2)
+
+    def test_local_initialization_rng_and_two_step_gradients(self):
+        torch.manual_seed(123456)
+        original=detector(region="diff",context=True).eval()
+        state=torch.get_rng_state(); order=torch.randperm(30)
+        torch.manual_seed(123456)
+        model=detector(region="diff",context=True,local=True).eval()
+        torch.testing.assert_close(torch.get_rng_state(),state,rtol=0,atol=0)
+        torch.testing.assert_close(torch.randperm(30),order,rtol=0,atol=0)
+        self.assertEqual(set(model.state_dict())-set(original.state_dict()),{"context_t.weight"})
+        for name,value in original.state_dict().items():
+            torch.testing.assert_close(value,model.state_dict()[name],rtol=0,atol=0)
+        self.assertEqual(model.context_t.weight.shape,(32,16))
+        self.assertIsNone(model.context_t.bias)
+        self.assertFalse(model.context_t.weight.any())
+        data=batch()
+        expected,old=paired_forward(original,data,"baseline","cpu",with_labels=False,return_attention=True)
+        actual,new=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+        torch.testing.assert_close(expected,actual,rtol=0,atol=0)
+        torch.testing.assert_close(old["line_rates"],new["line_rates"],rtol=0,atol=0)
+        optimizer=torch.optim.SGD(model.parameters(),lr=.01)
+        for step in range(2):
+            _,_,d=paired_forward(model,data,"baseline","cpu",return_attention=True)
+            d["region_loss"].backward()
+            self.assertGreater(float(model.context_t.weight.grad.abs().sum()),0.)
+            self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()))
+            if step==0:
+                self.assertEqual(float(model.context_u.weight.grad.abs().sum()),0.)
+            else:
+                self.assertGreater(float(model.context_u.weight.grad.abs().sum()),0.)
+                self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()),0.)
+            optimizer.step();optimizer.zero_grad()
+        # Adding zero T must also preserve an already learned context model.
+        original.context_v.weight.data.normal_(std=.2)
+        original.line_attention.weight.data.normal_(std=.2)
+        shared=model.state_dict();shared.update(original.state_dict());shared["context_t.weight"]=torch.zeros_like(model.context_t.weight)
+        model.load_state_dict(shared,strict=True)
+        torch.testing.assert_close(paired_forward(original,data,"baseline","cpu",with_labels=False),
+                                   paired_forward(model,data,"baseline","cpu",with_labels=False),rtol=0,atol=0)
+
+    def test_local_physical_neighbors_formula_padding_and_cross_line_tokens(self):
+        model=detector(context=True,local=True).eval()
+        model.context_t.weight.data.normal_(std=.2)
+        model.context_v.weight.data.normal_(std=.1)
+        states=torch.randn(1,7,16,requires_grad=True)
+        valid=torch.tensor([[False,True,True,True,True,True,False]])
+        membership=torch.tensor([[[True,True,True,False,False,False,False],
+                                  [False,False,True,True,False,False,False],
+                                  [False,False,False,False,True,False,False],
+                                  [False,False,False,False,False,True,True],
+                                  [False,False,False,False,False,False,True]]])
+        numbers=torch.tensor([[0,3,6,10,2]])
+        pooled,d=model.bounded_pool(states,valid,membership,line_numbers=numbers)
+        weighted=(membership & valid[:,None]).float();weighted/=weighted.sum(1).clamp_min(1)[:,None]
+        counts=weighted.sum(-1);lines=torch.bmm(weighted,states)/counts.clamp_min(1e-12)[...,None]
+        q=model.context_u(lines)
+        expected_mask=torch.tensor([[[False,True,False,False,False],
+                                    [True,False,True,False,False],
+                                    [False,True,False,False,False],
+                                    [False,False,False,False,False],
+                                    [False,False,False,False,False]]])
+        weights=d["neighbor_attention"]
+        torch.testing.assert_close(weights>0,expected_mask)
+        torch.testing.assert_close(weights.sum(-1),torch.tensor([[1.,1.,1.,0.,0.]]))
+        expected=(q[:,1,None]*q[:,[0,2]]).sum(-1)/(32**.5)
+        torch.testing.assert_close(weights[:,1,[0,2]],expected.softmax(-1))
+        local=torch.bmm(weights,lines)
+        self.assertFalse(local[:,3:].any())
+        score=model.line_attention(lines).squeeze(-1)+(q*(model.context_v(states[:,1:6].mean(1))[:,None]+model.context_t(local))).sum(-1)/(32**.5)
+        torch.testing.assert_close(d["line_rates"],(1+4*score.sigmoid()).masked_fill(counts==0,0))
+        torch.testing.assert_close(d["line_counts"].sum(),torch.tensor(5.))
+        torch.testing.assert_close(d["token_attention"].sum(),torch.tensor(1.))
+        self.assertFalse(d["local_scores"][:,3:].any())
+        changed=states.detach().clone();changed[:,[0,6]]=1000
+        other,od=model.bounded_pool(changed,valid,membership,line_numbers=numbers)
+        torch.testing.assert_close(pooled,other,rtol=0,atol=0)
+        torch.testing.assert_close(weights,od["neighbor_attention"],rtol=0,atol=0)
+        pooled.sum().backward()
+        self.assertFalse(states.grad[:,[0,6]].any())
+        self.assertTrue(torch.isfinite(states.grad).all())
+        # Neighbor normalization itself must propagate gradients through U.
+        model.zero_grad()
+        _,d=model.bounded_pool(states.detach(),valid,membership,line_numbers=numbers)
+        d["neighbor_attention"][0,1,0].backward()
+        self.assertGreater(float(model.context_u.weight.grad.abs().sum()),0.)
+        for bad in (None,torch.tensor([[0,-1,6,10,2]])):
+            with self.assertRaisesRegex(ValueError,"physical line numbers"):
+                model.bounded_pool(states.detach(),valid,membership,line_numbers=bad)
+
+    def test_local_changes_neighbor_rates_and_has_zero_isolated_contribution(self):
+        model=detector(context=True,local=True).eval()
+        model.context_u.weight.data.zero_();model.context_t.weight.data.zero_()
+        model.context_u.weight.data[0,0]=1.;model.context_t.weight.data[0,1]=1.
+        states=torch.zeros(1,3,16);states[0,0,0]=1.;states[0,2,0]=1.
+        valid=torch.ones(1,3,dtype=torch.bool);membership=torch.eye(3,dtype=torch.bool)[None]
+        numbers=torch.tensor([[0,3,7]])
+        _,before=model.bounded_pool(states,valid,membership,line_numbers=numbers)
+        states[0,1,1]=2.
+        _,after=model.bounded_pool(states,valid,membership,line_numbers=numbers)
+        self.assertGreater(float(after["line_rates"][0,0]),float(before["line_rates"][0,0]))
+        self.assertEqual(float(after["local_scores"][0,2]),0.)
+        self.assertEqual(float(after["line_rates"][0,2]),float(before["line_rates"][0,2]))
+
+    def test_local_checkpoint_and_source_only_inference(self):
+        model=detector(region="diff",context=True,local=True).eval()
+        model.context_t.weight.data.normal_(std=.1)
+        model.context_v.weight.data.normal_(std=.1)
+        expected=paired_forward(model,batch(),"baseline","cpu",with_labels=False)
+        cp=dict(protocol="losver",line_mapping="source_offsets",model_path="fixture",variant="baseline",
+                input_mode="512",pooling="bounded_attention",state_dict=model.state_dict(),
+                bounded_attention=dict(region_supervision="diff",context=dict(dimension=32),local=dict(radius=3)))
+        def factory(path,variant,**kwargs):
+            return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region"),
+                            context=kwargs.get("attention_context",False),local=kwargs.get("attention_local",False)),Tokens()
+        with tempfile.TemporaryDirectory() as tmp,patch("vulnmechanism.model.losver_model",side_effect=factory):
+            path=Path(tmp)/"model.pt";torch.save(cp,path)
+            actual=predict_checkpoint(path,[dict(raw_source=rows()[0]["func"])],device="cpu")
+        torch.testing.assert_close(actual.sigmoid(),expected[0].reshape(1),rtol=1e-6,atol=1e-7)
+        changed=dict(batch(),line_labels=1-batch()["line_labels"])
+        torch.testing.assert_close(expected,paired_forward(model,changed,"baseline","cpu",with_labels=False),rtol=0,atol=0)
+        from vulnmechanism.training import train_losver
+        with self.assertRaisesRegex(ValueError,"local attention requires context"):
+            detector(local=True)
+        with self.assertRaisesRegex(ValueError,"local attention requires context"):
+            train_losver("unused","unused","unused","unixcoder",bounded_attention=True,attention_local=True)
 
     def test_context_initialization_rng_and_two_step_gradients(self):
         torch.manual_seed(123456)

@@ -1,0 +1,9 @@
+{
+  "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+  "sample_key": "primevul_paired:valid:1",
+  "saved_probability": 0.9994077682495117,
+  "source_only_probability": 0.9994077682495117,
+  "max_delta": 0.0,
+  "old_context_checkpoint_loaded": true,
+  "test_used": false
+}

@@ -317,10 +317,10 @@ class ResumeTests(unittest.TestCase):
 
         def factory(path,variant,**kwargs):
             return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region"),
-                            context=kwargs.get("attention_context",False)),Tokens()
+                            context=kwargs.get("attention_context",False),local=kwargs.get("attention_local",False)),Tokens()
 
-        for supervision,context in ((s,c) for s in (None,"diff","random") for c in (False,True)):
-            with self.subTest(supervision=supervision,context=context),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+        for supervision,context,local in ((s,c,l) for s in (None,"diff","random") for c,l in ((False,False),(True,False),(True,True))):
+            with self.subTest(supervision=supervision,context=context,local=local),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
                 root=Path(tmp);self.paired_fixture(root,"512")
                 path=root/"data/primevul_paired/train.lines.jsonl"
                 rows=read_jsonl(path)
@@ -332,6 +332,7 @@ class ResumeTests(unittest.TestCase):
                               epochs=dict(baseline=2,localizer=2,predicted=2,oracle=2))
                 options=dict(device="cpu",config=settings,input_mode="512",save_every=1,
                              bounded_attention=True,attention_region=supervision,attention_context=context,
+                             attention_local=local,
                              function_micro_batch=2)
                 training.train_losver(root/"data",root/"control","fixture","unixcoder",**options)
                 with self.interruption(epoch=2,step=4,after_save=True),self.assertRaises(Interrupted):
@@ -340,7 +341,11 @@ class ResumeTests(unittest.TestCase):
                 self.compare_runs(root/"control/primevul_paired/unixcoder",root/"resumed/primevul_paired/unixcoder",["best-p_c.pt"])
                 with self.assertRaisesRegex(ValueError,"completed training configuration"):
                     training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
-                                         **dict(options,attention_context=not context))
+                                         **dict(options,attention_context=not context,attention_local=False))
+                if context:
+                    with self.assertRaisesRegex(ValueError,"completed training configuration"):
+                        training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
+                                             **dict(options,attention_local=not local))
 
     def test_attention_regularization_resume_including_epoch_diagnostics(self):
         from tests.test_bounded_attention import detector
