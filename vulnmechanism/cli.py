@@ -75,6 +75,8 @@ def build_parser():
             p.add_argument("--line-auxiliary-weight", type=float)
             p.add_argument("--bounded-attention", action="store_true",
                            help="512 UniXcoder line MIL with token-count weights and fixed K=5")
+            p.add_argument("--attention-context", action="store_true",
+                           help="condition bounded line scores on the valid code-token mean, rank 32")
             p.add_argument("--attention-region", choices=("diff", "random"),
                            help="fixed 0.1 log(2) region constraint; requires bounded attention")
             p.add_argument("--attention-suppression", choices=("random", "high"),
@@ -125,6 +127,7 @@ def build_parser():
     )
     p.add_argument("--localizer-regularization", action="store_true")
     p.add_argument("--bounded-attention",action="store_true")
+    p.add_argument("--attention-context",action="store_true")
     p.add_argument("--attention-regularization",action="store_true")
     p.add_argument("--device",default="auto")
     p.add_argument(
@@ -168,6 +171,8 @@ def build_parser():
     )
     p.add_argument("--bounded-attention",action="store_true",
                    help="real UniXcoder bounded-pooling/gradient/save-reload checks on Train only")
+    p.add_argument("--attention-context",action="store_true",
+                   help="also check rank-32 context interaction and its initialization")
     p.add_argument("--attention-regularization",action="store_true",
                    help="also check real suppression and full-encoder EMA gradients")
     return parser
@@ -236,6 +241,7 @@ def main():
                     localizer_dir=args.localizer_dir,
                     train_localizer_dir=args.train_localizer_dir,
                     bounded_attention=args.bounded_attention,
+                    attention_context=args.attention_context,
                     attention_region=args.attention_region,
                     attention_suppression=args.attention_suppression,
                     attention_ema=args.attention_ema,
@@ -248,6 +254,8 @@ def main():
             raise ValueError("choose one paired check")
         if args.attention_regularization and not args.bounded_attention:
             raise ValueError("attention regularization checks require bounded attention")
+        if args.attention_context and (not args.bounded_attention or args.attention_regularization):
+            raise ValueError("context checks require bounded attention without other regularization")
 
         print(
             json.dumps(
@@ -258,7 +266,8 @@ def main():
                     args.model,
                     device=args.device,
                     input_mode=args.paired_input,
-                    **(dict(regularization=args.attention_regularization) if args.bounded_attention else {}),
+                    **(dict(regularization=args.attention_regularization,
+                            context=args.attention_context) if args.bounded_attention else {}),
                 ),
                 indent=2,
             )
@@ -299,6 +308,7 @@ def main():
                 paired_report(args.output_dir, args.data_dir, reference_dir=args.reference_dir,
                               localizer_regularization=args.localizer_regularization,
                               bounded_attention=args.bounded_attention,
+                              attention_context=args.attention_context,
                               attention_regularization=args.attention_regularization,device=args.device)
                 if args.dataset == "primevul_paired"
                 else report(args.output_dir, args.data_dir),

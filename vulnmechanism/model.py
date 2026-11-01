@@ -518,6 +518,9 @@ class LOSVERDetector(nn.Module):
         self.fusion_beta = 0.25
         self.attention_region = getattr(args, "attention_region", None)
         self.attention_suppression = getattr(args, "attention_suppression", None)
+        self.attention_context = getattr(args, "attention_context", False)
+        if self.attention_context and self.pooling != "bounded_attention":
+            raise ValueError("context attention requires bounded attention")
         self.force_uniform_attention = False
         if self.pooling == "bounded_attention":
             # Preserve encoder/classifier initialization and all sampler RNG.
@@ -525,6 +528,12 @@ class LOSVERDetector(nn.Module):
                 self.line_attention = nn.Linear(config.hidden_size, 1)
             nn.init.zeros_(self.line_attention.weight)
             nn.init.zeros_(self.line_attention.bias)
+            if self.attention_context:
+                with torch.random.fork_rng(devices=[]):
+                    self.context_u = nn.Linear(config.hidden_size, 32, bias=False)
+                    self.context_v = nn.Linear(config.hidden_size, 32, bias=False)
+                # U must be nonzero so V receives a gradient on the first step.
+                nn.init.zeros_(self.context_v.weight)
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -573,7 +582,16 @@ class LOSVERDetector(nn.Module):
         counts = membership.sum(-1)
         lines = torch.bmm(membership, states) / counts.clamp_min(1e-12)[..., None]
         head = self.line_attention if attention_head is None else attention_head
-        rates = 1 + 4 * head(lines).squeeze(-1).sigmoid()
+        scores = head(lines).squeeze(-1)
+        if self.attention_context:
+            valid = code_mask.to(states.dtype)
+            if not (valid.sum(-1) > 0).all():
+                raise ValueError("context attention requires valid code tokens")
+            global_mean = (states * valid[..., None]).sum(1) / valid.sum(-1, keepdim=True)
+            scores = scores + (
+                self.context_u(lines) * self.context_v(global_mean)[:, None]
+            ).sum(-1) / math.sqrt(32)
+        rates = 1 + 4 * scores.sigmoid()
         if self.force_uniform_attention:
             rates = torch.ones_like(rates)
         rates = rates.masked_fill(counts == 0, 0)
@@ -793,6 +811,7 @@ def losver_model(
     dropout_probability=0.0,
     line_auxiliary_weight=None,
     bounded_attention=False,
+    attention_context=False,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -803,6 +822,8 @@ def losver_model(
         raise ValueError("window micro-batch must be positive")
     if bounded_attention and (variant != "baseline" or line_auxiliary_weight is not None):
         raise ValueError("bounded attention uses only the original baseline encoder/classifier")
+    if attention_context and (not bounded_attention or attention_suppression is not None):
+        raise ValueError("context attention requires bounded attention without suppression")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("region supervision requires bounded attention and diff/random")
     if attention_suppression is not None and (
@@ -816,6 +837,7 @@ def losver_model(
         gradient_checkpointing=gradient_checkpointing,
         line_auxiliary_weight=line_auxiliary_weight,
         bounded_attention=bounded_attention,
+        attention_context=attention_context,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )

@@ -1,0 +1,16 @@
+{
+  "train_functions": 16,
+  "valid_functions": 8,
+  "epochs": 1,
+  "optimizer_steps": 2,
+  "device": "NVIDIA GeForce RTX 4090",
+  "attention_context": {
+    "dimension": 32,
+    "bias": false,
+    "score": "W(h_i) + dot(U(h_i), V(g))/sqrt(32)",
+    "global_mean": "valid code tokens; cross-line tokens counted once",
+    "initialization": "W=0; U=random; V=0; no global RNG advance"
+  },
+  "test_used": false,
+  "full_experiment": false
+}

@@ -342,3 +342,33 @@ python -m vulnmechanism.cli report --dataset primevul_paired --attention-regular
 high、EMA的P-C分别多判对7对、5对，但三种新正则的AUC、MCC均下降，召回与误报也同时下降。本轮没有观察到一致的分类泛化收益，不追加组合、模块或参数搜索。新对照16轮的六项分类指标与旧实验逐轮完全一致；相关检查为52项测试加1项诊断隔离测试，恢复配置校验另行复验通过，且全部实验未读取Test。
 
 固定Valid成员、同轮对齐的第2–16轮平均相邻注意力JSD：对照0.008533、random 0.009114、high 0.010566、EMA 0.006407。EMA降低约24.9%，但分类AUC/MCC未改善；不能以JSD下降单独宣布成功。完整最佳checkpoint的Train/Valid编辑区域倍率及纯新增子集结果见报告。
+
+### 上下文条件化有界注意力
+
+在现有 `--bounded-attention` 上增加 `--attention-context`。同一次编码中，`g` 为有效代码Token的全局均值，`h_i` 为原物理行表示；分数为 `s_i=W(h_i)+dot(U(h_i),V(g))/sqrt(32)`。U/V均为无偏置的32维投影。W保持零初始化，U随机、V零初始化，新增初始化不推进CPU/CUDA采样RNG。初始输出与旧有界注意力一致；V首步有梯度，随后U及编码器可学习。保持1～5倍倍率、原MIL聚合、函数BCE及固定 `.1*L_region`，不叠加抑制或EMA。
+
+关闭开关时不新增参数或checkpoint字段，旧权重仍可严格加载。新checkpoint自动恢复上下文分支，`infer`仍只接收单函数源码。Padding不参与g，跨行Token在行聚合中守恒且在g中只计一次。
+
+三组使用PrimeVul original官方完整Train8708/Valid1124函数、512输入、Seed123456、16轮/17424步和原优化器。只按完整Valid P-C选模，四位小数严格改善、平局取较早轮，概率阈值固定>.5。真实/随机Diff标签分别复用旧实验的相同定义与独立随机种子，不读取Test、不搜索超参数。
+
+```bash
+python -m unittest tests.test_bounded_attention tests.test_line_auxiliary tests.test_losver tests.test_resume
+python -m vulnmechanism.cli check-paired --bounded-attention --attention-context --output-dir results/attention_context_512 --device cuda:0
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/attention_context_512/context_bce --device cuda:0 --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/attention_context_512/context_diff --device cuda:1 --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-region diff --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --output-dir results/attention_context_512/context_random --device cuda:0 --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-region random --resume --save-every 1000
+python -m vulnmechanism.cli report --dataset primevul_paired --bounded-attention --attention-context --output-dir results/attention_context_512 --reference-dir results/bounded_attention_512 --device cuda:0
+```
+
+58项相关单元测试、非等长跨行Token均值复验、真实GPU梯度/交互/Padding/保存恢复/源码单函数检查及正式CLI最小训练通过。真实旧checkpoint单函数概率与原预测最大差为1.2e-7；新分支初始输出差为0。实际命令与检查见[实验目录](results/attention_context_512/)，权重保留本地。
+
+三组均实际完成16轮，按完整Valid P-C选出的checkpoint如下。倍率为原始Diff区域/背景的Token加权平均倍率之比，再对有效函数平均；Train/Valid有效函数分别为5180/8708、658/1124。
+
+|配置|Epoch|P-C|AUC|MCC|F1|Recall|修复侧FPR|Train/Valid倍率|
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+|原非Context真实Diff|12|16.01%|0.5873|0.1283|63.26%|75.98%|64.23%|2.97/1.76|
+|Context+BCE|16|15.48%|0.5759|0.0982|53.10%|51.07%|41.28%|1.53/1.34|
+|Context+真实Diff|14|17.79%|0.5896|0.1431|60.70%|66.37%|52.31%|3.15/1.78|
+|Context+随机Diff|15|16.37%|0.5754|0.1014|54.95%|54.80%|44.66%|1.27/1.16|
+
+在该固定Seed的Valid上，Context+真实Diff较Context+随机Diff多判对8对，较原真实Diff多10对，P-C分别提高1.42、1.78个百分点；也高于原Global Mean的16.37%。相对原真实Diff，AUC/MCC上升，F1/Recall下降、修复侧FPR下降。Context+BCE的P-C、AUC、MCC均低于原attention_bce，条件化本身未显示普遍收益。三组与旧对照的完整成员、环境、输入覆盖、最终CPU采样及CUDA dropout RNG、真实/随机Diff掩码均核对一致；没有读取Test或追加搜索。全部七组对照、逐轮指标及完整关注统计见[报告](results/attention_context_512/report.md)。

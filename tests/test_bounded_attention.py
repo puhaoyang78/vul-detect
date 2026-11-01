@@ -22,11 +22,11 @@ from vulnmechanism.evaluation import validate_paired
 from vulnmechanism.evaluation import bounded_region_record, attention_distribution_record, attention_epoch_diagnostics
 
 
-def detector(bounded=True, region=None, suppression=None):
+def detector(bounded=True, region=None, suppression=None, *, context=False):
     c = config()
     return LOSVERDetector(RobertaModel(c,add_pooling_layer=False),c,
         SimpleNamespace(class_weight=1.,bounded_attention=bounded,attention_region=region,
-                        attention_suppression=suppression))
+                        attention_suppression=suppression,attention_context=context))
 
 
 def rows():
@@ -44,6 +44,106 @@ def batch(records=None):
 class BoundedAttentionTests(unittest.TestCase):
     def setUp(self):
         torch.set_num_threads(2)
+
+    def test_context_initialization_rng_and_two_step_gradients(self):
+        torch.manual_seed(123456)
+        original=detector().eval()
+        state=torch.get_rng_state()
+        order=torch.randperm(30)
+        torch.manual_seed(123456)
+        model=detector(region="diff",context=True).eval()
+        torch.testing.assert_close(torch.get_rng_state(),state,rtol=0,atol=0)
+        torch.testing.assert_close(torch.randperm(30),order,rtol=0,atol=0)
+        for name,value in original.state_dict().items():
+            torch.testing.assert_close(value,model.state_dict()[name],rtol=0,atol=0)
+        self.assertEqual(model.context_u.weight.shape,(32,16))
+        self.assertIsNone(model.context_u.bias)
+        self.assertIsNone(model.context_v.bias)
+        self.assertTrue(model.context_u.weight.any())
+        self.assertFalse(model.context_v.weight.any())
+        data=batch()
+        expected,old=paired_forward(original,data,"baseline","cpu",with_labels=False,return_attention=True)
+        actual,new=paired_forward(model,data,"baseline","cpu",with_labels=False,return_attention=True)
+        torch.testing.assert_close(expected,actual,rtol=0,atol=0)
+        torch.testing.assert_close(old["line_rates"],new["line_rates"],rtol=0,atol=0)
+        optimizer=torch.optim.SGD(model.parameters(),lr=.01)
+        _,_,d=paired_forward(model,data,"baseline","cpu",return_attention=True)
+        d["region_loss"].backward()
+        self.assertEqual(float(model.context_u.weight.grad.abs().sum()),0.)
+        self.assertGreater(float(model.context_v.weight.grad.abs().sum()),0.)
+        optimizer.step();optimizer.zero_grad()
+        _,_,d=paired_forward(model,data,"baseline","cpu",return_attention=True)
+        d["region_loss"].backward()
+        for p in (model.context_u.weight,model.context_v.weight,
+                  model.encoder.embeddings.word_embeddings.weight):
+            self.assertTrue(torch.isfinite(p.grad).all())
+            self.assertGreater(float(p.grad.abs().sum()),0.)
+
+    def test_context_formula_padding_and_cross_line_token_mean(self):
+        model=detector(context=True).eval()
+        model.context_v.weight.data.normal_(std=.1)
+        states=torch.randn(1,6,16,requires_grad=True)
+        valid=torch.tensor([[False,True,True,True,True,False]])
+        membership=torch.tensor([[[True,True,True,False,False,False],[False,False,True,True,True,True],
+                                  [False,False,False,False,False,False]]])
+        pooled,d=model.bounded_pool(states,valid,membership)
+        lines=torch.stack([(states[:,1]+.5*states[:,2])/1.5,
+                           (.5*states[:,2]+states[:,3]+states[:,4])/2.5],1)
+        g=states[:,1:5].mean(1)
+        scores=model.line_attention(lines).squeeze(-1)+(model.context_u(lines)*model.context_v(g)[:,None]).sum(-1)/(32**.5)
+        expected=1+4*scores.sigmoid()
+        torch.testing.assert_close(d["line_rates"][:,:2],expected)
+        torch.testing.assert_close(d["line_counts"],torch.tensor([[1.5,2.5,0.]]))
+        torch.testing.assert_close(d["token_attention"].sum(-1),torch.ones(1))
+        self.assertFalse(d["line_rates"][:,2].any())
+        self.assertFalse(d["token_attention"][~valid].any())
+        self.assertLessEqual(float(d["token_attention"][valid].max()/d["token_attention"][valid].min()),5.+1e-6)
+        changed=states.detach().clone();changed[:,[0,5]]=1000
+        again,other=model.bounded_pool(changed,valid,membership)
+        torch.testing.assert_close(pooled,again,rtol=0,atol=0)
+        torch.testing.assert_close(d["line_rates"],other["line_rates"],rtol=0,atol=0)
+        pooled.sum().backward()
+        self.assertFalse(states.grad[:,[0,5]].any())
+        self.assertTrue((states.grad[:,1:5].abs().sum(-1)>0).all())
+
+    def test_context_changes_unchanged_line_attention_through_other_code(self):
+        model=detector(context=True).eval()
+        model.context_u.weight.data.zero_();model.context_v.weight.data.zero_()
+        model.context_u.weight.data[0,0]=1.
+        model.context_v.weight.data[0,1]=1.
+        states=torch.zeros(1,2,16);states[0,0,0]=1.
+        valid=torch.ones(1,2,dtype=torch.bool)
+        membership=torch.eye(2,dtype=torch.bool)[None]
+        _,before=model.bounded_pool(states,valid,membership)
+        states[0,1,1]=2.
+        _,after=model.bounded_pool(states,valid,membership)
+        self.assertGreater(float(after["line_rates"][0,0]),float(before["line_rates"][0,0]))
+        self.assertFalse(torch.equal(before["line_attention"],after["line_attention"]))
+
+    def test_context_checkpoint_and_source_only_single_function_inference(self):
+        model=detector(region="diff",context=True).eval()
+        model.context_v.weight.data.normal_(std=.1)
+        expected=paired_forward(model,batch(),"baseline","cpu",with_labels=False)
+        cp=dict(protocol="losver",line_mapping="source_offsets",model_path="fixture",variant="baseline",
+                input_mode="512",pooling="bounded_attention",
+                bounded_attention=dict(region_supervision="diff",context=dict(dimension=32)),
+                state_dict=model.state_dict())
+        def factory(path,variant,**kwargs):
+            return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region"),
+                            context=kwargs.get("attention_context",False)),Tokens()
+        with tempfile.TemporaryDirectory() as tmp,patch("vulnmechanism.model.losver_model",side_effect=factory):
+            path=Path(tmp)/"model.pt";torch.save(cp,path)
+            actual=predict_checkpoint(path,[dict(raw_source=rows()[0]["func"])],device="cpu")
+        torch.testing.assert_close(actual.sigmoid(),expected[0].reshape(1),rtol=1e-6,atol=1e-7)
+
+    def test_context_rejects_missing_bounded_pooling_and_other_modules(self):
+        from vulnmechanism.training import train_losver
+        with self.assertRaisesRegex(ValueError,"requires bounded attention"):
+            detector(False,context=True)
+        for extra in ({"bounded_attention":False},{"bounded_attention":True,"attention_ema":True},
+                      {"bounded_attention":True,"attention_region":"diff","attention_suppression":"high"}):
+            with self.subTest(extra=extra),self.assertRaisesRegex(ValueError,"context attention requires"):
+                train_losver("unused","unused","unused","unixcoder",attention_context=True,**extra)
 
     def test_zero_head_preserves_initialization_rng_sampler_and_mean(self):
         torch.manual_seed(123456)
