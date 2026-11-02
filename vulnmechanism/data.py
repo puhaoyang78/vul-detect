@@ -439,34 +439,125 @@ def prepare(raw_root, output, seed=42, datasets=DATASETS):
     return statistics
 
 
-def _line_diff(source, counterpart):
+def _line_diff(source, counterpart, *, return_alignment=False):
     """Original LOSVER Differ labels and edit coordinates from the same alignment."""
     import difflib
 
     result, edits, position, other, edit = [], [], 0, 0, None
+    unchanged, blocks, block = [], [], None
     for line in difflib.Differ().compare(
         source.splitlines(keepends=True), counterpart.splitlines(keepends=True)
     ):
         if line.startswith(("- ", "+ ")) and edit is None:
             edit = dict(start=position, end=position, other_lines=[])
+            block = [position, position, other, other]
         if line.startswith("- "):
             if line[2:].strip():
                 result.append(position)
             position += 1
             edit["end"] = position
+            block[1] = position
         elif line.startswith("+ "):
             if line[2:].strip():
                 edit["other_lines"].append(other)
             other += 1
+            block[3] = other
         elif line.startswith("  "):
             if edit is not None:
                 edits.append(edit)
+                blocks.append(block)
                 edit = None
+            if return_alignment:
+                unchanged.append((position, other))
             position += 1
             other += 1
     if edit is not None:
         edits.append(edit)
+        blocks.append(block)
+    if return_alignment:
+        return result, edits, dict(unchanged=unchanged, blocks=blocks)
     return result, edits
+
+
+def rccl_annotations(rows, features, mode, seed=123456):
+    """Unique exact Diff matches on fully visible lines; never change line labels.
+
+    Edit neighbors are the first nonblank equal lines on either side of a block.
+    Blank equal lines can be crossed, another edit cannot. An ambiguous or
+    incomplete nearest code line is skipped rather than replaced by a distant one.
+    Random controls draw the same count from all reliable equal lines in the pair.
+    """
+    from collections import Counter
+    import random
+
+    if mode not in ("baseline", "diff", "random") or len(rows) != len(features) or len(rows) % 2:
+        raise ValueError("RCCL requires complete official pairs and baseline/diff/random")
+    rng, records = random.Random(seed), []
+    for i in range(0, len(rows), 2):
+        old, new = rows[i:i + 2]
+        a, b = features[i:i + 2]
+        if old["target"] != 1 or new["target"] != 0 or old["pair_key"] != new["pair_key"]:
+            raise ValueError("RCCL pair order must be vulnerable, repaired with the same pair key")
+        deleted, edits, alignment = _line_diff(old["func"], new["func"], return_alignment=True)
+        if deleted != old.get("lines_ground_truth", deleted):
+            raise ValueError("RCCL source alignment differs from original Diff labels")
+        sources = [r["func"].splitlines(keepends=True) for r in (old, new)]
+        frequencies = [Counter(s) for s in sources]
+        slots = [{n: k for k, n in enumerate(f["line_numbers"]) if f["line_complete"][k]
+                  and f["line_token_indices"][k]} for f in (a, b)]
+        equal = set(alignment["unchanged"])
+        reliable, ambiguous, incomplete = {}, 0, 0
+        for left, right in alignment["unchanged"]:
+            text = sources[0][left]
+            if not text.strip():
+                continue
+            if text != sources[1][right]:
+                raise ValueError("Diff equal line contents differ")
+            if frequencies[0][text] != 1 or frequencies[1][text] != 1:
+                ambiguous += 1
+            elif left not in slots[0] or right not in slots[1]:
+                incomplete += 1
+            else:
+                reliable[(left, right)] = (slots[0][left], slots[1][right])
+        neighbors = set()
+        for start, end, other_start, other_end in alignment["blocks"]:
+            for left, right, direction in ((start - 1, other_start - 1, -1), (end, other_end, 1)):
+                while (left, right) in equal and not sources[0][left].strip():
+                    left, right = left + direction, right + direction
+                if (left, right) in reliable:
+                    neighbors.add((left, right))
+        different = a["input_ids"] != b["input_ids"]
+        near = [reliable[p] for p in sorted(neighbors)] if different else []
+        pool = [reliable[p] for p in sorted(reliable)]
+        selected = sorted(rng.sample(pool, len(near))) if mode == "random" else near
+        for f in (a, b):
+            f["rccl_pair_key"] = old["pair_key"]
+        a.update(rccl_near=near, rccl_selected=selected, rccl_alignment=pool)
+        b.update(rccl_near=[], rccl_selected=[], rccl_alignment=[])
+        records.append(dict(
+            pair_key=old["pair_key"], sample_keys=[old["sample_key"], new["sample_key"]],
+            pure_addition=not deleted and any(e["other_lines"] for e in edits),
+            visible_inputs_differ=different, edit_blocks=len(edits),
+            ambiguous_equal_lines=ambiguous, incomplete_equal_lines=incomplete,
+            reliable_equal_lines=len(pool), eligible=bool(near),
+            near_lines=[[a["line_numbers"][x], b["line_numbers"][y]] for x, y in near],
+            selected_lines=[[a["line_numbers"][x], b["line_numbers"][y]] for x, y in selected],
+        ))
+    return records
+
+
+def rccl_coverage(records):
+    """Pair denominators include invisible, ambiguous and empty pairs."""
+    result = {}
+    for name, members in (("all", records), ("pure_addition", [r for r in records if r["pure_addition"]])):
+        eligible = sum(r["eligible"] for r in members)
+        result[name] = dict(pairs=len(members), eligible_pairs=eligible,
+                            pair_coverage=eligible / len(members) if members else None,
+                            visible_inputs_differ=sum(r["visible_inputs_differ"] for r in members),
+                            selected_lines=sum(len(r["selected_lines"]) for r in members),
+                            ambiguous_equal_lines=sum(r["ambiguous_equal_lines"] for r in members),
+                            incomplete_equal_lines=sum(r["incomplete_equal_lines"] for r in members))
+    return result
 
 
 def modified_lines(source, counterpart):

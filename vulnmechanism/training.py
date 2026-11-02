@@ -177,6 +177,7 @@ def train(
     attention_local=False,
     attention_context_scale=False,
     insertion_supervision=None,
+    rccl=None,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -221,6 +222,7 @@ def train(
             attention_local=attention_local,
             attention_context_scale=attention_context_scale,
             insertion_supervision=insertion_supervision,
+            rccl=rccl,
             attention_region=attention_region,
             attention_suppression=attention_suppression,
             attention_ema=attention_ema,
@@ -235,7 +237,7 @@ def train(
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
         or bounded_attention or attention_context or attention_local or attention_context_scale
-        or insertion_supervision is not None or attention_region is not None or attention_suppression is not None
+        or insertion_supervision is not None or rccl is not None or attention_region is not None or attention_suppression is not None
         or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
@@ -919,6 +921,19 @@ def paired_collate(features):
             [True] * len(f["insertion_ranges"]) + [False] * (count - len(f["insertion_ranges"]))
             for f in features], dtype=torch.bool)
         batch["insertion_ranges"] = [f["insertion_ranges"] for f in features]
+    if "rccl_pair_key" in features[0]:
+        if len(features) % 2:
+            raise ValueError("RCCL batches must contain complete repair pairs")
+        matches, owners = [], []
+        for i in range(0, len(features), 2):
+            a, b = features[i:i + 2]
+            if (a["rccl_pair_key"] != b["rccl_pair_key"] or a["labels"] != 1 or b["labels"] != 0):
+                raise ValueError("RCCL batch order must be vulnerable, repaired")
+            matches.extend([i, x, i + 1, y] for x, y in a["rccl_selected"])
+            owners.extend([i // 2] * len(a["rccl_selected"]))
+        batch.update(rccl_matches=torch.tensor(matches, dtype=torch.long).reshape(-1, 4),
+                     rccl_owners=torch.tensor(owners, dtype=torch.long),
+                     rccl_pair_keys=[f["rccl_pair_key"] for f in features[::2]])
     return dict(
         batch,
         line_token_mask=membership,
@@ -928,8 +943,25 @@ def paired_collate(features):
     )
 
 
+class RepairPairSampler(torch.utils.data.Sampler):
+    """Shuffle pairs, retain vulnerable/repaired order, use the resumable sampler RNG."""
+    def __init__(self, features):
+        self.size = len(features)
+        if self.size % 2:
+            raise ValueError("paired sampling requires an even function count")
+
+    def __len__(self):
+        return self.size
+
+    def __iter__(self):
+        for pair in torch.randperm(self.size // 2).tolist():
+            yield 2 * pair
+            yield 2 * pair + 1
+
+
 def paired_loader(
-    rows, tokenizer, variant, *, train=False, batch_size=8, input_mode="512", insertion_supervision=None
+    rows, tokenizer, variant, *, train=False, batch_size=8, input_mode="512", insertion_supervision=None,
+    rccl=None, seed=123456,
 ):
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
     from .data import paired_features
@@ -938,8 +970,14 @@ def paired_loader(
         paired_features(r, tokenizer, variant, input_mode=input_mode, insertion=insertion_supervision is not None)
         for r in rows
     ]
-    sampler = RandomSampler(features) if train else SequentialSampler(features)
-    return DataLoader(
+    records = None
+    if rccl is not None:
+        from .data import rccl_annotations
+        if input_mode != "512" or variant != "baseline" or batch_size % 2:
+            raise ValueError("RCCL needs baseline 512 and an even micro-batch")
+        records = rccl_annotations(rows, features, rccl, seed)
+    sampler = (RepairPairSampler(features) if rccl is not None else RandomSampler(features)) if train else SequentialSampler(features)
+    loader = DataLoader(
         features,
         sampler=sampler,
         batch_size=batch_size,
@@ -947,10 +985,14 @@ def paired_loader(
         num_workers=4,
         pin_memory=True,
     )
+    if records is not None:
+        loader.rccl_records = records
+    return loader
 
 
 def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False,
-                   return_auxiliary=False, return_attention=False, suppression_mask=None):
+                   return_auxiliary=False, return_attention=False, suppression_mask=None,
+                   rccl_dropout_seed=None, return_line_states=False):
     keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
     keys.extend(
         ["line_token_mask", "context_mask", "line_indices", "line_counts"]
@@ -973,6 +1015,8 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
             keys.extend(("insertion_left", "insertion_right", "insertion_mask"))
             if with_labels:
                 keys.append("insertion_labels")
+        if with_labels and model.training and model.rccl in ("diff", "random"):
+            keys.extend(("rccl_matches", "rccl_owners"))
     args = {key: batch[key].to(device) for key in keys}
     if return_logits:
         if variant != "localizer":
@@ -986,6 +1030,12 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         args["return_auxiliary"] = True
     if return_attention:
         args["return_attention"] = True
+    if return_line_states:
+        if not return_attention:
+            raise ValueError("line states require attention details")
+        args["return_line_states"] = True
+    if rccl_dropout_seed is not None:
+        args["rccl_dropout_seed"] = rccl_dropout_seed
     if suppression_mask is not None:
         args["suppression_mask"] = suppression_mask.to(device)
     return model(**args)
@@ -1134,6 +1184,7 @@ def train_losver(
     attention_local=False,
     attention_context_scale=False,
     insertion_supervision=None,
+    rccl=None,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -1171,6 +1222,12 @@ def train_losver(
         or attention_diagnostics or joint
     ):
         raise ValueError("insertion localization requires original Context + Diff without other modules")
+    if rccl is not None and (
+        rccl not in ("baseline", "diff", "random") or not attention_context or attention_region != "diff"
+        or attention_local or attention_context_scale or insertion_supervision is not None
+        or attention_suppression is not None or attention_ema or attention_diagnostics or joint
+    ):
+        raise ValueError("RCCL requires original Context + Diff without other modules")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("attention region requires bounded attention and diff/random")
     if attention_suppression is not None or attention_ema or attention_diagnostics:
@@ -1239,6 +1296,8 @@ def train_losver(
     )
     if function_micro_batch < 1 or settings["batch_size"] % function_micro_batch:
         raise ValueError("function micro-batch must divide effective batch size")
+    if rccl is not None and (function_micro_batch % 2 or settings["eval_batch_size"] % 2):
+        raise ValueError("RCCL micro-batches must contain complete repair pairs")
     accumulation = settings["batch_size"] // function_micro_batch
     root = Path(output_dir) / "primevul_paired"
     run = root / method
@@ -1254,6 +1313,7 @@ def train_losver(
                 or bool(completed.get("bounded_attention",{}).get("local"))!=attention_local
                 or bool(completed.get("bounded_attention",{}).get("context_scale"))!=attention_context_scale
                 or completed.get("insertion_localization",{}).get("supervision")!=insertion_supervision
+                or completed.get("rccl",{}).get("mode")!=rccl
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
             raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
@@ -1325,6 +1385,7 @@ def train_losver(
         **(dict(attention_local=True) if attention_local else {}),
         **(dict(attention_context_scale=True) if attention_context_scale else {}),
         **(dict(insertion_supervision=insertion_supervision) if insertion_supervision else {}),
+        **(dict(rccl=rccl) if rccl is not None else {}),
         **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
@@ -1344,6 +1405,7 @@ def train_losver(
         batch_size=function_micro_batch,
         input_mode=input_mode,
         insertion_supervision=insertion_supervision,
+        rccl=rccl, seed=settings["seed"],
     )
     valid_loader = paired_loader(
         valid_rows,
@@ -1352,6 +1414,7 @@ def train_losver(
         batch_size=settings["eval_batch_size"],
         input_mode=input_mode,
         insertion_supervision=insertion_supervision,
+        rccl=rccl, seed=settings["seed"],
     )
     if line_auxiliary == "random" or attention_region == "random":
         shuffle_line_labels(loader.dataset, settings["seed"])
@@ -1368,6 +1431,9 @@ def train_losver(
             dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"], labels=f["line_labels"])
             for r,f in zip(train_rows,loader.dataset)
         ])
+    if rccl is not None:
+        for split, data_loader in (("train", loader), ("valid", valid_loader)):
+            write_jsonl(run / f"{split}.rccl_alignment.jsonl", data_loader.rccl_records)
     if insertion_supervision is not None:
         write_jsonl(run / "train.insertion_positions.jsonl", [
             dict(sample_key=r["sample_key"], pair_key=r["pair_key"],
@@ -1590,6 +1656,22 @@ def train_losver(
             train_positive_gaps=sum(f["insertion_truth"].count(1) for f in loader.dataset),
             inference="single source; no Diff, repaired version or reference library; shared encoder pass",
         )
+    if rccl is not None:
+        from .data import rccl_coverage
+        metadata["rccl"] = dict(
+            mode=rccl, weight=0. if rccl == "baseline" else .05, temperature=.1,
+            head="Linear(hidden_size,32,bias=False); training only", dropout=.1,
+            initialization="independent CPU fork_rng; original parameters and RNG unchanged",
+            views="two independent representation Dropout views per version; no extra encoding",
+            loss="four symmetric anchors; same-version other view positive; two cross-version views negative; mean lines then eligible pairs",
+            alignment="exact unique text in both full functions; Diff equal; both lines fully visible; visible input IDs differ",
+            neighbors="first nonblank equal line left/right of each edit; no crossing edits or fallback from ambiguous/partial lines",
+            random_seed=settings["seed"], random_control="same pair, same count, sample all reliable equal lines without replacement",
+            batches="shuffle pair indices; vulnerable then repaired; complete pairs; same seed/order across all three modes",
+            dropout_rng="private CPU Generator seeded seed + global_step * gradient_accumulation + micro_batch_index",
+            inference="single source; projection head omitted on checkpoint load; no Diff or repaired source",
+            coverage={s: rccl_coverage(l.rccl_records) for s, l in (("train", loader), ("valid", valid_loader))},
+        )
     if attention_suppression or attention_ema:
         metadata["attention_regularization"] = dict(
             suppression=attention_suppression, suppression_fraction=.1 if attention_suppression else None,
@@ -1635,6 +1717,8 @@ def train_losver(
         state["running_components"] = dict(bce=0.0, region_loss=0.0)
         if insertion_supervision is not None:
             state["running_components"]["insertion_loss"] = 0.
+        if rccl in ("diff", "random"):
+            state["running_components"]["rccl_loss"] = 0.
         if attention_suppression:
             state["running_components"].update(bce_normal=0., bce_suppressed=0.)
         if attention_ema:
@@ -1647,6 +1731,8 @@ def train_losver(
         state["suppression_rng"] = suppression_rng.getstate()
     if attention_diagnostics:
         state["attention_previous"] = {}
+    if rccl is not None:
+        state["paired_batch_order"] = []
     if continuing:
         state, saved_rng = load_training_state(
             run,
@@ -1721,13 +1807,16 @@ def train_losver(
             insertion_total = sum(int(((b["insertion_labels"] == 1).any(-1) &
                                        (b["insertion_labels"] == 0).any(-1)).sum())
                                   for b in group) if insertion_supervision is not None else 0
-            for batch, size in zip(group, sizes):
+            rccl_total = sum(len(b["rccl_owners"].unique()) for b in group) if rccl in ("diff", "random") else 0
+            for micro_index, (batch, size) in enumerate(zip(group, sizes)):
                 if joint:
                     loss, _, parts = paired_forward(model, batch, variant, device, return_auxiliary=True)
                 elif bounded_attention:
                     mask = random_attention_suppression(batch, suppression_rng) if suppression_rng is not None else None
                     loss, _, parts = paired_forward(model, batch, variant, device, return_attention=True,
-                                                     suppression_mask=mask)
+                                                     suppression_mask=mask,
+                                                     rccl_dropout_seed=(settings["seed"] + global_step * accumulation + micro_index)
+                                                     if rccl in ("diff", "random") else None)
                     if ema is not None:
                         parts["attention_kl"] = attention_ema_loss(model, ema, batch, parts["line_attention"], device)
                         loss = loss + .1 * parts["attention_kl"]
@@ -1740,6 +1829,7 @@ def train_losver(
                 coefficient = size / sum(sizes) if sum(sizes) else 1 / len(sizes)
                 region_coefficient = float(parts["region_functions"]) / region_total if bounded_attention and region_total else 0.0
                 insertion_coefficient = float(parts["insertion_functions"]) / insertion_total if insertion_total else 0.
+                rccl_coefficient = float(parts["rccl_pairs"]) / rccl_total if rccl_total else 0.
                 objective = (
                     (parts["bce"] + (.1 * parts["attention_kl"] if ema is not None else 0)) * coefficient
                     + 0.1 * parts["region_loss"] * region_coefficient
@@ -1747,13 +1837,16 @@ def train_losver(
                 )
                 if insertion_supervision is not None:
                     objective = objective + .1 * parts["insertion_loss"] * insertion_coefficient
+                if rccl in ("diff", "random"):
+                    objective = objective + .05 * parts["rccl_loss"] * rccl_coefficient
                 objective.backward()
                 group_loss += float(objective.detach())
                 if components is not None:
                     for key in components:
                         group_components[key] += float(parts[key].detach()) * (
                             region_coefficient if key=="region_loss" else
-                            insertion_coefficient if key=="insertion_loss" else coefficient
+                            insertion_coefficient if key=="insertion_loss" else
+                            rccl_coefficient if key=="rccl_loss" else coefficient
                         )
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
@@ -1765,6 +1858,8 @@ def train_losver(
             optimizer.zero_grad()
             scheduler.step()
             global_step += 1
+            if rccl is not None:
+                state["paired_batch_order"].extend(key for b in group for key in b["rccl_pair_keys"])
             if suppression_rng is not None:
                 state["suppression_rng"] = suppression_rng.getstate()
             running += group_loss
@@ -1841,6 +1936,8 @@ def train_losver(
         )
         if components is not None:
             event["train_components"] = {k: v / steps_per_epoch for k, v in components.items()}
+        if rccl is not None:
+            event["paired_batch_order"] = state["paired_batch_order"]
         if attention_diagnostics:
             from .evaluation import attention_epoch_diagnostics
 
@@ -1892,6 +1989,8 @@ def train_losver(
         )
         if components is not None:
             state["running_components"] = {k: 0.0 for k in components}
+        if rccl is not None:
+            state["paired_batch_order"] = []
         save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler, ema=ema)
     required = "f1" if variant == "localizer" else "p_c"
     if required not in chosen:

@@ -522,6 +522,7 @@ class LOSVERDetector(nn.Module):
         self.attention_local = getattr(args, "attention_local", False)
         self.attention_context_scale = getattr(args, "attention_context_scale", False)
         self.insertion_supervision = getattr(args, "insertion_supervision", None)
+        self.rccl = getattr(args, "rccl", None)
         if self.attention_context and self.pooling != "bounded_attention":
             raise ValueError("context attention requires bounded attention")
         if self.attention_local and not self.attention_context:
@@ -534,6 +535,13 @@ class LOSVERDetector(nn.Module):
             or self.attention_suppression is not None or getattr(args, "line_auxiliary_weight", None) is not None
         ):
             raise ValueError("insertion localization requires original Context + Diff without other modules")
+        if self.rccl is not None and (
+            self.rccl not in ("baseline", "diff", "random") or not self.attention_context
+            or self.attention_region != "diff" or self.attention_local or self.attention_context_scale
+            or self.insertion_supervision is not None or self.attention_suppression is not None
+            or getattr(args, "line_auxiliary_weight", None) is not None
+        ):
+            raise ValueError("RCCL requires original Context + Diff without other modules")
         self.force_uniform_attention = False
         self.force_context_scale_one = False
         if self.pooling == "bounded_attention":
@@ -561,6 +569,9 @@ class LOSVERDetector(nn.Module):
         if self.insertion_supervision is not None:
             with torch.random.fork_rng(devices=[]):
                 self.insertion_head = nn.Sequential(nn.Linear(3 * config.hidden_size, 32), nn.Tanh(), nn.Linear(32, 1, bias=False))
+        if self.rccl in ("diff", "random"):
+            with torch.random.fork_rng(devices=[]):
+                self.rccl_projection = nn.Linear(config.hidden_size, 32, bias=False)
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -597,7 +608,7 @@ class LOSVERDetector(nn.Module):
 
     def bounded_pool(self, states, code_mask, line_token_mask, *, line_numbers=None, attention_head=None,
                      suppress=False, suppression_mask=None,
-                     insertion_left=None, insertion_right=None, insertion_mask=None):
+                     insertion_left=None, insertion_right=None, insertion_mask=None, return_line_states=False):
         """One shared encoding; token-count-weighted physical-line MIL, K=5."""
         membership = (line_token_mask & code_mask[:, None].bool()).to(states.dtype)
         copies = membership.sum(1)
@@ -658,6 +669,8 @@ class LOSVERDetector(nn.Module):
         token_attention = (membership * (attention / counts.clamp_min(1e-12))[..., None]).sum(1)
         details = dict(line_rates=rates, line_counts=counts,
                        line_attention=attention, token_attention=token_attention, **local_details)
+        if return_line_states:
+            details["line_states"] = lines
         if self.insertion_supervision is not None and insertion_left is not None:
             if (insertion_right is None or insertion_mask is None or insertion_mask.dtype != torch.bool
                     or insertion_left.shape != insertion_right.shape or insertion_left.shape != insertion_mask.shape
@@ -702,6 +715,36 @@ class LOSVERDetector(nn.Module):
                     perturbed_attention / counts.clamp_min(1e-12))[..., None]).sum(1),
             )
         return pooled, details
+
+    def rccl_loss(self, lines, matches, owners, dropout_seed):
+        """Four anchors per matched line, positive view plus two cross-version negatives.
+
+        Each line has its own four-view comparison: no unrelated line is a
+        negative. Reduce anchors, lines within a repair pair, then repair pairs.
+        A private CPU generator supplies independent Bernoulli(.9) masks without
+        consuming encoder, CUDA or sampler RNG; the trainer derives its seed from
+        the seed and micro-batch index, which is also reproducible on resume.
+        """
+        if matches.ndim != 2 or matches.shape[1] != 4 or len(matches) != len(owners):
+            raise ValueError("RCCL requires aligned function/line slots and pair owners")
+        if not len(matches):
+            return lines.sum() * 0., lines.new_tensor(0, dtype=torch.long)
+        if dropout_seed is None:
+            raise ValueError("RCCL training requires an independent Dropout seed")
+        if ((matches < 0).any() or (matches[:, (0, 2)] >= len(lines)).any()
+                or (matches[:, (1, 3)] >= lines.shape[1]).any()):
+            raise ValueError("RCCL line indices are outside the shared line states")
+        old, new = lines[matches[:, 0], matches[:, 1]], lines[matches[:, 2], matches[:, 3]]
+        views = torch.stack((old, old, new, new), 1)
+        generator = torch.Generator(device="cpu").manual_seed(int(dropout_seed))
+        keep = (torch.rand(views.shape, generator=generator) >= .1).to(device=lines.device, dtype=lines.dtype)
+        z = F.normalize(self.rccl_projection(views * keep / .9), dim=-1)
+        logits = torch.bmm(z, z.transpose(1, 2)) / .1
+        logits = logits.masked_fill(torch.eye(4, device=lines.device, dtype=torch.bool)[None], float("-inf"))
+        targets = torch.tensor([1, 0, 3, 2], device=lines.device).expand(len(matches), -1)
+        per_line = F.cross_entropy(logits.reshape(-1, 4), targets.reshape(-1), reduction="none").reshape(-1, 4).mean(-1)
+        pairs = owners.unique()
+        return torch.stack([per_line[owners == pair].mean() for pair in pairs]).mean(), pairs.new_tensor(len(pairs))
 
     @staticmethod
     def attention_region_loss(rates, counts, labels):
@@ -750,9 +793,13 @@ class LOSVERDetector(nn.Module):
         insertion_right=None,
         insertion_mask=None,
         insertion_labels=None,
+        rccl_matches=None,
+        rccl_owners=None,
+        rccl_dropout_seed=None,
         suppression_mask=None,
         return_auxiliary=False,
         return_attention=False,
+        return_line_states=False,
     ):
         from torch.utils.checkpoint import checkpoint
 
@@ -828,6 +875,7 @@ class LOSVERDetector(nn.Module):
                 suppress=self.training and labels is not None and self.attention_suppression is not None,
                 suppression_mask=suppression_mask,
                 insertion_left=insertion_left, insertion_right=insertion_right, insertion_mask=insertion_mask,
+                return_line_states=return_line_states or (self.rccl in ("diff", "random") and self.training and labels is not None),
             )
         elif len(windows) == function_count and torch.equal(
             window_owners, torch.arange(function_count, device=window_owners.device)
@@ -879,6 +927,12 @@ class LOSVERDetector(nn.Module):
                         attention_details["insertion_logits"], attention_details["insertion_mask"], insertion_labels)
                     attention_details.update(insertion_loss=insertion_loss, insertion_functions=insertion_functions)
                     total = total + .1 * insertion_loss
+                if self.rccl in ("diff", "random") and self.training:
+                    if rccl_matches is None or rccl_owners is None:
+                        raise ValueError("RCCL training requires paired aligned-line targets")
+                    rccl_loss, rccl_pairs = self.rccl_loss(attention_details["line_states"], rccl_matches, rccl_owners, rccl_dropout_seed)
+                    attention_details.update(rccl_loss=rccl_loss, rccl_pairs=rccl_pairs)
+                    total = total + .05 * rccl_loss
                 return (total, probability, attention_details) if return_attention else (total, probability)
             if return_auxiliary:
                 states = torch.cat(token_states)
@@ -920,6 +974,7 @@ def losver_model(
     attention_local=False,
     attention_context_scale=False,
     insertion_supervision=None,
+    rccl=None,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -953,6 +1008,7 @@ def losver_model(
         attention_local=attention_local,
         attention_context_scale=attention_context_scale,
         insertion_supervision=insertion_supervision,
+        rccl=rccl,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )

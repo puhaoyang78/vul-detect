@@ -1,0 +1,182 @@
+{
+  "metrics": {
+    "all": {
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 96,
+        "p_v": 241,
+        "p_b": 203,
+        "p_r": 22
+      },
+      "p_c": 0.1708185053380783,
+      "p_v": 0.4288256227758007,
+      "p_b": 0.3612099644128114,
+      "p_r": 0.03914590747330961,
+      "accuracy": 0.5658362989323843,
+      "precision": 0.5616666666666666,
+      "recall": 0.599644128113879,
+      "f1": 0.5800344234079173,
+      "mcc": 0.131974629376188,
+      "auc": 0.5962579627917579,
+      "auprc": 0.5794389457775233,
+      "pair_ranking_accuracy": 0.47330960854092524,
+      "pair_ranking_ties": 168,
+      "patched_fpr": 0.4679715302491103
+    },
+    "pure_addition": {
+      "samples": 326,
+      "pairs": 163,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 36,
+        "p_v": 61,
+        "p_b": 60,
+        "p_r": 6
+      },
+      "p_c": 0.22085889570552147,
+      "p_v": 0.37423312883435583,
+      "p_b": 0.36809815950920244,
+      "p_r": 0.03680981595092025,
+      "accuracy": 0.5920245398773006,
+      "precision": 0.5914634146341463,
+      "recall": 0.5950920245398773,
+      "f1": 0.5932721712538226,
+      "mcc": 0.18405254345807756,
+      "auc": 0.6323346757499341,
+      "auprc": 0.642455332401709,
+      "pair_ranking_accuracy": 0.5460122699386503,
+      "pair_ranking_ties": 40,
+      "patched_fpr": 0.4110429447852761
+    }
+  },
+  "similarity": {
+    "all": {
+      "near_raw": {
+        "pairs": 381,
+        "lines": 1018,
+        "pair_mean": 0.8528545727223716,
+        "pair_std": 0.18933161754308309,
+        "line_mean": 0.8511805752592347
+      },
+      "near_projected": {
+        "pairs": 0,
+        "lines": 0,
+        "pair_mean": null,
+        "pair_std": null,
+        "line_mean": null
+      },
+      "random_raw": {
+        "pairs": 381,
+        "lines": 1018,
+        "pair_mean": 0.8963234972223173,
+        "pair_std": 0.1481749655465221,
+        "line_mean": 0.8862691154275346
+      },
+      "random_projected": {
+        "pairs": 0,
+        "lines": 0,
+        "pair_mean": null,
+        "pair_std": null,
+        "line_mean": null
+      },
+      "other_raw": {
+        "pairs": 377,
+        "lines": 7523,
+        "pair_mean": 0.897852233026747,
+        "pair_std": 0.13959008456388403,
+        "line_mean": 0.9119336753063548
+      },
+      "other_projected": {
+        "pairs": 0,
+        "lines": 0,
+        "pair_mean": null,
+        "pair_std": null,
+        "line_mean": null
+      }
+    },
+    "pure_addition": {
+      "near_raw": {
+        "pairs": 119,
+        "lines": 248,
+        "pair_mean": 0.7952416618524186,
+        "pair_std": 0.24160973967041732,
+        "line_mean": 0.8115592067084846
+      },
+      "near_projected": {
+        "pairs": 0,
+        "lines": 0,
+        "pair_mean": null,
+        "pair_std": null,
+        "line_mean": null
+      },
+      "random_raw": {
+        "pairs": 119,
+        "lines": 248,
+        "pair_mean": 0.8664408362598396,
+        "pair_std": 0.19349990516614166,
+        "line_mean": 0.8669120479945934
+      },
+      "random_projected": {
+        "pairs": 0,
+        "lines": 0,
+        "pair_mean": null,
+        "pair_std": null,
+        "line_mean": null
+      },
+      "other_raw": {
+        "pairs": 119,
+        "lines": 2622,
+        "pair_mean": 0.8689835769654063,
+        "pair_std": 0.1691745010834195,
+        "line_mean": 0.8898398132240336
+      },
+      "other_projected": {
+        "pairs": 0,
+        "lines": 0,
+        "pair_mean": null,
+        "pair_std": null,
+        "line_mean": null
+      }
+    }
+  },
+  "regions": [
+    {
+      "target": 1,
+      "eligible_functions": 266,
+      "mean_rate_ratio": 1.6156962629501324,
+      "attention_enrichment": 1.3846110262419538
+    },
+    {
+      "target": 0,
+      "eligible_functions": 392,
+      "mean_rate_ratio": 1.9483709787091033,
+      "attention_enrichment": 1.6085139637501926
+    }
+  ],
+  "coverage": {
+    "all": {
+      "pairs": 562,
+      "eligible_pairs": 381,
+      "pair_coverage": 0.6779359430604982,
+      "visible_inputs_differ": 398,
+      "selected_lines": 1018,
+      "ambiguous_equal_lines": 20857,
+      "incomplete_equal_lines": 30882
+    },
+    "pure_addition": {
+      "pairs": 163,
+      "eligible_pairs": 119,
+      "pair_coverage": 0.7300613496932515,
+      "visible_inputs_differ": 123,
+      "selected_lines": 248,
+      "ambiguous_equal_lines": 3758,
+      "incomplete_equal_lines": 6256
+    }
+  },
+  "classification_projection_used": false,
+  "selected_epoch": 13
+}

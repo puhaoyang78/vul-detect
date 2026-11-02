@@ -83,6 +83,8 @@ def build_parser():
                            help="function-adaptive context_scale: 2*sigmoid(Linear(non-affine LayerNorm(g)))")
             p.add_argument("--insertion-supervision", choices=("diff", "random"),
                            help="fixed .1 function-normalized gap ranking loss on original Context + Diff")
+            p.add_argument("--rccl", choices=("baseline", "diff", "random"),
+                           help="paired-batch Context + Diff control or fixed .05 repair-context contrastive loss")
             p.add_argument("--attention-region", choices=("diff", "random"),
                            help="fixed 0.1 log(2) region constraint; requires bounded attention")
             p.add_argument("--attention-suppression", choices=("random", "high"),
@@ -137,6 +139,7 @@ def build_parser():
     p.add_argument("--attention-local",action="store_true")
     p.add_argument("--attention-context-scale",action="store_true")
     p.add_argument("--insertion-localization", action="store_true")
+    p.add_argument("--rccl", action="store_true", help="report the three matched RCCL experiments")
     p.add_argument("--attention-regularization",action="store_true")
     p.add_argument("--device",default="auto")
     p.add_argument(
@@ -195,6 +198,7 @@ def build_parser():
                    help="also check context_scale initialization, gradients and fixed-alpha inference")
     p.add_argument("--insertion-localization", action="store_true",
                    help="check pure-addition gaps, shared-encoder ranking and single-source inference")
+    p.add_argument("--rccl", action="store_true", help="RCCL Train/Valid coverage and real GPU checks")
     p.add_argument("--attention-regularization",action="store_true",
                    help="also check real suppression and full-encoder EMA gradients")
     return parser
@@ -267,6 +271,7 @@ def main():
                     attention_local=args.attention_local,
                     attention_context_scale=args.attention_context_scale,
                     insertion_supervision=args.insertion_supervision,
+                    rccl=args.rccl,
                     attention_region=args.attention_region,
                     attention_suppression=args.attention_suppression,
                     attention_ema=args.attention_ema,
@@ -281,6 +286,10 @@ def main():
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions, check_bounded_attention, check_insertion_localization
 
+        if args.rccl:
+            from .rccl import check
+            print(json.dumps(check(args.data_dir,args.output_dir,args.model,device=args.device),indent=2))
+            return
         if args.insertion_localization:
             if args.paired_input != "512" or args.repair_regions or args.attention_regularization or args.attention_local or args.attention_context_scale:
                 raise ValueError("insertion checks use original 512 Context + Diff only")
@@ -344,6 +353,11 @@ def main():
             )
     elif args.command == "report":
         from .evaluation import report, paired_report
+
+        if args.rccl:
+            from .rccl import report as rccl_report
+            print(json.dumps(rccl_report(args.output_dir,args.data_dir,device=args.device),indent=2))
+            return
 
         print(
             json.dumps(

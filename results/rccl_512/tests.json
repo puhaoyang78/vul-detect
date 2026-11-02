@@ -1,0 +1,35 @@
+{
+  "suites": [
+    {
+      "command": "python -m unittest tests.test_rccl tests.test_bounded_attention tests.test_losver tests.test_resume",
+      "passed": 69,
+      "seconds": 344.96
+    },
+    {
+      "command": "python -m unittest tests.test_rccl tests.test_insertion_localization",
+      "passed": 23,
+      "seconds": 28.782
+    },
+    {
+      "command": "python -m unittest tests.test_rccl.RCCLTests.test_diagnostics_keep_source_only_classification_and_fixed_cohorts",
+      "passed": 1
+    }
+  ],
+  "unique_tests_passed": 85,
+  "python": "/home/phy/miniconda3/envs/vul-detect/bin/python",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "2",
+    "MKL_NUM_THREADS": "2",
+    "TOKENIZERS_PARALLELISM": "false"
+  },
+  "notes": "RCCL suite has 8 tests in both initial suites; the later diagnostics test is separate. No failure was skipped or assertion relaxed.",
+  "gpu_smoke": "passed; real RTX 4090",
+  "gpu_checker_repairs": "Before passing, corrected internal prediction API argument type and added LOSVER protocol metadata to the temporary smoke checkpoint; repeated the actual check, without relaxing assertions.",
+  "gpu_smoke_result": "gpu-smoke.json",
+  "additional_inference_api_test_passed": true,
+  "real_data_alignment": {
+    "train_and_valid_true_and_random_selected_lines_equal_and_unique_excluding_line_endings": true,
+    "violations": 0
+  }
+}

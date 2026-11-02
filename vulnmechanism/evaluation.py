@@ -906,7 +906,12 @@ def load_paired(checkpoint, device):
         model.pooling = checkpoint.get("pooling", "hard_weight")
         if model.pooling == "robust_fusion":
             model.fusion_beta = float(checkpoint["selected_fusion_beta"])
-    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    state = checkpoint["state_dict"]
+    if checkpoint.get("rccl", {}).get("mode") in ("diff", "random"):
+        # This head is an optimization aid, never part of single-function inference.
+        state = dict(state)
+        state.pop("rccl_projection.weight")
+    model.load_state_dict(state, strict=True)
     return model.to(device).eval(), tokenizer
 
 

@@ -1,0 +1,73 @@
+{
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "device": "cuda:0",
+  "hidden_size": 768,
+  "added_parameters": 24576,
+  "temperature": 0.1,
+  "dropout": 0.1,
+  "train_only_sample_keys": [
+    "primevul_paired:train:1",
+    "primevul_paired:train:2",
+    "primevul_paired:train:5",
+    "primevul_paired:train:6",
+    "primevul_paired:train:9",
+    "primevul_paired:train:10"
+  ],
+  "eligible_smoke_pairs": 2,
+  "rccl_loss": 0.7571873664855957,
+  "encoder_calls": 1,
+  "projection_gradient": 575.816162109375,
+  "encoder_gradient": 273.9634704589844,
+  "projection_update_l1": 0.4914555549621582,
+  "initialization_equal": true,
+  "sampler_rng_equal": true,
+  "dropout_rng_preserved": true,
+  "checkpoint_equal": true,
+  "padding_equal": true,
+  "inference_projection_absent": true,
+  "diff_not_used_in_inference": true,
+  "single_inference_max_delta": 1.341104507446289e-07,
+  "coverage": {
+    "train": {
+      "all": {
+        "pairs": 4354,
+        "eligible_pairs": 3017,
+        "pair_coverage": 0.6929260450160771,
+        "visible_inputs_differ": 3100,
+        "selected_lines": 8341,
+        "ambiguous_equal_lines": 233471,
+        "incomplete_equal_lines": 277598
+      },
+      "pure_addition": {
+        "pairs": 1232,
+        "eligible_pairs": 823,
+        "pair_coverage": 0.6680194805194806,
+        "visible_inputs_differ": 843,
+        "selected_lines": 1716,
+        "ambiguous_equal_lines": 61829,
+        "incomplete_equal_lines": 71323
+      }
+    },
+    "valid": {
+      "all": {
+        "pairs": 562,
+        "eligible_pairs": 381,
+        "pair_coverage": 0.6779359430604982,
+        "visible_inputs_differ": 398,
+        "selected_lines": 1018,
+        "ambiguous_equal_lines": 20857,
+        "incomplete_equal_lines": 30882
+      },
+      "pure_addition": {
+        "pairs": 163,
+        "eligible_pairs": 119,
+        "pair_coverage": 0.7300613496932515,
+        "visible_inputs_differ": 123,
+        "selected_lines": 248,
+        "ambiguous_equal_lines": 3758,
+        "incomplete_equal_lines": 6256
+      }
+    }
+  },
+  "test_used": false
+}

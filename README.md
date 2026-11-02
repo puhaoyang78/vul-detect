@@ -474,3 +474,18 @@ python -m vulnmechanism.cli report --dataset primevul_paired --insertion-localiz
 按用户后续要求，对七系列22组完整模型统一补充Test：行辅助损失、有界注意力、抑制/EMA、Context、双尺度、context_scale及插入定位。新跑21组，复用已验证的Context+Diff结果；均为原完整Train/Valid训练、512输入、Seed123456、16轮，固定原Valid P-C所选checkpoint和概率>.5，Test为1128函数/564对。全部预测已逐一复算，成员、标签、配对计数、512可见行及checkpoint未修改检查通过。
 
 Test P-C：Global Mean 13.83%、Context+Diff 13.65%、EMA 14.18%、真实插入监督 14.36%。真实插入比Context+Diff多4对，但AUC为0.5650（Context+Diff 0.5712）、Recall为47.34%（63.83%），且原Valid P-C更低，不能按稳定的全面提升解释。插入Test定位真实/随机Top1为16.80%/5.60%，Top3为40.00%/16.00%（125个可映射函数）。未按Test改选模型或追加变体；全部22组六项指标、日志与命令见[统一Test报告](results/attempts_test_512/report.md)。此前各报告未读Test的说明对应原训练及选模阶段。
+
+
+## RCCL 成对批次实验
+
+RCCL 直接复用 `data.py` 的 Diff/512 Token 物理行映射、`model.py` 的有界 Context MIL 行表示及 `training.py` 的正式训练循环。`--rccl baseline|diff|random` 都按修复对打乱批次：baseline 保留 Context + Diff，diff 选取编辑块左右最近的可靠未修改行，random 在同对中抽取等量可靠对齐行。仅使用两侧完整可见、全函数中无重复歧义且可见输入不同的对齐行；这些行不改变 Diff 标签。
+
+投影头仅用于训练：无偏置 768→32，两个独立 p=0.1 表示层 Dropout 视图，对称四视图 InfoNCE（温度 0.1）。损失固定 `BCE + 0.1*Diff + 0.05*RCCL`。新增初始化和 Dropout 保留原模型/采样 RNG；每个 Epoch 记录实际成对顺序。恢复与原训练共用 `--resume`。单函数推理仍使用原 `infer` 入口，加载时移除对比投影头。
+
+```bash
+python -m vulnmechanism.cli check-paired --rccl --output-dir results/rccl_512 --device cuda:0
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --bounded-attention --attention-context --attention-region diff --rccl diff --paired-epochs 16 --output-dir results/rccl_512/rccl_diff --device cuda:0 --resume
+python -m vulnmechanism.cli report --dataset primevul_paired --rccl --output-dir results/rccl_512 --device cuda:0
+```
+
+三组完整匹配实验、覆盖率、完整 Valid/纯新增子集指标、选模后 Test 及表示相似度诊断见 [results/rccl_512/report.md](results/rccl_512/report.md)。逐条命令和固定配置保存在 `results/rccl_512/commands.json`；历史 Context + Diff checkpoint 保留。

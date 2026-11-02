@@ -1,0 +1,48 @@
+{
+  "input_mode": "512",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "seed": 123456,
+  "test_used": false,
+  "splits": {
+    "train": {
+      "all": {
+        "pairs": 4354,
+        "eligible_pairs": 3017,
+        "pair_coverage": 0.6929260450160771,
+        "visible_inputs_differ": 3100,
+        "selected_lines": 8341,
+        "ambiguous_equal_lines": 233471,
+        "incomplete_equal_lines": 277598
+      },
+      "pure_addition": {
+        "pairs": 1232,
+        "eligible_pairs": 823,
+        "pair_coverage": 0.6680194805194806,
+        "visible_inputs_differ": 843,
+        "selected_lines": 1716,
+        "ambiguous_equal_lines": 61829,
+        "incomplete_equal_lines": 71323
+      }
+    },
+    "valid": {
+      "all": {
+        "pairs": 562,
+        "eligible_pairs": 381,
+        "pair_coverage": 0.6779359430604982,
+        "visible_inputs_differ": 398,
+        "selected_lines": 1018,
+        "ambiguous_equal_lines": 20857,
+        "incomplete_equal_lines": 30882
+      },
+      "pure_addition": {
+        "pairs": 163,
+        "eligible_pairs": 119,
+        "pair_coverage": 0.7300613496932515,
+        "visible_inputs_differ": 123,
+        "selected_lines": 248,
+        "ambiguous_equal_lines": 3758,
+        "incomplete_equal_lines": 6256
+      }
+    }
+  }
+}
