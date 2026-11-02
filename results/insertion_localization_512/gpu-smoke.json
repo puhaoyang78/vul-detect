@@ -1,0 +1,29 @@
+{
+  "device": "cuda:0",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "hidden_size": 768,
+  "added_parameters": 73792,
+  "initialization_equal": true,
+  "sampler_rng_equal": true,
+  "encoder_calls_per_joint_forward": 1,
+  "insertion_functions": 3,
+  "insertion_loss": 0.6521570086479187,
+  "head_gradient": 885.664458334446,
+  "encoder_gradient": 89.02828979492188,
+  "head_update_l1": 1.4445244027883746,
+  "checkpoint_equal": true,
+  "single_inference_max_delta": 4.76837158203125e-07,
+  "diff_not_used_in_inference": true,
+  "diff_line_labels_unchanged": true,
+  "train_only_sample_keys": [
+    "primevul_paired:train:1",
+    "primevul_paired:train:2",
+    "primevul_paired:train:5",
+    "primevul_paired:train:6",
+    "primevul_paired:train:27",
+    "primevul_paired:train:28",
+    "primevul_paired:train:69",
+    "primevul_paired:train:70"
+  ],
+  "test_used": false
+}

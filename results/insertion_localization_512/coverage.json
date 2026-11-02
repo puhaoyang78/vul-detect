@@ -1,0 +1,46 @@
+{
+  "input_mode": "512",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "test_used": false,
+  "position": "old-side gap p before physical line p; 0/N are true boundaries",
+  "blank_lines": "one gap interval per pair of adjacent effective lines; retain original Diff interval",
+  "visibility": "both real sides fully encoded; true EOF only for untruncated source",
+  "splits": {
+    "train": {
+      "functions": 8708,
+      "pairs": 4354,
+      "pure_pairs": 1232,
+      "raw_insertion_hunks": 1590,
+      "mapped_hunks": 977,
+      "visible_positive_gaps": 975,
+      "mapped_functions": 840,
+      "rankable_functions": 840,
+      "truncated_functions": 751,
+      "multiple_insertion_functions": 226,
+      "blank_replacement_hunks": 9,
+      "entry_hunks": 0,
+      "eof_hunks": 0,
+      "unmapped_hunks": 613,
+      "hunk_coverage": 0.6144654088050314,
+      "function_coverage": 0.6818181818181818
+    },
+    "valid": {
+      "functions": 1124,
+      "pairs": 562,
+      "pure_pairs": 163,
+      "raw_insertion_hunks": 223,
+      "mapped_hunks": 147,
+      "visible_positive_gaps": 147,
+      "mapped_functions": 122,
+      "rankable_functions": 122,
+      "truncated_functions": 87,
+      "multiple_insertion_functions": 35,
+      "blank_replacement_hunks": 6,
+      "entry_hunks": 0,
+      "eof_hunks": 0,
+      "unmapped_hunks": 76,
+      "hunk_coverage": 0.6591928251121076,
+      "function_coverage": 0.7484662576687117
+    }
+  }
+}

@@ -176,6 +176,7 @@ def train(
     attention_context=False,
     attention_local=False,
     attention_context_scale=False,
+    insertion_supervision=None,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -219,6 +220,7 @@ def train(
             attention_context=attention_context,
             attention_local=attention_local,
             attention_context_scale=attention_context_scale,
+            insertion_supervision=insertion_supervision,
             attention_region=attention_region,
             attention_suppression=attention_suppression,
             attention_ema=attention_ema,
@@ -233,7 +235,7 @@ def train(
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
         or bounded_attention or attention_context or attention_local or attention_context_scale
-        or attention_region is not None or attention_suppression is not None
+        or insertion_supervision is not None or attention_region is not None or attention_suppression is not None
         or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
@@ -906,6 +908,17 @@ def paired_collate(features):
         for i, f in enumerate(features):
             auxiliary[i, :len(f["line_numbers"])] = torch.tensor(f["line_labels"])
         batch["line_labels"] = auxiliary
+    if "insertion_ranges" in features[0]:
+        count = max(1, max(len(f["insertion_ranges"]) for f in features))
+        for key in ("insertion_left", "insertion_right", "insertion_labels", "insertion_truth"):
+            values = torch.full((len(features), count), -1, dtype=torch.long)
+            for i, f in enumerate(features):
+                values[i, :len(f[key])] = torch.tensor(f[key], dtype=torch.long)
+            batch[key] = values
+        batch["insertion_mask"] = torch.tensor([
+            [True] * len(f["insertion_ranges"]) + [False] * (count - len(f["insertion_ranges"]))
+            for f in features], dtype=torch.bool)
+        batch["insertion_ranges"] = [f["insertion_ranges"] for f in features]
     return dict(
         batch,
         line_token_mask=membership,
@@ -916,13 +929,14 @@ def paired_collate(features):
 
 
 def paired_loader(
-    rows, tokenizer, variant, *, train=False, batch_size=8, input_mode="512"
+    rows, tokenizer, variant, *, train=False, batch_size=8, input_mode="512", insertion_supervision=None
 ):
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
     from .data import paired_features
 
     features = [
-        paired_features(r, tokenizer, variant, input_mode=input_mode) for r in rows
+        paired_features(r, tokenizer, variant, input_mode=input_mode, insertion=insertion_supervision is not None)
+        for r in rows
     ]
     sampler = RandomSampler(features) if train else SequentialSampler(features)
     return DataLoader(
@@ -955,6 +969,10 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
             keys.append("line_numbers")
         if with_labels and model.attention_region is not None:
             keys.append("line_labels")
+        if model.insertion_supervision is not None:
+            keys.extend(("insertion_left", "insertion_right", "insertion_mask"))
+            if with_labels:
+                keys.append("insertion_labels")
     args = {key: batch[key].to(device) for key in keys}
     if return_logits:
         if variant != "localizer":
@@ -971,6 +989,17 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
     if suppression_mask is not None:
         args["suppression_mask"] = suppression_mask.to(device)
     return model(**args)
+
+
+def shuffle_insertion_labels(features, seed):
+    """Fixed Train control; same functions/counts, independent of sampler RNG."""
+    rng = random.Random(seed)
+    for feature in features:
+        truth = feature["insertion_truth"]
+        count = truth.count(1)
+        if count:
+            chosen = set(rng.sample(range(len(truth)), count))
+            feature["insertion_labels"] = [int(i in chosen) for i in range(len(truth))]
 
 
 def random_attention_suppression(batch, rng):
@@ -1104,6 +1133,7 @@ def train_losver(
     attention_context=False,
     attention_local=False,
     attention_context_scale=False,
+    insertion_supervision=None,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -1135,6 +1165,12 @@ def train_losver(
         raise ValueError("local attention requires context attention")
     if attention_context_scale and (not attention_context or attention_local):
         raise ValueError("context_scale requires context attention without local attention")
+    if insertion_supervision is not None and (
+        insertion_supervision not in ("diff", "random") or not attention_context or attention_region != "diff"
+        or attention_local or attention_context_scale or attention_suppression is not None or attention_ema
+        or attention_diagnostics or joint
+    ):
+        raise ValueError("insertion localization requires original Context + Diff without other modules")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("attention region requires bounded attention and diff/random")
     if attention_suppression is not None or attention_ema or attention_diagnostics:
@@ -1217,6 +1253,7 @@ def train_losver(
                 or bool(completed.get("bounded_attention",{}).get("context"))!=attention_context
                 or bool(completed.get("bounded_attention",{}).get("local"))!=attention_local
                 or bool(completed.get("bounded_attention",{}).get("context_scale"))!=attention_context_scale
+                or completed.get("insertion_localization",{}).get("supervision")!=insertion_supervision
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
             raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
@@ -1270,6 +1307,9 @@ def train_losver(
         held_out = [r for r in train_rows if folds[r["pair_key"]] == oof_fold]
         train_rows = [r for r in train_rows if folds[r["pair_key"]] != oof_fold]
     device = resolve_device(device)
+    if insertion_supervision is not None:
+        from .data import insertion_annotations
+        train_rows, valid_rows = insertion_annotations(train_rows), insertion_annotations(valid_rows)
     seed_everything(settings["seed"])
     np.random.seed(settings["seed"])
     torch.backends.cudnn.deterministic = True
@@ -1284,6 +1324,7 @@ def train_losver(
         **(dict(attention_context=True) if attention_context else {}),
         **(dict(attention_local=True) if attention_local else {}),
         **(dict(attention_context_scale=True) if attention_context_scale else {}),
+        **(dict(insertion_supervision=insertion_supervision) if insertion_supervision else {}),
         **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
@@ -1302,6 +1343,7 @@ def train_losver(
         train=True,
         batch_size=function_micro_batch,
         input_mode=input_mode,
+        insertion_supervision=insertion_supervision,
     )
     valid_loader = paired_loader(
         valid_rows,
@@ -1309,9 +1351,12 @@ def train_losver(
         variant,
         batch_size=settings["eval_batch_size"],
         input_mode=input_mode,
+        insertion_supervision=insertion_supervision,
     )
     if line_auxiliary == "random" or attention_region == "random":
         shuffle_line_labels(loader.dataset, settings["seed"])
+    if insertion_supervision == "random":
+        shuffle_insertion_labels(loader.dataset, settings["seed"])
     if joint:
         write_jsonl(run / "train.line_labels.jsonl", [
             dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"],
@@ -1323,6 +1368,12 @@ def train_losver(
             dict(sample_key=r["sample_key"], line_numbers=f["line_numbers"], labels=f["line_labels"])
             for r,f in zip(train_rows,loader.dataset)
         ])
+    if insertion_supervision is not None:
+        write_jsonl(run / "train.insertion_positions.jsonl", [
+            dict(sample_key=r["sample_key"], pair_key=r["pair_key"],
+                 edits=r["insertion_edits"], ranges=f["insertion_ranges"],
+                 labels=f["insertion_labels"], truth=f["insertion_truth"])
+            for r, f in zip(train_rows, loader.dataset) if r["target"] == 1 and r["pure_addition_pair"]])
     diagnostic_loaders, diagnostic_rows = {}, {}
     if attention_diagnostics:
         from torch.utils.data import DataLoader
@@ -1525,6 +1576,20 @@ def train_losver(
                 score="W(h_i) + alpha(g)*dot(U(h_i), V(g))/sqrt(32)",
                 inference="single source only; optional fixed alpha=1 intervention",
             )
+    if insertion_supervision is not None:
+        metadata["insertion_localization"] = dict(
+            supervision=insertion_supervision, weight=.1, dimension=32,
+            head="Linear(3*hidden,32) -> tanh -> Linear(32,1,bias=False)",
+            inputs="left/right valid line means and global valid-code-token mean; true boundary side=zero",
+            initialization="independent CPU fork_rng; no original model or sampler RNG advance",
+            targets="old-side physical gap intervals from original _line_diff; blank-run equivalents merged",
+            loss="mean softplus(negative-positive) over all positive/negative pairs per function; mean eligible functions",
+            visibility="both actual sides fully visible; no artificial truncated EOF",
+            random_seed=settings["seed"] if insertion_supervision == "random" else None,
+            train_effective_functions=sum(1 in f["insertion_truth"] and 0 in f["insertion_truth"] for f in loader.dataset),
+            train_positive_gaps=sum(f["insertion_truth"].count(1) for f in loader.dataset),
+            inference="single source; no Diff, repaired version or reference library; shared encoder pass",
+        )
     if attention_suppression or attention_ema:
         metadata["attention_regularization"] = dict(
             suppression=attention_suppression, suppression_fraction=.1 if attention_suppression else None,
@@ -1568,6 +1633,8 @@ def train_losver(
         state["running_components"] = dict(bce=0.0, line_focal=0.0)
     elif bounded_attention:
         state["running_components"] = dict(bce=0.0, region_loss=0.0)
+        if insertion_supervision is not None:
+            state["running_components"]["insertion_loss"] = 0.
         if attention_suppression:
             state["running_components"].update(bce_normal=0., bce_suppressed=0.)
         if attention_ema:
@@ -1651,6 +1718,9 @@ def train_losver(
             region_total = sum(int(((b["line_labels"]==1).any(-1) &
                                    ((b["line_labels"]==0) & (b["line_numbers"]>=0)).any(-1)).sum())
                                for b in group) if attention_region else 0
+            insertion_total = sum(int(((b["insertion_labels"] == 1).any(-1) &
+                                       (b["insertion_labels"] == 0).any(-1)).sum())
+                                  for b in group) if insertion_supervision is not None else 0
             for batch, size in zip(group, sizes):
                 if joint:
                     loss, _, parts = paired_forward(model, batch, variant, device, return_auxiliary=True)
@@ -1669,17 +1739,21 @@ def train_losver(
                     raise ValueError(f"{method}: nonfinite loss {epoch}:{step}")
                 coefficient = size / sum(sizes) if sum(sizes) else 1 / len(sizes)
                 region_coefficient = float(parts["region_functions"]) / region_total if bounded_attention and region_total else 0.0
+                insertion_coefficient = float(parts["insertion_functions"]) / insertion_total if insertion_total else 0.
                 objective = (
                     (parts["bce"] + (.1 * parts["attention_kl"] if ema is not None else 0)) * coefficient
                     + 0.1 * parts["region_loss"] * region_coefficient
                     if bounded_attention else loss * coefficient
                 )
+                if insertion_supervision is not None:
+                    objective = objective + .1 * parts["insertion_loss"] * insertion_coefficient
                 objective.backward()
                 group_loss += float(objective.detach())
                 if components is not None:
                     for key in components:
                         group_components[key] += float(parts[key].detach()) * (
-                            region_coefficient if key=="region_loss" else coefficient
+                            region_coefficient if key=="region_loss" else
+                            insertion_coefficient if key=="insertion_loss" else coefficient
                         )
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True

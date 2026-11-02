@@ -521,12 +521,19 @@ class LOSVERDetector(nn.Module):
         self.attention_context = getattr(args, "attention_context", False)
         self.attention_local = getattr(args, "attention_local", False)
         self.attention_context_scale = getattr(args, "attention_context_scale", False)
+        self.insertion_supervision = getattr(args, "insertion_supervision", None)
         if self.attention_context and self.pooling != "bounded_attention":
             raise ValueError("context attention requires bounded attention")
         if self.attention_local and not self.attention_context:
             raise ValueError("local attention requires context attention")
         if self.attention_context_scale and (not self.attention_context or self.attention_local):
             raise ValueError("context_scale requires context attention without local attention")
+        if self.insertion_supervision is not None and (
+            self.insertion_supervision not in ("diff", "random") or not self.attention_context
+            or self.attention_region != "diff" or self.attention_local or self.attention_context_scale
+            or self.attention_suppression is not None or getattr(args, "line_auxiliary_weight", None) is not None
+        ):
+            raise ValueError("insertion localization requires original Context + Diff without other modules")
         self.force_uniform_attention = False
         self.force_context_scale_one = False
         if self.pooling == "bounded_attention":
@@ -551,6 +558,9 @@ class LOSVERDetector(nn.Module):
                 if self.attention_context_scale:
                     nn.init.zeros_(self.context_scale.weight)
                     nn.init.zeros_(self.context_scale.bias)
+        if self.insertion_supervision is not None:
+            with torch.random.fork_rng(devices=[]):
+                self.insertion_head = nn.Sequential(nn.Linear(3 * config.hidden_size, 32), nn.Tanh(), nn.Linear(32, 1, bias=False))
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -586,7 +596,8 @@ class LOSVERDetector(nn.Module):
         return torch.where(mass > 0, result, global_mean)
 
     def bounded_pool(self, states, code_mask, line_token_mask, *, line_numbers=None, attention_head=None,
-                     suppress=False, suppression_mask=None):
+                     suppress=False, suppression_mask=None,
+                     insertion_left=None, insertion_right=None, insertion_mask=None):
         """One shared encoding; token-count-weighted physical-line MIL, K=5."""
         membership = (line_token_mask & code_mask[:, None].bool()).to(states.dtype)
         copies = membership.sum(1)
@@ -647,6 +658,25 @@ class LOSVERDetector(nn.Module):
         token_attention = (membership * (attention / counts.clamp_min(1e-12))[..., None]).sum(1)
         details = dict(line_rates=rates, line_counts=counts,
                        line_attention=attention, token_attention=token_attention, **local_details)
+        if self.insertion_supervision is not None and insertion_left is not None:
+            if (insertion_right is None or insertion_mask is None or insertion_mask.dtype != torch.bool
+                    or insertion_left.shape != insertion_right.shape or insertion_left.shape != insertion_mask.shape
+                    or insertion_left.shape[0] != len(lines)):
+                raise ValueError("insertion candidates require aligned left/right slots and valid mask")
+            sides = []
+            for indices in (insertion_left, insertion_right):
+                if ((indices[insertion_mask] < -1).any()
+                        or (indices[insertion_mask] >= lines.shape[1]).any()):
+                    raise ValueError("insertion side is outside the shared physical-line representation")
+                at = indices.clamp_min(0)
+                if ((counts.gather(1, at) <= 0) & (indices >= 0) & insertion_mask).any():
+                    raise ValueError("insertion side has no valid source Token")
+                side = lines.gather(1, at[..., None].expand(-1, -1, lines.shape[-1]))
+                sides.append(side * (indices >= 0)[..., None])
+            global_side = global_mean[:, None].expand(-1, insertion_left.shape[1], -1)
+            insertion_logits = self.insertion_head(torch.cat((*sides, global_side), -1)).squeeze(-1)
+            details.update(insertion_logits=insertion_logits.masked_fill(~insertion_mask, 0.),
+                           insertion_mask=insertion_mask)
         if suppress:
             valid = counts > 0
             if self.attention_suppression == "high":
@@ -687,6 +717,21 @@ class LOSVERDetector(nn.Module):
         loss = margin[valid].mean() if valid.any() else rates.sum() * 0
         return loss, valid.sum()
 
+    @staticmethod
+    def insertion_ranking_loss(logits, valid, labels):
+        """Mean pairwise logistic rank loss per eligible function, then functions."""
+        if logits.shape != valid.shape or labels.shape != valid.shape or not (
+            (labels == -1) | (labels == 0) | (labels == 1)
+        ).all():
+            raise ValueError("insertion targets must align to gaps with labels -1/0/1")
+        losses = []
+        for score, mask, target in zip(logits, valid, labels):
+            positive, negative = score[mask & (target == 1)], score[mask & (target == 0)]
+            if len(positive) and len(negative):
+                losses.append(F.softplus(negative[:, None] - positive[None, :]).mean())
+        return ((torch.stack(losses).mean() if losses else logits.sum() * 0),
+                logits.new_tensor(len(losses), dtype=torch.long))
+
     def forward(
         self,
         input_ids,
@@ -701,6 +746,10 @@ class LOSVERDetector(nn.Module):
         line_counts=None,
         line_numbers=None,
         line_labels=None,
+        insertion_left=None,
+        insertion_right=None,
+        insertion_mask=None,
+        insertion_labels=None,
         suppression_mask=None,
         return_auxiliary=False,
         return_attention=False,
@@ -778,6 +827,7 @@ class LOSVERDetector(nn.Module):
                 line_numbers=line_numbers,
                 suppress=self.training and labels is not None and self.attention_suppression is not None,
                 suppression_mask=suppression_mask,
+                insertion_left=insertion_left, insertion_right=insertion_right, insertion_mask=insertion_mask,
             )
         elif len(windows) == function_count and torch.equal(
             window_owners, torch.arange(function_count, device=window_owners.device)
@@ -822,6 +872,13 @@ class LOSVERDetector(nn.Module):
                 attention_details.update(bce=loss, region_loss=region_loss, region_functions=effective,
                                          logits=logits[:, 0])
                 total = loss + (0.1 * region_loss if self.attention_region is not None else 0)
+                if self.insertion_supervision is not None:
+                    if insertion_labels is None or "insertion_logits" not in attention_details:
+                        raise ValueError("insertion training requires mapped gap targets")
+                    insertion_loss, insertion_functions = self.insertion_ranking_loss(
+                        attention_details["insertion_logits"], attention_details["insertion_mask"], insertion_labels)
+                    attention_details.update(insertion_loss=insertion_loss, insertion_functions=insertion_functions)
+                    total = total + .1 * insertion_loss
                 return (total, probability, attention_details) if return_attention else (total, probability)
             if return_auxiliary:
                 states = torch.cat(token_states)
@@ -862,6 +919,7 @@ def losver_model(
     attention_context=False,
     attention_local=False,
     attention_context_scale=False,
+    insertion_supervision=None,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -894,6 +952,7 @@ def losver_model(
         attention_context=attention_context,
         attention_local=attention_local,
         attention_context_scale=attention_context_scale,
+        insertion_supervision=insertion_supervision,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )
@@ -948,7 +1007,8 @@ def predict_paired(checkpoint, records, *, device="auto", model_path=None):
                     n for n, p in zip(encoding["line_numbers"], scores) if p > 0.5
                 ],
             )
-        f = paired_features(row, tokenizer, variant, encoding=encoding)
+        f = paired_features(row, tokenizer, variant, encoding=encoding,
+                            insertion=model.insertion_supervision is not None)
         probability = paired_forward(
             model, paired_collate([f]), variant, device, with_labels=False
         )[:, 0]

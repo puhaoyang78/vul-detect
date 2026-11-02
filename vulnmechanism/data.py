@@ -474,6 +474,56 @@ def modified_lines(source, counterpart):
     return _line_diff(source, counterpart)[0]
 
 
+def insertion_annotations(rows):
+    """Pure additions from the SAME Differ alignment, in old-side gap coordinates.
+
+    Gap p is before old physical line p; 0/N are the function boundaries.
+    A replacement of blank old lines is an interval [start,end], not a guessed
+    neighboring code label. Only old nonblank deletions disqualify a pair.
+    """
+    result = []
+    if len(rows) % 2:
+        raise ValueError("insertion annotations require complete vulnerable/patched pairs")
+    for i in range(0, len(rows), 2):
+        old, new = rows[i:i+2]
+        if [old["target"], new["target"]] != [1, 0] or old["pair_key"] != new["pair_key"]:
+            raise ValueError("insertion annotations require unchanged official pair order")
+        deleted, edits = _line_diff(old["func"], new["func"])
+        if "lines_ground_truth" in old and deleted != old["lines_ground_truth"]:
+            raise ValueError("original Diff and insertion alignment disagree")
+        added = [e for e in edits if e["other_lines"]]
+        pure = not deleted and bool(added)
+        result.extend((dict(old, pure_addition_pair=pure, insertion_edits=added if pure else []),
+                       dict(new, pure_addition_pair=pure, insertion_edits=[])))
+    return result
+
+
+def insertion_features(feature, edits):
+    """Code-only gaps; collapse blank-run positions with identical two sides.
+
+    Each range contains physical insertion coordinates, never code-line labels.
+    Both real sides must be fully encoded. End-of-visible-prefix is NOT EOF.
+    Zero vectors represent the real function boundaries, without parameters.
+    """
+    numbers, full = feature["line_numbers"], feature["line_complete"]
+    left, right, ranges = [], [], []
+    for gap in range(len(numbers) + 1):
+        a, b = gap - 1, gap
+        if not numbers or (a >= 0 and not full[a]) or (b < len(numbers) and not full[b]):
+            continue
+        if b == len(numbers) and feature["source_tokens"] > 510:
+            continue
+        left.append(a)
+        right.append(b if b < len(numbers) else -1)
+        ranges.append([numbers[a] + 1 if a >= 0 else 0,
+                       numbers[b] if b < len(numbers) else feature["source_lines"]])
+    positive = {i for i, (a, b) in enumerate(ranges)
+                if any(a <= e["start"] <= e["end"] <= b for e in edits)}
+    labels = [int(i in positive) for i in range(len(ranges))] if positive else [-1] * len(ranges)
+    return dict(insertion_left=left, insertion_right=right, insertion_ranges=ranges,
+                insertion_labels=labels, insertion_truth=list(labels))
+
+
 def _neighbour_line_kinds(source):
     """Lexical boundaries only: comments/literals cannot create fake braces."""
     from bisect import bisect_right
@@ -1167,7 +1217,7 @@ def prepare_repair_regions(data_dir, output_dir):
     return statistics
 
 
-def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512"):
+def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512", insertion=False):
     """Attach labels or binary 5/1 weights to the same source-aligned input."""
     if variant not in ("localizer", "baseline", "predicted", "oracle"):
         raise ValueError(f"unknown paired variant: {variant}")
@@ -1176,6 +1226,10 @@ def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512")
         if encoding is None
         else encoding
     )
+    if insertion:
+        if variant != "baseline" or input_mode != "512":
+            raise ValueError("insertion localization requires the shared 512 baseline input")
+        f.update(insertion_features(f, row.get("insertion_edits", [])))
     if variant == "localizer":
         gt = set(row.get("lines_ground_truth", []))
         f["labels"] = [int(n in gt) for n in f["line_numbers"]]

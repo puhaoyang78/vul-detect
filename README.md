@@ -432,3 +432,35 @@ python -m vulnmechanism.cli repair-transfer report
 本次真实GPU提取2181个参考函数，71777条原始参考行去重并排除标签冲突后，得到5952条正参考及40988条背景参考。固定Train24/Valid24查询的462条候选并集已全部完成源码复核（复用125条、新复核337条）；related包含能确认的数据/控制上下文，不能全部当作危险操作定位金标。64项前置相关测试、16项收尾离线测试通过；RTX4090上的嵌入重复提取与48组完整检索重复结果一致，原checkpoint未改写。
 
 Train的Top3相关比例为直接检索19.44%、对比检索27.78%、注意力34.72%、随机15.28%；Valid分别为18.06%、19.44%、38.89%、27.78%，样本命中率为37.50%、41.67%、58.33%、58.33%。Valid中直接/对比检索相对注意力各新增2/1个命中，同时丢失7/5个；新增案例包含OVS循环后的encap字段写入和JasPer宽度赋值，后者仅为数据上下文。检索未超过现有注意力和随机对照，本轮不支持将其作为弱监督接入Context+Diff，不追加变体。
+
+### 修复插入位置定位（Repair Insertion Localization）
+
+在原 `--bounded-attention --attention-context --attention-region diff` 上增加 `--insertion-supervision diff|random`。复用 `_line_diff` 的同一双版本对齐；旧侧没有非空删除、且新侧有非空新增的配对提供插入监督。目标是旧侧行间位置 `p`（0/N为真实函数首尾），不是邻近代码行。空白区间内共享同一对有效行的物理位置合并为一个间隙区间，保留原始Diff坐标。两侧真实行都必须完整编码，真实边界缺失侧为0；截断处不构造伪EOF，部分可见行不作为位置两侧。
+
+同一次UniXcoder编码得到行均值及有效代码Token全局均值g。插入头为 `Linear(2304,32) -> tanh -> Linear(32,1,bias=False)`，拼接左右两侧及g，共73792个参数；在独立CPU `fork_rng` 中初始化，保持原模型参数、函数输出和采样RNG。多个正位置共同参与 `mean softplus(s_negative-s_positive)`：先在每个函数内对正负位置对平均，再对有效函数平均。总损失固定为 `BCE + .1*L_diff + .1*L_insertion`；没有有效正负位置的函数仍保留原BCE和Diff损失。
+
+Train有1232对纯新增修复，其中840对可监督，977/1590处Diff插入能映射为975个不重复可见间隙；Valid有163对，其中122对可评价，147/223处插入可见。随机对照只随机化Train的插入位置，逐函数保留相同正位置数量；原Diff行标签和全部函数成员不变。Valid始终使用真实插入坐标评价。
+
+```bash
+python -m unittest tests.test_insertion_localization tests.test_bounded_attention tests.test_line_auxiliary tests.test_losver tests.test_resume
+python -m vulnmechanism.cli check-paired --insertion-localization --output-dir results/insertion_localization_512 --device cuda:0
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-region diff --insertion-supervision diff --output-dir results/insertion_localization_512/insertion_diff --device cuda:0 --resume --save-every 1000
+python -m vulnmechanism.cli train --dataset primevul_paired --methods unixcoder --paired-input 512 --paired-epochs 16 --bounded-attention --attention-context --attention-region diff --insertion-supervision random --output-dir results/insertion_localization_512/insertion_random --device cuda:1 --resume --save-every 1000
+python -m vulnmechanism.cli report --dataset primevul_paired --insertion-localization --output-dir results/insertion_localization_512 --reference-dir results/attention_context_512 --device cuda:0
+```
+
+两组沿用官方完整配对Train8708/Valid1124函数、512输入、Seed123456、16轮、原优化器及固定阈值>.5，从与原Context+Diff相同的预训练初始化训练，只按完整Valid P-C选模。推理仍复用原单函数源码入口，不需要Diff、修复版本或参考库，不增加每个前向的编码次数。覆盖率、真实GPU检查、位置排序、整体/纯新增子集分类、区域倍率和实际耗时保存在[实验目录](results/insertion_localization_512)；不读取Test、不搜索参数、不叠加其他模块。
+
+两组均已完成16轮/17424步，所选epoch均为14。下表除纯新增P-C外均为完整Valid指标，纯新增子集含163对/326函数。
+
+|配置|P-C|纯新增P-C|AUC|MCC|F1|Recall|修复侧FPR|
+|---|---:|---:|---:|---:|---:|---:|---:|
+|原Context+Diff|17.79%|22.70%|0.5896|0.1431|60.70%|66.37%|52.31%|
+|真实插入位置监督|15.66%|16.56%|0.5812|0.1055|52.86%|50.18%|39.68%|
+|随机插入位置监督|16.73%|24.54%|0.5811|0.1068|55.96%|56.76%|46.09%|
+
+在122个可映射Valid漏洞函数上，真实/随机监督的插入位置Top1命中为10/4个（8.20%/3.28%），Top3为47/19个（38.52%/15.57%）。将不可见位置保留在全部163个纯新增函数分母后，真实监督Top3为28.83%。定位有改善，但真实监督的整体P-C比基线少12对，纯新增P-C少10对，也低于随机位置监督；FPR降低伴随Recall、AUC和MCC下降。本轮没有漏洞检测净收益，不追加模块或变体。
+
+真实监督的Train Top1/Top3为90.48%/99.29%，与Valid有明显泛化落差；训练位置拟合不能视为稳定的精确插入定位或漏洞检测提升。
+
+80项前置相关测试及1项新增评价测试、真实RTX4090 smoke、三组所选checkpoint的[单函数源码推理](results/insertion_localization_512/trained-inference.json)均通过；单函数与批量概率最大差为2.9e-8。真实/随机两组16轮训练耗时分别为54.04/48.92分钟，含初始化、验证及导出的进程耗时为63.81/57.05分钟；同机并发的实际耗时不用于单独归因模型计算开销。完整Train/Valid分类、定位、区域倍率、逐轮损失和协议检查见[插入定位报告](results/insertion_localization_512/report.md)，权重保留本地。

@@ -730,10 +730,15 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
     from .training import paired_loader, paired_forward
     from .metrics import paired_metrics
 
+    insertion_supervision = getattr(model, "insertion_supervision", None)
+    if insertion_supervision is not None and loader is None:
+        from .data import insertion_annotations
+        rows = insertion_annotations(rows)
     loader = (
         loader
         if loader is not None
-        else paired_loader(rows, tokenizer, variant, input_mode=model.input_mode)
+        else paired_loader(rows, tokenizer, variant, input_mode=model.input_mode,
+                           insertion_supervision=insertion_supervision)
     )
     model.eval()
     predictions = []
@@ -760,6 +765,12 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
                     line_rates=rates[:n].cpu().tolist(),line_token_counts=counts[:n].cpu().tolist()))
                 if model.attention_context_scale:
                     attention_predictions[-1]["context_scale_alpha"] = float(details["context_scale_alpha"][i])
+                if insertion_supervision is not None:
+                    count = len(batch["insertion_ranges"][i])
+                    attention_predictions[-1].update(
+                        insertion_ranges=batch["insertion_ranges"][i],
+                        insertion_scores=details["insertion_logits"][i, :count].cpu().tolist(),
+                        insertion_truth=batch["insertion_truth"][i, :count].tolist())
                 if model.attention_local:
                     attention_predictions[-1].update(
                         local_scores=details["local_scores"][i,:n].cpu().tolist(),
@@ -886,6 +897,8 @@ def load_paired(checkpoint, device):
         **(dict(attention_context=True) if checkpoint.get("bounded_attention", {}).get("context") else {}),
         **(dict(attention_local=True) if checkpoint.get("bounded_attention", {}).get("local") else {}),
         **(dict(attention_context_scale=True) if checkpoint.get("bounded_attention", {}).get("context_scale") else {}),
+        **(dict(insertion_supervision=checkpoint["insertion_localization"]["supervision"])
+           if checkpoint.get("insertion_localization") else {}),
     )
     model.input_mode = checkpoint["input_mode"]
     model.weak_supervision = checkpoint.get("weak_supervision", False)
@@ -2306,6 +2319,60 @@ def oof_report(output_dir, data_dir):
     return comparison
 
 
+def insertion_coverage(data_dir, output_dir, model_path):
+    """Train/Valid only; source/repair Diff is annotation, never encoder input."""
+    from collections import Counter
+    from transformers import RobertaTokenizerFast
+    from .data import insertion_annotations, paired_features
+
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
+    result = dict(input_mode="512", model_path=str(model_path), test_used=False,
+        position="old-side gap p before physical line p; 0/N are true boundaries",
+        blank_lines="one gap interval per pair of adjacent effective lines; retain original Diff interval",
+        visibility="both real sides fully encoded; true EOF only for untruncated source", splits={})
+    for split, size in (("train", 8708), ("valid", 1124)):
+        rows = read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl")
+        if len(rows) != size:
+            raise ValueError("insertion coverage requires the complete official paired Train/Valid")
+        annotated = insertion_annotations(rows)
+        counts = Counter(functions=len(rows), pairs=len(rows)//2)
+        records = []
+        for r in annotated[::2]:
+            if not r["pure_addition_pair"]:
+                continue
+            f = paired_features(r, tokenizer, "baseline", insertion=True)
+            truth = f["insertion_truth"]
+            positions = [i for i, y in enumerate(truth) if y == 1]
+            mapped = [[i for i, (a,b) in enumerate(f["insertion_ranges"])
+                       if a <= e["start"] <= e["end"] <= b] for e in r["insertion_edits"]]
+            if any(len(m) > 1 for m in mapped):
+                raise ValueError("a true insertion must map to at most one code gap")
+            eligible = bool(positions) and 0 in truth
+            counts.update(pure_pairs=1, raw_insertion_hunks=len(mapped),
+                mapped_hunks=sum(bool(m) for m in mapped), visible_positive_gaps=len(positions),
+                mapped_functions=bool(positions), rankable_functions=eligible,
+                truncated_functions=f["source_tokens"] > 510,
+                multiple_insertion_functions=len(mapped) > 1,
+                blank_replacement_hunks=sum(e["end"] > e["start"] for e in r["insertion_edits"]),
+                entry_hunks=sum(e["start"] == 0 for e in r["insertion_edits"]),
+                eof_hunks=sum(e["end"] == f["source_lines"] for e in r["insertion_edits"]))
+            records.append(dict(sample_key=r["sample_key"], pair_key=r["pair_key"], project=r["project"],
+                source_tokens=f["source_tokens"], source_lines=f["source_lines"],
+                line_numbers=f["line_numbers"], line_complete=f["line_complete"],
+                edits=r["insertion_edits"], mapped_candidates=mapped,
+                ranges=f["insertion_ranges"], positive_gaps=positions, rankable=eligible))
+        counts["unmapped_hunks"] = counts["raw_insertion_hunks"] - counts["mapped_hunks"]
+        result["splits"][split] = dict(counts,
+            hunk_coverage=counts["mapped_hunks"] / counts["raw_insertion_hunks"] if counts["raw_insertion_hunks"] else 0.,
+            function_coverage=counts["rankable_functions"] / counts["pure_pairs"] if counts["pure_pairs"] else 0.)
+        write_jsonl(root / f"coverage.{split}.jsonl", records)
+        print(f"{split} insertion coverage: {result['splits'][split]}", flush=True)
+    write_json(root / "coverage.json", result)
+    return result
+
+
 def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input_mode="512",regularization=False,
                             context=False,local=False,context_scale=False):
     """Actual pretrained encoder, Train examples, two updates; no experiment claim."""
@@ -3379,7 +3446,9 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
 
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False,
                   bounded_attention=False, attention_regularization=False, attention_context=False,
-                  attention_local=False, attention_context_scale=False, device="auto"):
+                  attention_local=False, attention_context_scale=False, insertion_localization=False, device="auto"):
+    if insertion_localization:
+        return insertion_localization_report(output_dir, data_dir, reference_dir, device=device)
     if attention_local and not attention_context:
         raise ValueError("local report requires attention context")
     if attention_context_scale and (not attention_context or attention_local):
@@ -4043,3 +4112,337 @@ def check_paired(data_dir, output_dir, model_path, *, device="auto", input_mode=
         smoke=str(root / "smoke.json"),
         report=str(root / "report.md"),
     )
+
+
+def check_insertion_localization(data_dir, output_dir, model_path, *, device="auto"):
+    """Real UniXcoder gradients/reload/source-only smoke, selected from Train."""
+    import tempfile
+    from .data import insertion_annotations, paired_features
+    from .training import paired_collate, paired_forward, LOSVERAdamW, LOSVER_CONFIG
+
+    root = Path(output_dir)
+    coverage_path = root / "coverage.json"
+    if not coverage_path.exists():
+        insertion_coverage(data_dir, root, model_path)
+    coverage = json.loads(coverage_path.read_text())
+    if coverage["input_mode"] != "512" or coverage["model_path"] != str(model_path):
+        raise ValueError("insertion coverage protocol differs")
+    audit = read_jsonl(root / "coverage.train.jsonl")
+    eligible = [r for r in audit if r["rankable"] and r["source_tokens"] <= 510]
+    selected = eligible[:2]
+    multiple = next((r for r in eligible if len(r["positive_gaps"]) > 1), None)
+    if multiple and multiple not in selected:
+        selected.append(multiple)
+    if not selected:
+        raise ValueError("no eligible real Train insertion smoke function")
+    rows = insertion_annotations(read_jsonl(Path(data_dir) / "primevul_paired/train.lines.jsonl"))
+    keys = {r["pair_key"] for r in selected}
+    keys.add(next(r["pair_key"] for r in rows if not r["pure_addition_pair"]))
+    rows = [r for r in rows if r["pair_key"] in keys]
+    device = core.resolve_device(device)
+    core.seed_everything(123456)
+    baseline, tokenizer = core.losver_model(model_path, "baseline", bounded_attention=True,
+                                            attention_context=True, attention_region="diff")
+    state = torch.get_rng_state().clone()
+    expected_order = torch.randperm(30)
+    core.seed_everything(123456)
+    model, _ = core.losver_model(model_path, "baseline", bounded_attention=True,
+                               attention_context=True, attention_region="diff", insertion_supervision="diff")
+    if not torch.equal(state, torch.get_rng_state()) or not torch.equal(expected_order, torch.randperm(30)):
+        raise ValueError("insertion initialization advanced original model/sampler RNG")
+    for key, value in baseline.state_dict().items():
+        if not torch.equal(value, model.state_dict()[key]):
+            raise ValueError("insertion initialization changed an original parameter")
+    added = sum(p.numel() for p in model.insertion_head.parameters())
+    features = [paired_features(r, tokenizer, "baseline", insertion=True) for r in rows]
+    for r, f in zip(rows, features):
+        if r["target"] == 1 and r["pure_addition_pair"] and any(f["line_labels"]):
+            raise ValueError("insertion supervision must not create neighboring Diff labels")
+    batch = paired_collate(features)
+    baseline.to(device).eval(); model.to(device).eval()
+    with torch.no_grad():
+        a, ad = paired_forward(baseline, batch, "baseline", device, with_labels=False, return_attention=True)
+        calls = []
+        handle = model.encoder.register_forward_pre_hook(lambda *_: calls.append(1))
+        try:
+            b, bd = paired_forward(model, batch, "baseline", device, with_labels=False, return_attention=True)
+        finally:
+            handle.remove()
+    if len(calls) != 1 or not torch.equal(a, b) or not torch.equal(ad["line_rates"], bd["line_rates"]):
+        raise ValueError("joint inference must reuse one encoding and preserve original initial outputs")
+    del baseline, a, ad, bd
+    model.train()
+    loss, _, parts = paired_forward(model, batch, "baseline", device, return_attention=True)
+    torch.testing.assert_close(loss, parts["bce"] + .1*parts["region_loss"] + .1*parts["insertion_loss"])
+    parts["insertion_loss"].backward()
+    head_gradient = sum(float(p.grad.abs().sum()) for p in model.insertion_head.parameters())
+    encoder_gradient = float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum())
+    if not head_gradient > 0 or not encoder_gradient > 0 or not int(parts["insertion_functions"]) > 0:
+        raise ValueError("insertion loss did not reach the new head and shared encoder")
+    original_head = [p.detach().clone() for p in model.insertion_head.parameters()]
+    model.zero_grad(set_to_none=True)
+    optimizer = LOSVERAdamW(model.parameters(), lr=LOSVER_CONFIG["learning_rate"],
+                           eps=LOSVER_CONFIG["adam_epsilon"], weight_decay=0.)
+    loss, _ = paired_forward(model, batch, "baseline", device)
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1., error_if_nonfinite=True)
+    optimizer.step(); optimizer.zero_grad()
+    update = sum(float((p.detach()-q).abs().sum()) for p,q in zip(model.insertion_head.parameters(), original_head))
+    if not update > 0:
+        raise ValueError("insertion parameters did not update")
+    model.eval()
+    with torch.no_grad():
+        expected, details = paired_forward(model, batch, "baseline", device, with_labels=False, return_attention=True)
+        unlabeled = {k:v for k,v in batch.items() if k not in ("labels", "line_labels", "insertion_labels", "insertion_truth")}
+        independent, ignored = paired_forward(model, unlabeled, "baseline", device, with_labels=False, return_attention=True)
+        if not torch.equal(expected, independent) or not torch.equal(details["insertion_logits"], ignored["insertion_logits"]):
+            raise ValueError("Diff or repair annotation entered single-source inference")
+    cp = dict(protocol="losver", line_mapping="source_offsets", input_mode="512", variant="baseline",
+        pooling="bounded_attention", window_micro_batch=8, model_path=str(model_path),
+        training_config=LOSVER_CONFIG, state_dict=model.state_dict(),
+        bounded_attention=dict(context=dict(dimension=32), region_supervision="diff"),
+        insertion_localization=dict(supervision="diff", weight=.1))
+    with tempfile.TemporaryDirectory(dir=root) as tmp:
+        path = Path(tmp) / "smoke.pt"
+        torch.save(cp, path)
+        saved = torch.load(path, map_location="cpu", weights_only=False)
+        restored, _ = load_paired(saved, device)
+        with torch.no_grad():
+            actual, restored_details = paired_forward(restored, batch, "baseline", device, with_labels=False, return_attention=True)
+        if not torch.equal(expected, actual) or not torch.equal(details["insertion_logits"], restored_details["insertion_logits"]):
+            raise ValueError("insertion checkpoint restoration differs")
+        single = core.predict_paired(saved, [dict(raw_source=r["func"]) for r in rows[:1]], device=device).sigmoid()
+        delta = float((single - actual[0, 0].cpu()).abs().max())
+        if delta > 1e-5:
+            raise ValueError("single-function source-only prediction differs from batched inference")
+    result = dict(device=str(device), gpu=torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+        hidden_size=model.encoder.config.hidden_size, added_parameters=added,
+        initialization_equal=True, sampler_rng_equal=True, encoder_calls_per_joint_forward=len(calls),
+        insertion_functions=int(parts["insertion_functions"]), insertion_loss=float(parts["insertion_loss"].detach()),
+        head_gradient=head_gradient, encoder_gradient=encoder_gradient, head_update_l1=update,
+        checkpoint_equal=True, single_inference_max_delta=delta, diff_not_used_in_inference=True,
+        diff_line_labels_unchanged=True, train_only_sample_keys=[r["sample_key"] for r in rows], test_used=False)
+    write_json(root / "gpu-smoke.json", result)
+    return result
+
+
+def insertion_localization_metrics(rows, predictions):
+    """True gap Hit@K and positive-gap recall; retain all pure pairs in coverage."""
+    from .data import insertion_annotations
+
+    annotated = insertion_annotations(rows)
+    if len(rows) != len(predictions) or any(r["sample_key"] != p["sample_key"] for r,p in zip(rows,predictions)):
+        raise ValueError("insertion evaluation members/order differ")
+    pure = mapped = positives = 0
+    hits = {1:0, 3:0}; recovered = {1:0, 3:0}; records = []
+    for r, p in zip(annotated, predictions):
+        if r["target"] != 1 or not r["pure_addition_pair"]:
+            continue
+        pure += 1
+        ranges, scores, truth = p["insertion_ranges"], p["insertion_scores"], p["insertion_truth"]
+        if not len(ranges) == len(scores) == len(truth):
+            raise ValueError("gap scores/truth are not aligned")
+        real = {i for i, y in enumerate(truth) if y == 1}
+        # Assert the complete target set, including intervals lost to truncation.
+        expected = {i for i,(a,b) in enumerate(ranges)
+                    if any(a <= e["start"] <= e["end"] <= b for e in r["insertion_edits"])}
+        if real != expected:
+            raise ValueError("saved gap target differs from source Diff")
+        order = sorted(range(len(scores)), key=lambda i:(-scores[i],ranges[i][0],ranges[i][1]))
+        mapped += bool(real); positives += len(real)
+        record = dict(sample_key=r["sample_key"], pair_key=r["pair_key"], mapped=bool(real),
+                      edits=r["insertion_edits"], true_ranges=[ranges[i] for i in sorted(real)])
+        for k in (1,3):
+            selected = order[:k]; correct = real & set(selected)
+            hits[k] += bool(correct); recovered[k] += len(correct)
+            record[f"top{k}"] = [dict(range=ranges[i], score=scores[i], correct=i in real) for i in selected]
+        records.append(record)
+    return dict(pure_functions=pure, mapped_functions=mapped, visible_positive_gaps=positives,
+        **{f"hit_at_{k}":hits[k]/mapped if mapped else None for k in (1,3)},
+        **{f"hit_at_{k}_all_pure":hits[k]/pure if pure else None for k in (1,3)},
+        **{f"positive_gap_recall_at_{k}":recovered[k]/positives if positives else None for k in (1,3)},
+        **{f"hit_functions_at_{k}":hits[k] for k in (1,3)}), records
+
+
+def insertion_localization_report(output_dir, data_dir, reference_dir, *, device="auto"):
+    """Matched 16-epoch experiments; official Train/Valid only, no new variants."""
+    import numpy as np
+    from statistics import mean
+    from .data import insertion_annotations
+    from .training import paired_loader
+    from .metrics import paired_metrics
+    from .losver_diagnosis import write_csv
+
+    if reference_dir is None:
+        raise ValueError("insertion comparison requires the existing Context + Diff reference directory")
+    root, reference = Path(output_dir), Path(reference_dir)
+    paths = {"context_diff":reference/"context_diff/primevul_paired/unixcoder",
+             **{name:root/name/"primevul_paired/unixcoder" for name in ("insertion_diff","insertion_random")}}
+    configs = {n:json.loads((p/"training.metrics.json").read_text()) for n,p in paths.items()}
+    base = configs["context_diff"]
+    reference_file = paths["context_diff"] / "best-p_c.pt"
+    reference_state = (reference_file.stat().st_size, reference_file.stat().st_mtime_ns)
+    annotations = {s:insertion_annotations(read_jsonl(Path(data_dir)/"primevul_paired"/f"{s}.lines.jsonl"))
+                   for s in ("train","valid")}
+    coverage = {s:{r["sample_key"]:r for r in read_jsonl(root/f"coverage.{s}.jsonl")} for s in annotations}
+    coverage_summary = json.loads((root/"coverage.json").read_text())["splits"]
+    common = ("training_config","training_members","validation_members","environment","input_coverage",
+              "input_mode","model_path","function_micro_batch","window_micro_batch","gradient_accumulation")
+    if base["training_config"]["seed"] != 123456 or base["input_mode"] != "512" or base["bounded_attention"].get("region_supervision") != "diff":
+        raise ValueError("reference must be original Seed123456 512 Context + Diff")
+    for split, field in (("train","training_members"),("valid","validation_members")):
+        if [r["sample_key"] for r in annotations[split]] != base[field]:
+            raise ValueError("official Train/Valid members/order differ")
+    classification, localization, attention, timing, epochs = [], [], [], [], []
+    predictions, histories = {}, {}
+    final_rng = {}
+    device = core.resolve_device(device)
+    for name, path in paths.items():
+        c = configs[name]
+        if (any(c[k] != base[k] for k in common) or c["bounded_attention"] != base["bounded_attention"]
+                or (c["train_samples"],c["valid_samples"],c["completed_epochs"],c["optimizer_steps"],c["epochs"]) != (8708,1124,16,17424,16)
+                or c["decision_threshold"] != .5 or c["comparison"] != ">"):
+            raise ValueError(f"unmatched original training protocol: {name}")
+        if name != "context_diff":
+            insertion = c["insertion_localization"]
+            mode = "random" if name.endswith("random") else "diff"
+            if (insertion["supervision"] != mode or insertion["weight"] != .1 or insertion["dimension"] != 32
+                    or c["parameters"] != base["parameters"] + 73792):
+                raise ValueError("only the fixed insertion head and .1 auxiliary loss may be added")
+            if (path/"train.attention_regions.jsonl").read_bytes() != (paths["context_diff"]/"train.attention_regions.jsonl").read_bytes():
+                raise ValueError("insertion experiment changed original Diff line targets")
+        history = [r for r in read_jsonl(path/"best.training.jsonl") if r.get("event") == "epoch"]
+        chosen = max(history,key=lambda r:(round(r["validation"]["p_c"],4),-r["epoch"]))
+        if len(history) != 16 or chosen["epoch"] != c["selected_epochs"]["p_c"]:
+            raise ValueError("selection must use complete Valid P-C with earlier-epoch ties")
+        histories[name] = history
+        epochs.extend(dict(model=name,epoch=r["epoch"],train_loss=r["train_loss"],
+            **r["train_components"], **{f"valid_{m}":r["validation"][m] for m in ("p_c","auc","mcc","f1","recall","patched_fpr")}) for r in history)
+        wall = None
+        if name != "context_diff":
+            execution = json.loads((root/f"execution.{name}.json").read_text())
+            if execution["status"] != "complete" or execution["return_code"] != 0:
+                raise ValueError("the full insertion training process has not completed successfully")
+            wall = execution["wall_seconds"]
+        timing.append(dict(model=name,training_seconds=sum(r["training_seconds"] for r in history),
+                           epoch_seconds=sum(r["epoch_seconds"] for r in history),wall_seconds=wall,
+                           optimizer_steps=c["optimizer_steps"]))
+        predictions[name] = {"valid":read_jsonl(path/"valid.best-p_c.predictions.jsonl")}
+        cache = path/"train.selected.metrics.json"
+        if cache.exists():
+            if json.loads(cache.read_text())["selected_epoch"] != chosen["epoch"]:
+                raise ValueError("Train inference cache belongs to a different selected checkpoint")
+            predictions[name]["train"] = read_jsonl(path/"train.selected.predictions.jsonl")
+        else:
+            model, tokenizer = load_paired(torch.load(path/"best-p_c.pt",map_location="cpu",weights_only=False),device)
+            loader = paired_loader(annotations["train"],tokenizer,"baseline",batch_size=8,
+                                   insertion_supervision=model.insertion_supervision)
+            values, predicted = validate_paired(model,annotations["train"],tokenizer,"baseline",device,loader=loader)
+            predictions[name]["train"] = predicted
+            write_jsonl(path/"train.selected.predictions.jsonl",predicted)
+            write_json(cache,dict(selected_epoch=chosen["epoch"],metrics=values))
+            del model, loader
+            if device.type == "cuda": torch.cuda.empty_cache()
+        for split, rows in annotations.items():
+            predicted = predictions[name][split]
+            if len(rows) != len(predicted) or any((r["sample_key"],r["pair_key"],r["target"]) !=
+                (p["sample_key"],p["pair_key"],p["target"]) for r,p in zip(rows,predicted)):
+                raise ValueError("saved prediction membership differs")
+            for subset in ("all","pure_addition"):
+                indices = [i for i,r in enumerate(rows) if subset == "all" or r["pure_addition_pair"]]
+                value = paired_metrics([rows[i] for i in indices],[predicted[i]["probability"] for i in indices])
+                if split == "valid" and subset == "all" and any(value[m] != chosen["validation"][m] for m in ("p_c","auc","mcc","f1","recall","patched_fpr")):
+                    raise ValueError("selected saved Valid scores differ from original P-C selection")
+                classification.append(dict(model=name,epoch=chosen["epoch"],split=split,subset=subset,
+                    samples=value["samples"],pairs=value["pairs"],p_c_pairs=value["pair_counts"]["p_c"],
+                    **{m:value[m] for m in ("p_c","auc","mcc","f1","recall","patched_fpr")}))
+            direct = [bounded_region_record(r,p) for r,p in zip(rows,predicted)]
+            direct = [r for r in direct if r["eligible"]]
+            adjacent = []
+            for r,p in zip(rows,predicted):
+                if r["sample_key"] not in coverage[split]: continue
+                f = coverage[split][r["sample_key"]]
+                if p["line_numbers"] != f["line_numbers"]:
+                    raise ValueError("insertion attention diagnostics changed the 512 visible line universe")
+                if name != "context_diff" and p["insertion_ranges"] != f["ranges"]:
+                    raise ValueError("insertion prediction candidates differ from the initial coverage count")
+                sides = {n for i in f["positive_gaps"] for n in (f["ranges"][i][0]-1,f["ranges"][i][1])
+                         if 0 <= n < f["source_lines"]}
+                record = bounded_region_record(r,p,[int(n in sides) for n in p["line_numbers"]])
+                if record["eligible"]: adjacent.append(record)
+            attention.append(dict(model=name,split=split,diff_functions=len(direct),
+                diff_mean_rate_ratio=mean(r["mean_rate_ratio"] for r in direct) if direct else None,
+                insertion_side_functions=len(adjacent),
+                insertion_side_mean_rate_ratio=mean(r["mean_rate_ratio"] for r in adjacent) if adjacent else None))
+            if name != "context_diff":
+                value, positions = insertion_localization_metrics(rows,predicted)
+                expected = coverage_summary[split]
+                if any(value[k] != expected[v] for k,v in (("pure_functions","pure_pairs"),
+                        ("mapped_functions","mapped_functions"),("visible_positive_gaps","visible_positive_gaps"))):
+                    raise ValueError("insertion evaluation changed the initial coverage denominators")
+                localization.append(dict(model=name,split=split,epoch=chosen["epoch"],**value))
+                write_jsonl(root/f"{name}.{split}.positions.jsonl",positions)
+        last = torch.load(path/"last.pt",map_location="cpu",weights_only=False)
+        final_rng[name] = last["rng"]
+        del last
+    controls = {}
+    for name in ("insertion_diff","insertion_random"):
+        a, b = final_rng["context_diff"], final_rng[name]
+        same = (a["python"] == b["python"] and np.array_equal(a["numpy"][1],b["numpy"][1])
+                and a["numpy"][0] == b["numpy"][0] and a["numpy"][2:] == b["numpy"][2:]
+                and torch.equal(a["torch"],b["torch"]) and len(a["cuda"]) == len(b["cuda"])
+                and all(torch.equal(x,y) for x,y in zip(a["cuda"],b["cuda"])))
+        if not same:
+            raise ValueError("original initialization/sampling/dropout RNG protocol changed")
+        controls[name] = dict(same_train_valid_protocol=True,original_diff_targets_equal=True,final_cpu_cuda_rng_equal=True)
+    real = read_jsonl(paths["insertion_diff"]/"train.insertion_positions.jsonl")
+    random_targets = read_jsonl(paths["insertion_random"]/"train.insertion_positions.jsonl")
+    if len(real) != len(random_targets) or any(any(a[k] != b[k] for k in ("sample_key","pair_key","edits","ranges","truth"))
+        or a["labels"].count(1) != b["labels"].count(1) for a,b in zip(real,random_targets)):
+        raise ValueError("real/random insertion supervision functions, candidates or positive counts differ")
+    overlap = sum(sum(x==y==1 for x,y in zip(a["labels"],b["labels"])) for a,b in zip(real,random_targets))
+    if reference_state != (reference_file.stat().st_size, reference_file.stat().st_mtime_ns):
+        raise ValueError("original Context + Diff checkpoint changed during reporting")
+    checks = dict(controls=controls,train_true_random_counts_equal=True,
+        random_true_positive_overlap=overlap,reference_checkpoint_modified=False,test_used=False,parameter_search=False)
+    write_csv(root/"classification.csv",classification)
+    write_csv(root/"localization.csv",localization)
+    write_csv(root/"attention.csv",attention)
+    write_csv(root/"timing.csv",timing)
+    # Each variant keeps its own component columns; no missing loss is treated as measured.
+    write_jsonl(root/"epochs.jsonl",epochs)
+    write_json(root/"comparison.json",dict(classification=classification,localization=localization,
+        attention=attention,timing=timing,protocol_checks=checks))
+    by_name = {(r["model"],r["subset"]):r for r in classification if r["split"] == "valid"}
+    improved = by_name[("insertion_diff","all")]["p_c"] > by_name[("context_diff","all")]["p_c"]
+    lines = ["# 修复插入位置定位：固定512输入、Seed123456、16轮", "",
+        "参考既有Context+Diff，新增左右有效行均值及全局均值的32维MLP插入头。监督为原_line_diff给出的旧侧行间位置，空白间隙保留物理坐标区间。真实边界缺失侧为0，截断或不完整相邻行不监督。多个真位置共同参与pairwise softplus排序，先函数内再有效函数间平均。", "",
+        "两组均从相同UniXcoder预训练初始化训练，辅助权重固定0.1，保留函数BCE、0.1倍原Diff区域损失及有界Context注意力。不是对最佳checkpoint再追加16轮。只按完整Valid P-C选模，阈值严格>.5；不训练其他变体，不读取Test。", "",
+        "|Split|纯新增配对|可映射函数|原始插入处|可映射插入处|不重复可见间隙|函数覆盖率|插入处覆盖率|",
+        "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    lines.extend(f"|{s}|{v['pure_pairs']}|{v['mapped_functions']}|{v['raw_insertion_hunks']}|{v['mapped_hunks']}|"
+                 f"{v['visible_positive_gaps']}|{v['function_coverage']:.6f}|{v['hunk_coverage']:.6f}|"
+                 for s,v in coverage_summary.items())
+    lines += ["", "不可映射位置不施加辅助损失，函数仍参与原分类训练与评价。多处插入落在同一空白间隙时只保留一个正候选。", "",
+        "|模型|Split|子集|Epoch|P-C|AUC|MCC|F1|Recall|修复侧FPR|",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['split']}|{r['subset']}|{r['epoch']}|"+
+                 "|".join(f"{r[m]:.6f}" for m in ("p_c","auc","mcc","f1","recall","patched_fpr"))+"|" for r in classification)
+    lines += ["", "插入Hit@K按可映射纯新增漏洞函数统计；all-pure将不可见位置保留在完整纯新增函数分母。多位置同时报告正间隙召回。原Context+Diff无插入头，不伪造其间隙预测。", "",
+        "|模型|Split|可映射/全部纯新增|Hit@1|Hit@3|全纯新增Hit@1|全纯新增Hit@3|正间隙Recall@1|正间隙Recall@3|",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['split']}|{r['mapped_functions']}/{r['pure_functions']}|"+
+        "|".join(f"{r[k]:.6f}" for k in ("hit_at_1","hit_at_3","hit_at_1_all_pure","hit_at_3_all_pure","positive_gap_recall_at_1","positive_gap_recall_at_3"))+"|" for r in localization)
+    lines += ["", "区域倍率为Token数加权的区域/背景倍率比，再按有效函数平均。插入间隙两侧倍率仅是预测后诊断，不作为Diff行标签或训练目标。", "",
+        "|模型|Split|Diff区域倍率|插入两侧倍率|", "|---|---|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['split']}|{r['diff_mean_rate_ratio']:.6f}|{r['insertion_side_mean_rate_ratio']:.6f}|" for r in attention)
+    lines += ["", "|模型|16轮训练秒数|含验证Epoch秒数|含初始化进程秒数|优化步数|", "|---|---:|---:|---:|---:|"]
+    lines.extend(f"|{r['model']}|{r['training_seconds']:.2f}|{r['epoch_seconds']:.2f}|"+
+                 (f"{r['wall_seconds']:.2f}" if r['wall_seconds'] is not None else "—")+
+                 f"|{r['optimizer_steps']}|" for r in timing)
+    lines += ["", "以上为实际日志耗时；训练进程同机并发，不能据此分离硬件负载影响。",
+        "本轮真实插入监督的完整Valid P-C超过原Context+Diff；仍需结合其余指标和随机监督对照判断。" if improved else
+        "本轮真实插入监督没有超过原Context+Diff的完整Valid P-C，按无检测净提升报告。插入命中率或注意力变化不能替代漏洞检测收益，不追加模块或变体。", "",
+        "覆盖率与不可见位置见[coverage.json](coverage.json)及coverage.train/valid.jsonl；完整分类、定位、注意力、时间分别见classification.csv、localization.csv、attention.csv、timing.csv。逐函数间隙排序保存在insertion_*.positions.jsonl，训练仅改变辅助位置标签，不改原始数据或Diff行标签。", ""]
+    (root/"report.md").write_text("\n".join(lines),encoding="utf-8")
+    return dict(classification=classification,localization=localization,attention=attention,timing=timing,protocol_checks=checks)
