@@ -1,0 +1,28 @@
+{
+  "reference_functions": 2181,
+  "extracted_functions": 2229,
+  "extracted_lines": 73449,
+  "query_functions": 48,
+  "dimensions": 768,
+  "reference_library": {
+    "raw_lines": 71777,
+    "unique_texts": 47626,
+    "conflicting_texts_removed": 686,
+    "usable_unique_texts": 46940
+  },
+  "first_batch_repeat_max_delta": 0.0,
+  "saved_probability_max_delta": 8.791685104370117e-07,
+  "saved_rate_max_delta": 1.430511474609375e-05,
+  "selected_epoch": 14,
+  "selected_valid_p_c": 0.17793594306049823,
+  "checkpoint_unchanged": true,
+  "model_frozen": true,
+  "eval_mode": true,
+  "seconds": 101.47404172923416,
+  "torch": "2.9.1+cu128",
+  "cuda": "12.8",
+  "device": "cuda:0",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "test_used": false,
+  "training": false
+}

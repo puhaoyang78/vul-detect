@@ -1,0 +1,72 @@
+{
+  "tests_argv": [
+    "env",
+    "CUDA_VISIBLE_DEVICES=",
+    "OMP_NUM_THREADS=2",
+    "MKL_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    "/home/phy/miniconda3/envs/vul-detect/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_repair_transfer",
+    "tests.test_bounded_attention",
+    "tests.test_losver"
+  ],
+  "extract_argv": [
+    "env",
+    "CUDA_VISIBLE_DEVICES=0",
+    "OMP_NUM_THREADS=4",
+    "MKL_NUM_THREADS=4",
+    "TOKENIZERS_PARALLELISM=false",
+    "PYTHONUNBUFFERED=1",
+    "/home/phy/miniconda3/envs/vul-detect/bin/python",
+    "-m",
+    "vulnmechanism.cli",
+    "repair-transfer",
+    "extract",
+    "--device",
+    "cuda:0"
+  ],
+  "retrieve_argv": [
+    "env",
+    "CUDA_VISIBLE_DEVICES=0",
+    "OMP_NUM_THREADS=4",
+    "MKL_NUM_THREADS=4",
+    "TOKENIZERS_PARALLELISM=false",
+    "PYTHONUNBUFFERED=1",
+    "/home/phy/miniconda3/envs/vul-detect/bin/python",
+    "-m",
+    "vulnmechanism.cli",
+    "repair-transfer",
+    "retrieve",
+    "--device",
+    "cuda:0"
+  ],
+  "report_argv": [
+    "env",
+    "CUDA_VISIBLE_DEVICES=",
+    "OMP_NUM_THREADS=4",
+    "MKL_NUM_THREADS=4",
+    "TOKENIZERS_PARALLELISM=false",
+    "/home/phy/miniconda3/envs/vul-detect/bin/python",
+    "-m",
+    "vulnmechanism.cli",
+    "repair-transfer",
+    "report"
+  ],
+  "training": false,
+  "test_used": false,
+  "seed": 123456,
+  "code_base_commit": "d95ab626cf633ccc0af65b6ad0077e84fc8674a9",
+  "post_review_tests_argv": [
+    "env",
+    "CUDA_VISIBLE_DEVICES=",
+    "OMP_NUM_THREADS=2",
+    "MKL_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    "/home/phy/miniconda3/envs/vul-detect/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_repair_transfer"
+  ]
+}

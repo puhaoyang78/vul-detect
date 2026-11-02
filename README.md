@@ -410,3 +410,25 @@ python -m vulnmechanism.cli report --dataset primevul_paired --bounded-attention
 两组均已完成16轮/17424步。`context_scale_diff`所选epoch为15，Valid P-C为15.84%、AUC为0.5824、MCC为0.1201；`context_scale_random`所选epoch为14，P-C为15.30%。真实Diff比随机Diff多判对3对，但比原 `context_diff` 少11对，P-C下降1.96个百分点，AUC/MCC也下降；修复侧FPR由52.31%降至50.18%，漏洞Recall同时由66.37%降至62.10%。本轮没有净分类提升。
 
 真实Diff的Train/Valid alpha为1.7845±0.2072、1.8337±0.1803，随机Diff为1.8131±0.1540、1.8202±0.1391；完整分位数和直方图已保存。真实Diff区域倍率为3.2495/1.8224（原Context为3.1495/1.7831）。同一checkpoint固定alpha=1后，真实Diff P-C仍为15.84%，随机Diff反而升至16.01%，未观察到调节项的P-C收益；不能将独立训练所得差异归因于推理时alpha。66项相关测试、真实GPU smoke和[训练后单函数源码推理](results/context_scale_512/trained-inference.json)均通过；不追加变体。
+
+### 跨样本修复区域迁移（离线）
+
+`repair-transfer`冻结既有 `context_diff/best-p_c.pt`，复用正式 `paired_features/paired_collate/paired_forward`。只观察原线性注意力头输入，直接取得 `bounded_pool` 已计算的768维物理行表示；不改变模型、训练入口或checkpoint。
+
+参考库只含官方Train漏洞函数中可见直接Diff行非空者：修改行为正参考，其余可见有效Token行为背景。固定查询组为已有静态审计的Train24/Valid24对纯新增修复。检索前排除同配对、完全相同非注释Token源码及重复参考文本；正/背景冲突文本排除，其余文本选首个合格来源。来源样本、物理行、Token数和匹配余弦完整保留。
+
+直接检索使用最大正参考余弦，对比检索使用最大正参考余弦减最大背景余弦。两者输出同一排序的Top1/Top3，与实际MIL行注意力质量 `n_i*r_i/sum(n_j*r_j)` 和固定Seed123456随机排序比较。所有方法使用正式512输入的同一可见行集合，不额外按语法或API筛行。源码长度和同项目匹配仅作分层诊断，不用于调参。
+
+```bash
+python -m unittest tests.test_repair_transfer tests.test_bounded_attention tests.test_losver
+python -m vulnmechanism.cli repair-transfer extract --device cuda:0
+python -m vulnmechanism.cli repair-transfer retrieve --device cuda:0
+# 逐行完成results/repair_transfer_512/review.jsonl中的pending判断，保留精确候选成员和源码。
+python -m vulnmechanism.cli repair-transfer report
+```
+
+复核四种方法Top3候选的完整并集；复用已存在且源码一致的判断，其余逐行核实为related/unrelated/unknown。未复核成员阻止报告，Unknown保留在分母。相关比例、样本命中率、Unknown、静态未恢复组、长度和项目分层见[离线检索报告](results/repair_transfer_512/report.md)。行向量缓存留本地；不读取Test、不训练、不搜索参数。
+
+本次真实GPU提取2181个参考函数，71777条原始参考行去重并排除标签冲突后，得到5952条正参考及40988条背景参考。固定Train24/Valid24查询的462条候选并集已全部完成源码复核（复用125条、新复核337条）；related包含能确认的数据/控制上下文，不能全部当作危险操作定位金标。64项前置相关测试、16项收尾离线测试通过；RTX4090上的嵌入重复提取与48组完整检索重复结果一致，原checkpoint未改写。
+
+Train的Top3相关比例为直接检索19.44%、对比检索27.78%、注意力34.72%、随机15.28%；Valid分别为18.06%、19.44%、38.89%、27.78%，样本命中率为37.50%、41.67%、58.33%、58.33%。Valid中直接/对比检索相对注意力各新增2/1个命中，同时丢失7/5个；新增案例包含OVS循环后的encap字段写入和JasPer宽度赋值，后者仅为数据上下文。检索未超过现有注意力和随机对照，本轮不支持将其作为弱监督接入Context+Diff，不追加变体。

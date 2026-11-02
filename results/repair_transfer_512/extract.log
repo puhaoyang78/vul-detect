@@ -1,0 +1,11 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+prepared train: 2205 selected functions
+prepared valid: 2229 selected functions
+encoded 400/2229 functions, 13537 physical lines
+encoded 800/2229 functions, 25397 physical lines
+encoded 1200/2229 functions, 38339 physical lines
+encoded 1600/2229 functions, 52291 physical lines
+encoded 2000/2229 functions, 65837 physical lines
+completed extraction: 2181 donor functions, 71777 reference lines, 48 queries

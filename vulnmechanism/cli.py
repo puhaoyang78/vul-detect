@@ -160,6 +160,13 @@ def build_parser():
     p.add_argument("--train-limit", type=int, default=1024)
     p.add_argument("--valid-limit", type=int, default=256)
     p.add_argument("--test-limit", type=int, default=256)
+    p = sub.add_parser("repair-transfer", help="frozen cross-sample repair-region retrieval; Train/Valid only")
+    p.add_argument("stage", choices=("extract", "retrieve", "report"))
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--audit-dir", type=Path, default=Path("results/primevul_targeted_slicing"))
+    p.add_argument("--checkpoint", type=Path, default=Path("results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/repair_transfer_512"))
+    p.add_argument("--device", default="auto")
     p = sub.add_parser(
         "check-paired", help="input coverage and tiny GPU/training-loop checks"
     )
@@ -259,6 +266,12 @@ def main():
                     attention_ema=args.attention_ema,
                     attention_diagnostics=args.attention_diagnostics,
                 )
+    elif args.command == "repair-transfer":
+        from . import repair_transfer
+        if args.stage == "report":
+            print(json.dumps(repair_transfer.report(args.output_dir), indent=2))
+        else:
+            getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions, check_bounded_attention
 

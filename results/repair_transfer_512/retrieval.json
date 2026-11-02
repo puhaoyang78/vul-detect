@@ -1,0 +1,15 @@
+{
+  "query_functions": 48,
+  "review_lines": 462,
+  "reused_reviews": 125,
+  "reference_library": {
+    "raw_lines": 71777,
+    "unique_texts": 47626,
+    "conflicting_texts_removed": 686,
+    "usable_unique_texts": 46940
+  },
+  "repeated_all_rankings_equal": true,
+  "reference_split": "train",
+  "test_used": false,
+  "initial_pending_reviews": 337
+}
