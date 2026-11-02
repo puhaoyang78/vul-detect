@@ -13,7 +13,7 @@
       "official_source_order_and_diff_equal": true
     }
   },
-  "test_used": false,
+  "test_used": true,
   "runs": [
     {
       "name": "context_bce",
@@ -194,5 +194,50 @@
     "mode": "eval; source only; Diff labels used only after prediction",
     "batch_size": 8,
     "functions_per_run": 8708
-  }
+  },
+  "test_evaluation": {
+    "status": "complete",
+    "started_utc": "2026-11-02T09:21:17.154358+00:00",
+    "argv": [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.cli",
+      "evaluate",
+      "--dataset",
+      "primevul_paired",
+      "--data-dir",
+      "data",
+      "--output-dir",
+      "results/attention_context_512/context_diff",
+      "--methods",
+      "unixcoder",
+      "--split",
+      "test",
+      "--device",
+      "cuda:0"
+    ],
+    "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+    "selected_epoch": 14,
+    "selection": "complete Valid P-C",
+    "decision_threshold": 0.5,
+    "comparison": ">",
+    "input_mode": "512",
+    "test_functions": 1128,
+    "test_pairs": 564,
+    "test_used": true,
+    "authorized_after_training_and_selection": true,
+    "environment": {
+      "CUDA_VISIBLE_DEVICES": "0",
+      "OMP_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "TOKENIZERS_PARALLELISM": "false"
+    },
+    "return_code": 0,
+    "wall_seconds": 41.06242607301101,
+    "finished_utc": "2026-11-02T09:21:58.254150+00:00",
+    "checkpoint_unchanged": true,
+    "metrics_file": "results/attention_context_512/context_diff/primevul_paired/unixcoder/test.metrics.json",
+    "predictions_file": "results/attention_context_512/context_diff/primevul_paired/unixcoder/test.predictions.jsonl"
+  },
+  "test_used_before_selection": false
 }

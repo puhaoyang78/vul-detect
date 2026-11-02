@@ -50,3 +50,20 @@ Context+真实Diff相对其他配置的差值：
 Context+BCE相对原attention_bce：P-C -0.001779，AUC -0.009722，MCC -0.032293。
 三组与旧对照的数据成员、配置、输入覆盖、CPU采样及CUDA dropout RNG均已核对；真实/随机Diff掩码分别与旧对照完全相同。全部函数保留BCE，空区域及全区域只跳过区域损失。
 测试及GPU smoke见[tests.log](tests.log)、[gpu-smoke.json](gpu-smoke.json)，实际命令见[commands.json](commands.json)。权重留本地。
+
+## Context + Diff：固定checkpoint的Test评估（后续授权）
+
+2026-11-02，在原Train/Valid实验及选模全部完成后，按用户后续要求评估原Context+真实Diff的完整官方配对Test。模型仍为完整Valid P-C选出的第14轮，训练Seed123456、512输入，概率严格>.5。Test包含1128个函数、564对，仅用于这次固定checkpoint评价。此前本报告中未使用Test的说明对应原训练及选模阶段。
+
+|Split|函数/配对|Epoch|P-C|AUC|MCC|F1|Recall|修复侧FPR|
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+|Valid|1124/562|14|0.177936|0.589555|0.143089|0.606998|0.663701|0.523132|
+|Test|1128/564|14|0.136525|0.571188|0.088486|0.582996|0.638298|0.551418|
+
+Test正确配对为77/564，P-C为13.65%，低于既有Valid的17.79%。没有用Test重新选择epoch、阈值或其他参数。RTX4090评估进程实际耗时41.06秒，包含模型加载、512物理行映射、推理、指标及预测导出。原最佳checkpoint未改动。
+
+```bash
+env CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 TOKENIZERS_PARALLELISM=false PYTHONUNBUFFERED=1 /home/phy/miniconda3/envs/vul-detect/bin/python -m vulnmechanism.cli evaluate --dataset primevul_paired --data-dir data --output-dir results/attention_context_512/context_diff --methods unixcoder --split test --device cuda:0
+```
+
+完整Test成员与顺序、概率和1～5倍有界行权重已核对；指标从导出的预测复算，并单独按配对及固定阈值核实77对正确。正式入口对每个函数独立推理，读取test.jsonl，不需要Diff或Test Oracle标注。指标与逐函数概率/行注意力分别见[原Context+Diff Test指标](context_diff/primevul_paired/unixcoder/test.metrics.json)、[Test预测](context_diff/primevul_paired/unixcoder/test.predictions.jsonl)。运行命令、开始/结束时间及checkpoint未修改记录见[commands.json](commands.json)的test_evaluation，日志见[context_diff_test.log](context_diff_test.log)。

@@ -464,3 +464,7 @@ python -m vulnmechanism.cli report --dataset primevul_paired --insertion-localiz
 真实监督的Train Top1/Top3为90.48%/99.29%，与Valid有明显泛化落差；训练位置拟合不能视为稳定的精确插入定位或漏洞检测提升。
 
 80项前置相关测试及1项新增评价测试、真实RTX4090 smoke、三组所选checkpoint的[单函数源码推理](results/insertion_localization_512/trained-inference.json)均通过；单函数与批量概率最大差为2.9e-8。真实/随机两组16轮训练耗时分别为54.04/48.92分钟，含初始化、验证及导出的进程耗时为63.81/57.05分钟；同机并发的实际耗时不用于单独归因模型计算开销。完整Train/Valid分类、定位、区域倍率、逐轮损失和协议检查见[插入定位报告](results/insertion_localization_512/report.md)，权重保留本地。
+
+### Context + Diff 的固定 checkpoint Test 评估
+
+2026-11-02按用户后续要求，使用原Context+真实Diff在完整Valid P-C选出的第14轮checkpoint、512输入及固定概率>.5，评估完整官方配对Test（1128函数/564对）。Test P-C为13.65%（77/564对）、AUC为0.5712、MCC为0.0885、F1为58.30%、Recall为63.83%、修复侧FPR为55.14%；评估进程耗时41.06秒。Test在原训练及选模完成后使用，未改变原checkpoint或选择规则。指标已从导出预测复算，命令、数据及完整Valid/Test比较见[Context+Diff报告](results/attention_context_512/report.md)。

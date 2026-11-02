@@ -306,3 +306,5 @@ __pycache__/
 !/results/insertion_localization_512/insertion_*/primevul_paired/unixcoder/train.selected.metrics.json
 !/results/insertion_localization_512/insertion_*/primevul_paired/unixcoder/train.selected.predictions.jsonl
 !/results/insertion_localization_512/insertion_*/primevul_paired/unixcoder/valid.best-p_c.predictions.jsonl
+!/results/attention_context_512/context_diff/primevul_paired/unixcoder/test.metrics.json
+!/results/attention_context_512/context_diff/primevul_paired/unixcoder/test.predictions.jsonl
