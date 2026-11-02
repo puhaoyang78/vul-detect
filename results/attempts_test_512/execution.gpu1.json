@@ -1,0 +1,118 @@
+{
+  "gpu": 1,
+  "status": "complete",
+  "started_utc": "2026-11-02T09:37:56.139936+00:00",
+  "runs": [
+    {
+      "name": "line_auxiliary_512/diff_0.1",
+      "selected_epoch": 16,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:37:56.150533+00:00",
+      "log": "results/attempts_test_512/line_auxiliary_512__diff_0.1.log",
+      "return_code": 0,
+      "wall_seconds": 66.77067179465666,
+      "finished_utc": "2026-11-02T09:39:02.926747+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "line_auxiliary_512/random_0.1",
+      "selected_epoch": 12,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:39:02.939450+00:00",
+      "log": "results/attempts_test_512/line_auxiliary_512__random_0.1.log",
+      "return_code": 0,
+      "wall_seconds": 44.010303303133696,
+      "finished_utc": "2026-11-02T09:39:46.982126+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "bounded_attention_512/attention_bce",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:39:46.993769+00:00",
+      "log": "results/attempts_test_512/bounded_attention_512__attention_bce.log",
+      "return_code": 0,
+      "wall_seconds": 56.20853640837595,
+      "finished_utc": "2026-11-02T09:40:43.214821+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "bounded_attention_512/global_mean",
+      "selected_epoch": 13,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:40:43.234739+00:00",
+      "log": "results/attempts_test_512/bounded_attention_512__global_mean.log",
+      "return_code": 0,
+      "wall_seconds": 56.99427433684468,
+      "finished_utc": "2026-11-02T09:41:40.250424+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_regularization_512/diff_region",
+      "selected_epoch": 12,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:41:40.279574+00:00",
+      "log": "results/attempts_test_512/attention_regularization_512__diff_region.log",
+      "return_code": 0,
+      "wall_seconds": 41.268470127135515,
+      "finished_utc": "2026-11-02T09:42:21.553907+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_regularization_512/high_suppression",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:42:21.565518+00:00",
+      "log": "results/attempts_test_512/attention_regularization_512__high_suppression.log",
+      "return_code": 0,
+      "wall_seconds": 41.713412874843925,
+      "finished_utc": "2026-11-02T09:43:03.284261+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_context_512/context_bce",
+      "selected_epoch": 16,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:43:03.296080+00:00",
+      "log": "results/attempts_test_512/attention_context_512__context_bce.log",
+      "return_code": 0,
+      "wall_seconds": 41.33408769220114,
+      "finished_utc": "2026-11-02T09:43:44.635999+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_local_512/dual_diff",
+      "selected_epoch": 13,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:43:44.647950+00:00",
+      "log": "results/attempts_test_512/attention_local_512__dual_diff.log",
+      "return_code": 0,
+      "wall_seconds": 42.367657606024295,
+      "finished_utc": "2026-11-02T09:44:27.031936+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "context_scale_512/context_scale_diff",
+      "selected_epoch": 15,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:44:27.061698+00:00",
+      "log": "results/attempts_test_512/context_scale_512__context_scale_diff.log",
+      "return_code": 0,
+      "wall_seconds": 41.52514347108081,
+      "finished_utc": "2026-11-02T09:45:08.592520+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "insertion_localization_512/insertion_diff",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:45:08.616964+00:00",
+      "log": "results/attempts_test_512/insertion_localization_512__insertion_diff.log",
+      "return_code": 0,
+      "wall_seconds": 44.889618842862546,
+      "finished_utc": "2026-11-02T09:45:53.512512+00:00",
+      "checkpoint_unchanged": true
+    }
+  ],
+  "finished_utc": "2026-11-02T09:45:53.521718+00:00"
+}

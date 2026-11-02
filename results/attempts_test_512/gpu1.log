@@ -1,0 +1,20 @@
+begin line_auxiliary_512/diff_0.1
+end line_auxiliary_512/diff_0.1 complete 66.77067179465666
+begin line_auxiliary_512/random_0.1
+end line_auxiliary_512/random_0.1 complete 44.010303303133696
+begin bounded_attention_512/attention_bce
+end bounded_attention_512/attention_bce complete 56.20853640837595
+begin bounded_attention_512/global_mean
+end bounded_attention_512/global_mean complete 56.99427433684468
+begin attention_regularization_512/diff_region
+end attention_regularization_512/diff_region complete 41.268470127135515
+begin attention_regularization_512/high_suppression
+end attention_regularization_512/high_suppression complete 41.713412874843925
+begin attention_context_512/context_bce
+end attention_context_512/context_bce complete 41.33408769220114
+begin attention_local_512/dual_diff
+end attention_local_512/dual_diff complete 42.367657606024295
+begin context_scale_512/context_scale_diff
+end context_scale_512/context_scale_diff complete 41.52514347108081
+begin insertion_localization_512/insertion_diff
+end insertion_localization_512/insertion_diff complete 44.889618842862546

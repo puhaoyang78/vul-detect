@@ -468,3 +468,9 @@ python -m vulnmechanism.cli report --dataset primevul_paired --insertion-localiz
 ### Context + Diff 的固定 checkpoint Test 评估
 
 2026-11-02按用户后续要求，使用原Context+真实Diff在完整Valid P-C选出的第14轮checkpoint、512输入及固定概率>.5，评估完整官方配对Test（1128函数/564对）。Test P-C为13.65%（77/564对）、AUC为0.5712、MCC为0.0885、F1为58.30%、Recall为63.83%、修复侧FPR为55.14%；评估进程耗时41.06秒。Test在原训练及选模完成后使用，未改变原checkpoint或选择规则。指标已从导出预测复算，命令、数据及完整Valid/Test比较见[Context+Diff报告](results/attention_context_512/report.md)。
+
+### 已完成512实验的统一 Test 对照
+
+按用户后续要求，对七系列22组完整模型统一补充Test：行辅助损失、有界注意力、抑制/EMA、Context、双尺度、context_scale及插入定位。新跑21组，复用已验证的Context+Diff结果；均为原完整Train/Valid训练、512输入、Seed123456、16轮，固定原Valid P-C所选checkpoint和概率>.5，Test为1128函数/564对。全部预测已逐一复算，成员、标签、配对计数、512可见行及checkpoint未修改检查通过。
+
+Test P-C：Global Mean 13.83%、Context+Diff 13.65%、EMA 14.18%、真实插入监督 14.36%。真实插入比Context+Diff多4对，但AUC为0.5650（Context+Diff 0.5712）、Recall为47.34%（63.83%），且原Valid P-C更低，不能按稳定的全面提升解释。插入Test定位真实/随机Top1为16.80%/5.60%，Top3为40.00%/16.00%（125个可映射函数）。未按Test改选模型或追加变体；全部22组六项指标、日志与命令见[统一Test报告](results/attempts_test_512/report.md)。此前各报告未读Test的说明对应原训练及选模阶段。

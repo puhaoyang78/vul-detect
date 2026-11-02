@@ -1,0 +1,3 @@
+name,epoch,pure_functions,mapped_functions,visible_positive_gaps,hit_at_1,hit_at_3,hit_at_1_all_pure,hit_at_3_all_pure,positive_gap_recall_at_1,positive_gap_recall_at_3,hit_functions_at_1,hit_functions_at_3
+insertion_localization_512/insertion_diff,14,189,125,151,0.168,0.4,0.1111111111111111,0.26455026455026454,0.1390728476821192,0.33774834437086093,21,50
+insertion_localization_512/insertion_random,14,189,125,151,0.056,0.16,0.037037037037037035,0.10582010582010581,0.046357615894039736,0.13245033112582782,7,20

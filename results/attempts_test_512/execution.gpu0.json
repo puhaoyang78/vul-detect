@@ -1,0 +1,129 @@
+{
+  "gpu": 0,
+  "status": "complete",
+  "started_utc": "2026-11-02T09:37:52.090475+00:00",
+  "runs": [
+    {
+      "name": "line_auxiliary_512/baseline",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:37:52.136455+00:00",
+      "log": "results/attempts_test_512/line_auxiliary_512__baseline.log",
+      "return_code": 0,
+      "wall_seconds": 67.02089879009873,
+      "finished_utc": "2026-11-02T09:38:59.187983+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "line_auxiliary_512/diff_0.3",
+      "selected_epoch": 10,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:38:59.220328+00:00",
+      "log": "results/attempts_test_512/line_auxiliary_512__diff_0.3.log",
+      "return_code": 0,
+      "wall_seconds": 56.77941733878106,
+      "finished_utc": "2026-11-02T09:39:56.014464+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "line_auxiliary_512/random_0.3",
+      "selected_epoch": 15,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:39:56.036831+00:00",
+      "log": "results/attempts_test_512/line_auxiliary_512__random_0.3.log",
+      "return_code": 0,
+      "wall_seconds": 59.02697132807225,
+      "finished_utc": "2026-11-02T09:40:55.092563+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "bounded_attention_512/diff_region",
+      "selected_epoch": 12,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:40:55.136265+00:00",
+      "log": "results/attempts_test_512/bounded_attention_512__diff_region.log",
+      "return_code": 0,
+      "wall_seconds": 42.723631946370006,
+      "finished_utc": "2026-11-02T09:41:37.906513+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "bounded_attention_512/random_region",
+      "selected_epoch": 13,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:41:37.949266+00:00",
+      "log": "results/attempts_test_512/bounded_attention_512__random_region.log",
+      "return_code": 0,
+      "wall_seconds": 43.740995361004025,
+      "finished_utc": "2026-11-02T09:42:21.713762+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_regularization_512/ema_attention",
+      "selected_epoch": 16,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:42:21.760638+00:00",
+      "log": "results/attempts_test_512/attention_regularization_512__ema_attention.log",
+      "return_code": 0,
+      "wall_seconds": 41.27499876404181,
+      "finished_utc": "2026-11-02T09:43:03.081767+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_regularization_512/random_suppression",
+      "selected_epoch": 12,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:43:03.128017+00:00",
+      "log": "results/attempts_test_512/attention_regularization_512__random_suppression.log",
+      "return_code": 0,
+      "wall_seconds": 41.423746954184026,
+      "finished_utc": "2026-11-02T09:43:44.573441+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_context_512/context_random",
+      "selected_epoch": 15,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:43:44.585100+00:00",
+      "log": "results/attempts_test_512/attention_context_512__context_random.log",
+      "return_code": 0,
+      "wall_seconds": 41.82743261102587,
+      "finished_utc": "2026-11-02T09:44:26.419042+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "attention_local_512/dual_random",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:44:26.431262+00:00",
+      "log": "results/attempts_test_512/attention_local_512__dual_random.log",
+      "return_code": 0,
+      "wall_seconds": 42.59730352088809,
+      "finished_utc": "2026-11-02T09:45:09.076011+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "context_scale_512/context_scale_random",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:45:09.108798+00:00",
+      "log": "results/attempts_test_512/context_scale_512__context_scale_random.log",
+      "return_code": 0,
+      "wall_seconds": 41.19317631237209,
+      "finished_utc": "2026-11-02T09:45:50.331547+00:00",
+      "checkpoint_unchanged": true
+    },
+    {
+      "name": "insertion_localization_512/insertion_random",
+      "selected_epoch": 14,
+      "status": "complete",
+      "started_utc": "2026-11-02T09:45:50.373312+00:00",
+      "log": "results/attempts_test_512/insertion_localization_512__insertion_random.log",
+      "return_code": 0,
+      "wall_seconds": 44.59183417400345,
+      "finished_utc": "2026-11-02T09:46:34.973152+00:00",
+      "checkpoint_unchanged": true
+    }
+  ],
+  "finished_utc": "2026-11-02T09:46:35.001629+00:00"
+}
