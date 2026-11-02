@@ -1,0 +1,23 @@
+{
+  "device": "NVIDIA GeForce RTX 4090",
+  "seed": 123456,
+  "test_used": false,
+  "target_summary": {
+    "functions": 8,
+    "unique_inputs": 6,
+    "conflicting_groups": 2,
+    "conflicting_functions": 4,
+    "target_histogram": {
+      "0.5": 4
+    }
+  },
+  "bce": 0.40238508582115173,
+  "region_loss": 0.0,
+  "encoder_gradient_l1": 183.35044860839844,
+  "classifier_update_l1": 0.0017597137484699488,
+  "rng_preserved": true,
+  "checkpoint_restore": true,
+  "single_function_consistent": true,
+  "inference_ignores_targets_and_diff": true,
+  "parameters_added": 0
+}

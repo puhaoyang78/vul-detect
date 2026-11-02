@@ -1,0 +1,194 @@
+{
+  "test_used": false,
+  "splits": {
+    "train": {
+      "groups": {
+        "truncated_visible": {
+          "pairs": 1576,
+          "correct": 1319,
+          "p_c": 0.8369289340101523
+        },
+        "untruncated_visible": {
+          "pairs": 1524,
+          "correct": 1442,
+          "p_c": 0.9461942257217848
+        },
+        "identical": {
+          "pairs": 1254,
+          "correct": 0,
+          "p_c": 0.0
+        }
+      },
+      "correctly_ordered_but_not_p_c": 286,
+      "attention_by_target": {
+        "1": {
+          "attention_logit_shift": 0.7513790901416882,
+          "line_logit_std": 2.464741982093965,
+          "rate_saturation_fraction": 0.6695712648993499,
+          "attention_top3_mass": 0.37298906621894107,
+          "fraction_any_positive_line_projection": 0.9993109784106569,
+          "fraction_any_negative_line_projection": 0.5466237942122186,
+          "edit_rate_ratio": 2.9577295017367002,
+          "edit_eligible_functions": 2175
+        },
+        "0": {
+          "attention_logit_shift": -3.9070805030792477,
+          "line_logit_std": 5.397586461602375,
+          "rate_saturation_fraction": 0.697626533219056,
+          "attention_top3_mass": 0.36433505042394915,
+          "fraction_any_positive_line_projection": 0.5020670647680294,
+          "fraction_any_negative_line_projection": 0.9813964170877354,
+          "edit_rate_ratio": 3.2883067512182427,
+          "edit_eligible_functions": 3005
+        }
+      },
+      "attention_mass_by_length": {
+        "10": {
+          "functions": 8397,
+          "median_top3_mass": 0.3196769058704376
+        },
+        "20": {
+          "functions": 7470,
+          "median_top3_mass": 0.30764468014240265
+        },
+        "40": {
+          "functions": 3993,
+          "median_top3_mass": 0.2792990803718567
+        }
+      },
+      "interventions": {
+        "original": {
+          "gains": 0,
+          "losses": 0
+        },
+        "token_mean": {
+          "gains": 68,
+          "losses": 93
+        },
+        "line_mean": {
+          "gains": 53,
+          "losses": 104
+        },
+        "attention_top3": {
+          "gains": 38,
+          "losses": 100
+        },
+        "rate_top3": {
+          "gains": 42,
+          "losses": 215
+        },
+        "risk_top3": {
+          "gains": 35,
+          "losses": 563
+        },
+        "remove_attention_top3": {
+          "gains": 50,
+          "losses": 161
+        }
+      }
+    },
+    "valid": {
+      "groups": {
+        "truncated_visible": {
+          "pairs": 180,
+          "correct": 45,
+          "p_c": 0.25
+        },
+        "untruncated_visible": {
+          "pairs": 218,
+          "correct": 55,
+          "p_c": 0.25229357798165136
+        },
+        "identical": {
+          "pairs": 164,
+          "correct": 0,
+          "p_c": 0.0
+        }
+      },
+      "correctly_ordered_but_not_p_c": 162,
+      "attention_by_target": {
+        "1": {
+          "attention_logit_shift": -0.9382705456781072,
+          "line_logit_std": 2.9078971497495774,
+          "rate_saturation_fraction": 0.6652968770748143,
+          "attention_top3_mass": 0.3845432985878924,
+          "fraction_any_positive_line_projection": 0.9590747330960854,
+          "fraction_any_negative_line_projection": 0.8149466192170819,
+          "edit_rate_ratio": 1.619704097732774,
+          "edit_eligible_functions": 266
+        },
+        "0": {
+          "attention_logit_shift": -1.454729440861491,
+          "line_logit_std": 3.3201838553952734,
+          "rate_saturation_fraction": 0.665589185782917,
+          "attention_top3_mass": 0.3744961591271743,
+          "fraction_any_positive_line_projection": 0.9217081850533808,
+          "fraction_any_negative_line_projection": 0.8612099644128114,
+          "edit_rate_ratio": 1.8939968140761,
+          "edit_eligible_functions": 392
+        }
+      },
+      "attention_mass_by_length": {
+        "10": {
+          "functions": 1068,
+          "median_top3_mass": 0.3187771141529083
+        },
+        "20": {
+          "functions": 949,
+          "median_top3_mass": 0.30805864930152893
+        },
+        "40": {
+          "functions": 436,
+          "median_top3_mass": 0.27138274908065796
+        }
+      },
+      "interventions": {
+        "original": {
+          "gains": 0,
+          "losses": 0
+        },
+        "token_mean": {
+          "gains": 21,
+          "losses": 35
+        },
+        "line_mean": {
+          "gains": 16,
+          "losses": 35
+        },
+        "attention_top3": {
+          "gains": 15,
+          "losses": 14
+        },
+        "rate_top3": {
+          "gains": 23,
+          "losses": 34
+        },
+        "risk_top3": {
+          "gains": 18,
+          "losses": 81
+        },
+        "remove_attention_top3": {
+          "gains": 22,
+          "losses": 42
+        }
+      }
+    }
+  },
+  "uninformed_source_only_reference": {
+    "definition": "independent fair Bernoulli predictions assigned to distinct visible token sequences; identical sequences always share one prediction",
+    "expected_p_c": 0.17704626334519574,
+    "expected_p_r": 0.17704626334519574,
+    "expected_auc": 0.5,
+    "expected_mcc": 0.0,
+    "meaning": "analytical diagnostic, not a trained model; P-C alone can reward prediction decorrelation; interpret together with P-R/AUC/MCC"
+  },
+  "intervention_definitions": {
+    "original": "a_i=n_i*r_i/sum_j(n_j*r_j), shared linear classifier",
+    "token_mean": "all visible code tokens receive equal weight",
+    "line_mean": "equal weight per effective code line",
+    "attention_top3": "select the 3 greatest actual attention masses a_i, then token mean within selected lines",
+    "rate_top3": "select the 3 greatest bounded multipliers r_i, then token mean within selected lines",
+    "risk_top3": "select the 3 greatest shared-classifier line projections, then token mean; projections are not trained line-risk probabilities",
+    "remove_attention_top3": "remove the 3 greatest actual attention masses and renormalize the original weights on remaining lines; keep original if no line remains"
+  }
+}

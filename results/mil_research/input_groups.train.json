@@ -1,0 +1,19 @@
+{
+  "functions": 8708,
+  "unique_inputs": 7336,
+  "conflicting_groups": 1171,
+  "conflicting_functions": 2531,
+  "target_histogram": {
+    "0.5": 2480,
+    "0.6666666666666666": 18,
+    "0.6": 5,
+    "0.3333333333333333": 24,
+    "0.25": 4
+  },
+  "irreducible_function_errors": 1257,
+  "empirical_bce_floor": 0.20112000479679287,
+  "test_used": false,
+  "split": "train",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "definition": "exact 512 token ids, attention/code masks, physical-line ids and memberships; full official Train only"
+}

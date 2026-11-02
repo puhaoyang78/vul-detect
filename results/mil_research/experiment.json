@@ -1,0 +1,375 @@
+{
+  "base_commit": "492b57d10d3d73c03296cec7b3689c35b2fbc58f",
+  "test_used": false,
+  "seed": 123456,
+  "threshold": 0.5,
+  "selection": "complete Valid P-C, rounded 4 decimals, earliest tie",
+  "hypothesis": "marginalizing Train label assignments conditional on identical 512 detector inputs reduces stochastic gradient noise without extra parameters or changing expected BCE",
+  "pilot": {
+    "train_functions": 2048,
+    "train_selection": "existing pair subset: random.Random(42), same members and order both runs",
+    "valid_functions": 1124,
+    "epochs": 16,
+    "optimizer_steps": 4096,
+    "runs": [
+      {
+        "name": "pilot_baseline",
+        "argv": [
+          "/home/phy/miniconda3/envs/vul-detect/bin/python",
+          "-u",
+          "-m",
+          "vulnmechanism.cli",
+          "train",
+          "--dataset",
+          "primevul_paired",
+          "--data-dir",
+          "data",
+          "--model",
+          "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+          "--methods",
+          "unixcoder",
+          "--paired-input",
+          "512",
+          "--paired-seed",
+          "123456",
+          "--paired-epochs",
+          "16",
+          "--train-limit",
+          "2048",
+          "--bounded-attention",
+          "--attention-context",
+          "--attention-region",
+          "diff",
+          "--save-every",
+          "1000",
+          "--resume",
+          "--device",
+          "cuda:0",
+          "--output-dir",
+          "results/mil_research/pilot_baseline"
+        ]
+      },
+      {
+        "name": "pilot_marginalized",
+        "argv": [
+          "/home/phy/miniconda3/envs/vul-detect/bin/python",
+          "-u",
+          "-m",
+          "vulnmechanism.cli",
+          "train",
+          "--dataset",
+          "primevul_paired",
+          "--data-dir",
+          "data",
+          "--model",
+          "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+          "--methods",
+          "unixcoder",
+          "--paired-input",
+          "512",
+          "--paired-seed",
+          "123456",
+          "--paired-epochs",
+          "16",
+          "--train-limit",
+          "2048",
+          "--bounded-attention",
+          "--attention-context",
+          "--attention-region",
+          "diff",
+          "--save-every",
+          "1000",
+          "--resume",
+          "--device",
+          "cuda:1",
+          "--output-dir",
+          "results/mil_research/pilot_marginalized",
+          "--marginalize-inputs"
+        ]
+      }
+    ]
+  },
+  "promotion_rule": {
+    "selected_p_c_gain_min": 0.01,
+    "selected_auc_change_min": -0.005,
+    "last_four_epochs_mean_p_c_change_min": 0.0,
+    "decision": "full matched training only if all three criteria pass; then multiple seeds only if full experiment improves"
+  },
+  "no_parameter_search": true,
+  "full_experiment": {
+    "train_functions": 8708,
+    "valid_functions": 1124,
+    "epochs": 16,
+    "optimizer_steps": 17424,
+    "seed": 123456,
+    "argv": [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-u",
+      "-m",
+      "vulnmechanism.cli",
+      "train",
+      "--dataset",
+      "primevul_paired",
+      "--data-dir",
+      "data",
+      "--model",
+      "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+      "--methods",
+      "unixcoder",
+      "--paired-input",
+      "512",
+      "--paired-seed",
+      "123456",
+      "--paired-epochs",
+      "16",
+      "--bounded-attention",
+      "--attention-context",
+      "--attention-region",
+      "diff",
+      "--marginalize-inputs",
+      "--save-every",
+      "1000",
+      "--resume",
+      "--device",
+      "cuda:1",
+      "--output-dir",
+      "results/mil_research/full_marginalized/seed123456"
+    ],
+    "reference": "results/attention_context_512/context_diff/primevul_paired/unixcoder",
+    "initialization": "same pretrained UniXcoder as baseline, not continuation from selected checkpoint",
+    "multiseed_promotion_rule": {
+      "selected_p_c_gain_min": 0.01,
+      "selected_auc_change_min": 0.0,
+      "selected_mcc_change_min": 0.0,
+      "decision": "two additional fixed seeds only if all three pass; otherwise stop this direction without parameter search"
+    },
+    "rng_indices": {
+      "reference": 0,
+      "candidate": 1,
+      "reference_visibility": "CUDA_VISIBLE_DEVICES=1, --device cuda:0",
+      "candidate_visibility": "both GPUs visible, --device cuda:1"
+    }
+  },
+  "diagnostic_commands": [
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "existing",
+      "--output-dir",
+      "results/mil_research"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "frozen",
+      "--checkpoint",
+      "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+      "--output-dir",
+      "results/mil_research/context_diff",
+      "--device",
+      "cuda:0",
+      "--layers",
+      "4",
+      "8"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "probe",
+      "--feature-dir",
+      "results/mil_research/context_diff",
+      "--output-dir",
+      "results/mil_research"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "probe",
+      "--feature-dir",
+      "results/mil_research/context_diff/layer4",
+      "--output-dir",
+      "results/mil_research/layer4"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "probe",
+      "--feature-dir",
+      "results/mil_research/context_diff/layer8",
+      "--output-dir",
+      "results/mil_research/layer8"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "target-smoke",
+      "--checkpoint",
+      "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+      "--output-dir",
+      "results/mil_research",
+      "--device",
+      "cuda:0"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "losver-frozen",
+      "--output-dir",
+      "results/mil_research",
+      "--device",
+      "cuda:0"
+    ],
+    [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-m",
+      "vulnmechanism.mil_diagnosis",
+      "frozen",
+      "--checkpoint",
+      "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+      "--output-dir",
+      "results/mil_research/context_diff",
+      "--device",
+      "cuda:1",
+      "--splits",
+      "valid"
+    ]
+  ],
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8",
+    "gpus": [
+      "NVIDIA GeForce RTX 4090",
+      "NVIDIA GeForce RTX 4090"
+    ],
+    "precision": "FP32 eager; no AMP or encoder activation checkpointing",
+    "env": {
+      "OMP_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "TOKENIZERS_PARALLELISM": "false"
+    },
+    "encoder_hidden_dropout_probability": 0.1,
+    "encoder_attention_dropout_probability": 0.1,
+    "numpy": "2.4.0",
+    "scipy": "1.16.3",
+    "scikit_learn": "1.8.0"
+  },
+  "baseline_replication": {
+    "seed": 123457,
+    "argv": [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-u",
+      "-m",
+      "vulnmechanism.cli",
+      "train",
+      "--dataset",
+      "primevul_paired",
+      "--data-dir",
+      "data",
+      "--model",
+      "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+      "--methods",
+      "unixcoder",
+      "--paired-input",
+      "512",
+      "--paired-seed",
+      "123457",
+      "--paired-epochs",
+      "16",
+      "--bounded-attention",
+      "--attention-context",
+      "--attention-region",
+      "diff",
+      "--save-every",
+      "1000",
+      "--resume",
+      "--device",
+      "cuda:0",
+      "--output-dir",
+      "results/mil_research/full_context/seed123457"
+    ],
+    "purpose": "assess original Context+Diff training-seed variation before interpreting any candidate gain; independent of candidate full-run outcome"
+  },
+  "next_frozen_check": {
+    "hypothesis": "the additive lower bound of 1 can dilute already negative repair-line evidence; replacing n*(1+4*sigmoid(s)) by n*sigmoid(s) isolates this floor",
+    "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+    "change": "fixed learned weights and classifier, source-only single-function readout, stable log-count + logsigmoid normalization",
+    "valid_functions": 1124,
+    "threshold": 0.5,
+    "additional_training": false,
+    "hyperparameter_search": false,
+    "promotion_rule": {
+      "p_c_gain_min": 0.01,
+      "auc_change_min": 0.0,
+      "mcc_change_min": 0.0,
+      "decision": "only if all three pass, evaluate identical readout on fixed additional Context+Diff seeds; no floor/temperature search"
+    },
+    "timing": "after current full training releases a GPU"
+  },
+  "diagnostic_probe_environments": {
+    "final_layer": {
+      "OMP_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4"
+    },
+    "layer4_and_layer8": {
+      "OMP_NUM_THREADS": "2",
+      "MKL_NUM_THREADS": "2",
+      "OPENBLAS_NUM_THREADS": "2"
+    }
+  },
+  "final_diagnostic_commands": [
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.mil_diagnosis",
+        "frozen",
+        "--checkpoint",
+        "results/mil_research/full_marginalized/seed123456/primevul_paired/unixcoder/best-p_c.pt",
+        "--output-dir",
+        "results/mil_research/full_marginalized/seed123456/diagnostics",
+        "--device",
+        "cuda:1"
+      ],
+      "exit_status": 1,
+      "reason": "strict 2e-6 single-function probability check retained; all statistics saved before failure"
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.mil_diagnosis",
+        "numerics",
+        "--checkpoint",
+        "results/mil_research/full_marginalized/seed123456/primevul_paired/unixcoder/best-p_c.pt",
+        "--output-dir",
+        "results/mil_research",
+        "--device",
+        "cuda:0"
+      ],
+      "exit_status": 1,
+      "reason": "28 strict probability failures; no class or P-C/AUC/MCC/F1/Recall/FPR difference on full Valid; AUPRC differs by 3.18e-7"
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.mil_diagnosis",
+        "full-report",
+        "--output-dir",
+        "results/mil_research"
+      ],
+      "exit_status": 0
+    }
+  ],
+  "outcome": "no candidate met predeclared promotion criteria; no new default or additional parameter search"
+}

@@ -1,0 +1,29 @@
+{
+  "seed": 123456,
+  "resamples": 3000,
+  "test_used": false,
+  "scope": "paired Valid resampling conditional on the saved selected checkpoints; not training-seed stability or correction for historical model selection",
+  "deltas": {
+    "p_c": {
+      "observed": 0.03558718861209964,
+      "interval_95": [
+        0.0,
+        0.0711743772241993
+      ]
+    },
+    "auc": {
+      "observed": 0.025867200263421153,
+      "interval_95": [
+        0.0023791808614378822,
+        0.04889565734983098
+      ]
+    },
+    "mcc": {
+      "observed": 0.05568963346958099,
+      "interval_95": [
+        0.01031162688018018,
+        0.10143457463082933
+      ]
+    }
+  }
+}

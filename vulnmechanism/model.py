@@ -671,6 +671,7 @@ class LOSVERDetector(nn.Module):
                        line_attention=attention, token_attention=token_attention, **local_details)
         if return_line_states:
             details["line_states"] = lines
+            details["attention_scores"] = scores
         if self.insertion_supervision is not None and insertion_left is not None:
             if (insertion_right is None or insertion_mask is None or insertion_mask.dtype != torch.bool
                     or insertion_left.shape != insertion_right.shape or insertion_left.shape != insertion_mask.shape
@@ -800,6 +801,7 @@ class LOSVERDetector(nn.Module):
         return_auxiliary=False,
         return_attention=False,
         return_line_states=False,
+        diagnostic_layers=(),
     ):
         from torch.utils.checkpoint import checkpoint
 
@@ -813,9 +815,18 @@ class LOSVERDetector(nn.Module):
             raise ValueError("bounded attention requires the shared 512 physical-line map")
         if return_attention and not bounded:
             raise ValueError("attention diagnostics require bounded attention")
+        if diagnostic_layers and (self.training or not return_attention or not bounded):
+            raise ValueError("intermediate-layer diagnostics require eval bounded attention details")
+        hidden_parts = []
 
         def encode(ids, attention, valid, weights):
-            states = self.encoder(ids, attention_mask=attention)[0]
+            encoded = self.encoder(ids, attention_mask=attention,
+                                   **(dict(output_hidden_states=True) if diagnostic_layers else {}))
+            states = encoded[0]
+            if diagnostic_layers:
+                if any(i < 0 or i >= len(encoded.hidden_states) for i in diagnostic_layers):
+                    raise ValueError("diagnostic layer outside the encoder")
+                hidden_parts.append(tuple(encoded.hidden_states[i] for i in diagnostic_layers))
             if bounded:
                 return states
             occupied = valid.any(-1)
@@ -877,6 +888,14 @@ class LOSVERDetector(nn.Module):
                 insertion_left=insertion_left, insertion_right=insertion_right, insertion_mask=insertion_mask,
                 return_line_states=return_line_states or (self.rccl in ("diff", "random") and self.training and labels is not None),
             )
+            if diagnostic_layers:
+                attention_details["diagnostic_line_states"] = {
+                    layer: self.bounded_pool(
+                        torch.cat([part[j] for part in hidden_parts]), code_mask, line_token_mask,
+                        line_numbers=line_numbers, return_line_states=True,
+                    )[1]["line_states"]
+                    for j, layer in enumerate(diagnostic_layers)
+                }
         elif len(windows) == function_count and torch.equal(
             window_owners, torch.arange(function_count, device=window_owners.device)
         ):

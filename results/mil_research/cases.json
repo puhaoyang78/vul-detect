@@ -1,0 +1,274 @@
+{
+  "test_used": false,
+  "cases": [
+    {
+      "pair_key": "primevul_paired:valid:18",
+      "project": "tensorflow",
+      "vulnerable_idx": 195247,
+      "patched_idx": 223174,
+      "vulnerable_probability": 0.014640826731920242,
+      "patched_probability": 0.884951651096344,
+      "visible_inputs_differ": true,
+      "source_tokens": [
+        2537,
+        2581
+      ],
+      "old_modified_lines": [],
+      "new_modified_lines": [
+        22,
+        23
+      ],
+      "analysis": "新增 dilation 参数必须大于0的保护检查，模型反而把修复侧判为高风险；可确认函数内修复作用，但不能仅凭单例确定总体原因。",
+      "readout_diagnostics": [
+        {
+          "target": 1,
+          "min_line_logit": -26.811086654663086,
+          "max_line_logit": 0.9556506872177124,
+          "bounded_min_logit": -5.529435573778021,
+          "bounded_max_logit": -0.039994569941836776,
+          "top3_physical_lines": [
+            31,
+            34,
+            37
+          ],
+          "top3_line_projections": [
+            -1.5394303798675537,
+            -2.052140235900879,
+            -20.817625045776367
+          ],
+          "top3_edit_membership": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "target": 0,
+          "min_line_logit": 0.4364331364631653,
+          "max_line_logit": 6.613709926605225,
+          "bounded_min_logit": 0.9031632979926856,
+          "bounded_max_logit": 2.530071568820212,
+          "top3_physical_lines": [
+            33,
+            23,
+            35
+          ],
+          "top3_line_projections": [
+            5.529210090637207,
+            0.8219501972198486,
+            0.5035446882247925
+          ],
+          "top3_edit_membership": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "pair_key": "primevul_paired:valid:2",
+      "project": "Chrome",
+      "vulnerable_idx": 5439,
+      "patched_idx": 162555,
+      "vulnerable_probability": 0.9987718462944031,
+      "patched_probability": 0.9938852190971375,
+      "visible_inputs_differ": true,
+      "source_tokens": [
+        706,
+        707
+      ],
+      "old_modified_lines": [
+        1
+      ],
+      "new_modified_lines": [
+        1
+      ],
+      "analysis": "形参改为 const 引用；两侧均高分。仅函数体和Diff不能充分确认实际安全机制，标记 Unknown。",
+      "readout_diagnostics": [
+        {
+          "target": 1,
+          "min_line_logit": 3.5792434215545654,
+          "max_line_logit": 16.49333953857422,
+          "bounded_min_logit": 4.310271609453366,
+          "bounded_max_logit": 7.382261757123268,
+          "top3_physical_lines": [
+            0,
+            1,
+            2
+          ],
+          "top3_line_projections": [
+            10.713139533996582,
+            3.765420913696289,
+            13.563825607299805
+          ],
+          "top3_edit_membership": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "target": 0,
+          "min_line_logit": -4.206824779510498,
+          "max_line_logit": 14.432991981506348,
+          "bounded_min_logit": 3.7999376990500844,
+          "bounded_max_logit": 6.494191620353918,
+          "top3_physical_lines": [
+            1,
+            0,
+            2
+          ],
+          "top3_line_projections": [
+            -4.206824779510498,
+            8.920327186584473,
+            12.352554321289062
+          ],
+          "top3_edit_membership": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "pair_key": "primevul_paired:valid:1",
+      "project": "Chrome",
+      "vulnerable_idx": 4678,
+      "patched_idx": 161816,
+      "vulnerable_probability": 3.368483021404245e-06,
+      "patched_probability": 6.043136835387486e-08,
+      "visible_inputs_differ": true,
+      "source_tokens": [
+        323,
+        348
+      ],
+      "old_modified_lines": [
+        20,
+        21
+      ],
+      "new_modified_lines": [
+        19,
+        21,
+        22,
+        24
+      ],
+      "analysis": "PNG 编码选项及初始化位置变化；两侧均低分。仅局部Diff不足以证明具体漏洞机理，标记 Unknown。",
+      "readout_diagnostics": [
+        {
+          "target": 1,
+          "min_line_logit": -29.638700485229492,
+          "max_line_logit": -0.6884573698043823,
+          "bounded_min_logit": -12.78110323713712,
+          "bounded_max_logit": -2.1436305673107534,
+          "top3_physical_lines": [
+            21,
+            19,
+            20
+          ],
+          "top3_line_projections": [
+            -29.638700485229492,
+            -27.733612060546875,
+            -27.641403198242188
+          ],
+          "top3_edit_membership": [
+            1,
+            0,
+            1
+          ]
+        },
+        {
+          "target": 0,
+          "min_line_logit": -30.33592987060547,
+          "max_line_logit": -1.9572957754135132,
+          "bounded_min_logit": -16.806385704868873,
+          "bounded_max_logit": -4.2747260950946036,
+          "top3_physical_lines": [
+            22,
+            24,
+            19
+          ],
+          "top3_line_projections": [
+            -28.861236572265625,
+            -30.037246704101562,
+            -30.33592987060547
+          ],
+          "top3_edit_membership": [
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "pair_key": "primevul_paired:valid:11",
+      "project": "hhvm",
+      "vulnerable_idx": 195007,
+      "patched_idx": 219451,
+      "vulnerable_probability": 0.5295730829238892,
+      "patched_probability": 0.5295730829238892,
+      "visible_inputs_differ": false,
+      "source_tokens": [
+        4865,
+        4873
+      ],
+      "old_modified_lines": [
+        588,
+        590
+      ],
+      "new_modified_lines": [
+        588,
+        590
+      ],
+      "analysis": "512 可见Token相同，实际修复发生在可见范围以外；单函数512输入无法区分此对。",
+      "readout_diagnostics": [
+        {
+          "target": 1,
+          "min_line_logit": -0.047939054667949677,
+          "max_line_logit": 1.1103832721710205,
+          "bounded_min_logit": 0.040573888817313,
+          "bounded_max_logit": 0.19588995616160707,
+          "top3_physical_lines": [
+            57,
+            37,
+            55
+          ],
+          "top3_line_projections": [
+            0.007328810170292854,
+            1.1103832721710205,
+            -0.04682668298482895
+          ],
+          "top3_edit_membership": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "target": 0,
+          "min_line_logit": -0.047939054667949677,
+          "max_line_logit": 1.1103832721710205,
+          "bounded_min_logit": 0.040573888817313,
+          "bounded_max_logit": 0.19588995616160707,
+          "top3_physical_lines": [
+            57,
+            37,
+            55
+          ],
+          "top3_line_projections": [
+            0.007328810170292854,
+            1.1103832721710205,
+            -0.04682668298482895
+          ],
+          "top3_edit_membership": [
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

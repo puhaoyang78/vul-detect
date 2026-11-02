@@ -1,0 +1,36 @@
+{
+  "test_used": false,
+  "hard_weight_token_ratio": 54.598150033144236,
+  "splits": {
+    "train": {
+      "functions": 8708,
+      "visible_lines": 318058,
+      "tp": 22465,
+      "fp": 5563,
+      "fn": 162,
+      "precision": 0.8015199086627658,
+      "recall": 0.9928404118972909,
+      "f1": 0.8869805547329978,
+      "zero_selected_functions": 3108,
+      "all_selected_functions": 30,
+      "functions_selecting_any_unmodified_line": 2052,
+      "functions_diff_mask_mismatch": 2083,
+      "physical_line_mapping_matches_current": true
+    },
+    "valid": {
+      "functions": 1124,
+      "visible_lines": 38745,
+      "tp": 864,
+      "fp": 2598,
+      "fn": 1834,
+      "precision": 0.24956672443674177,
+      "recall": 0.3202372127501853,
+      "f1": 0.2805194805194805,
+      "zero_selected_functions": 366,
+      "all_selected_functions": 1,
+      "functions_selecting_any_unmodified_line": 668,
+      "functions_diff_mask_mismatch": 853,
+      "physical_line_mapping_matches_current": true
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "unique_tests_passed": 94,
+  "environment": "host Python; sandbox multiprocessing IPC permission was insufficient",
+  "gpu_smoke": "gpu-smoke.json",
+  "primevul_test_used": false,
+  "runs": [
+    {
+      "tests": 68,
+      "seconds": 371.76,
+      "command": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_mil_diagnosis",
+        "tests.test_bounded_attention",
+        "tests.test_losver",
+        "tests.test_resume"
+      ]
+    },
+    {
+      "tests": 8,
+      "seconds": 13.127,
+      "command": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_mil_diagnosis",
+        "-v"
+      ]
+    },
+    {
+      "tests": 9,
+      "seconds": 14.428,
+      "command": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_mil_diagnosis",
+        "-v"
+      ]
+    },
+    {
+      "tests": 24,
+      "seconds": 30.184,
+      "command": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_rccl",
+        "tests.test_insertion_localization"
+      ]
+    }
+  ],
+  "counting": "61 existing core/resume methods + 9 final MIL diagnostic/marginalization methods + 24 distinct RCCL/insertion compatibility methods",
+  "full_checkpoint_probability_check": {
+    "tolerance": 2e-06,
+    "passed": false,
+    "functions": 1124,
+    "failures": 28,
+    "decision_mismatches": 0,
+    "max_probability_delta": 5.900859832763672e-06,
+    "batch_and_single_metrics_equal": false,
+    "metrics_with_batch_differences": ["auprc"],
+    "exit_status": 1,
+    "records": "valid.inference_check.predictions.jsonl"
+  }
+}

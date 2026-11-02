@@ -1,0 +1,46 @@
+{
+  "test_used": false,
+  "definition": "label-informed per-function extrema of sum(n*r*z)/sum(n*r), independently allowing every r in [1,5]; identical visible inputs cannot receive different weights",
+  "splits": {
+    "train": {
+      "pairs": 4354,
+      "wrong_functions": 1594,
+      "wrong_functions_1_to_5_cannot_fix": 975,
+      "wrong_functions_any_convex_cannot_fix": 84,
+      "possible_bounded_p_c_pairs": 2930
+    },
+    "valid": {
+      "pairs": 562,
+      "wrong_functions": 483,
+      "wrong_functions_1_to_5_cannot_fix": 309,
+      "wrong_functions_any_convex_cannot_fix": 101,
+      "possible_bounded_p_c_pairs": 188
+    }
+  },
+  "cases": [
+    {
+      "pair_key": "primevul_paired:valid:2",
+      "target": 1,
+      "lower_logit": 4.310271609453366,
+      "upper_logit": 7.382261757123268
+    },
+    {
+      "pair_key": "primevul_paired:valid:2",
+      "target": 0,
+      "lower_logit": 3.7999376990500844,
+      "upper_logit": 6.494191620353918
+    },
+    {
+      "pair_key": "primevul_paired:valid:18",
+      "target": 1,
+      "lower_logit": -5.529435573778021,
+      "upper_logit": -0.039994569941836776
+    },
+    {
+      "pair_key": "primevul_paired:valid:18",
+      "target": 0,
+      "lower_logit": 0.9031632979926856,
+      "upper_logit": 2.530071568820212
+    }
+  ]
+}

@@ -353,3 +353,23 @@ __pycache__/
 !/results/rccl_512/*/primevul_paired/unixcoder/*.selected.predictions.jsonl
 !/results/rccl_512/*/primevul_paired/unixcoder/test.metrics.json
 !/results/rccl_512/*/primevul_paired/unixcoder/test.predictions.jsonl
+
+# MIL diagnosis and controlled loss experiments; weights/tensor caches stay local.
+!/results/mil_research/
+!/results/mil_research/**/
+!/results/mil_research/*.json
+!/results/mil_research/*.csv
+!/results/mil_research/*.md
+!/results/mil_research/*.predictions.jsonl
+!/results/mil_research/**/config.json
+!/results/mil_research/**/training.metrics.json
+!/results/mil_research/**/best-p_c.json
+!/results/mil_research/**/best.training.jsonl
+!/results/mil_research/**/valid.best-p_c.predictions.jsonl
+!/results/mil_research/**/train.attention_regions.jsonl
+!/results/mil_research/**/train.classification_targets.jsonl
+!/results/mil_research/**/train.summary.json
+!/results/mil_research/**/valid.summary.json
+!/results/mil_research/**/train.lines.jsonl
+!/results/mil_research/**/valid.lines.jsonl
+!/results/mil_research/**/frozen_probes.json

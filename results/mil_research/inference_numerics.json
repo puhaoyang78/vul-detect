@@ -1,0 +1,46 @@
+{
+  "test_used": false,
+  "probability_tolerance": 2e-06,
+  "results": {
+    "context_diff": {
+      "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+      "inputs_equal": {
+        "input_ids": true,
+        "attention_mask": true,
+        "code_mask": true,
+        "token_weights": true,
+        "line_token_mask": true
+      },
+      "batch_probability": 0.9994077682495117,
+      "single_probability": 0.9994077682495117,
+      "probability_delta": 0.0,
+      "strict_probability_check_passed": true,
+      "decision_equal": true,
+      "encoder_max_delta": 0.00019311904907226562,
+      "line_state_max_delta": 0.00014579296112060547,
+      "attention_score_max_delta": 4.38690185546875e-05,
+      "repeat_batch_max_delta": 0.0,
+      "remove_diff_metadata_max_delta": 0.0
+    },
+    "conditional_bce": {
+      "checkpoint": "results/mil_research/full_marginalized/seed123456/primevul_paired/unixcoder/best-p_c.pt",
+      "inputs_equal": {
+        "input_ids": true,
+        "attention_mask": true,
+        "code_mask": true,
+        "token_weights": true,
+        "line_token_mask": true
+      },
+      "batch_probability": 0.8539735078811646,
+      "single_probability": 0.8539705872535706,
+      "probability_delta": 2.9206275939941406e-06,
+      "strict_probability_check_passed": false,
+      "decision_equal": true,
+      "encoder_max_delta": 0.001087188720703125,
+      "line_state_max_delta": 0.0005664825439453125,
+      "attention_score_max_delta": 5.7697296142578125e-05,
+      "repeat_batch_max_delta": 0.0,
+      "remove_diff_metadata_max_delta": 0.0
+    }
+  }
+}

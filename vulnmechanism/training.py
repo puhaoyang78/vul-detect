@@ -164,6 +164,8 @@ def train(
     resume=False,
     save_every=100,
     paired_epochs=None,
+    paired_seed=None,
+    marginalize_inputs=False,
     localizer_dropout=None,
     localizer_weight_decay=None,
     localizer_rdrop=None,
@@ -207,6 +209,8 @@ def train(
             resume=resume,
             save_every=save_every,
             epochs_override=paired_epochs,
+            seed=paired_seed,
+            marginalize_inputs=marginalize_inputs,
             train_limit=train_limit,
             valid_limit=valid_limit,
             localizer_dropout=localizer_dropout,
@@ -232,7 +236,7 @@ def train(
         paired_input != "512"
         or window_micro_batch is not None
         or function_micro_batch is not None
-        or paired_epochs is not None
+        or paired_epochs is not None or paired_seed is not None or marginalize_inputs
         or any(v is not None for v in (localizer_dropout, localizer_weight_decay, localizer_rdrop))
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
@@ -910,6 +914,8 @@ def paired_collate(features):
         for i, f in enumerate(features):
             auxiliary[i, :len(f["line_numbers"])] = torch.tensor(f["line_labels"])
         batch["line_labels"] = auxiliary
+    if "classification_target" in features[0]:
+        batch["classification_targets"] = torch.tensor([f["classification_target"] for f in features],dtype=torch.float)
     if "insertion_ranges" in features[0]:
         count = max(1, max(len(f["insertion_ranges"]) for f in features))
         for key in ("insertion_left", "insertion_right", "insertion_labels", "insertion_truth"):
@@ -959,9 +965,37 @@ class RepairPairSampler(torch.utils.data.Sampler):
             yield 2 * pair + 1
 
 
+def marginalize_input_targets(features):
+    """Train-only empirical E[label | exactly identical detector input].
+
+    Keep every member, its original hard label and all Diff labels. Marginalizing
+    the label assignment removes its stochastic association with Dropout views;
+    the expected empirical BCE is unchanged. No similarity threshold or RNG.
+    """
+    from collections import defaultdict, Counter
+    groups = defaultdict(list)
+    for f in features:
+        if f["labels"] not in (0,1) or f["input_mode"] != "512":
+            raise ValueError("input marginalization requires binary 512 function examples")
+        signature = (tuple(f["input_ids"]),tuple(f["attention_mask"]),tuple(f["code_mask"]),
+                     tuple(f["line_numbers"]),tuple(tuple(x) for x in f["line_token_indices"]))
+        groups[signature].append(f)
+    conflicts = []
+    histogram = Counter()
+    for group in groups.values():
+        target = sum(f["labels"] for f in group)/len(group)
+        for f in group:
+            f["classification_target"] = target
+        if 0 < target < 1:
+            conflicts.append(len(group))
+            histogram[str(target)] += len(group)
+    return dict(functions=len(features),unique_inputs=len(groups),conflicting_groups=len(conflicts),
+                conflicting_functions=sum(conflicts),target_histogram=dict(histogram))
+
+
 def paired_loader(
     rows, tokenizer, variant, *, train=False, batch_size=8, input_mode="512", insertion_supervision=None,
-    rccl=None, seed=123456,
+    rccl=None, seed=123456, marginalize_inputs=False,
 ):
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
     from .data import paired_features
@@ -971,6 +1005,11 @@ def paired_loader(
         for r in rows
     ]
     records = None
+    target_summary = None
+    if marginalize_inputs:
+        if not train or variant != "baseline" or input_mode != "512":
+            raise ValueError("marginalize inputs only on Train baseline 512")
+        target_summary = marginalize_input_targets(features)
     if rccl is not None:
         from .data import rccl_annotations
         if input_mode != "512" or variant != "baseline" or batch_size % 2:
@@ -987,12 +1026,14 @@ def paired_loader(
     )
     if records is not None:
         loader.rccl_records = records
+    if target_summary is not None:
+        loader.input_target_summary = target_summary
     return loader
 
 
 def paired_forward(model, batch, variant, device, *, with_labels=True, return_logits=False,
                    return_auxiliary=False, return_attention=False, suppression_mask=None,
-                   rccl_dropout_seed=None, return_line_states=False):
+                   rccl_dropout_seed=None, return_line_states=False, diagnostic_layers=()):
     keys = ["input_ids", "attention_mask", "code_mask", "window_owners"]
     keys.extend(
         ["line_token_mask", "context_mask", "line_indices", "line_counts"]
@@ -1018,6 +1059,8 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         if with_labels and model.training and model.rccl in ("diff", "random"):
             keys.extend(("rccl_matches", "rccl_owners"))
     args = {key: batch[key].to(device) for key in keys}
+    if with_labels and model.training and "classification_targets" in batch:
+        args["labels"] = batch["classification_targets"].to(device)
     if return_logits:
         if variant != "localizer":
             raise ValueError("line logits require the localizer")
@@ -1036,6 +1079,8 @@ def paired_forward(model, batch, variant, device, *, with_labels=True, return_lo
         args["return_line_states"] = True
     if rccl_dropout_seed is not None:
         args["rccl_dropout_seed"] = rccl_dropout_seed
+    if diagnostic_layers:
+        args["diagnostic_layers"] = diagnostic_layers
     if suppression_mask is not None:
         args["suppression_mask"] = suppression_mask.to(device)
     return model(**args)
@@ -1169,6 +1214,8 @@ def train_losver(
     resume=False,
     save_every=100,
     epochs_override=None,
+    seed=None,
+    marginalize_inputs=False,
     train_limit=None,
     valid_limit=None,
     localizer_dropout=None,
@@ -1197,6 +1244,14 @@ def train_losver(
 
     variant = LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    if seed is not None:
+        if not 0 <= seed < 2**32:
+            raise ValueError("paired seed must be in [0, 2**32)")
+        settings["seed"] = seed
+    if marginalize_inputs and (not attention_context or attention_region != "diff" or attention_local
+                              or attention_context_scale or insertion_supervision is not None or rccl is not None
+                              or attention_suppression is not None or attention_ema or line_auxiliary is not None):
+        raise ValueError("input marginalization is an isolated Context + Diff training intervention")
     if oof_fold is not None and (
         oof_fold not in (0, 1) or method != "losver_localizer" or input_mode != "512"
         or train_limit is None or valid_limit is None
@@ -1314,6 +1369,8 @@ def train_losver(
                 or bool(completed.get("bounded_attention",{}).get("context_scale"))!=attention_context_scale
                 or completed.get("insertion_localization",{}).get("supervision")!=insertion_supervision
                 or completed.get("rccl",{}).get("mode")!=rccl
+                or bool(completed.get("input_marginalization"))!=marginalize_inputs
+                or completed["training_config"]["seed"]!=settings["seed"]
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
             raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
@@ -1406,6 +1463,7 @@ def train_losver(
         input_mode=input_mode,
         insertion_supervision=insertion_supervision,
         rccl=rccl, seed=settings["seed"],
+        marginalize_inputs=marginalize_inputs,
     )
     valid_loader = paired_loader(
         valid_rows,
@@ -1655,6 +1713,12 @@ def train_losver(
             train_effective_functions=sum(1 in f["insertion_truth"] and 0 in f["insertion_truth"] for f in loader.dataset),
             train_positive_gaps=sum(f["insertion_truth"].count(1) for f in loader.dataset),
             inference="single source; no Diff, repaired version or reference library; shared encoder pass",
+        )
+    if marginalize_inputs:
+        metadata["input_marginalization"] = dict(
+            targets="Train empirical E[hard label | exact 512 ids, mask and physical-line membership]",
+            evaluation="original hard labels, complete official Valid, threshold > .5",
+            parameters_added=0,extra_encodings=0,**loader.input_target_summary,
         )
     if rccl is not None:
         from .data import rccl_coverage

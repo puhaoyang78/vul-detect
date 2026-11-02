@@ -114,6 +114,9 @@ def build_parser():
                 default="finite_difference",
             )
             p.add_argument("--train-limit", type=int)
+            p.add_argument("--paired-seed",type=int,help="paired protocol seed; default 123456")
+            p.add_argument("--marginalize-inputs",action="store_true",
+                           help="Train-only conditional BCE targets for exactly identical 512 detector inputs")
             p.add_argument(
                 "--paired-epochs",
                 type=int,
@@ -258,6 +261,8 @@ def main():
                     resume=args.resume,
                     save_every=args.save_every,
                     paired_epochs=args.paired_epochs,
+                    paired_seed=args.paired_seed,
+                    marginalize_inputs=args.marginalize_inputs,
                     localizer_dropout=args.localizer_dropout,
                     localizer_weight_decay=args.localizer_weight_decay,
                     localizer_rdrop=args.localizer_rdrop,

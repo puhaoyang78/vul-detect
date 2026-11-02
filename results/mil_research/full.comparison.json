@@ -1,0 +1,125 @@
+{
+  "test_used": false,
+  "results": {
+    "context_diff_seed123456": {
+      "seed": 123456,
+      "epoch": 14,
+      "metrics": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 100,
+          "p_v": 273,
+          "p_b": 168,
+          "p_r": 21
+        },
+        "p_c": 0.17793594306049823,
+        "p_v": 0.48576512455516013,
+        "p_b": 0.298932384341637,
+        "p_r": 0.037366548042704624,
+        "accuracy": 0.5702846975088968,
+        "precision": 0.5592203898050975,
+        "recall": 0.6637010676156584,
+        "f1": 0.6069975589910497,
+        "mcc": 0.1430889425867793,
+        "auc": 0.5895552867871481,
+        "auprc": 0.5823064969017904,
+        "pair_ranking_accuracy": 0.46619217081850534,
+        "pair_ranking_ties": 164,
+        "patched_fpr": 0.5231316725978647
+      },
+      "last_four_mean_p_c": 0.16058718861209964,
+      "training_seconds": 3093.557607276831,
+      "path": "results/attention_context_512/context_diff/primevul_paired/unixcoder"
+    },
+    "full_marginalized_seed123456": {
+      "seed": 123456,
+      "epoch": 14,
+      "metrics": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 94,
+          "p_v": 218,
+          "p_b": 226,
+          "p_r": 24
+        },
+        "p_c": 0.16725978647686832,
+        "p_v": 0.3879003558718861,
+        "p_b": 0.40213523131672596,
+        "p_r": 0.042704626334519574,
+        "accuracy": 0.5622775800711743,
+        "precision": 0.5631768953068592,
+        "recall": 0.5551601423487544,
+        "f1": 0.5591397849462365,
+        "mcc": 0.12456778147110145,
+        "auc": 0.5838673522371804,
+        "auprc": 0.5752784572671604,
+        "pair_ranking_accuracy": 0.45373665480427045,
+        "pair_ranking_ties": 168,
+        "patched_fpr": 0.4306049822064057
+      },
+      "last_four_mean_p_c": 0.1583629893238434,
+      "training_seconds": 3012.1664997823536,
+      "path": "results/mil_research/full_marginalized/seed123456/primevul_paired/unixcoder"
+    },
+    "full_context_seed123457": {
+      "seed": 123457,
+      "epoch": 9,
+      "metrics": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 99,
+          "p_v": 257,
+          "p_b": 186,
+          "p_r": 20
+        },
+        "p_c": 0.17615658362989323,
+        "p_v": 0.45729537366548045,
+        "p_b": 0.3309608540925267,
+        "p_r": 0.03558718861209965,
+        "accuracy": 0.5702846975088968,
+        "precision": 0.5624012638230648,
+        "recall": 0.6334519572953736,
+        "f1": 0.59581589958159,
+        "mcc": 0.14170477675678722,
+        "auc": 0.5981892959815606,
+        "auprc": 0.5884203355532733,
+        "pair_ranking_accuracy": 0.4822064056939502,
+        "pair_ranking_ties": 164,
+        "patched_fpr": 0.4928825622775801
+      },
+      "last_four_mean_p_c": 0.1641459074733096,
+      "training_seconds": 3017.4088896443136,
+      "path": "results/mil_research/full_context/seed123457/primevul_paired/unixcoder"
+    }
+  },
+  "matched_seed123456_deltas": {
+    "p_c": -0.010676156583629914,
+    "auc": -0.005687934549967633,
+    "mcc": -0.018521161115677837,
+    "f1": -0.04785777404481317,
+    "recall": -0.10854092526690395,
+    "patched_fpr": -0.09252669039145905,
+    "pair_ranking_accuracy": -0.01245551601423489
+  },
+  "multiseed_promotion_rule": {
+    "selected_p_c_gain_min": 0.01,
+    "selected_auc_change_min": 0.0,
+    "selected_mcc_change_min": 0.0,
+    "decision": "two additional fixed seeds only if all three pass; otherwise stop this direction without parameter search"
+  },
+  "promote_candidate_to_multiple_seeds": false,
+  "note": "LOSVER historical reference has one fixed localizer/detector seed; no claim of full LOSVER pipeline seed stability",
+  "rng_control": {
+    "cpu_equal": true,
+    "active_cuda_equal": true
+  }
+}

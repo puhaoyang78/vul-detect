@@ -1,0 +1,74 @@
+{
+  "test_used": false,
+  "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+  "selected_epoch": 14,
+  "original": {
+    "samples": 1124,
+    "pairs": 562,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 100,
+      "p_v": 273,
+      "p_b": 168,
+      "p_r": 21
+    },
+    "p_c": 0.17793594306049823,
+    "p_v": 0.48576512455516013,
+    "p_b": 0.298932384341637,
+    "p_r": 0.037366548042704624,
+    "accuracy": 0.5702846975088968,
+    "precision": 0.5592203898050975,
+    "recall": 0.6637010676156584,
+    "f1": 0.6069975589910497,
+    "mcc": 0.1430889425867793,
+    "auc": 0.5895552867871481,
+    "auprc": 0.5823064969017904,
+    "pair_ranking_accuracy": 0.46619217081850534,
+    "pair_ranking_ties": 164,
+    "patched_fpr": 0.5231316725978647
+  },
+  "zero_floor": {
+    "samples": 1124,
+    "pairs": 562,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 99,
+      "p_v": 223,
+      "p_b": 209,
+      "p_r": 31
+    },
+    "p_c": 0.17615658362989323,
+    "p_v": 0.39679715302491103,
+    "p_b": 0.3718861209964413,
+    "p_r": 0.05516014234875445,
+    "accuracy": 0.5604982206405694,
+    "precision": 0.5590277777777778,
+    "recall": 0.5729537366548043,
+    "f1": 0.5659050966608085,
+    "mcc": 0.12103400150987446,
+    "auc": 0.5815624168893504,
+    "auprc": 0.5771697815379128,
+    "pair_ranking_accuracy": 0.45195729537366547,
+    "pair_ranking_ties": 165,
+    "patched_fpr": 0.45195729537366547
+  },
+  "deltas": {
+    "p_c": -0.0017793594306050042,
+    "auc": -0.007992869897797683,
+    "mcc": -0.022054941076904824,
+    "f1": -0.04109246233024122,
+    "recall": -0.09074733096085408,
+    "patched_fpr": -0.07117437722419928
+  },
+  "promotion_rule": {
+    "p_c_gain_min": 0.01,
+    "auc_change_min": 0.0,
+    "mcc_change_min": 0.0,
+    "decision": "only if all three pass, evaluate identical readout on fixed additional Context+Diff seeds; no floor/temperature search"
+  },
+  "promote": false,
+  "training": false,
+  "changed_parameters": 0
+}

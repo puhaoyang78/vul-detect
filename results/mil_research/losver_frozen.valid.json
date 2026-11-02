@@ -1,0 +1,59 @@
+{
+  "test_used": false,
+  "checkpoint": "results/losver_512/primevul_paired/losver/best-p_c.pt",
+  "reproduction_max_probability_delta": 0.0,
+  "metrics": {
+    "original": {
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 80,
+        "p_v": 206,
+        "p_b": 245,
+        "p_r": 31
+      },
+      "p_c": 0.1423487544483986,
+      "p_v": 0.3665480427046263,
+      "p_b": 0.4359430604982206,
+      "p_r": 0.05516014234875445,
+      "accuracy": 0.5435943060498221,
+      "precision": 0.5468451242829828,
+      "recall": 0.5088967971530249,
+      "f1": 0.5271889400921659,
+      "mcc": 0.0873993091171983,
+      "auc": 0.5636880865237269,
+      "auprc": 0.5612114420230693,
+      "pair_ranking_accuracy": 0.4110320284697509,
+      "pair_ranking_ties": 171,
+      "patched_fpr": 0.42170818505338076
+    },
+    "uniform": {
+      "samples": 1124,
+      "pairs": 562,
+      "threshold": 0.5,
+      "comparison": ">",
+      "pair_counts": {
+        "p_c": 51,
+        "p_v": 337,
+        "p_b": 156,
+        "p_r": 18
+      },
+      "p_c": 0.09074733096085409,
+      "p_v": 0.599644128113879,
+      "p_b": 0.2775800711743772,
+      "p_r": 0.03202846975088968,
+      "accuracy": 0.5293594306049823,
+      "precision": 0.522207267833109,
+      "recall": 0.6903914590747331,
+      "f1": 0.5946360153256705,
+      "mcc": 0.062023610714391504,
+      "auc": 0.5560165778042325,
+      "auprc": 0.5562942526197627,
+      "pair_ranking_accuracy": 0.4608540925266904,
+      "pair_ranking_ties": 166,
+      "patched_fpr": 0.6316725978647687
+    }
+  }
+}
