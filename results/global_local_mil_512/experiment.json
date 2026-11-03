@@ -1,0 +1,457 @@
+{
+  "base_commit": "6d24067a146de198f6c7ea04c8370578c5471047",
+  "hypothesis": "an independent local safe/vulnerable evidence branch complements global Context + Diff",
+  "training_entry": "vulnmechanism.cli train; one existing LOSVERDetector and optimizer implementation",
+  "protocol": {
+    "train_functions": 8708,
+    "valid_functions": 1124,
+    "input_tokens": 512,
+    "source_tokens": 510,
+    "batch": 8,
+    "epochs": 16,
+    "optimizer_steps": 17424,
+    "threshold": 0.5,
+    "comparison": ">",
+    "selection": "complete Valid P-C rounded 4 decimals; earliest tie",
+    "training_config": {
+      "seed": 123456,
+      "batch_size": 8,
+      "eval_batch_size": 8,
+      "learning_rate": 2e-05,
+      "adam_epsilon": 1e-08,
+      "weight_decay": 0.0,
+      "gradient_clip": 1.0,
+      "warmup_fraction": 0.1,
+      "block_size": 512,
+      "epochs": {
+        "baseline": 16,
+        "localizer": 40,
+        "predicted": 16,
+        "oracle": 16
+      },
+      "fp16": false,
+      "dropout_probability": 0.0,
+      "class_weight": 1.0,
+      "early_stopping": null
+    }
+  },
+  "architecture": {
+    "global_branch": "unchanged Context + Diff",
+    "local_head": "Linear(768,2), bias included; independent CPU fork_rng",
+    "pooling": [
+      "mean over valid physical lines",
+      "logsumexp over valid physical lines minus log(valid-line count)"
+    ],
+    "temperature": 1.0,
+    "parameters_added": 1539,
+    "fusion": "unconstrained learned scalar initialized to exactly zero",
+    "objective": "BCE(final global+local residual logit) + 0.1 original Diff region loss",
+    "initialization": "original weights and RNG unchanged; Mean/LSE local head identical",
+    "inference": "one source function, shared single encoding; no Diff or patched version"
+  },
+  "runs": [
+    {
+      "method": "baseline",
+      "seed": 123456,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "train",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--model",
+        "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+        "--methods",
+        "unixcoder",
+        "--paired-input",
+        "512",
+        "--paired-seed",
+        "123456",
+        "--paired-epochs",
+        "16",
+        "--bounded-attention",
+        "--attention-context",
+        "--attention-region",
+        "diff",
+        "--save-every",
+        "1000",
+        "--resume",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_mil_512/seed123456/baseline"
+      ]
+    },
+    {
+      "method": "mean",
+      "seed": 123456,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "train",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--model",
+        "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+        "--methods",
+        "unixcoder",
+        "--paired-input",
+        "512",
+        "--paired-seed",
+        "123456",
+        "--paired-epochs",
+        "16",
+        "--bounded-attention",
+        "--attention-context",
+        "--attention-region",
+        "diff",
+        "--save-every",
+        "1000",
+        "--resume",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_mil_512/seed123456/mean",
+        "--local-mil",
+        "mean"
+      ]
+    },
+    {
+      "method": "lse",
+      "seed": 123456,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "train",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--model",
+        "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+        "--methods",
+        "unixcoder",
+        "--paired-input",
+        "512",
+        "--paired-seed",
+        "123456",
+        "--paired-epochs",
+        "16",
+        "--bounded-attention",
+        "--attention-context",
+        "--attention-region",
+        "diff",
+        "--save-every",
+        "1000",
+        "--resume",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_mil_512/seed123456/lse",
+        "--local-mil",
+        "lse"
+      ]
+    }
+  ],
+  "second_seed_rule": {
+    "p_c_gain_min": 0.01,
+    "auc_change_min": 0.0,
+    "mcc_change_min": 0.0,
+    "comparison": "LSE versus BOTH baseline and Mean",
+    "seed": 123457,
+    "decision": "run all three controls on second seed only if all criteria pass; otherwise stop without searching"
+  },
+  "test_protocol": "evaluate every completed control only after Valid-only seed/method decision is final; selected best-p_c checkpoint unchanged",
+  "parameter_search": false,
+  "additional_auxiliary_tasks": false,
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "numpy": "2.4.0",
+    "cuda": "12.8",
+    "precision": "FP32 eager; no AMP/checkpointing"
+  },
+  "validation_evidence_tracking": "full Valid per-class pooled evidence mean/std and scalar fusion each epoch; training batch statistics every 100 steps; no extra encoding",
+  "valid_count_normalization": "logsumexp(scores)-log(number of effective physical lines); common log N cancels in class contrast",
+  "valid_only_decision": {
+    "decided_at": "2026-11-03T12:51:44.898955+08:00",
+    "test_used": false,
+    "second_seed_required": false,
+    "reason": "LSE P-C/AUC/MCC are below matched baseline; stop the direction without variants or parameter search",
+    "selected_epochs": {
+      "baseline": 15,
+      "mean": 5,
+      "lse": 12
+    },
+    "metrics": {
+      "baseline": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 98,
+          "p_v": 272,
+          "p_b": 169,
+          "p_r": 23
+        },
+        "p_c": 0.17437722419928825,
+        "p_v": 0.48398576512455516,
+        "p_b": 0.30071174377224197,
+        "p_r": 0.04092526690391459,
+        "accuracy": 0.5667259786476868,
+        "precision": 0.556390977443609,
+        "recall": 0.6583629893238434,
+        "f1": 0.6030969845150774,
+        "mcc": 0.1357513314895269,
+        "auc": 0.5895410392472233,
+        "auprc": 0.5824215384913731,
+        "pair_ranking_accuracy": 0.4395017793594306,
+        "pair_ranking_ties": 165,
+        "patched_fpr": 0.5249110320284698
+      },
+      "mean": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 79,
+          "p_v": 117,
+          "p_b": 358,
+          "p_r": 8
+        },
+        "p_c": 0.14056939501779359,
+        "p_v": 0.20818505338078291,
+        "p_b": 0.6370106761565836,
+        "p_r": 0.014234875444839857,
+        "accuracy": 0.5631672597864769,
+        "precision": 0.6105919003115264,
+        "recall": 0.3487544483985765,
+        "f1": 0.44394110985277463,
+        "mcc": 0.13984535955150823,
+        "auc": 0.5837106292980079,
+        "auprc": 0.5760289607850895,
+        "pair_ranking_accuracy": 0.498220640569395,
+        "pair_ranking_ties": 164,
+        "patched_fpr": 0.22241992882562278
+      },
+      "lse": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 85,
+          "p_v": 322,
+          "p_b": 125,
+          "p_r": 30
+        },
+        "p_c": 0.1512455516014235,
+        "p_v": 0.5729537366548043,
+        "p_b": 0.22241992882562278,
+        "p_r": 0.05338078291814947,
+        "accuracy": 0.548932384341637,
+        "precision": 0.5362318840579711,
+        "recall": 0.7241992882562278,
+        "f1": 0.6161998485995458,
+        "mcc": 0.10449496607626099,
+        "auc": 0.5739336507896303,
+        "auprc": 0.5745688740537537,
+        "pair_ranking_accuracy": 0.45907473309608543,
+        "pair_ranking_ties": 164,
+        "patched_fpr": 0.6263345195729537
+      }
+    },
+    "rng": {
+      "cpu_equal": true,
+      "active_cuda_equal": true
+    }
+  },
+  "test_evaluation": {
+    "status": "complete",
+    "role": "fixed checkpoint descriptive evaluation only; no method/parameter/checkpoint selection",
+    "argv": [
+      [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "evaluate",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--output-dir",
+        "results/global_local_mil_512/seed123456/baseline",
+        "--methods",
+        "unixcoder",
+        "--split",
+        "test",
+        "--device",
+        "cuda:0"
+      ],
+      [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "evaluate",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--output-dir",
+        "results/global_local_mil_512/seed123456/mean",
+        "--methods",
+        "unixcoder",
+        "--split",
+        "test",
+        "--device",
+        "cuda:0"
+      ],
+      [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "evaluate",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--output-dir",
+        "results/global_local_mil_512/seed123456/lse",
+        "--methods",
+        "unixcoder",
+        "--split",
+        "test",
+        "--device",
+        "cuda:0"
+      ]
+    ],
+    "env": {
+      "CUDA_VISIBLE_DEVICES": "1",
+      "OMP_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "TOKENIZERS_PARALLELISM": "false"
+    },
+    "completed_at": "2026-11-03T12:56:54.293977+08:00",
+    "complete_official_functions": 1128,
+    "checkpoint_epochs_unchanged": true,
+    "threshold_unchanged": true,
+    "verified_members_and_hard_labels": true,
+    "metrics_recomputed_from_predictions": true
+  },
+  "diagnostic_commands": [
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "check",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_mil_512"
+      ],
+      "cuda_visible_devices": "1"
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "analyze",
+        "--run-dir",
+        "results/global_local_mil_512/seed123456/baseline/primevul_paired/unixcoder",
+        "--device",
+        "cuda:0"
+      ],
+      "cuda_visible_devices": "1"
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "analyze",
+        "--run-dir",
+        "results/global_local_mil_512/seed123456/mean/primevul_paired/unixcoder",
+        "--device",
+        "cuda:0"
+      ],
+      "cuda_visible_devices": "1"
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "analyze",
+        "--run-dir",
+        "results/global_local_mil_512/seed123456/lse/primevul_paired/unixcoder",
+        "--device",
+        "cuda:0"
+      ],
+      "cuda_visible_devices": "1"
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "report",
+        "--output-dir",
+        "results/global_local_mil_512"
+      ]
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "report",
+        "--output-dir",
+        "results/global_local_mil_512",
+        "--include-test"
+      ]
+    }
+  ],
+  "outcome": "LSE failed versus matched Context+Diff on Valid P-C/AUC/MCC; no second seed, parameter search, variants, or default change. Test evaluated only after fixed Valid decision."
+}

@@ -180,6 +180,7 @@ def train(
     attention_context_scale=False,
     insertion_supervision=None,
     rccl=None,
+    local_mil=None,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -227,6 +228,7 @@ def train(
             attention_context_scale=attention_context_scale,
             insertion_supervision=insertion_supervision,
             rccl=rccl,
+            local_mil=local_mil,
             attention_region=attention_region,
             attention_suppression=attention_suppression,
             attention_ema=attention_ema,
@@ -241,7 +243,8 @@ def train(
         or line_auxiliary is not None or line_auxiliary_weight is not None
         or oof_fold is not None or localizer_dir is not None or train_localizer_dir is not None
         or bounded_attention or attention_context or attention_local or attention_context_scale
-        or insertion_supervision is not None or rccl is not None or attention_region is not None or attention_suppression is not None
+        or insertion_supervision is not None or rccl is not None or local_mil is not None
+        or attention_region is not None or attention_suppression is not None
         or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
@@ -1232,6 +1235,7 @@ def train_losver(
     attention_context_scale=False,
     insertion_supervision=None,
     rccl=None,
+    local_mil=None,
     attention_region=None,
     attention_suppression=None,
     attention_ema=False,
@@ -1250,7 +1254,8 @@ def train_losver(
         settings["seed"] = seed
     if marginalize_inputs and (not attention_context or attention_region != "diff" or attention_local
                               or attention_context_scale or insertion_supervision is not None or rccl is not None
-                              or attention_suppression is not None or attention_ema or line_auxiliary is not None):
+                              or attention_suppression is not None or attention_ema or line_auxiliary is not None
+                              or local_mil is not None):
         raise ValueError("input marginalization is an isolated Context + Diff training intervention")
     if oof_fold is not None and (
         oof_fold not in (0, 1) or method != "losver_localizer" or input_mode != "512"
@@ -1271,6 +1276,12 @@ def train_losver(
         raise ValueError("local attention requires context attention")
     if attention_context_scale and (not attention_context or attention_local):
         raise ValueError("context_scale requires context attention without local attention")
+    if local_mil is not None and (
+        local_mil not in ("mean", "lse") or not attention_context or attention_region != "diff"
+        or attention_local or attention_context_scale or insertion_supervision is not None or rccl is not None
+        or attention_suppression is not None or attention_ema or joint or marginalize_inputs
+    ):
+        raise ValueError("local MIL requires original Context + Diff without other modules")
     if insertion_supervision is not None and (
         insertion_supervision not in ("diff", "random") or not attention_context or attention_region != "diff"
         or attention_local or attention_context_scale or attention_suppression is not None or attention_ema
@@ -1369,6 +1380,7 @@ def train_losver(
                 or bool(completed.get("bounded_attention",{}).get("context_scale"))!=attention_context_scale
                 or completed.get("insertion_localization",{}).get("supervision")!=insertion_supervision
                 or completed.get("rccl",{}).get("mode")!=rccl
+                or completed.get("local_mil",{}).get("pooling")!=local_mil
                 or bool(completed.get("input_marginalization"))!=marginalize_inputs
                 or completed["training_config"]["seed"]!=settings["seed"]
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
@@ -1443,6 +1455,7 @@ def train_losver(
         **(dict(attention_context_scale=True) if attention_context_scale else {}),
         **(dict(insertion_supervision=insertion_supervision) if insertion_supervision else {}),
         **(dict(rccl=rccl) if rccl is not None else {}),
+        **(dict(local_mil=local_mil) if local_mil is not None else {}),
         **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
@@ -1720,6 +1733,18 @@ def train_losver(
             evaluation="original hard labels, complete official Valid, threshold > .5",
             parameters_added=0,extra_encodings=0,**loader.input_target_summary,
         )
+    if local_mil is not None:
+        metadata["local_mil"] = dict(
+            pooling=local_mil, temperature=1., classes=["safe", "vulnerable"],
+            head="Linear(hidden_size,2), with bias; shared physical-line means",
+            reduction="equal valid-line mean" if local_mil == "mean" else "logsumexp(valid-line scores)-log(valid-line count)",
+            logit="global_logit + local_fusion * (local_class[1]-local_class[0])",
+            initialization="random local classifier in CPU fork_rng; scalar local_fusion=0; original RNG unchanged",
+            parameters_added=2*model.classifier.in_features+3, extra_encodings=0,
+            supervision="original function BCE + 0.1 original Diff region loss only",
+            inference="single source; no Diff, patched version, reference library or extra encoding",
+        )
+        metadata["classifier_head"] += "; scalar-zero residual of independent two-class local MIL"
     if rccl is not None:
         from .data import rccl_coverage
         metadata["rccl"] = dict(
@@ -1941,6 +1966,16 @@ def train_losver(
                 )
                 if components is not None:
                     item.update(group_components)
+                if local_mil is not None:
+                    item["local_mil"] = dict(
+                        fusion=float(model.local_fusion.detach()),
+                        head_weight_norm=float(model.local_classifier.weight.detach().norm()),
+                        safe_score_mean=float(parts["local_class_scores"][:, 0].detach().mean()),
+                        vulnerable_score_mean=float(parts["local_class_scores"][:, 1].detach().mean()),
+                        global_logit_mean=float(parts["global_logits"].detach().mean()),
+                        local_logit_mean=float(parts["local_logit"].detach().mean()),
+                        residual_abs_mean=float(parts["local_residual"].detach().abs().mean()),
+                    )
                 history.add(item)
                 print(json.dumps(item), flush=True)
             if (

@@ -1,0 +1,14 @@
+{
+  "equal_fields": {
+    "training_members": true,
+    "validation_members": true,
+    "training_config": true,
+    "parameters": true,
+    "input_coverage": true
+  },
+  "cpu_rng_equal": true,
+  "active_cuda_rng_equal": true,
+  "original_selected_epoch": 14,
+  "current_selected_epoch": 15,
+  "note": "Use the fresh matched baseline for all comparisons. Equal random streams do not establish bitwise deterministic GPU training."
+}

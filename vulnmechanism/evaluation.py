@@ -759,12 +759,26 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
             value = torch.nn.functional.binary_cross_entropy_with_logits(
                 details["logits"],batch["labels"].float().to(device)
             )
+            if model.local_mil is not None:
+                global_probabilities = details["global_logits"].sigmoid().cpu().tolist()
+                local_probabilities = details["local_residual"].sigmoid().cpu().tolist()
             for i,(numbers,rates,counts) in enumerate(zip(batch["line_numbers"],details["line_rates"],details["line_counts"])):
                 n = int((numbers>=0).sum())
                 attention_predictions.append(dict(line_numbers=numbers[:n].tolist(),
                     line_rates=rates[:n].cpu().tolist(),line_token_counts=counts[:n].cpu().tolist()))
                 if model.attention_context_scale:
                     attention_predictions[-1]["context_scale_alpha"] = float(details["context_scale_alpha"][i])
+                if model.local_mil is not None:
+                    attention_predictions[-1].update(
+                        local_line_scores=details["local_line_scores"][i, :n].cpu().tolist(),
+                        local_class_scores=details["local_class_scores"][i].cpu().tolist(),
+                        local_logit=float(details["local_logit"][i]),
+                        global_logit=float(details["global_logits"][i]),
+                        local_residual=float(details["local_residual"][i]),
+                        local_fusion=float(model.local_fusion),
+                        global_probability=global_probabilities[i],
+                        scaled_local_probability=local_probabilities[i],
+                    )
                 if insertion_supervision is not None:
                     count = len(batch["insertion_ranges"][i])
                     attention_predictions[-1].update(
@@ -872,6 +886,25 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
                 raise ValueError("attention and function prediction members differ")
             for prediction,attention in zip(predictions,attention_predictions):
                 prediction.update(attention)
+        if getattr(model, "local_mil", None) is not None:
+            # These are summaries of the SAME source-only validation pass.
+            # Tracking a fixed full cohort avoids confusing changing training
+            # minibatches with learned changes in local evidence.
+            result["local_mil"] = dict(fusion=float(model.local_fusion), by_target={})
+            for y in (0, 1):
+                selected = [p for p in predictions if p["target"] == y]
+                if not selected:
+                    continue
+                values = dict(
+                    safe_score=[p["local_class_scores"][0] for p in selected],
+                    vulnerable_score=[p["local_class_scores"][1] for p in selected],
+                    global_logit=[p["global_logit"] for p in selected],
+                    local_logit=[p["local_logit"] for p in selected],
+                    local_residual=[p["local_residual"] for p in selected],
+                )
+                result["local_mil"]["by_target"][str(y)] = {
+                    key: dict(mean=float(np.mean(v)), std=float(np.std(v))) for key, v in values.items()
+                }
     return result, predictions
 
 
@@ -897,6 +930,7 @@ def load_paired(checkpoint, device):
         **(dict(attention_context=True) if checkpoint.get("bounded_attention", {}).get("context") else {}),
         **(dict(attention_local=True) if checkpoint.get("bounded_attention", {}).get("local") else {}),
         **(dict(attention_context_scale=True) if checkpoint.get("bounded_attention", {}).get("context_scale") else {}),
+        **(dict(local_mil=checkpoint["local_mil"]["pooling"]) if checkpoint.get("local_mil") else {}),
         **(dict(insertion_supervision=checkpoint["insertion_localization"]["supervision"])
            if checkpoint.get("insertion_localization") else {}),
     )

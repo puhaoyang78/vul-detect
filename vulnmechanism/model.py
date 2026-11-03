@@ -523,6 +523,7 @@ class LOSVERDetector(nn.Module):
         self.attention_context_scale = getattr(args, "attention_context_scale", False)
         self.insertion_supervision = getattr(args, "insertion_supervision", None)
         self.rccl = getattr(args, "rccl", None)
+        self.local_mil = getattr(args, "local_mil", None)
         if self.attention_context and self.pooling != "bounded_attention":
             raise ValueError("context attention requires bounded attention")
         if self.attention_local and not self.attention_context:
@@ -542,6 +543,13 @@ class LOSVERDetector(nn.Module):
             or getattr(args, "line_auxiliary_weight", None) is not None
         ):
             raise ValueError("RCCL requires original Context + Diff without other modules")
+        if self.local_mil is not None and (
+            self.local_mil not in ("mean", "lse") or not self.attention_context
+            or self.attention_region != "diff" or self.attention_local or self.attention_context_scale
+            or self.insertion_supervision is not None or self.rccl is not None
+            or self.attention_suppression is not None or getattr(args, "line_auxiliary_weight", None) is not None
+        ):
+            raise ValueError("local MIL requires original Context + Diff without other modules")
         self.force_uniform_attention = False
         self.force_context_scale_one = False
         if self.pooling == "bounded_attention":
@@ -572,6 +580,13 @@ class LOSVERDetector(nn.Module):
         if self.rccl in ("diff", "random"):
             with torch.random.fork_rng(devices=[]):
                 self.rccl_projection = nn.Linear(config.hidden_size, 32, bias=False)
+        if self.local_mil is not None:
+            # Both controls get exactly the same head without advancing the
+            # encoder/classifier or sampler RNG. The scalar learns first; once
+            # nonzero it passes classification gradients into the local head.
+            with torch.random.fork_rng(devices=[]):
+                self.local_classifier = nn.Linear(config.hidden_size, 2)
+            self.local_fusion = nn.Parameter(torch.zeros(()))
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -605,6 +620,24 @@ class LOSVERDetector(nn.Module):
         strength = s.amax(-1, keepdim=True)
         result = global_mean + beta * strength * (local - global_mean)
         return torch.where(mass > 0, result, global_mean)
+
+    @staticmethod
+    def pool_local_classes(scores, valid, mode):
+        """Unweighted physical-line mean or log-mean-exp, temperature fixed at 1.
+
+        Channels are safe=0 and vulnerable=1. They are latent bag-level evidence,
+        not calibrated line probabilities or additional line supervision.
+        """
+        if scores.shape[:2] != valid.shape or scores.shape[-1] != 2 or valid.dtype != torch.bool:
+            raise ValueError("local class scores require two channels and an aligned valid-line mask")
+        if not valid.any(-1).all():
+            raise ValueError("local MIL requires at least one effective code line per function")
+        count = valid.sum(-1, keepdim=True).to(scores.dtype)
+        if mode == "mean":
+            return scores.masked_fill(~valid[..., None], 0.).sum(1) / count
+        if mode == "lse":
+            return torch.logsumexp(scores.masked_fill(~valid[..., None], float("-inf")), 1) - count.log()
+        raise ValueError("local MIL pooling must be mean or lse")
 
     def bounded_pool(self, states, code_mask, line_token_mask, *, line_numbers=None, attention_head=None,
                      suppress=False, suppression_mask=None,
@@ -669,6 +702,13 @@ class LOSVERDetector(nn.Module):
         token_attention = (membership * (attention / counts.clamp_min(1e-12))[..., None]).sum(1)
         details = dict(line_rates=rates, line_counts=counts,
                        line_attention=attention, token_attention=token_attention, **local_details)
+        if self.local_mil is not None:
+            valid_lines = counts > 0
+            local_scores = self.local_classifier(lines)
+            local_classes = self.pool_local_classes(local_scores, valid_lines, self.local_mil)
+            details.update(local_line_scores=local_scores.masked_fill(~valid_lines[..., None], 0.),
+                           local_class_scores=local_classes,
+                           local_logit=local_classes[:, 1] - local_classes[:, 0])
         if return_line_states:
             details["line_states"] = lines
             details["attention_scores"] = scores
@@ -918,6 +958,11 @@ class LOSVERDetector(nn.Module):
                 function_count,
             )
         logits = self.classifier(pooled)
+        if self.local_mil is not None:
+            residual = self.local_fusion * attention_details["local_logit"]
+            attention_details.update(global_logits=logits[:, 0], local_residual=residual,
+                                     local_fusion=self.local_fusion)
+            logits = logits + residual[:, None]
         probability = logits.sigmoid()
         if labels is not None:
             y = labels.float()
@@ -994,6 +1039,7 @@ def losver_model(
     attention_context_scale=False,
     insertion_supervision=None,
     rccl=None,
+    local_mil=None,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -1028,6 +1074,7 @@ def losver_model(
         attention_context_scale=attention_context_scale,
         insertion_supervision=insertion_supervision,
         rccl=rccl,
+        local_mil=local_mil,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )

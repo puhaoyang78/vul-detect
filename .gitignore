@@ -373,3 +373,22 @@ __pycache__/
 !/results/mil_research/**/train.lines.jsonl
 !/results/mil_research/**/valid.lines.jsonl
 !/results/mil_research/**/frozen_probes.json
+
+# Matched global/local MIL controls; keep weights, caches and console logs local.
+!/results/global_local_mil_512/
+!/results/global_local_mil_512/**/
+!/results/global_local_mil_512/*.json
+!/results/global_local_mil_512/*.csv
+!/results/global_local_mil_512/*.md
+!/results/global_local_mil_512/**/config.json
+!/results/global_local_mil_512/**/training.metrics.json
+!/results/global_local_mil_512/**/best-p_c.json
+!/results/global_local_mil_512/**/best.training.jsonl
+!/results/global_local_mil_512/**/valid.best-p_c.predictions.jsonl
+!/results/global_local_mil_512/**/train.attention_regions.jsonl
+!/results/global_local_mil_512/**/train.selected.predictions.jsonl
+!/results/global_local_mil_512/**/train.region_attention.jsonl
+!/results/global_local_mil_512/**/valid.region_attention.jsonl
+!/results/global_local_mil_512/**/branch_diagnostics.json
+!/results/global_local_mil_512/**/test.metrics.json
+!/results/global_local_mil_512/**/test.predictions.jsonl

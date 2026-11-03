@@ -81,6 +81,8 @@ def build_parser():
                            help="add learned physical-line neighbors within +/-3; requires attention context")
             p.add_argument("--attention-context-scale", action="store_true",
                            help="function-adaptive context_scale: 2*sigmoid(Linear(non-affine LayerNorm(g)))")
+            p.add_argument("--local-mil", choices=("mean", "lse"),
+                           help="two-class physical-line MIL residual on original Context + Diff; fixed temperature 1")
             p.add_argument("--insertion-supervision", choices=("diff", "random"),
                            help="fixed .1 function-normalized gap ranking loss on original Context + Diff")
             p.add_argument("--rccl", choices=("baseline", "diff", "random"),
@@ -277,6 +279,7 @@ def main():
                     attention_context_scale=args.attention_context_scale,
                     insertion_supervision=args.insertion_supervision,
                     rccl=args.rccl,
+                    local_mil=args.local_mil,
                     attention_region=args.attention_region,
                     attention_suppression=args.attention_suppression,
                     attention_ema=args.attention_ema,

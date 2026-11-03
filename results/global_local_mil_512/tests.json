@@ -1,0 +1,45 @@
+{
+  "unique_tests_passed": 105,
+  "gpu_smoke": "gpu-smoke.json",
+  "runs": [
+    {
+      "tests": 103,
+      "seconds": 386.445,
+      "modules": [
+        "tests.test_dual_stream",
+        "tests.test_bounded_attention",
+        "tests.test_losver",
+        "tests.test_resume",
+        "tests.test_mil_diagnosis",
+        "tests.test_rccl",
+        "tests.test_insertion_localization"
+      ]
+    },
+    {
+      "tests": 39,
+      "seconds": 9.637,
+      "modules": [
+        "tests.test_dual_stream",
+        "tests.test_bounded_attention"
+      ]
+    },
+    {
+      "tests": 11,
+      "seconds": 7.651,
+      "modules": [
+        "tests.test_dual_stream"
+      ]
+    },
+    {
+      "tests": 2,
+      "seconds": 0.788,
+      "methods": [
+        "test_paired_gain_loss_and_repair_visibility_cohorts",
+        "test_formal_validation_exports_both_contributions_and_fp_changes"
+      ]
+    }
+  ],
+  "counting": "94 existing related tests + 11 final dual-stream tests; overlapping reruns counted once",
+  "initial_fixture_error_corrected": "checkpoint API test originally passed a dict to a path API; corrected to save a real fixture checkpoint with protocol metadata",
+  "execution": "host Python for multiprocessing DataLoader; real RTX4090 smoke"
+}
