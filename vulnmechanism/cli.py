@@ -74,7 +74,11 @@ def build_parser():
             p.add_argument("--line-auxiliary", choices=("diff", "random"))
             p.add_argument("--line-auxiliary-weight", type=float)
             p.add_argument("--bounded-attention", action="store_true",
-                           help="512 UniXcoder line MIL with token-count weights and fixed K=5")
+                           help="512 UniXcoder line MIL with token-count weights (default K=5)")
+            p.add_argument("--attention-max-rate", type=int, choices=(5, 10), default=5,
+                           help="bounded attention upper multiplier; 10 for the line-region experiment")
+            p.add_argument("--attention-region-weighting", choices=("token", "line"), default="token",
+                           help="region-loss averaging only; function pooling keeps token-count weights")
             p.add_argument("--attention-context", action="store_true",
                            help="condition bounded line scores on the valid code-token mean, rank 32")
             p.add_argument("--attention-local", action="store_true",
@@ -143,6 +147,8 @@ def build_parser():
     p.add_argument("--attention-context",action="store_true")
     p.add_argument("--attention-local",action="store_true")
     p.add_argument("--attention-context-scale",action="store_true")
+    p.add_argument("--attention-region-weighting",choices=("token","line"),default="token",
+                   help="report the fixed K=10 equal-line experiment against its historical reference")
     p.add_argument("--insertion-localization", action="store_true")
     p.add_argument("--rccl", action="store_true", help="report the three matched RCCL experiments")
     p.add_argument("--attention-regularization",action="store_true")
@@ -195,6 +201,8 @@ def build_parser():
     )
     p.add_argument("--bounded-attention",action="store_true",
                    help="real UniXcoder bounded-pooling/gradient/save-reload checks on Train only")
+    p.add_argument("--attention-max-rate",type=int,choices=(5,10),default=5)
+    p.add_argument("--attention-region-weighting",choices=("token","line"),default="token")
     p.add_argument("--attention-context",action="store_true",
                    help="also check rank-32 context interaction and its initialization")
     p.add_argument("--attention-local",action="store_true",
@@ -281,6 +289,8 @@ def main():
                     rccl=args.rccl,
                     local_mil=args.local_mil,
                     attention_region=args.attention_region,
+                    attention_max_rate=args.attention_max_rate,
+                    attention_region_weighting=args.attention_region_weighting,
                     attention_suppression=args.attention_suppression,
                     attention_ema=args.attention_ema,
                     attention_diagnostics=args.attention_diagnostics,
@@ -306,6 +316,8 @@ def main():
 
         if args.repair_regions and args.bounded_attention:
             raise ValueError("choose one paired check")
+        if (args.attention_max_rate != 5 or args.attention_region_weighting != "token") and not args.bounded_attention:
+            raise ValueError("attention rate/region weighting checks require bounded attention")
         if args.attention_regularization and not args.bounded_attention:
             raise ValueError("attention regularization checks require bounded attention")
         if args.attention_context and (not args.bounded_attention or args.attention_regularization):
@@ -326,7 +338,9 @@ def main():
                     input_mode=args.paired_input,
                     **(dict(regularization=args.attention_regularization,
                             context=args.attention_context, local=args.attention_local,
-                            context_scale=args.attention_context_scale) if args.bounded_attention else {}),
+                            context_scale=args.attention_context_scale,
+                            max_rate=args.attention_max_rate,
+                            region_weighting=args.attention_region_weighting) if args.bounded_attention else {}),
                 ),
                 indent=2,
             )
@@ -375,6 +389,7 @@ def main():
                               attention_context=args.attention_context,
                               attention_local=args.attention_local,
                               attention_context_scale=args.attention_context_scale,
+                              attention_region_weighting=args.attention_region_weighting,
                               insertion_localization=args.insertion_localization,
                               attention_regularization=args.attention_regularization,device=args.device)
                 if args.dataset == "primevul_paired"

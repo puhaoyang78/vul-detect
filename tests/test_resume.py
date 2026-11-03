@@ -318,11 +318,16 @@ class ResumeTests(unittest.TestCase):
         def factory(path,variant,**kwargs):
             return detector(kwargs.get("bounded_attention",False),kwargs.get("attention_region"),
                             context=kwargs.get("attention_context",False),local=kwargs.get("attention_local",False),
-                            context_scale=kwargs.get("attention_context_scale",False)),Tokens()
+                            context_scale=kwargs.get("attention_context_scale",False),
+                            max_rate=kwargs.get("attention_max_rate",5),
+                            region_weighting=kwargs.get("attention_region_weighting","token")),Tokens()
 
-        for supervision,context,local,context_scale in ((s,c,l,a) for s in (None,"diff","random")
-                for c,l,a in ((False,False,False),(True,False,False),(True,True,False),(True,False,True))):
-            with self.subTest(supervision=supervision,context=context,local=local,context_scale=context_scale),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
+        protocols=[(s,c,l,a,5,"token") for s in (None,"diff","random")
+                   for c,l,a in ((False,False,False),(True,False,False),(True,True,False),(True,False,True))]
+        protocols.append(("diff",True,False,False,10,"line"))
+        for supervision,context,local,context_scale,max_rate,weighting in protocols:
+            with self.subTest(supervision=supervision,context=context,local=local,context_scale=context_scale,
+                             max_rate=max_rate,weighting=weighting),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
                 root=Path(tmp);self.paired_fixture(root,"512")
                 path=root/"data/primevul_paired/train.lines.jsonl"
                 rows=read_jsonl(path)
@@ -336,12 +341,19 @@ class ResumeTests(unittest.TestCase):
                              bounded_attention=True,attention_region=supervision,attention_context=context,
                              attention_local=local,
                              attention_context_scale=context_scale,
+                             attention_max_rate=max_rate,attention_region_weighting=weighting,
                              function_micro_batch=2)
                 training.train_losver(root/"data",root/"control","fixture","unixcoder",**options)
                 with self.interruption(epoch=2,step=4,after_save=True),self.assertRaises(Interrupted):
                     training.train_losver(root/"data",root/"resumed","fixture","unixcoder",**options)
                 training.train_losver(root/"data",root/"resumed","fixture","unixcoder",resume=True,**options)
                 self.compare_runs(root/"control/primevul_paired/unixcoder",root/"resumed/primevul_paired/unixcoder",["best-p_c.pt"])
+                if supervision is not None:
+                    for changed in (dict(attention_max_rate=10 if max_rate==5 else 5),
+                                    dict(attention_region_weighting="line" if weighting=="token" else "token")):
+                        with self.assertRaisesRegex(ValueError,"completed training configuration"):
+                            training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
+                                                 **dict(options,**changed))
                 with self.assertRaisesRegex(ValueError,"completed training configuration"):
                     training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
                                          **dict(options,attention_context=not context,attention_local=False,attention_context_scale=False))

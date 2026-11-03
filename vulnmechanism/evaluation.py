@@ -925,7 +925,9 @@ def load_paired(checkpoint, device):
         **(dict(line_auxiliary_weight=checkpoint["line_auxiliary"]["weight"])
            if "line_auxiliary" in checkpoint else {}),
         **(dict(bounded_attention=True,
-                attention_region=checkpoint["bounded_attention"]["region_supervision"])
+                attention_region=checkpoint["bounded_attention"]["region_supervision"],
+                attention_max_rate=checkpoint["bounded_attention"].get("k", 5),
+                attention_region_weighting=checkpoint["bounded_attention"].get("region_weighting", "token"))
            if "bounded_attention" in checkpoint else {}),
         **(dict(attention_context=True) if checkpoint.get("bounded_attention", {}).get("context") else {}),
         **(dict(attention_local=True) if checkpoint.get("bounded_attention", {}).get("local") else {}),
@@ -2415,7 +2417,7 @@ def insertion_coverage(data_dir, output_dir, model_path):
 
 
 def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input_mode="512",regularization=False,
-                            context=False,local=False,context_scale=False):
+                            context=False,local=False,context_scale=False,max_rate=5,region_weighting="token"):
     """Actual pretrained encoder, Train examples, two updates; no experiment claim."""
     import tempfile
     import time
@@ -2433,12 +2435,13 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
     started=time.perf_counter()
     core.seed_everything(123456)
     baseline,tokenizer=core.losver_model(model_path,"baseline",bounded_attention=context,
-                                      attention_context=local or context_scale)
+                                      attention_context=local or context_scale or (context and (max_rate!=5 or region_weighting!="token")))
     initial_rng=torch.get_rng_state()
     initial_cuda_rng=torch.cuda.get_rng_state_all() if device.type=="cuda" else []
     core.seed_everything(123456)
     model,_=core.losver_model(model_path,"baseline",bounded_attention=True,attention_region="diff",
-                             attention_context=context,attention_local=local,attention_context_scale=context_scale)
+                             attention_context=context,attention_local=local,attention_context_scale=context_scale,
+                             attention_max_rate=max_rate,attention_region_weighting=region_weighting)
     assert torch.equal(torch.get_rng_state(),initial_rng)
     assert all(torch.equal(a,b) for a,b in zip(initial_cuda_rng,
         torch.cuda.get_rng_state_all() if device.type=="cuda" else [],strict=True))
@@ -2468,6 +2471,9 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         assert delta==0 and torch.equal(details["context_scale_alpha"],torch.ones(len(features),device=device))
         assert not list(model.context_scale_norm.parameters())
     weights=details["token_attention"]
+    line_valid=details["line_counts"]>0
+    assert bool(((details["line_rates"][line_valid]>=1)&(details["line_rates"][line_valid]<=max_rate)).all())
+    assert not bool(details["line_rates"][~line_valid].any())
     mask=batch["code_mask"].to(device)
     assert bool((weights[mask]>0).all()) and not bool(weights[~mask].any())
     torch.testing.assert_close(weights.sum(-1),torch.ones(len(features),device=device))
@@ -2574,7 +2580,8 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
             context_checks.update(padding_excluded=True,cross_line_mass_conserved=True,cuda_rng_preserved=True)
             del states,d,without,other,padded
     cp=dict(protocol="losver",line_mapping="source_offsets",input_mode="512",variant="baseline",
-            model_path=str(model_path),pooling="bounded_attention",bounded_attention=dict(region_supervision="diff"),
+            model_path=str(model_path),pooling="bounded_attention",
+            bounded_attention=dict(region_supervision="diff",k=max_rate,region_weighting=region_weighting),
             state_dict={k:v.detach().cpu() for k,v in model.state_dict().items()})
     if context:
         cp["bounded_attention"]["context"]=dict(dimension=32)
@@ -2587,6 +2594,7 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
         del model,optimizer,parts
         if device.type=="cuda": torch.cuda.empty_cache()
         restored,_=load_paired(torch.load(path,map_location="cpu",weights_only=False),device)
+        assert restored.attention_max_rate==max_rate and restored.attention_region_weighting==region_weighting
         with torch.no_grad():
             reloaded=paired_forward(restored,batch,"baseline",device,with_labels=False)
         torch.testing.assert_close(probability,reloaded,rtol=0,atol=0)
@@ -2608,7 +2616,7 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
             valid=batch["code_mask"].to(device)
             token=d["suppressed_token_attention"]
             ratios=[float(x.max()/x.min()) for x in (t[v] for t,v in zip(token,valid))]
-            assert bool((token[valid]>0).all()) and not bool(token[~valid].any()) and max(ratios)<=5+1e-6
+            assert bool((token[valid]>0).all()) and not bool(token[~valid].any()) and max(ratios)<=max_rate+1e-6
             torch.testing.assert_close(d["bce"],(d["bce_normal"]+d["bce_suppressed"])/2)
             loss.backward()
             assert all(p.grad is None or bool(torch.isfinite(p.grad).all()) for p in restored.parameters())
@@ -2643,7 +2651,7 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
                 region_encoder_gradient_after_head_update=encoder_gradient,all_gradients_finite=True,
                 diff_independent_inference=True,save_reload_equal=True,seconds=time.perf_counter()-started,
                 peak_memory_mib=torch.cuda.max_memory_allocated(device)/1024**2 if device.type=="cuda" else None,
-                test_used=False,full_experiment=False)
+                test_used=False,full_experiment=False,attention_max_rate=max_rate,region_weighting=region_weighting)
     if regularization:
         result["attention_regularization"]=regularization_checks
     if context:
@@ -2656,7 +2664,7 @@ def check_bounded_attention(data_dir,output_dir,model_path,*,device="auto",input
     return result
 
 
-def bounded_region_record(annotation,prediction,labels=None):
+def bounded_region_record(annotation,prediction,labels=None,*,max_rate=5):
     """Post-prediction diagnostics; edit membership never changes the weights."""
     import math
     numbers=prediction["line_numbers"]
@@ -2667,23 +2675,29 @@ def bounded_region_record(annotation,prediction,labels=None):
               if labels is None else labels)
     if (annotation["sample_key"]!=prediction["sample_key"] or
         not len(numbers)==len(counts)==len(rates)==len(selected) or
-        any(n<=0 for n in counts) or any(not 1<=r<=5 for r in rates) or any(y not in (0,1) for y in selected)):
+        any(n<=0 for n in counts) or any(not 1<=r<=max_rate for r in rates) or any(y not in (0,1) for y in selected)):
         raise ValueError("invalid aligned bounded-attention diagnostics")
     total=sum(counts);nr=sum(n*y for n,y in zip(counts,selected));nb=total-nr
     weighted=sum(n*r for n,r in zip(counts,rates))
     region_mass=sum(n*r*y for n,r,y in zip(counts,rates,selected))/weighted
     ratio=((sum(n*r*y for n,r,y in zip(counts,rates,selected))/nr) /
            (sum(n*r*(1-y) for n,r,y in zip(counts,rates,selected))/nb)) if nr>0 and nb>0 else None
+    region_rates=[r for r,y in zip(rates,selected) if y]
+    background_rates=[r for r,y in zip(rates,selected) if not y]
+    line_ratio=((sum(region_rates)/len(region_rates))/(sum(background_rates)/len(background_rates))
+                if region_rates and background_rates else None)
     return dict(sample_key=annotation["sample_key"],pair_key=annotation["pair_key"],target=annotation["target"],
                 visible_lines=len(numbers),region_lines=sum(selected),code_tokens=total,region_tokens=nr,
                 token_coverage=nr/total,region_attention_mass=region_mass,
                 token_weight_ratio=max(rates)/min(rates),
                 attention_enrichment=region_mass/(nr/total) if nr>0 else None,
                 mean_rate_ratio=ratio,eligible=nr>0 and nb>0,
+                line_mean_rate_ratio=line_ratio,
+                line_region_margin=max(0.,math.log(2)-math.log(line_ratio)) if line_ratio is not None else None,
                 region_margin=max(0.,math.log(2)-math.log(ratio)) if ratio is not None else None)
 
 
-def attention_distribution_record(annotation, prediction, previous=None):
+def attention_distribution_record(annotation, prediction, previous=None, *, max_rate=5):
     """Post-prediction JSD; uniform means equal per-token weights."""
     import math
 
@@ -2695,7 +2709,7 @@ def attention_distribution_record(annotation, prediction, previous=None):
         middle = [(a+b)/2 for a,b in zip(p,q)]
         return sum(a*math.log(a/m)+b*math.log(b/m) for a,b,m in zip(p,q,middle))/2
 
-    record = bounded_region_record(annotation, prediction)
+    record = bounded_region_record(annotation, prediction, max_rate=max_rate)
     a = distribution(prediction)
     counts, rates = prediction["line_token_counts"], prediction["line_rates"]
     mean_rate = sum(rates)/len(rates)
@@ -2727,7 +2741,7 @@ def attention_epoch_diagnostics(model, rows, loaders, tokenizer, device, epoch, 
             old = {r["sample_key"]:r for r in previous.get(split,[])}
             if old and set(old)!={r["sample_key"] for r in predictions}:
                 raise ValueError("fixed attention diagnostic members changed")
-            stats = [attention_distribution_record(ann,pred,old.get(pred["sample_key"]))
+            stats = [attention_distribution_record(ann,pred,old.get(pred["sample_key"]),max_rate=model.attention_max_rate)
                      for ann,pred in zip(rows[split],predictions)]
             current[split] = predictions
             summary = dict(functions=len(stats),eligible=sum(r["eligible"] for r in stats))
@@ -3485,9 +3499,202 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
     return result
 
 
+def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
+    """One fixed Train/Valid comparison; no Test, tuning or training entry point."""
+    import numpy as np
+    from .dual_stream import align_predictions, distribution, pair_changes
+    from .metrics import paired_metrics
+    from .training import paired_loader
+
+    root=Path(output_dir)
+    paths=dict(context_diff=Path(reference_dir or "results/attention_context_512/context_diff/primevul_paired/unixcoder"),
+               line_k10=root/"line_k10/primevul_paired/unixcoder")
+    configs={name:json.loads((path/"training.metrics.json").read_text()) for name,path in paths.items()}
+    base=configs["context_diff"]
+    common=("training_config","training_members","validation_members","environment","input_coverage",
+            "input_mode","model_path","function_micro_batch","window_micro_batch","gradient_accumulation",
+            "parameters","selection","selection_ties","precision","checkpoint_interval")
+    annotations={s:read_jsonl(Path(data_dir)/"primevul_paired"/f"{s}.lines.jsonl") for s in ("train","valid")}
+    for split,field in (("train","training_members"),("valid","validation_members")):
+        if [r["sample_key"] for r in annotations[split]]!=base[field]:
+            raise ValueError("official Train/Valid members or order differ")
+    for name,c in configs.items():
+        cfg=c["bounded_attention"]
+        expected=(5,"token") if name=="context_diff" else (10,"line")
+        if (any(c[k]!=base[k] for k in common)
+                or (c["train_samples"],c["valid_samples"],c["completed_epochs"],c["optimizer_steps"])!=(8708,1124,16,17424)
+                or c["training_config"]["seed"]!=123456 or c["decision_threshold"]!=.5 or c["comparison"]!=">"
+                or (cfg["k"],cfg.get("region_weighting","token"))!=expected):
+            raise ValueError(f"unmatched complete training protocol: {name}")
+        if {k:v for k,v in cfg.items() if k not in ("k","region_weighting","attention")}!={
+            k:v for k,v in base["bounded_attention"].items() if k not in ("k","region_weighting","attention")}:
+            raise ValueError("only the attention bound and region averaging may differ")
+
+    def describe(values):
+        return distribution(values) if values else None
+
+    result=dict(test_used=False,reference=str(paths["context_diff"]),candidate=str(paths["line_k10"]),
+        protocol_fields_equal=list(common),changes=dict(context_diff=dict(k=5,region_weighting="token"),
+        line_k10=dict(k=10,region_weighting="line")),
+        attribution="K and loss averaging change together; effects cannot be isolated by this comparison.",
+        short_definition="visible modified physical line with conserved code-token count <=4",
+        attention_population="eligible functions only; macro statistics use equal function weight; line bands use equal line weight",
+        splits={},training={})
+    predictions={name:{} for name in paths}
+    for name,path in paths.items():
+        train_file=path/"train.selected.predictions.jsonl"
+        if not train_file.exists():
+            model,tokenizer=load_paired(torch.load(path/"best-p_c.pt",map_location="cpu",weights_only=False),core.resolve_device(device))
+            loader=paired_loader(annotations["train"],tokenizer,"baseline",batch_size=8)
+            metric,pred=validate_paired(model,annotations["train"],tokenizer,"baseline",core.resolve_device(device),loader=loader)
+            write_jsonl(train_file,pred);write_json(path/"train.selected.metrics.json",metric)
+            del model,loader
+            if torch.cuda.is_available(): torch.cuda.empty_cache()
+        for split,filename in (("train","train.selected.predictions.jsonl"),("valid","valid.best-p_c.predictions.jsonl")):
+            predictions[name][split]=align_predictions(annotations[split],read_jsonl(path/filename))
+        history=[r for r in read_jsonl(path/"best.training.jsonl") if r["event"]=="epoch"]
+        if [r["epoch"] for r in history]!=list(range(1,17)):
+            raise ValueError("all sixteen epochs must finish before reporting")
+        chosen=json.loads((path/"best-p_c.json").read_text())
+        result["training"][name]=dict(selected_epoch=chosen["epoch"],
+            train_seconds=sum(r["training_seconds"] for r in history),epoch_seconds=sum(r["epoch_seconds"] for r in history),
+            epoch_metrics=[dict(epoch=r["epoch"],p_c=r["validation"]["p_c"],**r["train_components"]) for r in history])
+        actual=paired_metrics(annotations["valid"],[p["probability"] for p in predictions[name]["valid"]])
+        if any(actual[k]!=chosen["validation"][k] for k in ("pair_counts","p_c","auc","mcc")):
+            raise ValueError("saved selected predictions do not reproduce the selected Valid metrics")
+
+    for split,rows in annotations.items():
+        records={};bands={};supervision=[]
+        for a,b in zip(predictions["context_diff"][split],predictions["line_k10"][split]):
+            if any(a[k]!=b[k] for k in ("line_numbers","line_token_counts")):
+                raise ValueError("visible physical-line/Token mapping differs between methods")
+        for name in paths:
+            k=configs[name]["bounded_attention"]["k"]
+            records[name]=[];bands[name]={}
+            for row,pred in zip(rows,predictions[name][split]):
+                stat=bounded_region_record(row,pred,max_rate=k)
+                selected=[i for i,n in enumerate(pred["line_numbers"]) if n in row["lines_ground_truth"]]
+                short=[i for i in selected if pred["line_token_counts"][i]<=4]
+                background=[r for i,r in enumerate(pred["line_rates"]) if i not in selected]
+                stat.update(short_region_lines=len(short),
+                    medium_region_lines=sum(4<pred["line_token_counts"][i]<=16 for i in selected),
+                    long_region_lines=sum(pred["line_token_counts"][i]>16 for i in selected),
+                    short_rate_over_background=(np.mean([pred["line_rates"][i] for i in short])/np.mean(background)
+                                                if short and background else None))
+                records[name].append(stat)
+                if not stat["eligible"]: continue
+                if name=="context_diff":
+                    positive_counts=[pred["line_token_counts"][i] for i in selected]
+                    supervision.append(dict(target=row["target"],region_lines=len(selected),short_lines=len(short),
+                        short_initial_gradient_share_gains=[sum(positive_counts)/(len(selected)*pred["line_token_counts"][i]) for i in short]))
+                mean_token_rate=sum(n*r for n,r in zip(pred["line_token_counts"],pred["line_rates"]))/sum(pred["line_token_counts"])
+                for i in selected:
+                    n=pred["line_token_counts"][i];rate=pred["line_rates"][i]
+                    band="1_to_4" if n<=4 else "over_4_to_16" if n<=16 else "over_16"
+                    for target in ("all","vulnerable" if row["target"] else "repaired"):
+                        bands[name].setdefault(target,{}).setdefault(band,[]).append((rate,(rate-1)/(k-1),rate/mean_token_rate))
+            write_jsonl(root/f"{split}.{name}.regions.jsonl",records[name])
+        groups=dict(all=list(range(len(rows))),has_short_region=[],has_medium_region=[],has_long_region=[],
+                    single_modified_line=[],multiple_modified_lines=[])
+        for i in range(0,len(rows),2):
+            pair=records["context_diff"][i:i+2]
+            for group,flag in (("has_short_region",any(r["short_region_lines"] for r in pair)),
+                               ("has_medium_region",any(r["medium_region_lines"] for r in pair)),
+                               ("has_long_region",any(r["long_region_lines"] for r in pair)),
+                               ("single_modified_line",any(r["region_lines"]==1 for r in pair)),
+                               ("multiple_modified_lines",any(r["region_lines"]>1 for r in pair))):
+                if flag:groups[group].extend((i,i+1))
+        summary=dict(groups={},attention={},repair_line_bands={},
+            supervision=dict(eligible_functions=len(supervision),single_modified_line_functions=sum(r["region_lines"]==1 for r in supervision),
+                functions_with_short_repair_lines=sum(r["short_lines"]>0 for r in supervision),
+                multi_modified_line_functions_with_short_lines=sum(r["short_lines"]>0 and r["region_lines"]>1 for r in supervision),
+                short_initial_gradient_share_gain=describe([g for r in supervision for g in r["short_initial_gradient_share_gains"]])))
+        for group,ix in groups.items():
+            if ix:
+                summary["groups"][group]={name:paired_metrics([rows[i] for i in ix],[predictions[name][split][i]["probability"] for i in ix]) for name in paths}
+        for name in paths:
+            summary["attention"][name]={target:{key:describe([r[key] for r in records[name] if r["eligible"]
+                and (target=="all" or r["target"]==int(target=="vulnerable")) and r[key] is not None])
+                for key in ("mean_rate_ratio","line_mean_rate_ratio","region_margin","line_region_margin",
+                            "attention_enrichment","region_attention_mass","short_rate_over_background")}
+                for target in ("all","vulnerable","repaired")}
+            summary["repair_line_bands"][name]={target:{band:{key:describe([v[j] for v in values])
+                for j,key in enumerate(("rate","sigmoid_score","per_token_enrichment"))} for band,values in bucket.items()}
+                for target,bucket in bands[name].items()}
+        summary["pair_changes"]=pair_changes(rows,[p["probability"] for p in predictions["line_k10"][split]],
+            [p["probability"] for p in predictions["context_diff"][split]])
+        result["splits"][split]=summary
+    write_json(root/"comparison.json",result)
+    lines=["# 有效物理行等权区域损失：固定 Train/Valid 实验", "",
+        "历史 Context + Diff 使用 K=5、Token 数加权区域均值；新实验按要求同时改为 K=10、行等权区域均值。"
+        "函数 MIL 仍按 n_i*r_i 聚合，BCE、0.1 区域损失、数据及训练协议不变。此次组合对比不能单独归因于行等权。",
+        "", "完整官方 Train 8708 / Valid 1124，Seed123456，Batch8，512 Token，16 Epoch / 17424 步。"
+        "按完整 Valid P-C 选模，严格 probability > 0.5。复用原基线；未读取 Test。", "",
+        "| Valid | Epoch | P-C | AUC | MCC | F1 | Recall | 修复侧 FPR |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    all_metrics=result["splits"]["valid"]["groups"]["all"]
+    for name,m in all_metrics.items():
+        lines.append(f"| {name} | {result['training'][name]['selected_epoch']} | {m['p_c']*100:.2f}% ({m['pair_counts']['p_c']}/562) | {m['auc']:.4f} | {m['mcc']:.4f} | {m['f1']*100:.2f}% | {m['recall']*100:.2f}% | {m['patched_fpr']*100:.2f}% |")
+    change=result["splits"]["valid"]["pair_changes"]
+    lines.extend(["",f"相比原基线新增正确对 {change['gains']}，丢失 {change['losses']}。", "",
+        "短修复行固定定义为 ≤4 个守恒有效 Token；对应分类子集包含任一侧存在该类修改行的完整配对。"
+        "以下注意力倍率只统计实际适用区域损失的函数；token/line 两种区域均值同时保留，避免改变统计口径。",
+        "", "| Split | Method | 行均值修复/背景倍率 | Token均值修复/背景倍率 | 短修复行/背景倍率 | 短修复行 per-token enrichment |", "|---|---|---:|---:|---:|---:|"])
+    for split,s in result["splits"].items():
+        for name in paths:
+            a=s["attention"][name]["all"]
+            short=s["repair_line_bands"][name].get("all",{}).get("1_to_4")
+            values=[a["line_mean_rate_ratio"],a["mean_rate_ratio"],a["short_rate_over_background"],short["per_token_enrichment"] if short else None]
+            lines.append(f"| {split} | {name} | "+" | ".join(f"{v['mean']:.3f}" if v else "—" for v in values)+" |")
+    lines.extend(["", "三个长度区间在训练前已固定。下列完整配对子集可重叠；任一侧存在对应长度的修改行即纳入。",
+        "", "| Valid 修改行长度子集 | Method | 配对数 | P-C | AUC | MCC | 修复侧 FPR |", "|---|---|---:|---:|---:|---:|---:|"])
+    for group,label in (("has_short_region","≤4"),("has_medium_region","5–16"),("has_long_region",">16")):
+        for name,m in result["splits"]["valid"]["groups"].get(group,{}).items():
+            lines.append(f"| {label} | {name} | {m['pairs']} | {m['p_c']*100:.2f}% | {m['auc']:.4f} | {m['mcc']:.4f} | {m['patched_fpr']*100:.2f}% |")
+    old,new=all_metrics["context_diff"],all_metrics["line_k10"]
+    tp_delta=(new["pair_counts"]["p_c"]+new["pair_counts"]["p_v"])-(old["pair_counts"]["p_c"]+old["pair_counts"]["p_v"])
+    fp_delta=(new["pair_counts"]["p_v"]+new["pair_counts"]["p_r"])-(old["pair_counts"]["p_v"]+old["pair_counts"]["p_r"])
+    lines.extend(["",f"完整 Valid 的漏洞侧 TP 净变化 {tp_delta:+d}，修复侧 FP 净变化 {fp_delta:+d}。"
+        f"Recall 变化 {(new['recall']-old['recall'])*100:+.2f} 个百分点，修复侧 FPR 变化 {(new['patched_fpr']-old['patched_fpr'])*100:+.2f} 个百分点；"
+        f"AUC 变化 {new['auc']-old['auc']:+.4f}，MCC 变化 {new['mcc']-old['mcc']:+.4f}。"])
+    for split,s in result["splits"].items():
+        a,b=[s["attention"][name]["all"]["line_region_margin"]["mean"] for name in paths]
+        x,y=[s["repair_line_bands"][name]["all"]["1_to_4"]["per_token_enrichment"] for name in paths]
+        lines.extend(["",f"{split}: 用同一行等权口径复算的区域 margin 为 {a:.4f} → {b:.4f}；"
+            f"短修改行 per-token enrichment 均值 {x['mean']:.3f} → {y['mean']:.3f}，"
+            f"中位数 {x['quantiles']['p50']:.3f} → {y['quantiles']['p50']:.3f}。"])
+    short=result["splits"]["valid"]["groups"].get("has_short_region",{})
+    if short:
+        a,b=short["context_diff"],short["line_k10"]
+        lines.extend(["",f"≤4 Token 子集 P-C 的正确对数为 {a['pair_counts']['p_c']} → {b['pair_counts']['p_c']}，"
+            f"但 AUC 为 {a['auc']:.4f} → {b['auc']:.4f}，MCC 为 {a['mcc']:.4f} → {b['mcc']:.4f}。"
+            "该子集结果需与完整 Valid 指标共同解释。"])
+    for split,s in result["splits"].items():
+        t=s["supervision"]
+        lines.extend(["",f"{split}: 区域损失有效函数 {t['eligible_functions']}；仅一条可见修改行 {t['single_modified_line_functions']}；含短修改行 {t['functions_with_short_repair_lines']}，其中多修改行 {t['multi_modified_line_functions_with_short_lines']}。"])
+    lines.extend(["", "单条修改行时，正区域均值不会因 Token/行等权而改变；变化只能来自背景均值及 K。"
+        "多修改行时，行等权才直接提高短行相对长行的正区域梯度份额。原始倍率受 K 影响，故同时报告函数内 per-token enrichment。",
+        "", "Train 中按原顺序最先满足“漏洞侧、多条可见修改行、含 ≤4 Token 修改行”的五个函数为 sample 13、19、57、73、91。"
+        "人工查看发现短行包括括号/else、函数签名片段、break/p++、变量声明和注释结束符；≤4 仅是长度分层，并非保护检查标签。"
+        "这些样本沿用原 Diff 标签。原始倍率、约束损失和分类指标分别报告，检测收益由完整 Valid 分类指标判断。",
+        "", f"新模型完整训练 wall time {json.loads((root/'commands.json').read_text())['wall_seconds']/60:.2f} 分钟；"
+        "55 项不同的相关单元测试通过，另有重复复查；真实 RTX4090 smoke 验证初始化、梯度、Padding、跨行 Token、恢复和源码单函数推理。"
+        "未新增参数；最终 Python、NumPy、CPU/CUDA RNG 与历史基线逐项一致。",
+        "", ("新方法完整 Valid P-C 未超过原 Context + Diff，按负结果停止；不搜索参数、不追加模块。"
+               if all_metrics["line_k10"]["p_c"]<=all_metrics["context_diff"]["p_c"] else
+               "新方法在本次单种子 Valid 上提高 P-C；此结果不证明独立行等权作用或多种子稳定性。"),
+        "", "完整分布、子集指标、逐函数区域统计及 16 Epoch 损失见 comparison.json 与对应 JSONL；实际命令、单元测试和真实 GPU smoke 见 commands.json、tests.log、gpu-smoke.json。权重仅保留本地。", ""])
+    (root/"report.md").write_text("\n".join(lines),encoding="utf-8")
+    return result
+
+
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False,
                   bounded_attention=False, attention_regularization=False, attention_context=False,
-                  attention_local=False, attention_context_scale=False, insertion_localization=False, device="auto"):
+                  attention_local=False, attention_context_scale=False, attention_region_weighting="token",
+                  insertion_localization=False, device="auto"):
+    if attention_region_weighting=="line":
+        if not bounded_attention or not attention_context or attention_local or attention_context_scale or insertion_localization or attention_regularization or localizer_regularization:
+            raise ValueError("line-region report requires original Context + Diff only")
+        return line_region_report(output_dir,data_dir,reference_dir,device=device)
     if insertion_localization:
         return insertion_localization_report(output_dir, data_dir, reference_dir, device=device)
     if attention_local and not attention_context:

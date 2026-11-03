@@ -412,3 +412,21 @@ __pycache__/
 !/results/global_local_residual_512/**/branch_diagnostics.json
 !/results/global_local_residual_512/**/test.metrics.json
 !/results/global_local_residual_512/**/test.predictions.jsonl
+
+# Fixed equal-physical-line region-loss experiment (Train/Valid only).
+!/results/attention_region_lines_512/
+!/results/attention_region_lines_512/*.json
+!/results/attention_region_lines_512/*.jsonl
+!/results/attention_region_lines_512/*.md
+!/results/attention_region_lines_512/*.log
+!/results/attention_region_lines_512/line_k10/
+!/results/attention_region_lines_512/line_k10/primevul_paired/
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/config.json
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/training.metrics.json
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/best-p_c.json
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/best.training.jsonl
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/train.attention_regions.jsonl
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/valid.best-p_c.predictions.jsonl
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/train.selected.predictions.jsonl
+!/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/train.selected.metrics.json

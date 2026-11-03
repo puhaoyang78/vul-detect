@@ -517,6 +517,12 @@ class LOSVERDetector(nn.Module):
         self.pooling = "bounded_attention" if getattr(args, "bounded_attention", False) else "hard_weight"
         self.fusion_beta = 0.25
         self.attention_region = getattr(args, "attention_region", None)
+        self.attention_max_rate = getattr(args, "attention_max_rate", 5)
+        self.attention_region_weighting = getattr(args, "attention_region_weighting", "token")
+        if self.attention_max_rate not in (5, 10):
+            raise ValueError("attention max rate must be 5 or 10")
+        if self.attention_region_weighting not in ("token", "line"):
+            raise ValueError("attention region weighting must be token or line")
         self.attention_suppression = getattr(args, "attention_suppression", None)
         self.attention_context = getattr(args, "attention_context", False)
         self.attention_local = getattr(args, "attention_local", False)
@@ -652,7 +658,7 @@ class LOSVERDetector(nn.Module):
     def bounded_pool(self, states, code_mask, line_token_mask, *, line_numbers=None, attention_head=None,
                      suppress=False, suppression_mask=None,
                      insertion_left=None, insertion_right=None, insertion_mask=None, return_line_states=False):
-        """One shared encoding; token-count-weighted physical-line MIL, K=5."""
+        """One shared encoding; token-count-weighted physical-line MIL."""
         membership = (line_token_mask & code_mask[:, None].bool()).to(states.dtype)
         copies = membership.sum(1)
         if not torch.equal(copies > 0, code_mask.bool()):
@@ -692,7 +698,7 @@ class LOSVERDetector(nn.Module):
                 global_scores = (queries * context).sum(-1) / math.sqrt(32)
                 local_details = dict(neighbor_attention=weights, neighbor_mask=neighbors, local_scores=local_scores,
                                      global_scores=global_scores,
-                                     rates_without_local=1 + 4 * (scores + global_scores).sigmoid())
+                                     rates_without_local=1 + (self.attention_max_rate - 1) * (scores + global_scores).sigmoid())
                 context = context + projected
             interaction = (queries * context).sum(-1) / math.sqrt(32)
             if self.attention_context_scale:
@@ -702,7 +708,7 @@ class LOSVERDetector(nn.Module):
                 local_details["context_scale_alpha"] = alpha
                 interaction = alpha[:, None] * interaction
             scores = scores + interaction
-        rates = 1 + 4 * scores.sigmoid()
+        rates = 1 + (self.attention_max_rate - 1) * scores.sigmoid()
         if self.force_uniform_attention:
             rates = torch.ones_like(rates)
         rates = rates.masked_fill(counts == 0, 0)
@@ -798,8 +804,16 @@ class LOSVERDetector(nn.Module):
         return torch.stack([per_line[owners == pair].mean() for pair in pairs]).mean(), pairs.new_tensor(len(pairs))
 
     @staticmethod
-    def attention_region_loss(rates, counts, labels):
-        """Mean over eligible functions; zero/all-token regions keep all BCE."""
+    def attention_region_loss(rates, counts, labels, *, weighting="token"):
+        """Region/background mean rates; keep the eligible-function reduction.
+
+        Only this auxiliary statistic may use equal physical-line weights.
+        Function pooling always retains the conserved code-token counts.
+        """
+        if weighting == "line":
+            counts = (counts > 0).to(rates.dtype)
+        elif weighting != "token":
+            raise ValueError("attention region weighting must be token or line")
         selected = (labels == 1).to(rates.dtype)
         region = counts * selected
         background = counts * (1 - selected)
@@ -991,7 +1005,8 @@ class LOSVERDetector(nn.Module):
                     if line_labels is None:
                         raise ValueError("region training requires original or fixed random line labels")
                     region_loss, effective = self.attention_region_loss(
-                        attention_details["line_rates"], attention_details["line_counts"], line_labels
+                        attention_details["line_rates"], attention_details["line_counts"], line_labels,
+                        weighting=self.attention_region_weighting,
                     )
                 attention_details.update(bce=loss, region_loss=region_loss, region_functions=effective,
                                          logits=logits[:, 0])
@@ -1054,6 +1069,8 @@ def losver_model(
     local_mil=None,
     local_mil_version=2,
     attention_region=None,
+    attention_max_rate=5,
+    attention_region_weighting="token",
     attention_suppression=None,
 ):
     """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
@@ -1063,6 +1080,8 @@ def losver_model(
         raise ValueError("window micro-batch must be positive")
     if bounded_attention and (variant != "baseline" or line_auxiliary_weight is not None):
         raise ValueError("bounded attention uses only the original baseline encoder/classifier")
+    if (attention_max_rate != 5 or attention_region_weighting != "token") and not bounded_attention:
+        raise ValueError("attention rate/region weighting require bounded attention")
     if attention_context and (not bounded_attention or attention_suppression is not None):
         raise ValueError("context attention requires bounded attention without suppression")
     if attention_local and not attention_context:
@@ -1090,6 +1109,8 @@ def losver_model(
         local_mil=local_mil,
         local_mil_version=local_mil_version,
         attention_region=attention_region,
+        attention_max_rate=attention_max_rate,
+        attention_region_weighting=attention_region_weighting,
         attention_suppression=attention_suppression,
     )
     encoder = RobertaModel.from_pretrained(

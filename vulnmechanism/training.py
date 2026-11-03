@@ -182,6 +182,8 @@ def train(
     rccl=None,
     local_mil=None,
     attention_region=None,
+    attention_max_rate=5,
+    attention_region_weighting="token",
     attention_suppression=None,
     attention_ema=False,
     attention_diagnostics=False,
@@ -230,6 +232,8 @@ def train(
             rccl=rccl,
             local_mil=local_mil,
             attention_region=attention_region,
+            attention_max_rate=attention_max_rate,
+            attention_region_weighting=attention_region_weighting,
             attention_suppression=attention_suppression,
             attention_ema=attention_ema,
             attention_diagnostics=attention_diagnostics,
@@ -245,6 +249,7 @@ def train(
         or bounded_attention or attention_context or attention_local or attention_context_scale
         or insertion_supervision is not None or rccl is not None or local_mil is not None
         or attention_region is not None or attention_suppression is not None
+        or attention_max_rate != 5 or attention_region_weighting != "token"
         or attention_ema or attention_diagnostics
     ):
         raise ValueError("paired training options apply only to paired methods")
@@ -1237,6 +1242,8 @@ def train_losver(
     rccl=None,
     local_mil=None,
     attention_region=None,
+    attention_max_rate=5,
+    attention_region_weighting="token",
     attention_suppression=None,
     attention_ema=False,
     attention_diagnostics=False,
@@ -1296,6 +1303,12 @@ def train_losver(
         raise ValueError("RCCL requires original Context + Diff without other modules")
     if attention_region is not None and (not bounded_attention or attention_region not in ("diff", "random")):
         raise ValueError("attention region requires bounded attention and diff/random")
+    if attention_max_rate not in (5, 10) or attention_region_weighting not in ("token", "line"):
+        raise ValueError("unsupported attention rate or region weighting")
+    if (attention_max_rate != 5 or attention_region_weighting != "token") and (
+        not bounded_attention or attention_region is None
+    ):
+        raise ValueError("attention rate/region weighting require bounded region supervision")
     if attention_suppression is not None or attention_ema or attention_diagnostics:
         if not bounded_attention or attention_region != "diff":
             raise ValueError("attention regularization/diagnostics require bounded attention with original Diff")
@@ -1378,6 +1391,8 @@ def train_losver(
                 or bool(completed.get("bounded_attention",{}).get("context"))!=attention_context
                 or bool(completed.get("bounded_attention",{}).get("local"))!=attention_local
                 or bool(completed.get("bounded_attention",{}).get("context_scale"))!=attention_context_scale
+                or completed.get("bounded_attention",{}).get("k",5)!=attention_max_rate
+                or completed.get("bounded_attention",{}).get("region_weighting","token")!=attention_region_weighting
                 or completed.get("insertion_localization",{}).get("supervision")!=insertion_supervision
                 or completed.get("rccl",{}).get("mode")!=rccl
                 or completed.get("local_mil",{}).get("pooling")!=local_mil
@@ -1450,7 +1465,9 @@ def train_losver(
         gradient_checkpointing=input_mode == "l1",
         **(dict(dropout_probability=settings["dropout_probability"]) if settings["dropout_probability"] else {}),
         **(dict(line_auxiliary_weight=line_auxiliary_weight) if joint else {}),
-        **(dict(bounded_attention=True, attention_region=attention_region) if bounded_attention else {}),
+        **(dict(bounded_attention=True, attention_region=attention_region,
+                attention_max_rate=attention_max_rate,
+                attention_region_weighting=attention_region_weighting) if bounded_attention else {}),
         **(dict(attention_context=True) if attention_context else {}),
         **(dict(attention_local=True) if attention_local else {}),
         **(dict(attention_context_scale=True) if attention_context_scale else {}),
@@ -1682,15 +1699,18 @@ def train_losver(
         metadata["localizer_attention"] = "none; auxiliary linear head on mean source-token states"
     if bounded_attention:
         metadata["bounded_attention"] = dict(
-            k=5, head="zero-initialized Linear(hidden_size,1); no global RNG advance",
+            k=attention_max_rate, head="zero-initialized Linear(hidden_size,1); no global RNG advance",
             region_supervision=attention_region, region_weight=0.1 if attention_region else 0.0,
             random_seed=settings["seed"] if attention_region=="random" else None,
             region_margin="log(2)", region_reduction="eligible functions within effective batch",
-            attention="n_i*(1+4*sigmoid(s_i))/sum_j(n_j*(1+4*sigmoid(s_j)))",
+            attention=f"n_i*(1+{attention_max_rate-1}*sigmoid(s_i))/sum_j(n_j*(1+{attention_max_rate-1}*sigmoid(s_j)))",
             inference="single source only; no Diff or independently predicted localizer",
             cross_line_tokens="conserve one token mass across its physical-line memberships",
         )
         metadata["localizer_attention"] = "none; bounded line attention from the shared encoding"
+        # Keep default metadata identical for exact resumption of legacy runs.
+        if attention_region_weighting != "token":
+            metadata["bounded_attention"]["region_weighting"] = attention_region_weighting
         if attention_context:
             metadata["bounded_attention"]["context"] = dict(
                 dimension=32, bias=False,
