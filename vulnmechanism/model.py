@@ -524,6 +524,9 @@ class LOSVERDetector(nn.Module):
         self.insertion_supervision = getattr(args, "insertion_supervision", None)
         self.rccl = getattr(args, "rccl", None)
         self.local_mil = getattr(args, "local_mil", None)
+        self.local_mil_version = getattr(args, "local_mil_version", 2)
+        if self.local_mil is not None and self.local_mil_version not in (1, 2):
+            raise ValueError("unsupported local MIL checkpoint version")
         if self.attention_context and self.pooling != "bounded_attention":
             raise ValueError("context attention requires bounded attention")
         if self.attention_local and not self.attention_context:
@@ -581,12 +584,19 @@ class LOSVERDetector(nn.Module):
             with torch.random.fork_rng(devices=[]):
                 self.rccl_projection = nn.Linear(config.hidden_size, 32, bias=False)
         if self.local_mil is not None:
-            # Both controls get exactly the same head without advancing the
-            # encoder/classifier or sampler RNG. The scalar learns first; once
-            # nonzero it passes classification gradients into the local head.
+            # Preserve the original parameters and sampler RNG. New training
+            # uses a zero head and a direct additive residual: its gradient is
+            # nonzero on the first step, while initial predictions stay exact.
             with torch.random.fork_rng(devices=[]):
                 self.local_classifier = nn.Linear(config.hidden_size, 2)
-            self.local_fusion = nn.Parameter(torch.zeros(()))
+            if self.local_mil_version == 1:
+                # Read historical checkpoints; this protocol is not a new CLI option.
+                self.local_fusion = nn.Parameter(torch.zeros(()))
+            else:
+                nn.init.zeros_(self.local_classifier.weight)
+                nn.init.zeros_(self.local_classifier.bias)
+                # A constant for shared diagnostics, not a trainable coefficient.
+                self.register_buffer("local_fusion", torch.ones(()), persistent=False)
         self.line_auxiliary_weight = getattr(args, "line_auxiliary_weight", None)
         if self.line_auxiliary_weight is not None:
             if not math.isfinite(self.line_auxiliary_weight) or self.line_auxiliary_weight < 0:
@@ -959,7 +969,9 @@ class LOSVERDetector(nn.Module):
             )
         logits = self.classifier(pooled)
         if self.local_mil is not None:
-            residual = self.local_fusion * attention_details["local_logit"]
+            residual = attention_details["local_logit"]
+            if self.local_mil_version == 1:
+                residual = self.local_fusion * residual
             attention_details.update(global_logits=logits[:, 0], local_residual=residual,
                                      local_fusion=self.local_fusion)
             logits = logits + residual[:, None]
@@ -1040,6 +1052,7 @@ def losver_model(
     insertion_supervision=None,
     rccl=None,
     local_mil=None,
+    local_mil_version=2,
     attention_region=None,
     attention_suppression=None,
 ):
@@ -1075,6 +1088,7 @@ def losver_model(
         insertion_supervision=insertion_supervision,
         rccl=rccl,
         local_mil=local_mil,
+        local_mil_version=local_mil_version,
         attention_region=attention_region,
         attention_suppression=attention_suppression,
     )

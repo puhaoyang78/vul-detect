@@ -1381,6 +1381,7 @@ def train_losver(
                 or completed.get("insertion_localization",{}).get("supervision")!=insertion_supervision
                 or completed.get("rccl",{}).get("mode")!=rccl
                 or completed.get("local_mil",{}).get("pooling")!=local_mil
+                or (local_mil is not None and completed.get("local_mil",{}).get("version",1)!=2)
                 or bool(completed.get("input_marginalization"))!=marginalize_inputs
                 or completed["training_config"]["seed"]!=settings["seed"]
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
@@ -1735,16 +1736,17 @@ def train_losver(
         )
     if local_mil is not None:
         metadata["local_mil"] = dict(
+            version=2,
             pooling=local_mil, temperature=1., classes=["safe", "vulnerable"],
             head="Linear(hidden_size,2), with bias; shared physical-line means",
             reduction="equal valid-line mean" if local_mil == "mean" else "logsumexp(valid-line scores)-log(valid-line count)",
-            logit="global_logit + local_fusion * (local_class[1]-local_class[0])",
-            initialization="random local classifier in CPU fork_rng; scalar local_fusion=0; original RNG unchanged",
-            parameters_added=2*model.classifier.in_features+3, extra_encodings=0,
+            logit="global_logit + local_class[1] - local_class[0]",
+            initialization="zero local classifier weight/bias in CPU fork_rng; direct additive residual; original RNG unchanged",
+            parameters_added=2*model.classifier.in_features+2, extra_encodings=0,
             supervision="original function BCE + 0.1 original Diff region loss only",
             inference="single source; no Diff, patched version, reference library or extra encoding",
         )
-        metadata["classifier_head"] += "; scalar-zero residual of independent two-class local MIL"
+        metadata["classifier_head"] += "; zero-head additive residual of independent two-class local MIL"
     if rccl is not None:
         from .data import rccl_coverage
         metadata["rccl"] = dict(
@@ -1937,6 +1939,9 @@ def train_losver(
                             insertion_coefficient if key=="insertion_loss" else
                             rccl_coefficient if key=="rccl_loss" else coefficient
                         )
+            log_local_gradient = local_mil is not None and (global_step == 0 or (global_step + 1) % 100 == 0)
+            if log_local_gradient:
+                local_gradient_l1 = float(model.local_classifier.weight.grad.detach().abs().sum())
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), settings["gradient_clip"], error_if_nonfinite=True
             )
@@ -1969,6 +1974,7 @@ def train_losver(
                 if local_mil is not None:
                     item["local_mil"] = dict(
                         fusion=float(model.local_fusion.detach()),
+                        head_gradient_l1=local_gradient_l1,
                         head_weight_norm=float(model.local_classifier.weight.detach().norm()),
                         safe_score_mean=float(parts["local_class_scores"][:, 0].detach().mean()),
                         vulnerable_score_mean=float(parts["local_class_scores"][:, 1].detach().mean()),

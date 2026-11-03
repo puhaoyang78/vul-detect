@@ -1,0 +1,4076 @@
+{
+  "cases": [
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:0",
+      "sample_key": "primevul_paired:valid:1",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9994077682495117,
+      "modified_lines": []
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:0",
+      "sample_key": "primevul_paired:valid:2",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 2.6495379188418156e-06,
+      "modified_lines": [
+        6,
+        7
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:2",
+      "sample_key": "primevul_paired:valid:5",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9987718462944031,
+      "modified_lines": [
+        1
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:2",
+      "sample_key": "primevul_paired:valid:6",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 0.9938852190971375,
+      "modified_lines": [
+        1
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:3",
+      "sample_key": "primevul_paired:valid:7",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.05187111720442772,
+      "modified_lines": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:3",
+      "sample_key": "primevul_paired:valid:8",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 9.058374189629959e-11,
+      "modified_lines": [
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:4",
+      "sample_key": "primevul_paired:valid:9",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.7845815420150757,
+      "modified_lines": [
+        9,
+        11,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:4",
+      "sample_key": "primevul_paired:valid:10",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 5.319997220532002e-11,
+      "modified_lines": [
+        10,
+        11,
+        12,
+        13,
+        15
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:8",
+      "sample_key": "primevul_paired:valid:17",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9999120235443115,
+      "modified_lines": [
+        13
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:8",
+      "sample_key": "primevul_paired:valid:18",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 2.7761123261305087e-11,
+      "modified_lines": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        19
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:11",
+      "sample_key": "primevul_paired:valid:23",
+      "project": "hhvm",
+      "target": 1,
+      "probability": 0.5295730829238892,
+      "modified_lines": [
+        588,
+        590
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:11",
+      "sample_key": "primevul_paired:valid:24",
+      "project": "hhvm",
+      "target": 0,
+      "probability": 0.5295730829238892,
+      "modified_lines": [
+        588,
+        590
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:14",
+      "sample_key": "primevul_paired:valid:29",
+      "project": "keepkey-firmware",
+      "target": 1,
+      "probability": 0.3685670793056488,
+      "modified_lines": [
+        6,
+        9
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:14",
+      "sample_key": "primevul_paired:valid:30",
+      "project": "keepkey-firmware",
+      "target": 0,
+      "probability": 5.628073631669395e-05,
+      "modified_lines": [
+        6,
+        9
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:16",
+      "sample_key": "primevul_paired:valid:33",
+      "project": "mruby",
+      "target": 1,
+      "probability": 0.2340065836906433,
+      "modified_lines": [
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:16",
+      "sample_key": "primevul_paired:valid:34",
+      "project": "mruby",
+      "target": 0,
+      "probability": 0.006409170106053352,
+      "modified_lines": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:18",
+      "sample_key": "primevul_paired:valid:37",
+      "project": "tensorflow",
+      "target": 1,
+      "probability": 0.01464082021266222,
+      "modified_lines": []
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:18",
+      "sample_key": "primevul_paired:valid:38",
+      "project": "tensorflow",
+      "target": 0,
+      "probability": 0.884951651096344,
+      "modified_lines": [
+        22,
+        23
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:80",
+      "sample_key": "primevul_paired:valid:161",
+      "project": "rsync",
+      "target": 1,
+      "probability": 0.5299462080001831,
+      "modified_lines": [
+        4,
+        29,
+        97,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:80",
+      "sample_key": "primevul_paired:valid:162",
+      "project": "rsync",
+      "target": 0,
+      "probability": 0.529144823551178,
+      "modified_lines": [
+        4,
+        29,
+        97,
+        99,
+        100,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        109,
+        110,
+        111,
+        115
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:157",
+      "sample_key": "primevul_paired:valid:315",
+      "project": "tensorflow",
+      "target": 1,
+      "probability": 0.9972048401832581,
+      "modified_lines": []
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:157",
+      "sample_key": "primevul_paired:valid:316",
+      "project": "tensorflow",
+      "target": 0,
+      "probability": 6.505775672849268e-05,
+      "modified_lines": [
+        13,
+        14
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:196",
+      "sample_key": "primevul_paired:valid:393",
+      "project": "php-src",
+      "target": 1,
+      "probability": 0.9978964328765869,
+      "modified_lines": [
+        14
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:196",
+      "sample_key": "primevul_paired:valid:394",
+      "project": "php-src",
+      "target": 0,
+      "probability": 7.019357781246072e-06,
+      "modified_lines": [
+        11
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:215",
+      "sample_key": "primevul_paired:valid:431",
+      "project": "rpm",
+      "target": 1,
+      "probability": 0.952032744884491,
+      "modified_lines": [
+        6,
+        8,
+        9
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:215",
+      "sample_key": "primevul_paired:valid:432",
+      "project": "rpm",
+      "target": 0,
+      "probability": 0.35100239515304565,
+      "modified_lines": [
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:250",
+      "sample_key": "primevul_paired:valid:501",
+      "project": "qemu",
+      "target": 1,
+      "probability": 0.9649363160133362,
+      "modified_lines": [
+        49
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:250",
+      "sample_key": "primevul_paired:valid:502",
+      "project": "qemu",
+      "target": 0,
+      "probability": 0.34575724601745605,
+      "modified_lines": [
+        5,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        57
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:301",
+      "sample_key": "primevul_paired:valid:603",
+      "project": "sqlite",
+      "target": 1,
+      "probability": 0.00398911302909255,
+      "modified_lines": [
+        19
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:301",
+      "sample_key": "primevul_paired:valid:604",
+      "project": "sqlite",
+      "target": 0,
+      "probability": 0.0003285454004071653,
+      "modified_lines": [
+        19,
+        124,
+        125,
+        126,
+        127
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:508",
+      "sample_key": "primevul_paired:valid:1017",
+      "project": "php-src",
+      "target": 1,
+      "probability": 0.46942925453186035,
+      "modified_lines": [
+        89
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "baseline",
+      "pair_key": "primevul_paired:valid:508",
+      "sample_key": "primevul_paired:valid:1018",
+      "project": "php-src",
+      "target": 0,
+      "probability": 0.3584349453449249,
+      "modified_lines": [
+        6,
+        61,
+        78,
+        92
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:0",
+      "sample_key": "primevul_paired:valid:1",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.8794062733650208,
+      "modified_lines": [],
+      "global_logit": 2.7746529579162598,
+      "local_logit": -0.7878336906433105,
+      "local_residual": -0.7878336906433105,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.3939168453216553,
+        -0.3939168453216553
+      ],
+      "safe_top3": [
+        {
+          "line": 3,
+          "score": 1.3512731790542603,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 1.3335765600204468,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 1.2736432552337646,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 10,
+          "score": 0.2814423441886902,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.04897935688495636,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": -0.012571830302476883,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:0",
+      "sample_key": "primevul_paired:valid:2",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 0.9688087701797485,
+      "modified_lines": [
+        6,
+        7
+      ],
+      "global_logit": 3.7624378204345703,
+      "local_logit": -0.3265083432197571,
+      "local_residual": -0.3265083432197571,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.16325417160987854,
+        -0.16325417160987854
+      ],
+      "safe_top3": [
+        {
+          "line": 5,
+          "score": 0.6670972108840942,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.4781494736671448,
+          "modified": true
+        },
+        {
+          "line": 2,
+          "score": 0.3318651616573334,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 12,
+          "score": 0.1674661487340927,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 0.050277162343263626,
+          "modified": false
+        },
+        {
+          "line": 14,
+          "score": -0.03845677524805069,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:2",
+      "sample_key": "primevul_paired:valid:5",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9996392726898193,
+      "modified_lines": [
+        1
+      ],
+      "global_logit": 8.581974983215332,
+      "local_logit": -0.6547965407371521,
+      "local_residual": -0.6547965407371521,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.32739827036857605,
+        -0.32739827036857605
+      ],
+      "safe_top3": [
+        {
+          "line": 3,
+          "score": 1.4167513847351074,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": 1.3640222549438477,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 1.1439523696899414,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 50,
+          "score": -0.19205829501152039,
+          "modified": false
+        },
+        {
+          "line": 48,
+          "score": -0.19428223371505737,
+          "modified": false
+        },
+        {
+          "line": 27,
+          "score": -0.1977260410785675,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:2",
+      "sample_key": "primevul_paired:valid:6",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 0.9996732473373413,
+      "modified_lines": [
+        1
+      ],
+      "global_logit": 8.688070297241211,
+      "local_logit": -0.6622159481048584,
+      "local_residual": -0.6622159481048584,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.3311079740524292,
+        -0.3311079740524292
+      ],
+      "safe_top3": [
+        {
+          "line": 3,
+          "score": 1.409093976020813,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": 1.3503029346466064,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 1.1638036966323853,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 48,
+          "score": -0.19478848576545715,
+          "modified": false
+        },
+        {
+          "line": 50,
+          "score": -0.19490818679332733,
+          "modified": false
+        },
+        {
+          "line": 41,
+          "score": -0.19820652902126312,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:3",
+      "sample_key": "primevul_paired:valid:7",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9999150037765503,
+      "modified_lines": [
+        7,
+        8,
+        9,
+        10
+      ],
+      "global_logit": 10.4966402053833,
+      "local_logit": -1.123337745666504,
+      "local_residual": -1.123337745666504,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.561668872833252,
+        -0.561668872833252
+      ],
+      "safe_top3": [
+        {
+          "line": 11,
+          "score": 1.269382119178772,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 1.2679336071014404,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 1.0197973251342773,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 10,
+          "score": -0.1221175342798233,
+          "modified": true
+        },
+        {
+          "line": 16,
+          "score": -0.22184805572032928,
+          "modified": false
+        },
+        {
+          "line": 15,
+          "score": -0.22405850887298584,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:3",
+      "sample_key": "primevul_paired:valid:8",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 5.714791972977196e-10,
+      "modified_lines": [
+        7,
+        8,
+        9
+      ],
+      "global_logit": -22.287752151489258,
+      "local_logit": 1.0049582719802856,
+      "local_residual": 1.0049582719802856,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.5024791359901428,
+        0.5024791359901428
+      ],
+      "safe_top3": [
+        {
+          "line": 11,
+          "score": 0.1824941784143448,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 0.16305793821811676,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.1500691920518875,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 8,
+          "score": 1.8582377433776855,
+          "modified": true
+        },
+        {
+          "line": 3,
+          "score": 1.8565114736557007,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 1.85439932346344,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:4",
+      "sample_key": "primevul_paired:valid:9",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9996589422225952,
+      "modified_lines": [
+        9,
+        11,
+        13,
+        14,
+        15
+      ],
+      "global_logit": 8.614374160766602,
+      "local_logit": -0.6314016580581665,
+      "local_residual": -0.6314016580581665,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.31570082902908325,
+        -0.31570082902908325
+      ],
+      "safe_top3": [
+        {
+          "line": 10,
+          "score": 1.1904171705245972,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.8790833353996277,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 0.775680422782898,
+          "modified": true
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 14,
+          "score": 0.5458738803863525,
+          "modified": true
+        },
+        {
+          "line": 13,
+          "score": 0.10084515810012817,
+          "modified": true
+        },
+        {
+          "line": 15,
+          "score": 0.001461018924601376,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:4",
+      "sample_key": "primevul_paired:valid:10",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 3.8624339837589616e-11,
+      "modified_lines": [
+        10,
+        11,
+        12,
+        13,
+        15
+      ],
+      "global_logit": -25.00351905822754,
+      "local_logit": 1.0263807773590088,
+      "local_residual": 1.0263807773590088,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.5131903886795044,
+        0.5131903886795044
+      ],
+      "safe_top3": [
+        {
+          "line": 7,
+          "score": 0.23939166963100433,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.17400453984737396,
+          "modified": false
+        },
+        {
+          "line": 18,
+          "score": 0.1400946080684662,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 12,
+          "score": 1.8010003566741943,
+          "modified": true
+        },
+        {
+          "line": 10,
+          "score": 1.8004852533340454,
+          "modified": true
+        },
+        {
+          "line": 11,
+          "score": 1.7968049049377441,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:8",
+      "sample_key": "primevul_paired:valid:17",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.0009957719594240189,
+      "modified_lines": [
+        13
+      ],
+      "global_logit": -6.001392364501953,
+      "local_logit": -0.909603476524353,
+      "local_residual": -0.909603476524353,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.4548017382621765,
+        -0.4548017382621765
+      ],
+      "safe_top3": [
+        {
+          "line": 14,
+          "score": 1.2650808095932007,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 1.1947393417358398,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 1.1861616373062134,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 1.1223503351211548,
+          "modified": true
+        },
+        {
+          "line": 4,
+          "score": -0.27651605010032654,
+          "modified": false
+        },
+        {
+          "line": 1,
+          "score": -0.29218560457229614,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:8",
+      "sample_key": "primevul_paired:valid:18",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 6.580065659012035e-11,
+      "modified_lines": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        19
+      ],
+      "global_logit": -24.4539737701416,
+      "local_logit": 1.0095831155776978,
+      "local_residual": 1.0095831155776978,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.5047915577888489,
+        0.5047915577888489
+      ],
+      "safe_top3": [
+        {
+          "line": 10,
+          "score": 0.14670707285404205,
+          "modified": false
+        },
+        {
+          "line": 22,
+          "score": 0.13940469920635223,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.134251669049263,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 1.8314212560653687,
+          "modified": true
+        },
+        {
+          "line": 15,
+          "score": 1.8294029235839844,
+          "modified": true
+        },
+        {
+          "line": 14,
+          "score": 1.8285142183303833,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:11",
+      "sample_key": "primevul_paired:valid:23",
+      "project": "hhvm",
+      "target": 1,
+      "probability": 0.5024434328079224,
+      "modified_lines": [
+        588,
+        590
+      ],
+      "global_logit": 0.0035214517265558243,
+      "local_logit": 0.006252333987504244,
+      "local_residual": 0.006252333987504244,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.003126166993752122,
+        0.003126166993752122
+      ],
+      "safe_top3": [
+        {
+          "line": 37,
+          "score": 0.050993211567401886,
+          "modified": false
+        },
+        {
+          "line": 40,
+          "score": 0.034559208899736404,
+          "modified": false
+        },
+        {
+          "line": 26,
+          "score": 0.0338393859565258,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 0.06688375025987625,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.06313946843147278,
+          "modified": false
+        },
+        {
+          "line": 34,
+          "score": 0.04661069065332413,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:11",
+      "sample_key": "primevul_paired:valid:24",
+      "project": "hhvm",
+      "target": 0,
+      "probability": 0.5024434328079224,
+      "modified_lines": [
+        588,
+        590
+      ],
+      "global_logit": 0.0035214517265558243,
+      "local_logit": 0.006252333987504244,
+      "local_residual": 0.006252333987504244,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.003126166993752122,
+        0.003126166993752122
+      ],
+      "safe_top3": [
+        {
+          "line": 37,
+          "score": 0.050993211567401886,
+          "modified": false
+        },
+        {
+          "line": 40,
+          "score": 0.034559208899736404,
+          "modified": false
+        },
+        {
+          "line": 26,
+          "score": 0.0338393859565258,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 0.06688375025987625,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.06313946843147278,
+          "modified": false
+        },
+        {
+          "line": 34,
+          "score": 0.04661069065332413,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:14",
+      "sample_key": "primevul_paired:valid:29",
+      "project": "keepkey-firmware",
+      "target": 1,
+      "probability": 3.996390660176985e-05,
+      "modified_lines": [
+        6,
+        9
+      ],
+      "global_logit": -9.942191123962402,
+      "local_logit": -0.18530228734016418,
+      "local_residual": -0.18530228734016418,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.09265114367008209,
+        -0.09265114367008209
+      ],
+      "safe_top3": [
+        {
+          "line": 2,
+          "score": 0.8070377111434937,
+          "modified": false
+        },
+        {
+          "line": 3,
+          "score": 0.765468418598175,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.647881269454956,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 8,
+          "score": 1.5802217721939087,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": 1.4880930185317993,
+          "modified": true
+        },
+        {
+          "line": 11,
+          "score": 0.032546836882829666,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:14",
+      "sample_key": "primevul_paired:valid:30",
+      "project": "keepkey-firmware",
+      "target": 0,
+      "probability": 0.00012413572403602302,
+      "modified_lines": [
+        6,
+        9
+      ],
+      "global_logit": -8.865809440612793,
+      "local_logit": -0.12820139527320862,
+      "local_residual": -0.12820139527320862,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.06410069763660431,
+        -0.06410069763660431
+      ],
+      "safe_top3": [
+        {
+          "line": 2,
+          "score": 0.7424536347389221,
+          "modified": false
+        },
+        {
+          "line": 3,
+          "score": 0.6507922410964966,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.5780740976333618,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 8,
+          "score": 1.692575216293335,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.910688579082489,
+          "modified": true
+        },
+        {
+          "line": 9,
+          "score": 0.5036798119544983,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:16",
+      "sample_key": "primevul_paired:valid:33",
+      "project": "mruby",
+      "target": 1,
+      "probability": 0.5543515086174011,
+      "modified_lines": [
+        9,
+        10,
+        11
+      ],
+      "global_logit": 0.6036935448646545,
+      "local_logit": -0.3854251503944397,
+      "local_residual": -0.3854251503944397,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.19271257519721985,
+        -0.19271257519721985
+      ],
+      "safe_top3": [
+        {
+          "line": 13,
+          "score": 0.5189289450645447,
+          "modified": false
+        },
+        {
+          "line": 8,
+          "score": 0.3860970735549927,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.33556878566741943,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 10,
+          "score": 0.24213245511054993,
+          "modified": true
+        },
+        {
+          "line": 6,
+          "score": -0.12341693043708801,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": -0.13062581419944763,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:16",
+      "sample_key": "primevul_paired:valid:34",
+      "project": "mruby",
+      "target": 0,
+      "probability": 5.7130200730171055e-05,
+      "modified_lines": [
+        6,
+        7,
+        8
+      ],
+      "global_logit": -9.737391471862793,
+      "local_logit": -0.032728832215070724,
+      "local_residual": -0.032728832215070724,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.016364416107535362,
+        -0.016364416107535362
+      ],
+      "safe_top3": [
+        {
+          "line": 13,
+          "score": 0.409106582403183,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.34509679675102234,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 0.2903210520744324,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 1.3852967023849487,
+          "modified": true
+        },
+        {
+          "line": 6,
+          "score": 0.4429524838924408,
+          "modified": true
+        },
+        {
+          "line": 4,
+          "score": 0.20565281808376312,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:18",
+      "sample_key": "primevul_paired:valid:37",
+      "project": "tensorflow",
+      "target": 1,
+      "probability": 0.9057679772377014,
+      "modified_lines": [],
+      "global_logit": 2.510016918182373,
+      "local_logit": -0.24699321389198303,
+      "local_residual": -0.24699321389198303,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.12349660694599152,
+        -0.12349660694599152
+      ],
+      "safe_top3": [
+        {
+          "line": 9,
+          "score": 0.6729701161384583,
+          "modified": false
+        },
+        {
+          "line": 8,
+          "score": 0.5361859202384949,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.2939318120479584,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 38,
+          "score": 0.2387644499540329,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 0.042527034878730774,
+          "modified": false
+        },
+        {
+          "line": 35,
+          "score": 0.0294924508780241,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:18",
+      "sample_key": "primevul_paired:valid:38",
+      "project": "tensorflow",
+      "target": 0,
+      "probability": 0.6313869953155518,
+      "modified_lines": [
+        22,
+        23
+      ],
+      "global_logit": 0.6872507333755493,
+      "local_logit": -0.14907903969287872,
+      "local_residual": -0.14907903969287872,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.07453951984643936,
+        -0.07453951984643936
+      ],
+      "safe_top3": [
+        {
+          "line": 9,
+          "score": 0.49475163221359253,
+          "modified": false
+        },
+        {
+          "line": 8,
+          "score": 0.22822478413581848,
+          "modified": false
+        },
+        {
+          "line": 25,
+          "score": 0.21656112372875214,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 33,
+          "score": 0.2581370770931244,
+          "modified": false
+        },
+        {
+          "line": 35,
+          "score": 0.09186700731515884,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 0.035291433334350586,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:80",
+      "sample_key": "primevul_paired:valid:161",
+      "project": "rsync",
+      "target": 1,
+      "probability": 0.49363335967063904,
+      "modified_lines": [
+        4,
+        29,
+        97,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114
+      ],
+      "global_logit": 6.718374788761139e-05,
+      "local_logit": -0.02553502470254898,
+      "local_residual": -0.02553502470254898,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.01276751235127449,
+        -0.01276751235127449
+      ],
+      "safe_top3": [
+        {
+          "line": 21,
+          "score": 0.09441480785608292,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": 0.06957608461380005,
+          "modified": false
+        },
+        {
+          "line": 24,
+          "score": 0.06246820464730263,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 19,
+          "score": 0.12432819604873657,
+          "modified": false
+        },
+        {
+          "line": 39,
+          "score": 0.03267942741513252,
+          "modified": false
+        },
+        {
+          "line": 40,
+          "score": 0.03061814419925213,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:80",
+      "sample_key": "primevul_paired:valid:162",
+      "project": "rsync",
+      "target": 0,
+      "probability": 0.46919527649879456,
+      "modified_lines": [
+        4,
+        29,
+        97,
+        99,
+        100,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        109,
+        110,
+        111,
+        115
+      ],
+      "global_logit": -0.10794251412153244,
+      "local_logit": -0.01543270330876112,
+      "local_residual": -0.01543270330876112,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.00771635165438056,
+        -0.00771635165438056
+      ],
+      "safe_top3": [
+        {
+          "line": 21,
+          "score": 0.1158701553940773,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": 0.07622309029102325,
+          "modified": false
+        },
+        {
+          "line": 31,
+          "score": 0.06685127317905426,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 19,
+          "score": 0.15110494196414948,
+          "modified": false
+        },
+        {
+          "line": 40,
+          "score": 0.04834312945604324,
+          "modified": false
+        },
+        {
+          "line": 48,
+          "score": 0.04656459018588066,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:157",
+      "sample_key": "primevul_paired:valid:315",
+      "project": "tensorflow",
+      "target": 1,
+      "probability": 0.9999997615814209,
+      "modified_lines": [],
+      "global_logit": 17.506364822387695,
+      "local_logit": -2.051811933517456,
+      "local_residual": -2.051811933517456,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        1.025905966758728,
+        -1.025905966758728
+      ],
+      "safe_top3": [
+        {
+          "line": 18,
+          "score": 1.4860743284225464,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 1.469281792640686,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 1.3909021615982056,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 23,
+          "score": -0.32009607553482056,
+          "modified": false
+        },
+        {
+          "line": 0,
+          "score": -0.5046284794807434,
+          "modified": false
+        },
+        {
+          "line": 21,
+          "score": -0.5544155836105347,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:157",
+      "sample_key": "primevul_paired:valid:316",
+      "project": "tensorflow",
+      "target": 0,
+      "probability": 0.15602639317512512,
+      "modified_lines": [
+        13,
+        14
+      ],
+      "global_logit": -0.6653590798377991,
+      "local_logit": -1.02273690700531,
+      "local_residual": -1.02273690700531,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.511368453502655,
+        -0.511368453502655
+      ],
+      "safe_top3": [
+        {
+          "line": 21,
+          "score": 1.3215230703353882,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 1.1825224161148071,
+          "modified": false
+        },
+        {
+          "line": 20,
+          "score": 1.1253819465637207,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 14,
+          "score": 1.7718321084976196,
+          "modified": true
+        },
+        {
+          "line": 13,
+          "score": 1.325697898864746,
+          "modified": true
+        },
+        {
+          "line": 11,
+          "score": 0.11727971583604813,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:196",
+      "sample_key": "primevul_paired:valid:393",
+      "project": "php-src",
+      "target": 1,
+      "probability": 0.9999861717224121,
+      "modified_lines": [
+        14
+      ],
+      "global_logit": 12.29517650604248,
+      "local_logit": -1.102686882019043,
+      "local_residual": -1.102686882019043,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.5513434410095215,
+        -0.5513434410095215
+      ],
+      "safe_top3": [
+        {
+          "line": 10,
+          "score": 1.092879056930542,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": 1.0718728303909302,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.94801265001297,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 15,
+          "score": -0.18006156384944916,
+          "modified": false
+        },
+        {
+          "line": 1,
+          "score": -0.234646275639534,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": -0.2597288191318512,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:196",
+      "sample_key": "primevul_paired:valid:394",
+      "project": "php-src",
+      "target": 0,
+      "probability": 0.7479703426361084,
+      "modified_lines": [
+        11
+      ],
+      "global_logit": 1.4175623655319214,
+      "local_logit": -0.32974573969841003,
+      "local_residual": -0.32974573969841003,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.16487286984920502,
+        -0.16487286984920502
+      ],
+      "safe_top3": [
+        {
+          "line": 10,
+          "score": 0.8737329840660095,
+          "modified": false
+        },
+        {
+          "line": 8,
+          "score": 0.5771158933639526,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": 0.501128077507019,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 1.3527237176895142,
+          "modified": false
+        },
+        {
+          "line": 14,
+          "score": 0.5683997869491577,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.1586580127477646,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:215",
+      "sample_key": "primevul_paired:valid:431",
+      "project": "rpm",
+      "target": 1,
+      "probability": 0.9535223245620728,
+      "modified_lines": [
+        6,
+        8,
+        9
+      ],
+      "global_logit": 3.6022863388061523,
+      "local_logit": -0.5810943841934204,
+      "local_residual": -0.5810943841934204,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.2905471920967102,
+        -0.2905471920967102
+      ],
+      "safe_top3": [
+        {
+          "line": 12,
+          "score": 1.3174729347229004,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 1.0835734605789185,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 1.003838062286377,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 17,
+          "score": 0.710145890712738,
+          "modified": false
+        },
+        {
+          "line": 20,
+          "score": 0.047665420919656754,
+          "modified": false
+        },
+        {
+          "line": 28,
+          "score": -0.058987993746995926,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:215",
+      "sample_key": "primevul_paired:valid:432",
+      "project": "rpm",
+      "target": 0,
+      "probability": 0.9952365756034851,
+      "modified_lines": [
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        14,
+        15
+      ],
+      "global_logit": 5.9706339836120605,
+      "local_logit": -0.6286322474479675,
+      "local_residual": -0.6286322474479675,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.31431612372398376,
+        -0.31431612372398376
+      ],
+      "safe_top3": [
+        {
+          "line": 19,
+          "score": 1.3379173278808594,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 1.2646838426589966,
+          "modified": true
+        },
+        {
+          "line": 12,
+          "score": 1.1008797883987427,
+          "modified": true
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 6,
+          "score": 0.42676544189453125,
+          "modified": true
+        },
+        {
+          "line": 8,
+          "score": 0.0915929302573204,
+          "modified": true
+        },
+        {
+          "line": 24,
+          "score": 0.07075311988592148,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:250",
+      "sample_key": "primevul_paired:valid:501",
+      "project": "qemu",
+      "target": 1,
+      "probability": 0.9328225255012512,
+      "modified_lines": [
+        49
+      ],
+      "global_logit": 2.9529712200164795,
+      "local_logit": -0.3220948874950409,
+      "local_residual": -0.3220948874950409,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.16104744374752045,
+        -0.16104744374752045
+      ],
+      "safe_top3": [
+        {
+          "line": 46,
+          "score": 0.7531638145446777,
+          "modified": false
+        },
+        {
+          "line": 43,
+          "score": 0.7238555550575256,
+          "modified": false
+        },
+        {
+          "line": 41,
+          "score": 0.6737536191940308,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 4,
+          "score": 0.02764233760535717,
+          "modified": false
+        },
+        {
+          "line": 15,
+          "score": -0.017616288736462593,
+          "modified": false
+        },
+        {
+          "line": 20,
+          "score": -0.04001109302043915,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:250",
+      "sample_key": "primevul_paired:valid:502",
+      "project": "qemu",
+      "target": 0,
+      "probability": 0.4913426637649536,
+      "modified_lines": [
+        5,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        57
+      ],
+      "global_logit": 0.20752567052841187,
+      "local_logit": -0.242158442735672,
+      "local_residual": -0.242158442735672,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.121079221367836,
+        -0.121079221367836
+      ],
+      "safe_top3": [
+        {
+          "line": 51,
+          "score": 1.1646099090576172,
+          "modified": false
+        },
+        {
+          "line": 43,
+          "score": 0.9457869529724121,
+          "modified": false
+        },
+        {
+          "line": 41,
+          "score": 0.6083434224128723,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 37,
+          "score": 1.0491514205932617,
+          "modified": true
+        },
+        {
+          "line": 36,
+          "score": 0.24455565214157104,
+          "modified": true
+        },
+        {
+          "line": 35,
+          "score": 0.1310102641582489,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:301",
+      "sample_key": "primevul_paired:valid:603",
+      "project": "sqlite",
+      "target": 1,
+      "probability": 0.4975428283214569,
+      "modified_lines": [
+        19
+      ],
+      "global_logit": 0.024744505062699318,
+      "local_logit": -0.03457332402467728,
+      "local_residual": -0.03457332402467728,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.01728666201233864,
+        -0.01728666201233864
+      ],
+      "safe_top3": [
+        {
+          "line": 17,
+          "score": 0.1534866988658905,
+          "modified": false
+        },
+        {
+          "line": 22,
+          "score": 0.04729204624891281,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 0.04623473435640335,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 38,
+          "score": 0.09873291105031967,
+          "modified": false
+        },
+        {
+          "line": 39,
+          "score": 0.07484086602926254,
+          "modified": false
+        },
+        {
+          "line": 34,
+          "score": 0.048222243785858154,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:301",
+      "sample_key": "primevul_paired:valid:604",
+      "project": "sqlite",
+      "target": 0,
+      "probability": 0.19700998067855835,
+      "modified_lines": [
+        19,
+        124,
+        125,
+        126,
+        127
+      ],
+      "global_logit": -1.4202396869659424,
+      "local_logit": 0.015151883475482464,
+      "local_residual": 0.015151883475482464,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.007575941737741232,
+        0.007575941737741232
+      ],
+      "safe_top3": [
+        {
+          "line": 17,
+          "score": 0.12577283382415771,
+          "modified": false
+        },
+        {
+          "line": 29,
+          "score": 0.04597710818052292,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 0.04495943337678909,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 38,
+          "score": 0.8990995287895203,
+          "modified": false
+        },
+        {
+          "line": 37,
+          "score": 0.1484278440475464,
+          "modified": false
+        },
+        {
+          "line": 35,
+          "score": 0.06923840194940567,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:508",
+      "sample_key": "primevul_paired:valid:1017",
+      "project": "php-src",
+      "target": 1,
+      "probability": 0.5016894340515137,
+      "modified_lines": [
+        89
+      ],
+      "global_logit": -0.008838167414069176,
+      "local_logit": 0.01559593714773655,
+      "local_residual": 0.01559593714773655,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.007797968573868275,
+        0.007797968573868275
+      ],
+      "safe_top3": [
+        {
+          "line": 16,
+          "score": 0.043412946164608,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": 0.022242847830057144,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.014030026271939278,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 29,
+          "score": 0.05579585209488869,
+          "modified": false
+        },
+        {
+          "line": 28,
+          "score": 0.04520422965288162,
+          "modified": false
+        },
+        {
+          "line": 30,
+          "score": 0.042142074555158615,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "mean",
+      "pair_key": "primevul_paired:valid:508",
+      "sample_key": "primevul_paired:valid:1018",
+      "project": "php-src",
+      "target": 0,
+      "probability": 0.4460102915763855,
+      "modified_lines": [
+        6,
+        61,
+        78,
+        92
+      ],
+      "global_logit": -0.250775009393692,
+      "local_logit": 0.03397085890173912,
+      "local_residual": 0.03397085890173912,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.01698542945086956,
+        0.01698542945086956
+      ],
+      "safe_top3": [
+        {
+          "line": 17,
+          "score": 0.0482938289642334,
+          "modified": false
+        },
+        {
+          "line": 24,
+          "score": 0.02452641725540161,
+          "modified": false
+        },
+        {
+          "line": 15,
+          "score": 0.016389839351177216,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 30,
+          "score": 0.22879654169082642,
+          "modified": false
+        },
+        {
+          "line": 31,
+          "score": 0.1252533346414566,
+          "modified": false
+        },
+        {
+          "line": 29,
+          "score": 0.06756214797496796,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:0",
+      "sample_key": "primevul_paired:valid:1",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9964481592178345,
+      "modified_lines": [],
+      "global_logit": 6.6301703453063965,
+      "local_logit": -0.9934296607971191,
+      "local_residual": -0.9934296607971191,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.6511335372924805,
+        -0.34229612350463867
+      ],
+      "safe_top3": [
+        {
+          "line": 5,
+          "score": 1.181477665901184,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 1.1409534215927124,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 1.1373841762542725,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 15,
+          "score": -0.06451865285634995,
+          "modified": false
+        },
+        {
+          "line": 14,
+          "score": -0.06796062737703323,
+          "modified": false
+        },
+        {
+          "line": 1,
+          "score": -0.10082046687602997,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:0",
+      "sample_key": "primevul_paired:valid:2",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 0.00020255253184586763,
+      "modified_lines": [
+        6,
+        7
+      ],
+      "global_logit": -8.658418655395508,
+      "local_logit": 0.15410971641540527,
+      "local_residual": 0.15410971641540527,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.03246307373046875,
+        0.12164664268493652
+      ],
+      "safe_top3": [
+        {
+          "line": 18,
+          "score": 0.23037970066070557,
+          "modified": false
+        },
+        {
+          "line": 19,
+          "score": 0.2207959145307541,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 0.17328768968582153,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 0.9294987320899963,
+          "modified": true
+        },
+        {
+          "line": 6,
+          "score": 0.7378364205360413,
+          "modified": true
+        },
+        {
+          "line": 5,
+          "score": 0.38180941343307495,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:2",
+      "sample_key": "primevul_paired:valid:5",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.9936524629592896,
+      "modified_lines": [
+        1
+      ],
+      "global_logit": 5.480571269989014,
+      "local_logit": -0.42725133895874023,
+      "local_residual": -0.42725133895874023,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.30200672149658203,
+        -0.1252446174621582
+      ],
+      "safe_top3": [
+        {
+          "line": 3,
+          "score": 1.3128035068511963,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": 1.0771232843399048,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.8780478239059448,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 29,
+          "score": -0.054356109350919724,
+          "modified": false
+        },
+        {
+          "line": 39,
+          "score": -0.05446725711226463,
+          "modified": false
+        },
+        {
+          "line": 44,
+          "score": -0.055167194455862045,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:2",
+      "sample_key": "primevul_paired:valid:6",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 0.9901443719863892,
+      "modified_lines": [
+        1
+      ],
+      "global_logit": 4.995382785797119,
+      "local_logit": -0.38558077812194824,
+      "local_residual": -0.38558077812194824,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.2749805450439453,
+        -0.11060023307800293
+      ],
+      "safe_top3": [
+        {
+          "line": 3,
+          "score": 1.2506955862045288,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": 1.060362696647644,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.8284749388694763,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 44,
+          "score": -0.04226704314351082,
+          "modified": false
+        },
+        {
+          "line": 29,
+          "score": -0.04308886080980301,
+          "modified": false
+        },
+        {
+          "line": 57,
+          "score": -0.04473017528653145,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:3",
+      "sample_key": "primevul_paired:valid:7",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.115914486348629,
+      "modified_lines": [
+        7,
+        8,
+        9,
+        10
+      ],
+      "global_logit": -1.373219609260559,
+      "local_logit": -0.6584813594818115,
+      "local_residual": -0.6584813594818115,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.4320559501647949,
+        -0.2264254093170166
+      ],
+      "safe_top3": [
+        {
+          "line": 6,
+          "score": 1.0700079202651978,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 1.0609583854675293,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 0.9064168334007263,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 9,
+          "score": 0.12085416167974472,
+          "modified": true
+        },
+        {
+          "line": 8,
+          "score": 0.0022660670801997185,
+          "modified": true
+        },
+        {
+          "line": 1,
+          "score": -0.07019716501235962,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:3",
+      "sample_key": "primevul_paired:valid:8",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 5.5827925615759e-10,
+      "modified_lines": [
+        7,
+        8,
+        9
+      ],
+      "global_logit": -22.124919891357422,
+      "local_logit": 0.8187577724456787,
+      "local_residual": 0.8187577724456787,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.3129889965057373,
+        0.5057687759399414
+      ],
+      "safe_top3": [
+        {
+          "line": 13,
+          "score": 0.06788329035043716,
+          "modified": false
+        },
+        {
+          "line": 14,
+          "score": 0.04530486464500427,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 0.045261140912771225,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 1.185804009437561,
+          "modified": true
+        },
+        {
+          "line": 9,
+          "score": 1.1841551065444946,
+          "modified": true
+        },
+        {
+          "line": 8,
+          "score": 1.1839085817337036,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:4",
+      "sample_key": "primevul_paired:valid:9",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 0.0007200230611488223,
+      "modified_lines": [
+        9,
+        11,
+        13,
+        14,
+        15
+      ],
+      "global_logit": -7.511585235595703,
+      "local_logit": 0.2760779857635498,
+      "local_residual": 0.2760779857635498,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.04733681678771973,
+        0.22874116897583008
+      ],
+      "safe_top3": [
+        {
+          "line": 16,
+          "score": 0.2726115882396698,
+          "modified": false
+        },
+        {
+          "line": 8,
+          "score": 0.26999756693840027,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 0.25983935594558716,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 14,
+          "score": 1.1151832342147827,
+          "modified": true
+        },
+        {
+          "line": 15,
+          "score": 1.045143485069275,
+          "modified": true
+        },
+        {
+          "line": 13,
+          "score": 0.8552860021591187,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:4",
+      "sample_key": "primevul_paired:valid:10",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 2.7679488909249095e-11,
+      "modified_lines": [
+        10,
+        11,
+        12,
+        13,
+        15
+      ],
+      "global_logit": -25.325382232666016,
+      "local_logit": 1.015052318572998,
+      "local_residual": 1.015052318572998,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.45354700088500977,
+        0.5615053176879883
+      ],
+      "safe_top3": [
+        {
+          "line": 5,
+          "score": 0.05164000391960144,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 0.04940313100814819,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 0.03087281435728073,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 12,
+          "score": 1.117238163948059,
+          "modified": true
+        },
+        {
+          "line": 11,
+          "score": 1.116353988647461,
+          "modified": true
+        },
+        {
+          "line": 10,
+          "score": 1.1162041425704956,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:8",
+      "sample_key": "primevul_paired:valid:17",
+      "project": "Chrome",
+      "target": 1,
+      "probability": 4.827773409488145e-06,
+      "modified_lines": [
+        13
+      ],
+      "global_logit": -11.698957443237305,
+      "local_logit": -0.5421628952026367,
+      "local_residual": -0.5421628952026367,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.426236629486084,
+        -0.11592626571655273
+      ],
+      "safe_top3": [
+        {
+          "line": 11,
+          "score": 0.8432008028030396,
+          "modified": false
+        },
+        {
+          "line": 14,
+          "score": 0.7732772827148438,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 0.7437052130699158,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 0.955458402633667,
+          "modified": true
+        },
+        {
+          "line": 2,
+          "score": -0.11078792065382004,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": -0.1163543313741684,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:8",
+      "sample_key": "primevul_paired:valid:18",
+      "project": "Chrome",
+      "target": 0,
+      "probability": 5.958477461431855e-11,
+      "modified_lines": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        19
+      ],
+      "global_logit": -24.38793182373047,
+      "local_logit": 0.844310998916626,
+      "local_residual": 0.844310998916626,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.3258230686187744,
+        0.5184879302978516
+      ],
+      "safe_top3": [
+        {
+          "line": 6,
+          "score": 0.08334124833345413,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 0.07141721248626709,
+          "modified": false
+        },
+        {
+          "line": 22,
+          "score": 0.06856966018676758,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 1.1502591371536255,
+          "modified": true
+        },
+        {
+          "line": 15,
+          "score": 1.1449271440505981,
+          "modified": true
+        },
+        {
+          "line": 14,
+          "score": 1.143532633781433,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:11",
+      "sample_key": "primevul_paired:valid:23",
+      "project": "hhvm",
+      "target": 1,
+      "probability": 0.4941442012786865,
+      "modified_lines": [
+        588,
+        590
+      ],
+      "global_logit": -0.03499320149421692,
+      "local_logit": 0.011569023132324219,
+      "local_residual": 0.011569023132324219,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.007915019989013672,
+        0.01948404312133789
+      ],
+      "safe_top3": [
+        {
+          "line": 27,
+          "score": 0.06327519565820694,
+          "modified": false
+        },
+        {
+          "line": 26,
+          "score": 0.06078466773033142,
+          "modified": false
+        },
+        {
+          "line": 45,
+          "score": 0.05964038893580437,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 0.05298146978020668,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.05098767206072807,
+          "modified": false
+        },
+        {
+          "line": 50,
+          "score": 0.05018829181790352,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:11",
+      "sample_key": "primevul_paired:valid:24",
+      "project": "hhvm",
+      "target": 0,
+      "probability": 0.4941442012786865,
+      "modified_lines": [
+        588,
+        590
+      ],
+      "global_logit": -0.03499320149421692,
+      "local_logit": 0.011569023132324219,
+      "local_residual": 0.011569023132324219,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.007915019989013672,
+        0.01948404312133789
+      ],
+      "safe_top3": [
+        {
+          "line": 27,
+          "score": 0.06327519565820694,
+          "modified": false
+        },
+        {
+          "line": 26,
+          "score": 0.06078466773033142,
+          "modified": false
+        },
+        {
+          "line": 45,
+          "score": 0.05964038893580437,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 0.05298146978020668,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.05098767206072807,
+          "modified": false
+        },
+        {
+          "line": 50,
+          "score": 0.05018829181790352,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:14",
+      "sample_key": "primevul_paired:valid:29",
+      "project": "keepkey-firmware",
+      "target": 1,
+      "probability": 0.6169437170028687,
+      "modified_lines": [
+        6,
+        9
+      ],
+      "global_logit": 1.2086728811264038,
+      "local_logit": -0.7320771217346191,
+      "local_residual": -0.7320771217346191,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.564403772354126,
+        -0.16767334938049316
+      ],
+      "safe_top3": [
+        {
+          "line": 2,
+          "score": 1.188623309135437,
+          "modified": false
+        },
+        {
+          "line": 3,
+          "score": 1.115290641784668,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 1.0996767282485962,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 9,
+          "score": 0.601890504360199,
+          "modified": true
+        },
+        {
+          "line": 8,
+          "score": 0.4227140247821808,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": -0.048945121467113495,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:14",
+      "sample_key": "primevul_paired:valid:30",
+      "project": "keepkey-firmware",
+      "target": 0,
+      "probability": 0.012191961519420147,
+      "modified_lines": [
+        6,
+        9
+      ],
+      "global_logit": -4.068736553192139,
+      "local_logit": -0.325974702835083,
+      "local_residual": -0.325974702835083,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.31499409675598145,
+        -0.010980606079101562
+      ],
+      "safe_top3": [
+        {
+          "line": 3,
+          "score": 0.9296247959136963,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": 0.8378622531890869,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 0.6907245516777039,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 8,
+          "score": 0.7689852714538574,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": 0.5968661308288574,
+          "modified": true
+        },
+        {
+          "line": 9,
+          "score": 0.17643387615680695,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:16",
+      "sample_key": "primevul_paired:valid:33",
+      "project": "mruby",
+      "target": 1,
+      "probability": 0.721133828163147,
+      "modified_lines": [
+        9,
+        10,
+        11
+      ],
+      "global_logit": 1.4498395919799805,
+      "local_logit": -0.49974679946899414,
+      "local_residual": -0.49974679946899414,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.34116458892822266,
+        -0.15858221054077148
+      ],
+      "safe_top3": [
+        {
+          "line": 8,
+          "score": 0.907638669013977,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 0.7887035012245178,
+          "modified": false
+        },
+        {
+          "line": 7,
+          "score": 0.6547738909721375,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 10,
+          "score": 0.07375992834568024,
+          "modified": true
+        },
+        {
+          "line": 9,
+          "score": 0.019418751820921898,
+          "modified": true
+        },
+        {
+          "line": 1,
+          "score": -0.04673363268375397,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:16",
+      "sample_key": "primevul_paired:valid:34",
+      "project": "mruby",
+      "target": 0,
+      "probability": 0.00021347476285882294,
+      "modified_lines": [
+        6,
+        7,
+        8
+      ],
+      "global_logit": -8.376089096069336,
+      "local_logit": -0.07568883895874023,
+      "local_residual": -0.07568883895874023,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.10062265396118164,
+        0.024933815002441406
+      ],
+      "safe_top3": [
+        {
+          "line": 11,
+          "score": 0.3591790795326233,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 0.3584737181663513,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.35085979104042053,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 7,
+          "score": 0.7677550315856934,
+          "modified": true
+        },
+        {
+          "line": 6,
+          "score": 0.23896069824695587,
+          "modified": true
+        },
+        {
+          "line": 4,
+          "score": 0.22407184541225433,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:18",
+      "sample_key": "primevul_paired:valid:37",
+      "project": "tensorflow",
+      "target": 1,
+      "probability": 0.7373636960983276,
+      "modified_lines": [],
+      "global_logit": 1.1587755680084229,
+      "local_logit": -0.1264643669128418,
+      "local_residual": -0.1264643669128418,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.09134745597839355,
+        -0.03511691093444824
+      ],
+      "safe_top3": [
+        {
+          "line": 5,
+          "score": 0.2967607378959656,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": 0.284618079662323,
+          "modified": false
+        },
+        {
+          "line": 31,
+          "score": 0.26143208146095276,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 38,
+          "score": 0.2821164131164551,
+          "modified": false
+        },
+        {
+          "line": 37,
+          "score": 0.09466353058815002,
+          "modified": false
+        },
+        {
+          "line": 13,
+          "score": 0.0660722553730011,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:18",
+      "sample_key": "primevul_paired:valid:38",
+      "project": "tensorflow",
+      "target": 0,
+      "probability": 0.8720136880874634,
+      "modified_lines": [
+        22,
+        23
+      ],
+      "global_logit": 2.079216480255127,
+      "local_logit": -0.16033434867858887,
+      "local_residual": -0.16033434867858887,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.11434674263000488,
+        -0.045987606048583984
+      ],
+      "safe_top3": [
+        {
+          "line": 33,
+          "score": 0.4434702694416046,
+          "modified": false
+        },
+        {
+          "line": 25,
+          "score": 0.4317840039730072,
+          "modified": false
+        },
+        {
+          "line": 36,
+          "score": 0.30384019017219543,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 0.0642378181219101,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": 0.026641445234417915,
+          "modified": true
+        },
+        {
+          "line": 7,
+          "score": 0.021526845172047615,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:80",
+      "sample_key": "primevul_paired:valid:161",
+      "project": "rsync",
+      "target": 1,
+      "probability": 0.44404909014701843,
+      "modified_lines": [
+        4,
+        29,
+        97,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114
+      ],
+      "global_logit": -0.21917478740215302,
+      "local_logit": -0.005569934844970703,
+      "local_residual": -0.005569934844970703,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.019458770751953125,
+        0.013888835906982422
+      ],
+      "safe_top3": [
+        {
+          "line": 23,
+          "score": 0.09271954745054245,
+          "modified": false
+        },
+        {
+          "line": 24,
+          "score": 0.08503357321023941,
+          "modified": false
+        },
+        {
+          "line": 25,
+          "score": 0.0846453607082367,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 19,
+          "score": 0.10732898861169815,
+          "modified": false
+        },
+        {
+          "line": 39,
+          "score": 0.04408461973071098,
+          "modified": false
+        },
+        {
+          "line": 47,
+          "score": 0.04108330234885216,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:80",
+      "sample_key": "primevul_paired:valid:162",
+      "project": "rsync",
+      "target": 0,
+      "probability": 0.4575403928756714,
+      "modified_lines": [
+        4,
+        29,
+        97,
+        99,
+        100,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        109,
+        110,
+        111,
+        115
+      ],
+      "global_logit": -0.16787128150463104,
+      "local_logit": -0.002377033233642578,
+      "local_residual": -0.002377033233642578,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.017313003540039062,
+        0.014935970306396484
+      ],
+      "safe_top3": [
+        {
+          "line": 23,
+          "score": 0.09727484732866287,
+          "modified": false
+        },
+        {
+          "line": 24,
+          "score": 0.0842096135020256,
+          "modified": false
+        },
+        {
+          "line": 25,
+          "score": 0.08279450237751007,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 19,
+          "score": 0.11650726199150085,
+          "modified": false
+        },
+        {
+          "line": 47,
+          "score": 0.05581822618842125,
+          "modified": false
+        },
+        {
+          "line": 48,
+          "score": 0.054156798869371414,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:157",
+      "sample_key": "primevul_paired:valid:315",
+      "project": "tensorflow",
+      "target": 1,
+      "probability": 0.9999938011169434,
+      "modified_lines": [],
+      "global_logit": 13.748868942260742,
+      "local_logit": -1.7671971321105957,
+      "local_residual": -1.7671971321105957,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        1.111215591430664,
+        -0.6559815406799316
+      ],
+      "safe_top3": [
+        {
+          "line": 7,
+          "score": 1.4482710361480713,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 1.434040904045105,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 1.4323461055755615,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 14,
+          "score": -0.10916697978973389,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": -0.1836066097021103,
+          "modified": false
+        },
+        {
+          "line": 21,
+          "score": -0.24196231365203857,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:157",
+      "sample_key": "primevul_paired:valid:316",
+      "project": "tensorflow",
+      "target": 0,
+      "probability": 0.3172398507595062,
+      "modified_lines": [
+        13,
+        14
+      ],
+      "global_logit": 0.2294905036687851,
+      "local_logit": -0.9959759712219238,
+      "local_residual": -0.9959759712219238,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.7871675491333008,
+        -0.20880842208862305
+      ],
+      "safe_top3": [
+        {
+          "line": 10,
+          "score": 1.393200397491455,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 1.290509819984436,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 1.2902709245681763,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 14,
+          "score": 1.1076501607894897,
+          "modified": true
+        },
+        {
+          "line": 13,
+          "score": 0.8979225158691406,
+          "modified": true
+        },
+        {
+          "line": 26,
+          "score": -0.036022089421749115,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:196",
+      "sample_key": "primevul_paired:valid:393",
+      "project": "php-src",
+      "target": 1,
+      "probability": 0.38691771030426025,
+      "modified_lines": [
+        14
+      ],
+      "global_logit": 0.19655998051166534,
+      "local_logit": -0.6568470001220703,
+      "local_residual": -0.6568470001220703,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.43034887313842773,
+        -0.22649812698364258
+      ],
+      "safe_top3": [
+        {
+          "line": 12,
+          "score": 0.9115244746208191,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 0.8937224745750427,
+          "modified": false
+        },
+        {
+          "line": 11,
+          "score": 0.7410416007041931,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 9,
+          "score": 0.1940934658050537,
+          "modified": false
+        },
+        {
+          "line": 15,
+          "score": -0.07981912791728973,
+          "modified": false
+        },
+        {
+          "line": 1,
+          "score": -0.1109418198466301,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:196",
+      "sample_key": "primevul_paired:valid:394",
+      "project": "php-src",
+      "target": 0,
+      "probability": 0.00022655681823380291,
+      "modified_lines": [
+        11
+      ],
+      "global_logit": -8.264999389648438,
+      "local_logit": -0.127288818359375,
+      "local_residual": -0.127288818359375,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.1379227638244629,
+        0.01063394546508789
+      ],
+      "safe_top3": [
+        {
+          "line": 10,
+          "score": 0.7775681018829346,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.43319907784461975,
+          "modified": false
+        },
+        {
+          "line": 4,
+          "score": 0.37022867798805237,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 13,
+          "score": 0.7715986967086792,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": 0.39291319251060486,
+          "modified": false
+        },
+        {
+          "line": 14,
+          "score": 0.16842566430568695,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:215",
+      "sample_key": "primevul_paired:valid:431",
+      "project": "rpm",
+      "target": 1,
+      "probability": 0.6704250574111938,
+      "modified_lines": [
+        6,
+        8,
+        9
+      ],
+      "global_logit": 1.2583972215652466,
+      "local_logit": -0.5482888221740723,
+      "local_residual": -0.5482888221740723,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.42325878143310547,
+        -0.1250300407409668
+      ],
+      "safe_top3": [
+        {
+          "line": 12,
+          "score": 1.3669685125350952,
+          "modified": false
+        },
+        {
+          "line": 10,
+          "score": 1.309470534324646,
+          "modified": false
+        },
+        {
+          "line": 9,
+          "score": 1.2095353603363037,
+          "modified": true
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 17,
+          "score": 0.7054673433303833,
+          "modified": false
+        },
+        {
+          "line": 20,
+          "score": 0.4142647981643677,
+          "modified": false
+        },
+        {
+          "line": 28,
+          "score": 0.08113878220319748,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:215",
+      "sample_key": "primevul_paired:valid:432",
+      "project": "rpm",
+      "target": 0,
+      "probability": 0.49326738715171814,
+      "modified_lines": [
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        14,
+        15
+      ],
+      "global_logit": 0.4634343385696411,
+      "local_logit": -0.49036622047424316,
+      "local_residual": -0.49036622047424316,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.3596351146697998,
+        -0.13073110580444336
+      ],
+      "safe_top3": [
+        {
+          "line": 19,
+          "score": 1.326793909072876,
+          "modified": false
+        },
+        {
+          "line": 12,
+          "score": 1.238357663154602,
+          "modified": true
+        },
+        {
+          "line": 13,
+          "score": 1.1367511749267578,
+          "modified": true
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 6,
+          "score": 0.3725277781486511,
+          "modified": true
+        },
+        {
+          "line": 8,
+          "score": 0.3374530076980591,
+          "modified": true
+        },
+        {
+          "line": 24,
+          "score": 0.14562039077281952,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:250",
+      "sample_key": "primevul_paired:valid:501",
+      "project": "qemu",
+      "target": 1,
+      "probability": 0.9958460927009583,
+      "modified_lines": [
+        49
+      ],
+      "global_logit": 6.052535533905029,
+      "local_logit": -0.5729970932006836,
+      "local_residual": -0.5729970932006836,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.406660795211792,
+        -0.1663362979888916
+      ],
+      "safe_top3": [
+        {
+          "line": 48,
+          "score": 1.3086892366409302,
+          "modified": false
+        },
+        {
+          "line": 49,
+          "score": 1.2708643674850464,
+          "modified": true
+        },
+        {
+          "line": 43,
+          "score": 1.192832350730896,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 4,
+          "score": 0.03655258193612099,
+          "modified": false
+        },
+        {
+          "line": 6,
+          "score": -0.011724650859832764,
+          "modified": false
+        },
+        {
+          "line": 2,
+          "score": -0.012446667067706585,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:250",
+      "sample_key": "primevul_paired:valid:502",
+      "project": "qemu",
+      "target": 0,
+      "probability": 0.4093339443206787,
+      "modified_lines": [
+        5,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        57
+      ],
+      "global_logit": 0.008070185780525208,
+      "local_logit": -0.3747897148132324,
+      "local_residual": -0.3747897148132324,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        0.2926290035247803,
+        -0.08216071128845215
+      ],
+      "safe_top3": [
+        {
+          "line": 43,
+          "score": 1.1939252614974976,
+          "modified": false
+        },
+        {
+          "line": 51,
+          "score": 1.1023247241973877,
+          "modified": false
+        },
+        {
+          "line": 42,
+          "score": 1.0467292070388794,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 37,
+          "score": 0.6139703392982483,
+          "modified": true
+        },
+        {
+          "line": 35,
+          "score": 0.2735433280467987,
+          "modified": true
+        },
+        {
+          "line": 36,
+          "score": 0.17560991644859314,
+          "modified": true
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:301",
+      "sample_key": "primevul_paired:valid:603",
+      "project": "sqlite",
+      "target": 1,
+      "probability": 0.312509685754776,
+      "modified_lines": [
+        19
+      ],
+      "global_logit": -0.8170053362846375,
+      "local_logit": 0.028593063354492188,
+      "local_residual": 0.028593063354492188,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.0008301734924316406,
+        0.027762889862060547
+      ],
+      "safe_top3": [
+        {
+          "line": 29,
+          "score": 0.10146047174930573,
+          "modified": false
+        },
+        {
+          "line": 23,
+          "score": 0.07524003833532333,
+          "modified": false
+        },
+        {
+          "line": 30,
+          "score": 0.07183501124382019,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 38,
+          "score": 0.3827672004699707,
+          "modified": false
+        },
+        {
+          "line": 39,
+          "score": 0.1594768762588501,
+          "modified": false
+        },
+        {
+          "line": 34,
+          "score": 0.07390020787715912,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:301",
+      "sample_key": "primevul_paired:valid:604",
+      "project": "sqlite",
+      "target": 0,
+      "probability": 0.046271905303001404,
+      "modified_lines": [
+        19,
+        124,
+        125,
+        126,
+        127
+      ],
+      "global_logit": -3.1078600883483887,
+      "local_logit": 0.0820164680480957,
+      "local_residual": 0.0820164680480957,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.007477283477783203,
+        0.0745391845703125
+      ],
+      "safe_top3": [
+        {
+          "line": 29,
+          "score": 0.09738154709339142,
+          "modified": false
+        },
+        {
+          "line": 30,
+          "score": 0.07914704084396362,
+          "modified": false
+        },
+        {
+          "line": 24,
+          "score": 0.07174365967512131,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 38,
+          "score": 1.1202592849731445,
+          "modified": false
+        },
+        {
+          "line": 37,
+          "score": 0.19692151248455048,
+          "modified": false
+        },
+        {
+          "line": 34,
+          "score": 0.10648041218519211,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:508",
+      "sample_key": "primevul_paired:valid:1017",
+      "project": "php-src",
+      "target": 1,
+      "probability": 0.48888474702835083,
+      "modified_lines": [
+        89
+      ],
+      "global_logit": -0.06912204623222351,
+      "local_logit": 0.02465367317199707,
+      "local_residual": 0.02465367317199707,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.002609729766845703,
+        0.022043943405151367
+      ],
+      "safe_top3": [
+        {
+          "line": 16,
+          "score": 0.04953000321984291,
+          "modified": false
+        },
+        {
+          "line": 21,
+          "score": 0.0314657986164093,
+          "modified": false
+        },
+        {
+          "line": 20,
+          "score": 0.029458940029144287,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 3,
+          "score": 0.05596330389380455,
+          "modified": false
+        },
+        {
+          "line": 28,
+          "score": 0.04780611768364906,
+          "modified": false
+        },
+        {
+          "line": 5,
+          "score": 0.03862883895635605,
+          "modified": false
+        }
+      ]
+    },
+    {
+      "seed": 123456,
+      "method": "lse",
+      "pair_key": "primevul_paired:valid:508",
+      "sample_key": "primevul_paired:valid:1018",
+      "project": "php-src",
+      "target": 0,
+      "probability": 0.47014692425727844,
+      "modified_lines": [
+        6,
+        61,
+        78,
+        92
+      ],
+      "global_logit": -0.15214253962039948,
+      "local_logit": 0.03258824348449707,
+      "local_residual": 0.03258824348449707,
+      "local_fusion": 1.0,
+      "local_class_scores": [
+        -0.0072705745697021484,
+        0.025317668914794922
+      ],
+      "safe_top3": [
+        {
+          "line": 17,
+          "score": 0.05519134923815727,
+          "modified": false
+        },
+        {
+          "line": 22,
+          "score": 0.04135574400424957,
+          "modified": false
+        },
+        {
+          "line": 21,
+          "score": 0.03447437658905983,
+          "modified": false
+        }
+      ],
+      "vulnerable_top3": [
+        {
+          "line": 30,
+          "score": 0.07531511038541794,
+          "modified": false
+        },
+        {
+          "line": 31,
+          "score": 0.06903345137834549,
+          "modified": false
+        },
+        {
+          "line": 29,
+          "score": 0.05810276046395302,
+          "modified": false
+        }
+      ]
+    }
+  ],
+  "interpretation": "latent class scores are not line vulnerability labels"
+}

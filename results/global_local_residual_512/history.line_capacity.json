@@ -1,0 +1,77 @@
+{
+  "role": "retrospective historical diagnosis only",
+  "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+  "selected_epoch": 14,
+  "splits": {
+    "train": {
+      "all": {
+        "functions": 8708,
+        "wrong_functions": 1594,
+        "bounded_cannot_fix": 975,
+        "any_convex_cannot_fix": 84,
+        "bounded_can_fix": 619
+      },
+      "visible_difference": {
+        "functions": 6200,
+        "wrong_functions": 340,
+        "bounded_cannot_fix": 170,
+        "any_convex_cannot_fix": 22,
+        "bounded_can_fix": 170
+      },
+      "identical_input": {
+        "functions": 2508,
+        "wrong_functions": 1254,
+        "bounded_cannot_fix": 805,
+        "any_convex_cannot_fix": 62,
+        "bounded_can_fix": 449
+      }
+    },
+    "valid": {
+      "all": {
+        "functions": 1124,
+        "wrong_functions": 483,
+        "bounded_cannot_fix": 309,
+        "any_convex_cannot_fix": 101,
+        "bounded_can_fix": 174
+      },
+      "visible_difference": {
+        "functions": 796,
+        "wrong_functions": 319,
+        "bounded_cannot_fix": 217,
+        "any_convex_cannot_fix": 84,
+        "bounded_can_fix": 102
+      },
+      "identical_input": {
+        "functions": 328,
+        "wrong_functions": 164,
+        "bounded_cannot_fix": 92,
+        "any_convex_cannot_fix": 17,
+        "bounded_can_fix": 72
+      }
+    },
+    "test": {
+      "all": {
+        "functions": 1128,
+        "wrong_functions": 515,
+        "bounded_cannot_fix": 324,
+        "any_convex_cannot_fix": 85,
+        "bounded_can_fix": 191
+      },
+      "visible_difference": {
+        "functions": 802,
+        "wrong_functions": 352,
+        "bounded_cannot_fix": 223,
+        "any_convex_cannot_fix": 70,
+        "bounded_can_fix": 129
+      },
+      "identical_input": {
+        "functions": 326,
+        "wrong_functions": 163,
+        "bounded_cannot_fix": 101,
+        "any_convex_cannot_fix": 15,
+        "bounded_can_fix": 62
+      }
+    }
+  },
+  "interpretation": "A bound that cannot cross zero excludes reweighting under this frozen classifier. It does not prove the encoder contains no useful information. A feasible bound is not evidence that a source-only learner can choose it."
+}

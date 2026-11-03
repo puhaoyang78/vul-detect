@@ -1,0 +1,618 @@
+{
+  "protocol": {
+    "train_functions": 8708,
+    "valid_functions": 1124,
+    "input_tokens": 512,
+    "source_tokens": 510,
+    "batch": 8,
+    "epochs": 16,
+    "optimizer_steps": 17424,
+    "threshold": 0.5,
+    "comparison": ">",
+    "selection": "complete Valid P-C rounded 4 decimals; earliest tie",
+    "training_config": {
+      "seed": 123456,
+      "batch_size": 8,
+      "eval_batch_size": 8,
+      "learning_rate": 2e-05,
+      "adam_epsilon": 1e-08,
+      "weight_decay": 0.0,
+      "gradient_clip": 1.0,
+      "warmup_fraction": 0.1,
+      "block_size": 512,
+      "epochs": {
+        "baseline": 16,
+        "localizer": 40,
+        "predicted": 16,
+        "oracle": 16
+      },
+      "fp16": false,
+      "dropout_probability": 0.0,
+      "class_weight": 1.0,
+      "early_stopping": null
+    }
+  },
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "numpy": "2.4.0",
+    "cuda": "12.8",
+    "precision": "FP32 eager; no AMP/checkpointing"
+  },
+  "second_seed_rule": {
+    "p_c_gain_min": 0.01,
+    "auc_change_min": 0.0,
+    "mcc_change_min": 0.0,
+    "comparison": "LSE versus BOTH baseline and Mean",
+    "seed": 123457,
+    "decision": "run all three controls on second seed only if all criteria pass; otherwise stop without searching"
+  },
+  "base_commit": "1ad7864b095154c423a183f60d6572ec5999efa7",
+  "created_at": "2026-11-03T13:25:53.340208+08:00",
+  "hypothesis": "Train/Valid evidence: scalar near zero prevents useful local residual; zero local head with direct addition removes the first-step gradient bottleneck",
+  "architecture": {
+    "version": 2,
+    "head": "Linear(768,2), weight and bias zero",
+    "parameters_added": 1538,
+    "fusion": "direct addition, no learned coefficient",
+    "temperature": 1.0,
+    "objective": "BCE(global + local margin) + 0.1 original Diff loss",
+    "pooling": [
+      "mean",
+      "logsumexp minus log(valid count)"
+    ]
+  },
+  "history_role": "Existing Test predictions used only for retrospective error diagnosis; no new method choices from Test",
+  "test_protocol": "After all full Train/Valid runs and Valid-only decision, evaluate the fixed three checkpoints on Test; no Test-driven iteration; effectiveness requires the fixed method to generalize to Test as well, without using Test to iterate",
+  "parameter_search": false,
+  "runs": [
+    {
+      "method": "baseline",
+      "seed": 123456,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "train",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--model",
+        "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+        "--methods",
+        "unixcoder",
+        "--paired-input",
+        "512",
+        "--paired-seed",
+        "123456",
+        "--paired-epochs",
+        "16",
+        "--bounded-attention",
+        "--attention-context",
+        "--attention-region",
+        "diff",
+        "--save-every",
+        "1000",
+        "--resume",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_residual_512/seed123456/baseline"
+      ]
+    },
+    {
+      "method": "mean",
+      "seed": 123456,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "train",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--model",
+        "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+        "--methods",
+        "unixcoder",
+        "--paired-input",
+        "512",
+        "--paired-seed",
+        "123456",
+        "--paired-epochs",
+        "16",
+        "--bounded-attention",
+        "--attention-context",
+        "--attention-region",
+        "diff",
+        "--save-every",
+        "1000",
+        "--resume",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_residual_512/seed123456/mean",
+        "--local-mil",
+        "mean"
+      ]
+    },
+    {
+      "method": "lse",
+      "seed": 123456,
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "train",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--model",
+        "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+        "--methods",
+        "unixcoder",
+        "--paired-input",
+        "512",
+        "--paired-seed",
+        "123456",
+        "--paired-epochs",
+        "16",
+        "--bounded-attention",
+        "--attention-context",
+        "--attention-region",
+        "diff",
+        "--save-every",
+        "1000",
+        "--resume",
+        "--device",
+        "cuda:0",
+        "--output-dir",
+        "results/global_local_residual_512/seed123456/lse",
+        "--local-mil",
+        "lse"
+      ]
+    }
+  ],
+  "diagnostic_commands": [
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "check",
+        "--output-dir",
+        "results/global_local_residual_512"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1"
+      }
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "history",
+        "--output-dir",
+        "results/global_local_residual_512"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1"
+      }
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "history-lines",
+        "--output-dir",
+        "results/global_local_residual_512"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1"
+      }
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "analyze",
+        "--run-dir",
+        "results/global_local_residual_512/seed123456/baseline/primevul_paired/unixcoder",
+        "--device",
+        "cuda:0"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1"
+      }
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "analyze",
+        "--run-dir",
+        "results/global_local_residual_512/seed123456/mean/primevul_paired/unixcoder",
+        "--device",
+        "cuda:0"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1"
+      }
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "analyze",
+        "--run-dir",
+        "results/global_local_residual_512/seed123456/lse/primevul_paired/unixcoder",
+        "--device",
+        "cuda:0"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1"
+      }
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "report",
+        "--output-dir",
+        "results/global_local_residual_512"
+      ]
+    },
+    {
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.dual_stream",
+        "report",
+        "--output-dir",
+        "results/global_local_residual_512",
+        "--include-test"
+      ]
+    }
+  ],
+  "interpretation_rule": {
+    "local_participation": "nonzero first-step head gradient, parameter update, measurable residual; selected-checkpoint own-global ablation counts classification changes",
+    "valid_comparison": "complete Valid P-C primary; AUC/MCC/P-R/pair ranking/patched FPR all reported; LSE versus both matched baseline and Mean",
+    "test_support": "fixed methods and Valid-selected checkpoints must also generalize to Test; a Test-only gain cannot rescue a failed Valid comparison; no Test-driven iteration",
+    "failure_action": "stop without added modules, temperature/fusion/Top-K search or further variants"
+  },
+  "resource_recovery": {
+    "status": "complete",
+    "failure": "LSE first forward CUDA OOM after another Ollama process loaded on both GPUs",
+    "failed_at": "2026-11-03T14:26:08+08:00",
+    "completed_optimizer_steps": 0,
+    "checkpoint_loop": {
+      "epoch": 1,
+      "next_batch": 0,
+      "global_step": 0
+    },
+    "recovery": "restore original last.pt at step zero through --resume, select an RTX4090 with at least 9 GiB free after current analyses; same logical cuda:0, data, seed, optimizer, batch, precision and 17424-step budget",
+    "initial_attempt_log": "lse.log",
+    "resume_log": "lse.resume.log",
+    "recorded_at": "2026-11-03T14:29:36.511056+08:00",
+    "resume_started_at": "2026-11-03T15:48:41.729986+08:00",
+    "cuda_visible_devices": "0",
+    "actual_device": "cuda:0",
+    "resume_argv": [
+      "/home/phy/miniconda3/envs/vul-detect/bin/python",
+      "-u",
+      "-m",
+      "vulnmechanism.cli",
+      "train",
+      "--dataset",
+      "primevul_paired",
+      "--data-dir",
+      "data",
+      "--model",
+      "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+      "--methods",
+      "unixcoder",
+      "--paired-input",
+      "512",
+      "--paired-seed",
+      "123456",
+      "--paired-epochs",
+      "16",
+      "--bounded-attention",
+      "--attention-context",
+      "--attention-region",
+      "diff",
+      "--save-every",
+      "1000",
+      "--resume",
+      "--device",
+      "cuda:0",
+      "--output-dir",
+      "results/global_local_residual_512/seed123456/lse",
+      "--local-mil",
+      "lse"
+    ],
+    "resume_exit_code": 0,
+    "resume_finished_at": "2026-11-03T16:41:18.999670+08:00"
+  },
+  "historical_diagnostic_recovery": {
+    "failed_stage": "raw logit recovery of insertion checkpoint",
+    "error": "KeyError: insertion_left",
+    "cause": "diagnostic loader omitted the existing insertion candidate option",
+    "fix": "pass model.insertion_supervision to the formal paired_loader; candidates remain source-only, no Diff needed",
+    "completed_reused": [
+      "history.context_test_lines.jsonl",
+      "history.line_capacity.json"
+    ],
+    "retry": "recover_historical_logits then historical_cases; no retraining and no repeat of completed frozen Context Test pass",
+    "status": "complete",
+    "exit_code": 0
+  },
+  "valid_only_decision": {
+    "recorded_at": "2026-11-03T16:47:01.415434+08:00",
+    "test_used": false,
+    "promote_to_second_seed": false,
+    "selected_epochs": {
+      "baseline": 14,
+      "mean": 15,
+      "lse": 15
+    },
+    "metrics": {
+      "baseline": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 100,
+          "p_v": 273,
+          "p_b": 168,
+          "p_r": 21
+        },
+        "p_c": 0.17793594306049823,
+        "p_v": 0.48576512455516013,
+        "p_b": 0.298932384341637,
+        "p_r": 0.037366548042704624,
+        "accuracy": 0.5702846975088968,
+        "precision": 0.5592203898050975,
+        "recall": 0.6637010676156584,
+        "f1": 0.6069975589910497,
+        "mcc": 0.1430889425867793,
+        "auc": 0.5895552867871481,
+        "auprc": 0.5823064969017904,
+        "pair_ranking_accuracy": 0.46619217081850534,
+        "pair_ranking_ties": 164,
+        "patched_fpr": 0.5231316725978647
+      },
+      "mean": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 94,
+          "p_v": 271,
+          "p_b": 179,
+          "p_r": 18
+        },
+        "p_c": 0.16725978647686832,
+        "p_v": 0.4822064056939502,
+        "p_b": 0.3185053380782918,
+        "p_r": 0.03202846975088968,
+        "accuracy": 0.5676156583629893,
+        "precision": 0.5581039755351682,
+        "recall": 0.6494661921708185,
+        "f1": 0.600328947368421,
+        "mcc": 0.13708053450082955,
+        "auc": 0.5866899482022772,
+        "auprc": 0.5796140388812838,
+        "pair_ranking_accuracy": 0.45729537366548045,
+        "pair_ranking_ties": 166,
+        "patched_fpr": 0.5142348754448398
+      },
+      "lse": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 85,
+          "p_v": 226,
+          "p_b": 227,
+          "p_r": 24
+        },
+        "p_c": 0.1512455516014235,
+        "p_v": 0.40213523131672596,
+        "p_b": 0.40391459074733094,
+        "p_r": 0.042704626334519574,
+        "accuracy": 0.5542704626334519,
+        "precision": 0.5543672014260249,
+        "recall": 0.5533807829181495,
+        "f1": 0.553873552983081,
+        "mcc": 0.10854109709410817,
+        "auc": 0.5768543964742088,
+        "auprc": 0.5699841584072567,
+        "pair_ranking_accuracy": 0.4679715302491103,
+        "pair_ranking_ties": 166,
+        "patched_fpr": 0.44483985765124556
+      }
+    },
+    "conclusion": "LSE failed to exceed the matched baseline and Mean on full Valid; stop training/variants; fixed Test evaluations requested by user still follow"
+  },
+  "status": "all three full Train/Valid runs, fixed Test, diagnostics and report complete",
+  "test_runs": [
+    {
+      "method": "baseline",
+      "seed": 123456,
+      "selected_epoch": 14,
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "evaluate",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--output-dir",
+        "results/global_local_residual_512/seed123456/baseline",
+        "--methods",
+        "unixcoder",
+        "--split",
+        "test",
+        "--device",
+        "cuda:0"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "log": "baseline.test.log"
+    },
+    {
+      "method": "mean",
+      "seed": 123456,
+      "selected_epoch": 15,
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "evaluate",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--output-dir",
+        "results/global_local_residual_512/seed123456/mean",
+        "--methods",
+        "unixcoder",
+        "--split",
+        "test",
+        "--device",
+        "cuda:0"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "log": "mean.test.log"
+    },
+    {
+      "method": "lse",
+      "seed": 123456,
+      "selected_epoch": 15,
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-u",
+        "-m",
+        "vulnmechanism.cli",
+        "evaluate",
+        "--dataset",
+        "primevul_paired",
+        "--data-dir",
+        "data",
+        "--output-dir",
+        "results/global_local_residual_512/seed123456/lse",
+        "--methods",
+        "unixcoder",
+        "--split",
+        "test",
+        "--device",
+        "cuda:0"
+      ],
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "OMP_NUM_THREADS": "4",
+        "MKL_NUM_THREADS": "4",
+        "TOKENIZERS_PARALLELISM": "false"
+      },
+      "log": "lse.test.log"
+    }
+  ],
+  "test_started_at": "2026-11-03T16:47:35.059001+08:00",
+  "test_execution": [
+    {
+      "method": "baseline",
+      "started_at": "2026-11-03T16:47:35.064381+08:00",
+      "finished_at": "2026-11-03T16:48:16.583905+08:00",
+      "exit_code": 0
+    },
+    {
+      "method": "lse",
+      "started_at": "2026-11-03T16:48:16.584086+08:00",
+      "finished_at": "2026-11-03T16:48:58.553051+08:00",
+      "exit_code": 0
+    },
+    {
+      "method": "mean",
+      "started_at": "2026-11-03T16:47:35.064962+08:00",
+      "finished_at": "2026-11-03T16:48:17.540306+08:00",
+      "exit_code": 0
+    }
+  ],
+  "test_finished_at": "2026-11-03T16:48:58.560452+08:00",
+  "outcome": {
+    "status": "negative result; stop without further variants",
+    "architecture": "zero local head with direct additive residual is active",
+    "valid_p_c": {
+      "baseline": 0.17793594306049823,
+      "mean": 0.16725978647686832,
+      "lse": 0.1512455516014235
+    },
+    "test_p_c": {
+      "baseline": 0.13652482269503546,
+      "mean": 0.11879432624113476,
+      "lse": 0.12588652482269502
+    },
+    "local_valid_decision_changes": {
+      "mean": 22,
+      "lse": 30
+    },
+    "second_seed_run": false,
+    "reason": "LSE failed the predeclared full Valid comparison against both controls; fixed Test also below baseline",
+    "test_did_not_change_valid_metrics_or_selected_epochs": true
+  },
+  "completed_at": "2026-11-03T16:51:23.021833+08:00"
+}

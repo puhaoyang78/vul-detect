@@ -41,9 +41,11 @@ class DualStreamTests(unittest.TestCase):
             for name, value in original.state_dict().items():
                 torch.testing.assert_close(model.state_dict()[name], value, rtol=0, atol=0)
             self.assertEqual(set(model.state_dict()) - set(original.state_dict()),
-                             {'local_classifier.weight', 'local_classifier.bias', 'local_fusion'})
-            self.assertEqual(float(model.local_fusion), 0.)
-            self.assertEqual(sum(p.numel() for p in model.local_classifier.parameters()) + 1, 35)
+                             {'local_classifier.weight', 'local_classifier.bias'})
+            self.assertNotIn('local_fusion', dict(model.named_parameters()))
+            self.assertFalse(model.local_classifier.weight.any())
+            self.assertFalse(model.local_classifier.bias.any())
+            self.assertEqual(sum(p.numel() for p in model.local_classifier.parameters()), 34)
             heads.append(copy.deepcopy(model.local_classifier.state_dict()))
             b = batch()
             expected = paired_forward(original, b, 'baseline', 'cpu', with_labels=False)
@@ -53,7 +55,7 @@ class DualStreamTests(unittest.TestCase):
         for k in heads[0]:
             torch.testing.assert_close(heads[0][k], heads[1][k], rtol=0, atol=0)
 
-    def test_scalar_then_head_gradients_and_original_losses(self):
+    def test_first_step_head_gradients_updates_and_original_losses(self):
         for mode in ('mean', 'lse'):
             torch.manual_seed(123456)
             model = detector(mode)
@@ -65,14 +67,21 @@ class DualStreamTests(unittest.TestCase):
                 torch.testing.assert_close(d['logits'], d['global_logits'] + d['local_residual'])
                 torch.testing.assert_close(p[:, 0], d['logits'].sigmoid())
                 loss.backward()
-                self.assertGreater(float(model.local_fusion.grad.abs()), 0.)
                 head_grad = float(model.local_classifier.weight.grad.abs().sum())
-                self.assertEqual(head_grad == 0., step == 0)
+                self.assertGreater(head_grad, 0.)
+                if step == 1:
+                    self.assertGreater(float(d['local_residual'].detach().abs().sum()), 0.)
                 self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()), 0.)
                 self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()))
                 opt.step()
                 opt.zero_grad()
             self.assertFalse(torch.equal(original_head, model.local_classifier.weight))
+            model.eval()
+            _, details = paired_forward(model, batch(), 'baseline', 'cpu', with_labels=False, return_attention=True)
+            details['local_residual'].square().mean().backward()
+            self.assertGreater(float(model.encoder.embeddings.word_embeddings.weight.grad.abs().sum()), 0.)
+            self.assertGreater(float(model.local_classifier.weight.grad.abs().sum()), 0.)
+            self.assertIsNone(model.classifier.weight.grad)
 
     def test_stable_length_normalized_lse_mean_and_padding(self):
         scores = torch.tensor([[[10000., 10001.], [9999., 10003.], [float('nan'), float('nan')]]], requires_grad=True)
@@ -127,7 +136,7 @@ class DualStreamTests(unittest.TestCase):
 
     def test_one_encoding_and_diff_does_not_enter_inference(self):
         model = detector('lse').eval()
-        model.local_fusion.data.fill_(.3)
+        torch.nn.init.normal_(model.local_classifier.weight, std=.1)
         b = batch()
         calls = []
         handle = model.encoder.register_forward_hook(lambda *args: calls.append(1))
@@ -153,15 +162,19 @@ class DualStreamTests(unittest.TestCase):
         from vulnmechanism.training import paired_collate
         from vulnmechanism.data import paired_features
         def factory(*args, **kwargs):
-            return detector(kwargs.get('local_mil')), Tokens()
+            return detector(kwargs.get('local_mil'), local_mil_version=kwargs.get('local_mil_version', 2)), Tokens()
         source = 'x();\n return;'
-        for mode in (None, 'mean', 'lse'):
-            m = detector(mode).eval()
-            if mode: m.local_fusion.data.fill_(.2)
+        for mode, version in ((None, 2), ('mean', 2), ('lse', 2), ('mean', 1), ('lse', 1)):
+            m = detector(mode, local_mil_version=version).eval()
+            if mode:
+                torch.nn.init.normal_(m.local_classifier.weight, std=.1)
+                if version == 1: m.local_fusion.data.fill_(.2)
             cp = dict(protocol='losver', model_path='fixture', dataset='primevul_paired', variant='baseline', input_mode='512',
                       line_mapping='source_offsets', pooling='bounded_attention',
                       bounded_attention=dict(context=True, region_supervision='diff'), state_dict=m.state_dict())
-            if mode: cp['local_mil'] = dict(pooling=mode)
+            if mode:
+                cp['local_mil'] = dict(pooling=mode)
+                if version == 2: cp['local_mil']['version'] = 2
             data = paired_collate([paired_features(dict(func=source, target=0), Tokens(), 'baseline')])
             with patch('vulnmechanism.model.losver_model', side_effect=factory), torch.no_grad():
                 restored, _ = load_paired(cp, 'cpu')
@@ -178,7 +191,7 @@ class DualStreamTests(unittest.TestCase):
         from tests.test_resume import ResumeTests, Interrupted
         from vulnmechanism import training, model as core
         def factory(*args, **kwargs):
-            return detector(kwargs.get('local_mil')), Tokens()
+            return detector(kwargs.get('local_mil'), local_mil_version=kwargs.get('local_mil_version', 2)), Tokens()
         helper = ResumeTests(); helper.setUp()
         with tempfile.TemporaryDirectory() as tmp, patch.object(core, 'losver_model', side_effect=factory):
             root = Path(tmp); helper.paired_fixture(root, '512')
@@ -194,6 +207,12 @@ class DualStreamTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'completed training configuration'):
                 training.train_losver(root/'data', root/'control', 'fixture', 'unixcoder', resume=True,
                                      **dict(options, local_mil='mean'))
+            import json
+            path = root/'control/primevul_paired/unixcoder/training.metrics.json'
+            old = json.loads(path.read_text()); old['local_mil'].pop('version')
+            path.write_text(json.dumps(old))
+            with self.assertRaisesRegex(ValueError, 'completed training configuration'):
+                training.train_losver(root/'data', root/'control', 'fixture', 'unixcoder', resume=True, **options)
 
     def test_rejects_stacked_modules_and_cli_defaults(self):
         from vulnmechanism.cli import build_parser
@@ -219,18 +238,34 @@ class DualStreamTests(unittest.TestCase):
         self.assertEqual(changes['gained_pairs'], ['0'])
         self.assertEqual(changes['lost_pairs'], ['1'])
 
+    def test_historical_join_uses_complete_pair_key_and_rejects_missing_or_duplicates(self):
+        from vulnmechanism.dual_stream import align_predictions, saved_logit, pair_category
+        rows = [dict(pair_key=f'primevul_paired:{s}:0', target=y, sample_key=f'{s}:{y}')
+                for s in ('train','valid') for y in (1,0)]
+        pred = [dict(r, probability=.6) for r in reversed(rows)]
+        self.assertEqual([r['sample_key'] for r in align_predictions(rows, pred)],
+                         [r['sample_key'] for r in rows])
+        for invalid in (pred[:-1], pred+[pred[0]], [dict(p, pair_key='0') for p in pred]):
+            with self.assertRaises(ValueError): align_predictions(rows, invalid)
+        self.assertIsNone(saved_logit(dict(probability=1.))[0])
+        self.assertAlmostEqual(saved_logit(dict(probability=.5))[0], 0.)
+        self.assertEqual(saved_logit(dict(global_logit=2., local_residual=-.1, probability=.9))[0], 1.9)
+        self.assertEqual([pair_category(a,b) for a,b in ((.6,.5),(.6,.6),(.5,.5),(.5,.6))],
+                         ['p_c','p_v','p_b','p_r'])
+
     def test_formal_validation_exports_both_contributions_and_fp_changes(self):
         from tests.test_bounded_attention import rows
         from vulnmechanism.evaluation import validate_paired
         from vulnmechanism.dual_stream import branch_summary
-        model = detector('lse').eval(); model.local_fusion.data.fill_(.2)
+        model = detector('lse').eval()
+        torch.nn.init.normal_(model.local_classifier.weight, std=.1)
         metrics, pred = validate_paired(model, rows(), Tokens(), 'baseline', 'cpu')
         self.assertEqual(set(metrics['local_mil']['by_target']), {'0', '1'})
         for p in pred:
             self.assertIn('global_probability', p)
             self.assertIn('scaled_local_probability', p)
             self.assertEqual(len(p['local_line_scores']), len(p['line_numbers']))
-            self.assertAlmostEqual(p['local_residual'], .2*p['local_logit'], places=6)
+            self.assertAlmostEqual(p['local_residual'], p['local_logit'], places=6)
         summary = branch_summary(rows(), pred)
         self.assertIn('introduced_patched_false_positives', summary)
         self.assertEqual(summary['global_only_metrics']['samples'], 2)

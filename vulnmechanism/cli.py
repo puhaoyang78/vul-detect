@@ -82,7 +82,7 @@ def build_parser():
             p.add_argument("--attention-context-scale", action="store_true",
                            help="function-adaptive context_scale: 2*sigmoid(Linear(non-affine LayerNorm(g)))")
             p.add_argument("--local-mil", choices=("mean", "lse"),
-                           help="two-class physical-line MIL residual on original Context + Diff; fixed temperature 1")
+                           help="zero-head additive two-class line MIL on Context + Diff; fixed temperature 1")
             p.add_argument("--insertion-supervision", choices=("diff", "random"),
                            help="fixed .1 function-normalized gap ranking loss on original Context + Diff")
             p.add_argument("--rccl", choices=("baseline", "diff", "random"),

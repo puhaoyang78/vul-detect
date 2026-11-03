@@ -1,0 +1,69 @@
+{
+  "focused_tests_passed": 39,
+  "seconds": 9.634,
+  "gpu_smoke": "gpu-smoke.json",
+  "unique_tests_passed": 106,
+  "regression_log": "/tmp/vul-residual-regression.log",
+  "final_dual_stream_tests": 12,
+  "final_dual_stream_seconds": 8.375,
+  "counting": "94 previous related tests + 12 final dual-stream tests, overlapping runs counted once",
+  "regression_tests_passed": 105,
+  "regression_seconds": 449.267,
+  "branch_statistics_host_recheck": {
+    "tests": 1,
+    "seconds": 0.821,
+    "passed": true,
+    "log": "/tmp/vul-residual-branch-host-test.log"
+  },
+  "sandbox_invocation": {
+    "status": "blocked by multiprocessing socket PermissionError, failed test processes cleaned up",
+    "log": "/tmp/vul-residual-branch-test.log",
+    "resolution": "same test and assertions passed on host; no loader changes"
+  },
+  "local_only_encoder_gradient_recheck": {
+    "tests": 1,
+    "seconds": 0.65,
+    "passed": true,
+    "global_classifier_gradient": null,
+    "log": "/tmp/vul-residual-local-path-test.log"
+  },
+  "final_summary_recheck": {
+    "tests": 1,
+    "seconds": 0.794,
+    "passed": true,
+    "log": "/tmp/vul-residual-final-summary-test.log"
+  },
+  "reproduce_related_tests": [
+    "/home/phy/miniconda3/envs/vul-detect/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_dual_stream",
+    "tests.test_bounded_attention",
+    "tests.test_losver",
+    "tests.test_resume",
+    "tests.test_mil_diagnosis",
+    "tests.test_rccl",
+    "tests.test_insertion_localization"
+  ],
+  "actual_control_config_check": {
+    "models": 3,
+    "fields": [
+      "training_members",
+      "validation_members",
+      "training_config",
+      "input_coverage",
+      "bounded_attention",
+      "model_path",
+      "line_mapping",
+      "input_mode",
+      "supervision",
+      "pooling",
+      "variant",
+      "precision",
+      "decision_threshold",
+      "comparison"
+    ],
+    "passed": true
+  },
+  "final_report_py_compile": true
+}

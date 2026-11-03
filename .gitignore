@@ -392,3 +392,23 @@ __pycache__/
 !/results/global_local_mil_512/**/branch_diagnostics.json
 !/results/global_local_mil_512/**/test.metrics.json
 !/results/global_local_mil_512/**/test.predictions.jsonl
+
+# Direct local residual controls and retrospective errors; weights remain local.
+!/results/global_local_residual_512/
+!/results/global_local_residual_512/**/
+!/results/global_local_residual_512/*.json
+!/results/global_local_residual_512/*.csv
+!/results/global_local_residual_512/*.md
+!/results/global_local_residual_512/history.*.jsonl
+!/results/global_local_residual_512/**/config.json
+!/results/global_local_residual_512/**/training.metrics.json
+!/results/global_local_residual_512/**/best-p_c.json
+!/results/global_local_residual_512/**/best.training.jsonl
+!/results/global_local_residual_512/**/valid.best-p_c.predictions.jsonl
+!/results/global_local_residual_512/**/train.attention_regions.jsonl
+!/results/global_local_residual_512/**/train.selected.predictions.jsonl
+!/results/global_local_residual_512/**/train.region_attention.jsonl
+!/results/global_local_residual_512/**/valid.region_attention.jsonl
+!/results/global_local_residual_512/**/branch_diagnostics.json
+!/results/global_local_residual_512/**/test.metrics.json
+!/results/global_local_residual_512/**/test.predictions.jsonl

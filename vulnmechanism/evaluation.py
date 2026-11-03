@@ -764,7 +764,7 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
                 local_probabilities = details["local_residual"].sigmoid().cpu().tolist()
             for i,(numbers,rates,counts) in enumerate(zip(batch["line_numbers"],details["line_rates"],details["line_counts"])):
                 n = int((numbers>=0).sum())
-                attention_predictions.append(dict(line_numbers=numbers[:n].tolist(),
+                attention_predictions.append(dict(logit=float(details['logits'][i]), line_numbers=numbers[:n].tolist(),
                     line_rates=rates[:n].cpu().tolist(),line_token_counts=counts[:n].cpu().tolist()))
                 if model.attention_context_scale:
                     attention_predictions[-1]["context_scale_alpha"] = float(details["context_scale_alpha"][i])
@@ -930,7 +930,9 @@ def load_paired(checkpoint, device):
         **(dict(attention_context=True) if checkpoint.get("bounded_attention", {}).get("context") else {}),
         **(dict(attention_local=True) if checkpoint.get("bounded_attention", {}).get("local") else {}),
         **(dict(attention_context_scale=True) if checkpoint.get("bounded_attention", {}).get("context_scale") else {}),
-        **(dict(local_mil=checkpoint["local_mil"]["pooling"]) if checkpoint.get("local_mil") else {}),
+        **(dict(local_mil=checkpoint["local_mil"]["pooling"],
+                local_mil_version=checkpoint["local_mil"].get("version", 1))
+           if checkpoint.get("local_mil") else {}),
         **(dict(insertion_supervision=checkpoint["insertion_localization"]["supervision"])
            if checkpoint.get("insertion_localization") else {}),
     )

@@ -1,0 +1,69 @@
+{
+  "test_used": false,
+  "seed": 123456,
+  "optimizer": "LOSVERAdamW lr=2e-5 eps=1e-8 clip=1; two smoke steps without scheduler",
+  "device": "NVIDIA GeForce RTX 4090",
+  "local_initialization_equal": true,
+  "results": {
+    "mean": {
+      "steps": [
+        {
+          "loss": 0.8224398493766785,
+          "head_gradient_l1": 159.9935760498047,
+          "encoder_gradient_l1": 116.87647247314453,
+          "head_weight_norm": 0.0007837298326194286,
+          "residual_abs_mean": 0.015867315232753754,
+          "maximum_probability_change": 0.002897799015045166,
+          "function_decision_changes": 0
+        },
+        {
+          "loss": 1.03898286819458,
+          "head_gradient_l1": 309.1199951171875,
+          "encoder_gradient_l1": 356.91845703125,
+          "head_weight_norm": 0.0010604497510939837,
+          "residual_abs_mean": 0.017051707953214645,
+          "maximum_probability_change": 0.004394114017486572,
+          "function_decision_changes": 0
+        }
+      ],
+      "added_parameters": 1538,
+      "initialization_equal": true,
+      "rng_and_order_equal": true,
+      "one_encoding": true,
+      "checkpoint_restored": true,
+      "inference_ignores_diff": true,
+      "single_function_delta": 0.0,
+      "peak_cuda_allocated_bytes": 6888837632
+    },
+    "lse": {
+      "steps": [
+        {
+          "loss": 0.8224398493766785,
+          "head_gradient_l1": 159.99356079101562,
+          "encoder_gradient_l1": 116.87647247314453,
+          "head_weight_norm": 0.0007837298326194286,
+          "residual_abs_mean": 0.015867263078689575,
+          "maximum_probability_change": 0.002897799015045166,
+          "function_decision_changes": 0
+        },
+        {
+          "loss": 1.03898286819458,
+          "head_gradient_l1": 309.12017822265625,
+          "encoder_gradient_l1": 356.9183349609375,
+          "head_weight_norm": 0.0010604498675093055,
+          "residual_abs_mean": 0.017051726579666138,
+          "maximum_probability_change": 0.004394114017486572,
+          "function_decision_changes": 0
+        }
+      ],
+      "added_parameters": 1538,
+      "initialization_equal": true,
+      "rng_and_order_equal": true,
+      "one_encoding": true,
+      "checkpoint_restored": true,
+      "inference_ignores_diff": true,
+      "single_function_delta": 1.1920928955078125e-07,
+      "peak_cuda_allocated_bytes": 6888058368
+    }
+  }
+}
