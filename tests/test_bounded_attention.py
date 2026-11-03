@@ -502,6 +502,35 @@ class BoundedAttentionTests(unittest.TestCase):
         self.assertTrue((details["line_rates"][valid]<=10).all())
         self.assertFalse(details["line_rates"][~valid].any())
 
+    def test_k5_line_region_keeps_predictions_pooling_and_rng(self):
+        torch.manual_seed(123456)
+        original=detector(region="diff",context=True).eval()
+        rng=torch.get_rng_state();order=torch.randperm(20)
+        torch.manual_seed(123456)
+        candidate=detector(region="diff",context=True,max_rate=5,region_weighting="line").eval()
+        self.assertTrue(torch.equal(torch.get_rng_state(),rng))
+        self.assertTrue(torch.equal(torch.randperm(20),order))
+        for name,value in original.state_dict().items():
+            torch.testing.assert_close(value,candidate.state_dict()[name],rtol=0,atol=0)
+        data=batch()
+        p,old=paired_forward(original,data,"baseline","cpu",with_labels=False,return_attention=True)
+        q,new=paired_forward(candidate,data,"baseline","cpu",with_labels=False,return_attention=True)
+        torch.testing.assert_close(p,q,rtol=0,atol=0)
+        torch.testing.assert_close(old["line_rates"],new["line_rates"],rtol=0,atol=0)
+        original.line_attention.weight.data.normal_(std=.01)
+        candidate.load_state_dict(original.state_dict())
+        _,p,old=paired_forward(original,data,"baseline","cpu",return_attention=True)
+        total,q,new=paired_forward(candidate,data,"baseline","cpu",return_attention=True)
+        for key in ("bce","line_rates","line_attention","token_attention"):
+            torch.testing.assert_close(old[key],new[key],rtol=0,atol=0)
+        torch.testing.assert_close(p,q,rtol=0,atol=0)
+        expected,n=candidate.attention_region_loss(new["line_rates"],new["line_counts"],data["line_labels"],weighting="line")
+        torch.testing.assert_close(total,new["bce"]+.1*expected)
+        self.assertEqual(int(n),int(new["region_functions"]))
+        new["region_loss"].backward()
+        self.assertGreater(float(candidate.line_attention.weight.grad.abs().sum()),0.)
+        self.assertTrue(all(p.grad is None or torch.isfinite(p.grad).all() for p in candidate.parameters()))
+
     def test_line_region_checkpoint_and_source_only_inference(self):
         from vulnmechanism.evaluation import load_paired
         model=detector(region="diff",context=True,max_rate=10,region_weighting="line").eval()

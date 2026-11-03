@@ -430,3 +430,18 @@ __pycache__/
 !/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/valid.best-p_c.predictions.jsonl
 !/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/train.selected.predictions.jsonl
 !/results/attention_region_lines_512/line_k10/primevul_paired/unixcoder/train.selected.metrics.json
+
+# Equal-line K=5 control; reuse the original bounded model and trainer.
+!/results/attention_region_lines_512/line_k5/
+!/results/attention_region_lines_512/line_k5/*.json
+!/results/attention_region_lines_512/line_k5/*.log
+!/results/attention_region_lines_512/line_k5/primevul_paired/
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/config.json
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/training.metrics.json
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/best-p_c.json
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/best.training.jsonl
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/train.attention_regions.jsonl
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/valid.best-p_c.predictions.jsonl
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/train.selected.predictions.jsonl
+!/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/train.selected.metrics.json

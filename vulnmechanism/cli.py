@@ -148,7 +148,9 @@ def build_parser():
     p.add_argument("--attention-local",action="store_true")
     p.add_argument("--attention-context-scale",action="store_true")
     p.add_argument("--attention-region-weighting",choices=("token","line"),default="token",
-                   help="report the fixed K=10 equal-line experiment against its historical reference")
+                   help="report equal-line region loss against historical Context + Diff")
+    p.add_argument("--attention-max-rate",type=int,choices=(5,10),default=10,
+                   help="primary equal-line report: K=5 loss-only control or historical K=10 comparison")
     p.add_argument("--insertion-localization", action="store_true")
     p.add_argument("--rccl", action="store_true", help="report the three matched RCCL experiments")
     p.add_argument("--attention-regularization",action="store_true")
@@ -390,6 +392,7 @@ def main():
                               attention_local=args.attention_local,
                               attention_context_scale=args.attention_context_scale,
                               attention_region_weighting=args.attention_region_weighting,
+                              attention_max_rate=args.attention_max_rate,
                               insertion_localization=args.insertion_localization,
                               attention_regularization=args.attention_regularization,device=args.device)
                 if args.dataset == "primevul_paired"

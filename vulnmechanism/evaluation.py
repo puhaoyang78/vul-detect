@@ -3499,7 +3499,7 @@ def attention_context_report(output_dir, data_dir, reference_dir, *, device="aut
     return result
 
 
-def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
+def line_region_report(output_dir, data_dir, reference_dir, *, device="auto", max_rate=10):
     """One fixed Train/Valid comparison; no Test, tuning or training entry point."""
     import numpy as np
     from .dual_stream import align_predictions, distribution, pair_changes
@@ -3507,8 +3507,14 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
     from .training import paired_loader
 
     root=Path(output_dir)
+    if max_rate not in (5,10):
+        raise ValueError("line-region report requires K=5 or K=10")
+    candidate=f"line_k{max_rate}"
     paths=dict(context_diff=Path(reference_dir or "results/attention_context_512/context_diff/primevul_paired/unixcoder"),
-               line_k10=root/"line_k10/primevul_paired/unixcoder")
+               **{candidate:root/candidate/"primevul_paired/unixcoder"})
+    if max_rate==5:
+        paths["line_k10"]=root/"line_k10/primevul_paired/unixcoder"
+    execution=json.loads(((root/candidate if max_rate==5 else root)/"commands.json").read_text())
     configs={name:json.loads((path/"training.metrics.json").read_text()) for name,path in paths.items()}
     base=configs["context_diff"]
     common=("training_config","training_members","validation_members","environment","input_coverage",
@@ -3520,7 +3526,7 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
             raise ValueError("official Train/Valid members or order differ")
     for name,c in configs.items():
         cfg=c["bounded_attention"]
-        expected=(5,"token") if name=="context_diff" else (10,"line")
+        expected=(5,"token") if name=="context_diff" else (5 if name=="line_k5" else 10,"line")
         if (any(c[k]!=base[k] for k in common)
                 or (c["train_samples"],c["valid_samples"],c["completed_epochs"],c["optimizer_steps"])!=(8708,1124,16,17424)
                 or c["training_config"]["seed"]!=123456 or c["decision_threshold"]!=.5 or c["comparison"]!=">"
@@ -3529,14 +3535,17 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
         if {k:v for k,v in cfg.items() if k not in ("k","region_weighting","attention")}!={
             k:v for k,v in base["bounded_attention"].items() if k not in ("k","region_weighting","attention")}:
             raise ValueError("only the attention bound and region averaging may differ")
+        if name=="line_k5" and {k:v for k,v in cfg.items() if k!="region_weighting"}!=base["bounded_attention"]:
+            raise ValueError("K=5 loss-only comparison changed another bounded-attention setting")
 
     def describe(values):
         return distribution(values) if values else None
 
-    result=dict(test_used=False,reference=str(paths["context_diff"]),candidate=str(paths["line_k10"]),
-        protocol_fields_equal=list(common),changes=dict(context_diff=dict(k=5,region_weighting="token"),
-        line_k10=dict(k=10,region_weighting="line")),
-        attribution="K and loss averaging change together; effects cannot be isolated by this comparison.",
+    result=dict(test_used=False,reference=str(paths["context_diff"]),candidate=str(paths[candidate]),
+        protocol_fields_equal=list(common),changes={name:dict(k=c["bounded_attention"]["k"],
+        region_weighting=c["bounded_attention"].get("region_weighting","token")) for name,c in configs.items()},
+        attribution=("K=5 is fixed against Context + Diff; only region averaging changes. K=10 is a historical extra reference."
+                     if max_rate==5 else "K and loss averaging change together; effects cannot be isolated by this comparison."),
         short_definition="visible modified physical line with conserved code-token count <=4",
         attention_population="eligible functions only; macro statistics use equal function weight; line bands use equal line weight",
         splits={},training={})
@@ -3565,9 +3574,10 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
 
     for split,rows in annotations.items():
         records={};bands={};supervision=[]
-        for a,b in zip(predictions["context_diff"][split],predictions["line_k10"][split]):
-            if any(a[k]!=b[k] for k in ("line_numbers","line_token_counts")):
-                raise ValueError("visible physical-line/Token mapping differs between methods")
+        for name in paths:
+            for a,b in zip(predictions["context_diff"][split],predictions[name][split]):
+                if any(a[k]!=b[k] for k in ("line_numbers","line_token_counts")):
+                    raise ValueError("visible physical-line/Token mapping differs between methods")
         for name in paths:
             k=configs[name]["bounded_attention"]["k"]
             records[name]=[];bands[name]={}
@@ -3621,13 +3631,20 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
             summary["repair_line_bands"][name]={target:{band:{key:describe([v[j] for v in values])
                 for j,key in enumerate(("rate","sigmoid_score","per_token_enrichment"))} for band,values in bucket.items()}
                 for target,bucket in bands[name].items()}
-        summary["pair_changes"]=pair_changes(rows,[p["probability"] for p in predictions["line_k10"][split]],
-            [p["probability"] for p in predictions["context_diff"][split]])
+        summary["pair_comparisons"]={name+"_vs_context_diff":pair_changes(rows,
+            [p["probability"] for p in predictions[name][split]],
+            [p["probability"] for p in predictions["context_diff"][split]]) for name in paths if name!="context_diff"}
+        if max_rate==5:
+            summary["pair_comparisons"]["line_k5_vs_line_k10"]=pair_changes(rows,
+                [p["probability"] for p in predictions["line_k5"][split]],
+                [p["probability"] for p in predictions["line_k10"][split]])
+        summary["pair_changes"]=summary["pair_comparisons"][candidate+"_vs_context_diff"]
         result["splits"][split]=summary
     write_json(root/"comparison.json",result)
     lines=["# 有效物理行等权区域损失：固定 Train/Valid 实验", "",
-        "历史 Context + Diff 使用 K=5、Token 数加权区域均值；新实验按要求同时改为 K=10、行等权区域均值。"
-        "函数 MIL 仍按 n_i*r_i 聚合，BCE、0.1 区域损失、数据及训练协议不变。此次组合对比不能单独归因于行等权。",
+        ("历史 Context + Diff 与新增行等权实验均使用 K=5，仅改变修复/背景区域均值的统计权重。已完成的 K=10 行等权实验作为附加对照保留。"
+         if max_rate==5 else "历史 Context + Diff 使用 K=5、Token 数加权区域均值；K=10 行等权实验同时改变上界和区域均值，此组合对比不能单独归因于行等权。")+
+        "函数 MIL 仍按 n_i*r_i 聚合，BCE、0.1 区域损失、数据及训练协议不变。",
         "", "完整官方 Train 8708 / Valid 1124，Seed123456，Batch8，512 Token，16 Epoch / 17424 步。"
         "按完整 Valid P-C 选模，严格 probability > 0.5。复用原基线；未读取 Test。", "",
         "| Valid | Epoch | P-C | AUC | MCC | F1 | Recall | 修复侧 FPR |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
@@ -3635,6 +3652,9 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
     for name,m in all_metrics.items():
         lines.append(f"| {name} | {result['training'][name]['selected_epoch']} | {m['p_c']*100:.2f}% ({m['pair_counts']['p_c']}/562) | {m['auc']:.4f} | {m['mcc']:.4f} | {m['f1']*100:.2f}% | {m['recall']*100:.2f}% | {m['patched_fpr']*100:.2f}% |")
     change=result["splits"]["valid"]["pair_changes"]
+    if max_rate==5:
+        bound_change=result["splits"]["valid"]["pair_comparisons"]["line_k5_vs_line_k10"]
+        lines.extend(["",f"同为行等权，K=5 相比 K=10：新增正确对 {bound_change['gains']}，丢失 {bound_change['losses']}。"])
     lines.extend(["",f"相比原基线新增正确对 {change['gains']}，丢失 {change['losses']}。", "",
         "短修复行固定定义为 ≤4 个守恒有效 Token；对应分类子集包含任一侧存在该类修改行的完整配对。"
         "以下注意力倍率只统计实际适用区域损失的函数；token/line 两种区域均值同时保留，避免改变统计口径。",
@@ -3650,21 +3670,21 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
     for group,label in (("has_short_region","≤4"),("has_medium_region","5–16"),("has_long_region",">16")):
         for name,m in result["splits"]["valid"]["groups"].get(group,{}).items():
             lines.append(f"| {label} | {name} | {m['pairs']} | {m['p_c']*100:.2f}% | {m['auc']:.4f} | {m['mcc']:.4f} | {m['patched_fpr']*100:.2f}% |")
-    old,new=all_metrics["context_diff"],all_metrics["line_k10"]
+    old,new=all_metrics["context_diff"],all_metrics[candidate]
     tp_delta=(new["pair_counts"]["p_c"]+new["pair_counts"]["p_v"])-(old["pair_counts"]["p_c"]+old["pair_counts"]["p_v"])
     fp_delta=(new["pair_counts"]["p_v"]+new["pair_counts"]["p_r"])-(old["pair_counts"]["p_v"]+old["pair_counts"]["p_r"])
     lines.extend(["",f"完整 Valid 的漏洞侧 TP 净变化 {tp_delta:+d}，修复侧 FP 净变化 {fp_delta:+d}。"
         f"Recall 变化 {(new['recall']-old['recall'])*100:+.2f} 个百分点，修复侧 FPR 变化 {(new['patched_fpr']-old['patched_fpr'])*100:+.2f} 个百分点；"
         f"AUC 变化 {new['auc']-old['auc']:+.4f}，MCC 变化 {new['mcc']-old['mcc']:+.4f}。"])
     for split,s in result["splits"].items():
-        a,b=[s["attention"][name]["all"]["line_region_margin"]["mean"] for name in paths]
-        x,y=[s["repair_line_bands"][name]["all"]["1_to_4"]["per_token_enrichment"] for name in paths]
+        a,b=[s["attention"][name]["all"]["line_region_margin"]["mean"] for name in ("context_diff",candidate)]
+        x,y=[s["repair_line_bands"][name]["all"]["1_to_4"]["per_token_enrichment"] for name in ("context_diff",candidate)]
         lines.extend(["",f"{split}: 用同一行等权口径复算的区域 margin 为 {a:.4f} → {b:.4f}；"
             f"短修改行 per-token enrichment 均值 {x['mean']:.3f} → {y['mean']:.3f}，"
             f"中位数 {x['quantiles']['p50']:.3f} → {y['quantiles']['p50']:.3f}。"])
     short=result["splits"]["valid"]["groups"].get("has_short_region",{})
     if short:
-        a,b=short["context_diff"],short["line_k10"]
+        a,b=short["context_diff"],short[candidate]
         lines.extend(["",f"≤4 Token 子集 P-C 的正确对数为 {a['pair_counts']['p_c']} → {b['pair_counts']['p_c']}，"
             f"但 AUC 为 {a['auc']:.4f} → {b['auc']:.4f}，MCC 为 {a['mcc']:.4f} → {b['mcc']:.4f}。"
             "该子集结果需与完整 Valid 指标共同解释。"])
@@ -3676,13 +3696,13 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
         "", "Train 中按原顺序最先满足“漏洞侧、多条可见修改行、含 ≤4 Token 修改行”的五个函数为 sample 13、19、57、73、91。"
         "人工查看发现短行包括括号/else、函数签名片段、break/p++、变量声明和注释结束符；≤4 仅是长度分层，并非保护检查标签。"
         "这些样本沿用原 Diff 标签。原始倍率、约束损失和分类指标分别报告，检测收益由完整 Valid 分类指标判断。",
-        "", f"新模型完整训练 wall time {json.loads((root/'commands.json').read_text())['wall_seconds']/60:.2f} 分钟；"
-        "55 项不同的相关单元测试通过，另有重复复查；真实 RTX4090 smoke 验证初始化、梯度、Padding、跨行 Token、恢复和源码单函数推理。"
+        "", f"{candidate} 完整训练 wall time {execution['wall_seconds']/60:.2f} 分钟；"
+        f"{execution['unit_tests']['tests'] if max_rate==5 else execution['diagnostic_rechecks']['unique_related_tests_across_both_runs']} 项相关单元测试通过；真实 RTX4090 smoke 验证初始化、梯度、Padding、跨行 Token、恢复和源码单函数推理。"
         "未新增参数；最终 Python、NumPy、CPU/CUDA RNG 与历史基线逐项一致。",
         "", ("新方法完整 Valid P-C 未超过原 Context + Diff，按负结果停止；不搜索参数、不追加模块。"
-               if all_metrics["line_k10"]["p_c"]<=all_metrics["context_diff"]["p_c"] else
-               "新方法在本次单种子 Valid 上提高 P-C；此结果不证明独立行等权作用或多种子稳定性。"),
-        "", "完整分布、子集指标、逐函数区域统计及 16 Epoch 损失见 comparison.json 与对应 JSONL；实际命令、单元测试和真实 GPU smoke 见 commands.json、tests.log、gpu-smoke.json。权重仅保留本地。", ""])
+               if all_metrics[candidate]["p_c"]<=all_metrics["context_diff"]["p_c"] else
+               "新方法在本次单种子 Valid 上提高 P-C；此结果不证明多种子稳定性。"),
+        "", "完整分布、子集指标、逐函数区域统计及 16 Epoch 损失见 comparison.json 与对应 JSONL；实际命令、单元测试和真实 GPU smoke 见各实验的 commands.json、tests.log、gpu-smoke.json。权重仅保留本地。", ""])
     (root/"report.md").write_text("\n".join(lines),encoding="utf-8")
     return result
 
@@ -3690,11 +3710,12 @@ def line_region_report(output_dir, data_dir, reference_dir, *, device="auto"):
 def paired_report(output_dir, data_dir, *, reference_dir=None, localizer_regularization=False,
                   bounded_attention=False, attention_regularization=False, attention_context=False,
                   attention_local=False, attention_context_scale=False, attention_region_weighting="token",
+                  attention_max_rate=10,
                   insertion_localization=False, device="auto"):
     if attention_region_weighting=="line":
         if not bounded_attention or not attention_context or attention_local or attention_context_scale or insertion_localization or attention_regularization or localizer_regularization:
             raise ValueError("line-region report requires original Context + Diff only")
-        return line_region_report(output_dir,data_dir,reference_dir,device=device)
+        return line_region_report(output_dir,data_dir,reference_dir,device=device,max_rate=attention_max_rate)
     if insertion_localization:
         return insertion_localization_report(output_dir, data_dir, reference_dir, device=device)
     if attention_local and not attention_context:

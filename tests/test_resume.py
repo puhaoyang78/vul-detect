@@ -325,6 +325,7 @@ class ResumeTests(unittest.TestCase):
         protocols=[(s,c,l,a,5,"token") for s in (None,"diff","random")
                    for c,l,a in ((False,False,False),(True,False,False),(True,True,False),(True,False,True))]
         protocols.append(("diff",True,False,False,10,"line"))
+        protocols.append(("diff",True,False,False,5,"line"))
         for supervision,context,local,context_scale,max_rate,weighting in protocols:
             with self.subTest(supervision=supervision,context=context,local=local,context_scale=context_scale,
                              max_rate=max_rate,weighting=weighting),tempfile.TemporaryDirectory() as tmp,patch.object(core,"losver_model",side_effect=factory):
