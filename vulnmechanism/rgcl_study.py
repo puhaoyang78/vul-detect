@@ -227,7 +227,9 @@ def report(data_dir, output_dir, model_path):
         "Seed123457, historical Global Mean and the stopped Patch study are preserved and excluded from the three-seed mean. "
         "Historical result paths and completed optimization budgets are recorded in experiments.json. "
         "Standard deviations below use ddof=1. New resumable checkpoints are saved every 500 steps and at epoch boundaries; "
-        "this changes disk I/O only, with the original optimization budget and RNG behavior.", "",
+        "this changes disk I/O only, with the original optimization budget and RNG behavior. "
+        "PrimeVul FPR uses the complete repaired side of official pairs; SecVulEval FPR uses all original normal functions, "
+        "including ordinary and repaired functions. PR-AUC retains the existing average-precision (AP) definition.", "",
         "| Dataset | Split | Seed | Method | Epoch | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR |",
         "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for r in records:
@@ -239,7 +241,9 @@ def report(data_dir, output_dir, model_path):
     for r in aggregate:
         values=[]
         for key in ("p_c","mcc","f1","auc","auprc","recall","fpr"):
-            v=r["metrics"].get(key);values.append(f"{v['mean']:.6f} ± {v['std']:.6f}" if v else "—")
+            v=r["metrics"].get(key)
+            values.append((f"{100*v['mean']:.2f}% ± {100*v['std']:.2f}pp" if key=="p_c" else
+                           f"{v['mean']:.6f} ± {v['std']:.6f}") if v else "—")
         lines.append(f"| {r['dataset']} | {r['split']} | {r['method']} | "+" | ".join(values)+" |")
     deltas=[]
     for dataset in DATASETS:

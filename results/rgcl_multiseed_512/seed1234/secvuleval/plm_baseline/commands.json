@@ -1,0 +1,11 @@
+{
+  "dataset": "secvuleval",
+  "seed": 1234,
+  "method": "plm_baseline",
+  "device": "cuda:0",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 7737.470628999174,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

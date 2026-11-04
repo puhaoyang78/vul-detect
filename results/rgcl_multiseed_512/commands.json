@@ -1,0 +1,35 @@
+{
+  "source_commit": "32fc5f6196c5a30bca2439ade87b5c42fb22ca8a",
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "datasets": [
+    "primevul_paired",
+    "secvuleval"
+  ],
+  "methods": [
+    "plm_baseline",
+    "context_only",
+    "rgcl"
+  ],
+  "training": "UniXcoder 512, batch8, 16 epochs, original LOSVERAdamW lr2e-5, K5, lambda0.1, token region statistics",
+  "selection": {
+    "primevul_paired": "full Valid P-C",
+    "secvuleval": "full Valid MCC"
+  },
+  "threshold": 0.5,
+  "comparison": ">",
+  "test_used_for_selection": false,
+  "entrypoints": [
+    "python -m vulnmechanism.cli rgcl-study inventory",
+    "python -m vulnmechanism.cli rgcl-study check --device cuda:0",
+    "python -m vulnmechanism.cli rgcl-study run --dataset DATASET --seed SEED --methods METHOD --device cuda:0 --save-every 500",
+    "python -m vulnmechanism.cli rgcl-study report"
+  ],
+  "gpu_context": "one visible physical RTX4090 per worker; CUDA_VISIBLE_DEVICES recorded in gpu*.progress.json",
+  "reuse": "five existing complete Seed123456 runs; source paths in experiments.json",
+  "new_training_combinations": 13,
+  "patch": "stopped and excluded; existing outputs preserved"
+}

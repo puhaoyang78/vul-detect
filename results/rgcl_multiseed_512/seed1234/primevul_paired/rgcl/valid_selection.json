@@ -1,0 +1,32 @@
+{
+  "selection": "p_c",
+  "selected_epoch": 13,
+  "validation": {
+    "samples": 1124,
+    "pairs": 562,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 92,
+      "p_v": 283,
+      "p_b": 153,
+      "p_r": 34
+    },
+    "p_c": 0.16370106761565836,
+    "p_v": 0.50355871886121,
+    "p_b": 0.2722419928825623,
+    "p_r": 0.060498220640569395,
+    "accuracy": 0.5516014234875445,
+    "precision": 0.541907514450867,
+    "recall": 0.6672597864768683,
+    "f1": 0.5980861244019139,
+    "mcc": 0.10607989298231889,
+    "auc": 0.5733020098529653,
+    "auprc": 0.5710400216374314,
+    "pair_ranking_accuracy": 0.4306049822064057,
+    "pair_ranking_ties": 164,
+    "patched_fpr": 0.5640569395017794,
+    "loss": 1.3763113710789856
+  },
+  "source": "full Valid; fixed before Test evaluation"
+}

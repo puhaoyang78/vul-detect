@@ -1,0 +1,240 @@
+{
+  "unit_tests": {
+    "count": 67,
+    "passed": true,
+    "commands": [
+      "python -m unittest tests.test_rgcl tests.test_bounded_attention tests.test_losver",
+      "two additional RGCL study reuse/report checks"
+    ]
+  },
+  "gpu_smoke": {
+    "passed": true,
+    "results": {
+      "primevul_paired": {
+        "device": "cuda:0",
+        "gpu": "NVIDIA GeForce RTX 4090",
+        "dataset": "primevul_paired",
+        "train_members": [
+          "primevul_paired:train:1",
+          "primevul_paired:train:2"
+        ],
+        "classification_positive_weight": 1.0,
+        "test_used": false,
+        "methods": {
+          "plm_baseline": {
+            "head_gradient_l1": [
+              85.8865966796875,
+              78.21809387207031
+            ],
+            "head_update_l1": [
+              0.015277279540896416,
+              0.010467306710779667
+            ],
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "single_function_max_delta": 1.7881393432617188e-07,
+            "parameters": 125930497
+          },
+          "context_only": {
+            "head_gradient_l1": [
+              286.94305419921875,
+              217.42330932617188
+            ],
+            "head_update_l1": [
+              0.015358241274952888,
+              0.005964623764157295
+            ],
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "single_function_max_delta": 3.5762786865234375e-07,
+            "parameters": 125389826
+          },
+          "rgcl": {
+            "head_gradient_l1": [
+              286.94305419921875,
+              217.43673706054688
+            ],
+            "head_update_l1": [
+              0.015358241274952888,
+              0.0059644016437232494
+            ],
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "single_function_max_delta": 7.152557373046875e-07,
+            "parameters": 125389826
+          }
+        },
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "encoder_initialization_equal": true,
+        "seconds": 20.108167006168514
+      },
+      "secvuleval": {
+        "device": "cuda:0",
+        "gpu": "NVIDIA GeForce RTX 4090",
+        "dataset": "secvuleval",
+        "train_members": [
+          "secvuleval:0",
+          "secvuleval:1",
+          "secvuleval:5"
+        ],
+        "classification_positive_weight": 1.3132530120481927,
+        "test_used": false,
+        "methods": {
+          "plm_baseline": {
+            "head_gradient_l1": [
+              85.70037841796875,
+              69.01325988769531
+            ],
+            "head_update_l1": [
+              0.01533825695514679,
+              0.010932182893157005
+            ],
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "single_function_max_delta": 1.1920928955078125e-07,
+            "parameters": 125930497
+          },
+          "context_only": {
+            "head_gradient_l1": [
+              166.15907287597656,
+              136.37159729003906
+            ],
+            "head_update_l1": [
+              0.015357648953795433,
+              0.008810028433799744
+            ],
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "single_function_max_delta": 2.9802322387695312e-08,
+            "parameters": 125389826
+          },
+          "rgcl": {
+            "head_gradient_l1": [
+              166.15907287597656,
+              136.44432067871094
+            ],
+            "head_update_l1": [
+              0.015357645228505135,
+              0.008811195380985737
+            ],
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "single_function_max_delta": 5.960464477539063e-08,
+            "parameters": 125389826
+          }
+        },
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "encoder_initialization_equal": true,
+        "seconds": 16.810401189140975
+      },
+      "original_rgcl_checkpoint": {
+        "path": "results/attention_context_512/context_diff/primevul_paired/unixcoder",
+        "passed": true,
+        "source_only_predictions_match_historical_valid": true,
+        "single_function": true
+      }
+    },
+    "test_used": false
+  },
+  "original_model_and_data_implementation_unchanged": true,
+  "patch_stopped": {
+    "groups": [
+      2515264,
+      2368577
+    ],
+    "results": "results/patch_guided_512/status.json"
+  },
+  "first_step_context_rgcl_bce": [
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "first_step_function_bce": {
+        "context_only": 0.6433603167533875,
+        "rgcl": 0.6433603167533875
+      },
+      "equal": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "first_step_function_bce": {
+        "context_only": 0.7112748026847839,
+        "rgcl": 0.7112748026847839
+      },
+      "equal": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "first_step_function_bce": {
+        "context_only": 0.6197437644004822,
+        "rgcl": 0.6197437644004822
+      },
+      "equal": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "first_step_function_bce": {
+        "context_only": 0.5781843662261963,
+        "rgcl": 0.5781843662261963
+      },
+      "equal": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "first_step_function_bce": {
+        "context_only": 0.9259428977966309,
+        "rgcl": 0.9259428977966309
+      },
+      "equal": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "first_step_function_bce": {
+        "context_only": 0.719419002532959,
+        "rgcl": 0.719419002532959
+      },
+      "equal": true
+    }
+  ],
+  "report_retest": {
+    "passed": true,
+    "tests": 1,
+    "seconds": 0.811
+  },
+  "training_workers": {
+    "0": "complete",
+    "1": "complete"
+  },
+  "full_experiments": {
+    "complete": 18,
+    "reused": 5,
+    "new_fits": 13,
+    "epochs_each": 16,
+    "optimizer_steps": {
+      "primevul_paired": 17424,
+      "secvuleval": 40704
+    },
+    "valid_test_prediction_sets_recomputed": 36,
+    "official_members_and_labels_checked": true,
+    "valid_selection_and_checkpoint_checked": true,
+    "seeds": [
+      42,
+      1234,
+      123456
+    ],
+    "test_used_for_selection": false,
+    "report_command_exit_code": 0
+  }
+}

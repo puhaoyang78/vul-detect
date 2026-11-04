@@ -1,0 +1,93 @@
+{
+  "gpu": 1,
+  "status": "complete",
+  "source_commit": "32fc5f6196c5a30bca2439ade87b5c42fb22ca8a",
+  "groups": [
+    [
+      "secvuleval",
+      1234,
+      [
+        "plm_baseline",
+        "context_only",
+        "rgcl"
+      ]
+    ],
+    [
+      "primevul_paired",
+      1234,
+      [
+        "plm_baseline",
+        "context_only",
+        "rgcl"
+      ]
+    ]
+  ],
+  "completed": [
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "methods": [
+        "plm_baseline",
+        "context_only",
+        "rgcl"
+      ],
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.cli",
+        "rgcl-study",
+        "run",
+        "--dataset",
+        "secvuleval",
+        "--seed",
+        "1234",
+        "--methods",
+        "plm_baseline",
+        "context_only",
+        "rgcl",
+        "--device",
+        "cuda:0",
+        "--save-every",
+        "500"
+      ],
+      "cuda_visible_devices": "1",
+      "started_utc": "2026-11-04 09:59:48 UTC",
+      "return_code": 0,
+      "wall_seconds": 22008.51377168391
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "methods": [
+        "plm_baseline",
+        "context_only",
+        "rgcl"
+      ],
+      "argv": [
+        "/home/phy/miniconda3/envs/vul-detect/bin/python",
+        "-m",
+        "vulnmechanism.cli",
+        "rgcl-study",
+        "run",
+        "--dataset",
+        "primevul_paired",
+        "--seed",
+        "1234",
+        "--methods",
+        "plm_baseline",
+        "context_only",
+        "rgcl",
+        "--device",
+        "cuda:0",
+        "--save-every",
+        "500"
+      ],
+      "cuda_visible_devices": "1",
+      "started_utc": "2026-11-04 16:06:36 UTC",
+      "return_code": 0,
+      "wall_seconds": 9796.699059593026
+    }
+  ],
+  "test_selection": false,
+  "current": null
+}

@@ -1,0 +1,11 @@
+{
+  "dataset": "primevul_paired",
+  "seed": 1234,
+  "method": "rgcl",
+  "device": "cuda:0",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 3278.934406630229,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}
