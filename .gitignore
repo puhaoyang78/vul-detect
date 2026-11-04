@@ -458,3 +458,11 @@ __pycache__/
 !/results/rgcl_512/**/*.jsonl
 !/results/rgcl_512/**/*.md
 !/results/rgcl_512/**/*.log
+
+# Fixed three-seed RGCL comparison; checkpoints and raw source stay local.
+!/results/rgcl_multiseed_512/
+!/results/rgcl_multiseed_512/**/
+!/results/rgcl_multiseed_512/**/*.json
+!/results/rgcl_multiseed_512/**/*.jsonl
+!/results/rgcl_multiseed_512/**/*.md
+!/results/rgcl_multiseed_512/**/*.txt

@@ -565,12 +565,13 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
     if device.type != "cuda":
         raise ValueError("native RGCL smoke requires a real GPU")
     started = time.monotonic()
-    data = json.loads((Path(data_dir) / dataset / "statistics.json").read_text())
+    data = (dict(classification_positive_weight=1.) if dataset == "primevul_paired" else
+            json.loads((Path(data_dir) / dataset / "statistics.json").read_text()))
     all_rows = read_jsonl(Path(data_dir) / dataset / "train.lines.jsonl")
     tokenizer = core.RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
     selected = []
     for kind in ("vulnerable", "repaired", "ordinary"):
-        candidates = (r for r in all_rows if r["normal_kind"] == kind)
+        candidates = (r for r in all_rows if r.get("normal_kind", "vulnerable" if r["target"] else "repaired") == kind)
         for row in candidates:
             feature = paired_features(row, tokenizer, "baseline")
             if kind != "vulnerable" or (1 in feature["line_labels"] and 0 in feature["line_labels"]):
@@ -598,7 +599,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
         else:
             torch.testing.assert_close(current_encoder, encoder_initial, rtol=0, atol=0)
             torch.testing.assert_close(current_rng, initial_rng, rtol=0, atol=0)
-        model.native_binary = True
+        model.native_binary = dataset != "primevul_paired"
         model.to(device).eval()
         with torch.no_grad():
             initial = paired_forward(model, batch, "baseline", device, with_labels=False)
@@ -640,7 +641,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
             one = paired_forward(model, paired_collate(features[:1]), "baseline", device, with_labels=False)
             torch.testing.assert_close(one, p[:1], rtol=1e-5, atol=1e-6)
         cp = dict(line_mapping="source_offsets", variant="baseline", input_mode="512", model_path=str(model_path),
-            pooling=model.pooling, native_binary=True, cls_baseline=method == "plm_baseline",
+            pooling=model.pooling, native_binary=dataset != "primevul_paired", cls_baseline=method == "plm_baseline",
             training_config=dict(class_weight=data["classification_positive_weight"]),
             state_dict={k: v.detach().cpu() for k, v in model.state_dict().items()})
         if method != "plm_baseline":
@@ -814,7 +815,7 @@ def evaluate(
     splits=("valid", "test"),
 ):
     from .training import RGCL_METHODS
-    if any(m in RGCL_METHODS for m in methods):
+    if dataset != "primevul_paired" and any(m in RGCL_METHODS for m in methods):
         if not all(m in RGCL_METHODS for m in methods) or valid_limit is not None or test_limit is not None:
             raise ValueError("native RGCL evaluates complete, matched native members")
         return evaluate_rgcl(data_dir, output_dir, dataset, methods, device=device, splits=splits)
@@ -1182,7 +1183,7 @@ def load_paired(checkpoint, device):
         window_micro_batch=checkpoint.get("window_micro_batch", 8),
         **(dict(cls_baseline=checkpoint.get("cls_baseline", False),
                 class_weight=checkpoint["training_config"]["class_weight"])
-           if checkpoint.get("native_binary") else {}),
+           if checkpoint.get("native_binary") or checkpoint.get("cls_baseline") else {}),
         **(
             dict(dropout_probability=checkpoint["training_config"]["dropout_probability"])
             if checkpoint.get("training_config", {}).get("dropout_probability", 0.0)
@@ -1284,13 +1285,13 @@ def localize_paired(
 def evaluate_paired(
     data_dir, output_dir, methods, *, device="auto", splits=("valid", "test")
 ):
-    from .training import LOSVER_METHODS, LOSVER_VARIANTS, paired_rows
+    from .training import LOSVER_METHODS, LOSVER_VARIANTS, RGCL_METHODS, paired_rows
 
-    if any(m not in LOSVER_METHODS for m in methods):
+    if any(m not in (*LOSVER_METHODS, *RGCL_METHODS) for m in methods):
         raise ValueError("official paired evaluation requires LOSVER methods")
     device = core.resolve_device(device)
     for method in methods:
-        variant = LOSVER_VARIANTS[method]
+        variant = "baseline" if method in RGCL_METHODS else LOSVER_VARIANTS[method]
         run = Path(output_dir) / "primevul_paired" / method
         cp = torch.load(
             run / ("best-f1.pt" if variant == "localizer" else "best-p_c.pt"),

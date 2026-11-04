@@ -218,6 +218,85 @@ class RGCLTests(unittest.TestCase):
         self.assertEqual(result["fp"], 0)
         self.assertEqual(metrics([0, 1], [.5, .5])["tp"], 1)
 
+    def test_primevul_uses_same_cls_head_and_selects_only_full_valid_pc(self):
+        from tests.test_insertion_localization import records
+        from vulnmechanism.training import train
+        from vulnmechanism.evaluation import evaluate
+        from vulnmechanism.cli import build_parser
+        with tempfile.TemporaryDirectory() as tmp, patch("vulnmechanism.model.losver_model", side_effect=factory):
+            root = Path(tmp)
+            for split in ("train", "valid"):
+                rows = records(split=split)
+                write_jsonl(root/"data/primevul_paired"/f"{split}.jsonl", rows)
+                write_jsonl(root/"data/primevul_paired"/f"{split}.lines.jsonl", rows)
+            cfg = dict(LOSVER_CONFIG, epochs=dict(LOSVER_CONFIG["epochs"], baseline=2), batch_size=2, eval_batch_size=2)
+            for method in ("plm_baseline", "context_only", "rgcl"):
+                result = train_losver(root/"data", root/"out", "tiny", method, dataset="primevul_paired",
+                                      config=cfg, seed=42, device="cpu")
+                self.assertEqual(result["selected_epochs"].keys(), {"p_c"})
+                self.assertFalse(result.get("native_binary", False))
+                run = root/"out/primevul_paired"/method
+                cp = torch.load(run/"best-p_c.pt", weights_only=False)
+                restored, _ = load_paired(cp, "cpu")
+                self.assertEqual(restored.cls_baseline, method == "plm_baseline")
+                self.assertEqual(restored.attention_region, "diff" if method == "rgcl" else None)
+                evaluate(root/"data", root/"out", "primevul_paired", [method], device="cpu", splits=("valid",))
+                value = json.loads((run/"valid.metrics.json").read_text())["metrics"]
+                self.assertEqual(value["p_c"], cp["validation"]["p_c"])
+            with patch("vulnmechanism.training.train_losver", return_value={}) as shared:
+                train(root/"data", root/"out", "tiny", "primevul_paired", "plm_baseline", device="cpu")
+                self.assertEqual(shared.call_args.args[3], "plm_baseline")
+            args = build_parser().parse_args(["rgcl-study", "run", "--seed", "1234", "--methods", "rgcl"])
+            self.assertEqual(args.seed, 1234)
+            self.assertEqual(args.methods, ["rgcl"])
+
+    def test_study_reuses_original_paths_without_retraining_or_rewriting(self):
+        from vulnmechanism import rgcl_study as study
+        self.assertEqual(study.SEEDS, (42, 1234, 123456))
+        self.assertNotIn(123457, study.SEEDS)
+        self.assertEqual(study.run_path("unused", "primevul_paired", 123456, "rgcl"),
+                         Path("results/attention_context_512/context_diff/primevul_paired/unixcoder"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root/"out"; historical = root/"historical"
+            historical.mkdir(); out.mkdir()
+            for name in ("test.metrics.json", "test.predictions.jsonl"):
+                (historical/name).write_text("retained")
+            (out/"gpu-smoke.json").write_text('{"passed":true}')
+            before = {p.name:p.read_bytes() for p in historical.iterdir()}
+            with patch.object(study, "run_path", return_value=historical), patch.object(study, "inspect_run"), \
+                 patch.object(study, "train_losver") as fit:
+                study.run(root, out, "tiny", "primevul_paired", 123456, ["rgcl"], device="cpu")
+                fit.assert_not_called()
+            self.assertEqual({p.name:p.read_bytes() for p in historical.iterdir()}, before)
+
+    def test_study_report_three_seed_mean_sample_std_and_fixed_threshold(self):
+        import statistics
+        from vulnmechanism import rgcl_study as study
+        from vulnmechanism.metrics import paired_metrics
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); entries=[]
+            for dataset in study.DATASETS:
+                rows=[dict(sample_key=f"{dataset}:{i}",pair_key="pair",target=1-i) for i in range(2)]
+                for split in ("valid","test"):
+                    write_jsonl(study.data_root(root/"data",dataset)/dataset/f"{split}.jsonl",rows)
+                for seed in study.SEEDS:
+                    scores={42:[.8,.2],1234:[.5,.2],123456:[.8,.7]}[seed]
+                    value=paired_metrics(rows,scores) if dataset=="primevul_paired" else metrics([1,0],scores,strict=True)
+                    for method in ("plm_baseline","context_only","rgcl"):
+                        run=root/f"{dataset}-{seed}-{method}";run.mkdir()
+                        entry=dict(dataset=dataset,seed=seed,method=method,run=str(run),validation=value,selected_epoch=1,reused=False)
+                        entries.append(entry)
+                        pred=[dict(r,probability=p) for r,p in zip(rows,scores)]
+                        write_jsonl(run/("valid.best-p_c.predictions.jsonl" if dataset=="primevul_paired" else "valid.predictions.jsonl"),pred)
+                        write_jsonl(run/"test.predictions.jsonl",pred)
+                        (run/"test.metrics.json").write_text(json.dumps(dict(selected_epoch=1,metrics=value)))
+            with patch.object(study,"inventory",return_value=dict(missing=0,experiments=entries)):
+                result=study.report(root/"data",root,"tiny")
+            row=next(r for r in result["aggregate"] if r["dataset"]=="primevul_paired" and r["split"]=="valid" and r["method"]=="rgcl")
+            self.assertAlmostEqual(row["metrics"]["p_c"]["mean"],1/3)
+            self.assertAlmostEqual(row["metrics"]["p_c"]["std"],statistics.stdev([1.,0.,0.]))
+            self.assertEqual(len(result["records"]),36)
+
     def test_native_training_uses_mcc_and_shared_original_loop(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

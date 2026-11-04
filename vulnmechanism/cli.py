@@ -190,6 +190,16 @@ def build_parser():
     p.add_argument("--checkpoint", type=Path, default=Path("results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt"))
     p.add_argument("--output-dir", type=Path, default=Path("results/repair_transfer_512"))
     p.add_argument("--device", default="auto")
+    p = sub.add_parser("rgcl-study", help="fixed three-seed PrimeVul/SecVulEval comparison")
+    p.add_argument("stage", choices=("inventory", "check", "run", "report"))
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/rgcl_multiseed_512"))
+    p.add_argument("--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine")
+    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval"), default="primevul_paired")
+    p.add_argument("--seed", type=int, choices=(42, 1234, 123456), default=123456)
+    p.add_argument("--methods", nargs="+", choices=RGCL_METHODS, default=list(RGCL_METHODS))
+    p.add_argument("--device", default="auto")
+    p.add_argument("--save-every", type=int, default=500)
     p = sub.add_parser(
         "check-paired", help="input coverage and tiny GPU/training-loop checks"
     )
@@ -314,6 +324,17 @@ def main():
             print(json.dumps(repair_transfer.report(args.output_dir), indent=2))
         else:
             getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
+    elif args.command == "rgcl-study":
+        from . import rgcl_study
+        common = dict(data_dir=args.data_dir, output_dir=args.output_dir, model_path=args.model)
+        if args.stage == "check":
+            result = rgcl_study.check(**common, device=args.device)
+        elif args.stage == "run":
+            result = rgcl_study.run(**common, dataset=args.dataset, seed=args.seed, methods=args.methods,
+                                     device=args.device, save_every=args.save_every)
+        else:
+            result = getattr(rgcl_study, args.stage)(**common)
+        print(json.dumps(result, indent=2))
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions, check_bounded_attention, check_insertion_localization
 
