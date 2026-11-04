@@ -4,19 +4,22 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from .data import DATASETS
+from .data import DATASETS, RGCL_DATASETS
 
 
 def build_parser():
-    from .training import METHODS, LOSVER_METHODS
+    from .training import METHODS, LOSVER_METHODS, RGCL_METHODS
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("prepare")
     p.add_argument("--raw-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, default=Path("data"))
-    p.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
+    p.add_argument("--datasets", nargs="+", choices=(*DATASETS, "secvuleval"), default=list(DATASETS))
     supervision = p.add_mutually_exclusive_group()
+    supervision.add_argument(
+        "--rgcl", action="store_true", help="native binary labels and leakage-grouped SecVulEval/MegaVul splits"
+    )
     supervision.add_argument(
         "--paired",
         action="store_true",
@@ -44,7 +47,7 @@ def build_parser():
         p.add_argument("--data-dir", type=Path, default=Path("data"))
         p.add_argument("--output-dir", type=Path, default=Path("results"))
         p.add_argument(
-            "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
+            "--dataset", choices=(*DATASETS, "secvuleval", "primevul_paired", "all"), default="all"
         )
         if command in ("train", "candidates"):
             p.add_argument(
@@ -55,7 +58,7 @@ def build_parser():
             p.add_argument(
                 "--methods",
                 nargs="+",
-                choices=(*METHODS, *LOSVER_METHODS),
+                choices=(*METHODS, *LOSVER_METHODS, *RGCL_METHODS),
                 default=list(METHODS),
             )
             p.add_argument("--device", default="auto")
@@ -143,6 +146,7 @@ def build_parser():
         help="completed original LOSVER pilot used as the comparison reference",
     )
     p.add_argument("--localizer-regularization", action="store_true")
+    p.add_argument("--rgcl", action="store_true", help="compare the three native-binary RGCL methods")
     p.add_argument("--bounded-attention",action="store_true")
     p.add_argument("--attention-context",action="store_true")
     p.add_argument("--attention-local",action="store_true")
@@ -156,7 +160,7 @@ def build_parser():
     p.add_argument("--attention-regularization",action="store_true")
     p.add_argument("--device",default="auto")
     p.add_argument(
-        "--dataset", choices=(*DATASETS, "primevul_paired", "all"), default="all"
+        "--dataset", choices=(*DATASETS, "secvuleval", "primevul_paired", "all"), default="all"
     )
     p = sub.add_parser("infer")
     p.add_argument("--checkpoint", type=Path, required=True)
@@ -196,6 +200,7 @@ def build_parser():
     )
     p.add_argument("--device", default="auto")
     p.add_argument("--paired-input", choices=("512", "l1"), default="512")
+    p.add_argument("--dataset", choices=(*RGCL_DATASETS, "primevul_paired"), default="primevul_paired")
     p.add_argument(
         "--repair-regions",
         action="store_true",
@@ -224,7 +229,13 @@ def main():
     if args.command == "prepare":
         from .data import prepare, prepare_paired, prepare_repair_regions, prepare_diff_neighbour
 
-        if args.oof_predictions:
+        if args.rgcl:
+            from .data import prepare_rgcl
+            for dataset in args.datasets:
+                if dataset not in RGCL_DATASETS:
+                    raise ValueError("--rgcl preparation requires secvuleval or megavul")
+                prepare_rgcl(args.raw_root, args.output_dir, dataset, args.model)
+        elif args.oof_predictions:
             from .data import prepare_oof_predictions
             prepare_oof_predictions(args.raw_root, args.output_dir, args.reference_dir)
         elif args.diff_neighbour:
@@ -247,13 +258,13 @@ def main():
         else (getattr(args, "dataset", None),)
     )
     if args.command == "train":
-        from .training import train, LOSVER_METHODS
+        from .training import train, LOSVER_METHODS, RGCL_METHODS
 
         for dataset in datasets:
             for method in args.methods:
                 path = args.model or (
                     "/home/PublicData/PHY-data/resource/unixcoder-base-nine"
-                    if method in LOSVER_METHODS
+                    if method in (*LOSVER_METHODS, *RGCL_METHODS)
                     else "/home/PublicData/PHY-data/resource/codebert-base"
                 )
                 train(
@@ -305,6 +316,12 @@ def main():
             getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions, check_bounded_attention, check_insertion_localization
+
+        if args.dataset in RGCL_DATASETS:
+            from .evaluation import check_rgcl
+            print(json.dumps(check_rgcl(args.data_dir, args.output_dir, args.model,
+                                       args.dataset, device=args.device), indent=2))
+            return
 
         if args.rccl:
             from .rccl import check
@@ -378,6 +395,11 @@ def main():
     elif args.command == "report":
         from .evaluation import report, paired_report
 
+        if args.rgcl:
+            from .evaluation import rgcl_report
+            print(json.dumps(rgcl_report(args.output_dir, args.data_dir, args.dataset), indent=2))
+            return
+
         if args.rccl:
             from .rccl import report as rccl_report
             print(json.dumps(rccl_report(args.output_dir,args.data_dir,device=args.device),indent=2))
@@ -417,7 +439,7 @@ def main():
         threshold = cp["decision_threshold"]
         prediction = (
             score > threshold
-            if cp.get("protocol") == "losver"
+            if cp.get("protocol") in ("losver", "rgcl_native_binary")
             else score >= decision_boundary(threshold)
         )
         print(

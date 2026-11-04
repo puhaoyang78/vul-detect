@@ -11,7 +11,7 @@ def decision_boundary(threshold):
     return struct.unpack("f", struct.pack("f", threshold))[0]
 
 
-def metrics(labels, scores, threshold=0.5):
+def metrics(labels, scores, threshold=0.5, *, strict=False):
     if not labels or len(labels) != len(scores):
         raise ValueError("nonempty equal-length labels/scores required")
     if (
@@ -21,7 +21,8 @@ def metrics(labels, scores, threshold=0.5):
         or not 0 <= threshold <= 1
     ):
         raise ValueError("invalid labels, probabilities or threshold")
-    predictions = [s >= decision_boundary(threshold) for s in scores]
+    boundary = decision_boundary(threshold)
+    predictions = [s > boundary if strict else s >= boundary for s in scores]
     tp = sum(y == 1 and p for y, p in zip(labels, predictions))
     tn = sum(y == 0 and not p for y, p in zip(labels, predictions))
     fp = sum(y == 0 and p for y, p in zip(labels, predictions))

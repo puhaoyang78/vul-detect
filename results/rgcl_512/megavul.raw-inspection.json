@@ -1,0 +1,18 @@
+{
+  "source": "/home/PublicData/PHY-data/vul_detect/data/megavul/megavul.json",
+  "official_evaluation_split": false,
+  "native_labels": "is_vul",
+  "raw_functions": 353873,
+  "native_class_counts": {
+    "1": 17975,
+    "0": 335898
+  },
+  "normal_kinds": {
+    "vulnerable": 17975,
+    "ordinary": 335898
+  },
+  "reliable_counterparts": 17975,
+  "issues": {},
+  "labels_reconstructed": false,
+  "synthesized_fixed_negatives": 0
+}

@@ -445,3 +445,16 @@ __pycache__/
 !/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/valid.best-p_c.predictions.jsonl
 !/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/train.selected.predictions.jsonl
 !/results/attention_region_lines_512/line_k5/primevul_paired/unixcoder/train.selected.metrics.json
+
+# Native-label RGCL experiments; keep raw sources and all weights local.
+!/data/rgcl/
+!/data/rgcl/*/
+!/data/rgcl/*/statistics.json
+!/data/rgcl/*/members.csv
+!/data/rgcl/megavul/grouped_members.csv
+!/results/rgcl_512/
+!/results/rgcl_512/**/
+!/results/rgcl_512/**/*.json
+!/results/rgcl_512/**/*.jsonl
+!/results/rgcl_512/**/*.md
+!/results/rgcl_512/**/*.log

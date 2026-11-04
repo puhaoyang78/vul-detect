@@ -16,6 +16,7 @@ from transformers import (
     RobertaTokenizerFast,
 )
 import torch.nn.functional as F
+from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
 from .progress import training_bar
 
 
@@ -320,7 +321,7 @@ def predict_checkpoint(
     checkpoint_path, records, *, device="auto", batch_size=4, model_path=None
 ):
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if checkpoint.get("protocol") == "losver":
+    if checkpoint.get("protocol") in ("losver", "rgcl_native_binary"):
         return predict_paired(checkpoint, records, device=device, model_path=model_path)
     device = resolve_device(device)
     path = model_path or checkpoint["model_path"]
@@ -510,6 +511,18 @@ class LOSVERDetector(nn.Module):
         super().__init__()
         self.encoder = encoder
         self.classifier = nn.Linear(config.hidden_size, 1)
+        self.cls_baseline = getattr(args, "cls_baseline", False)
+        if self.cls_baseline:
+            # Match run_base.py's RobertaForSequenceClassification head. Keep
+            # encoder initialization and the shared sampler RNG unchanged.
+            with torch.random.fork_rng(devices=[]):
+                head_config = RobertaConfig.from_dict(config.to_dict())
+                head_config.num_labels = 1
+                self.classifier = RobertaClassificationHead(head_config)
+                for module in self.classifier.modules():
+                    if isinstance(module, nn.Linear):
+                        nn.init.normal_(module.weight, std=config.initializer_range)
+                        nn.init.zeros_(module.bias)
         self.class_weight = args.class_weight
         self.window_micro_batch = getattr(args, "window_micro_batch", 8)
         self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
@@ -893,6 +906,8 @@ class LOSVERDetector(nn.Module):
                 hidden_parts.append(tuple(encoded.hidden_states[i] for i in diagnostic_layers))
             if bounded:
                 return states
+            if self.cls_baseline:
+                return states[:, 0]
             occupied = valid.any(-1)
             pooled = states.new_zeros((len(states), states.shape[-1]))
             if occupied.any():
@@ -981,7 +996,7 @@ class LOSVERDetector(nn.Module):
                 mass[:, None],
                 function_count,
             )
-        logits = self.classifier(pooled)
+        logits = self.classifier(pooled[:, None] if self.cls_baseline else pooled)
         if self.local_mil is not None:
             residual = attention_details["local_logit"]
             if self.local_mil_version == 1:
@@ -1072,12 +1087,18 @@ def losver_model(
     attention_max_rate=5,
     attention_region_weighting="token",
     attention_suppression=None,
+    cls_baseline=False,
+    class_weight=1.0,
 ):
     """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
     config = RobertaConfig.from_pretrained(model_path)
     tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
     if window_micro_batch < 1:
         raise ValueError("window micro-batch must be positive")
+    if not math.isfinite(class_weight) or class_weight <= 0:
+        raise ValueError("classification positive weight must be finite and positive")
+    if cls_baseline and (variant != "baseline" or bounded_attention or line_auxiliary_weight is not None):
+        raise ValueError("CLS baseline uses its own classification head without line pooling/auxiliary heads")
     if bounded_attention and (variant != "baseline" or line_auxiliary_weight is not None):
         raise ValueError("bounded attention uses only the original baseline encoder/classifier")
     if (attention_max_rate != 5 or attention_region_weighting != "token") and not bounded_attention:
@@ -1095,7 +1116,8 @@ def losver_model(
     ):
         raise ValueError("attention suppression requires bounded attention with original Diff")
     args = SimpleNamespace(
-        class_weight=1.0,
+        class_weight=class_weight,
+        cls_baseline=cls_baseline,
         dropout_probability=dropout_probability,
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=gradient_checkpointing,

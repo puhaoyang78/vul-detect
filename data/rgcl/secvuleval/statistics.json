@@ -1,0 +1,133 @@
+{
+  "source": "/home/PublicData/PHY-data/vul_detect/data/SecVulEval/data/train-00000-of-00001.parquet",
+  "official_evaluation_split": false,
+  "native_labels": "is_vulnerable",
+  "raw_functions": 25440,
+  "native_class_counts": {
+    "1": 10998,
+    "0": 14442
+  },
+  "normal_kinds": {
+    "vulnerable": 10998,
+    "repaired": 10024,
+    "ordinary": 4418
+  },
+  "reliable_counterparts": 20048,
+  "issues": {
+    "missing_fixed_id": 974
+  },
+  "labels_reconstructed": false,
+  "synthesized_fixed_negatives": 0,
+  "split_protocol": {
+    "seed": 42,
+    "target_ratios": [
+      0.8,
+      0.1,
+      0.1
+    ],
+    "groups": 5605,
+    "largest_groups": [
+      533,
+      442,
+      233,
+      193,
+      177,
+      164,
+      156,
+      154,
+      152,
+      130
+    ],
+    "grouping": "transitive union of CVE, fix commit, repair link and whitespace-normalized source (including counterparts)",
+    "cross_split_group_overlap": 0,
+    "members_removed": 0,
+    "duplicate_code_groups": 156
+  },
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "input_tokens": 512,
+  "splits": {
+    "train": {
+      "functions": 20352,
+      "class_counts": {
+        "1": 8798,
+        "0": 11554
+      },
+      "normal_kinds": {
+        "vulnerable": 8798,
+        "repaired": 7943,
+        "ordinary": 3611
+      },
+      "coverage": {
+        "functions": 20352,
+        "reliable_counterpart": 15886,
+        "with_diff_lines": 15496,
+        "visible_diff": 13045,
+        "partial_visible_diff": 534,
+        "effective_region": 12489,
+        "no_region_function_bce_only": 7863,
+        "truncated": 9395,
+        "target_1_functions": 8798,
+        "target_1_effective_region": 6112,
+        "target_0_functions": 11554,
+        "target_0_effective_region": 6377
+      },
+      "actual_fraction": 0.8
+    },
+    "valid": {
+      "functions": 2544,
+      "class_counts": {
+        "1": 1100,
+        "0": 1444
+      },
+      "normal_kinds": {
+        "vulnerable": 1100,
+        "repaired": 1038,
+        "ordinary": 406
+      },
+      "coverage": {
+        "functions": 2544,
+        "reliable_counterpart": 2076,
+        "with_diff_lines": 2037,
+        "visible_diff": 1688,
+        "partial_visible_diff": 52,
+        "effective_region": 1636,
+        "no_region_function_bce_only": 908,
+        "truncated": 1171,
+        "target_1_functions": 1100,
+        "target_1_effective_region": 806,
+        "target_0_functions": 1444,
+        "target_0_effective_region": 830
+      },
+      "actual_fraction": 0.1
+    },
+    "test": {
+      "functions": 2544,
+      "class_counts": {
+        "1": 1100,
+        "0": 1444
+      },
+      "normal_kinds": {
+        "vulnerable": 1100,
+        "repaired": 1043,
+        "ordinary": 401
+      },
+      "coverage": {
+        "functions": 2544,
+        "reliable_counterpart": 2086,
+        "with_diff_lines": 2030,
+        "visible_diff": 1678,
+        "partial_visible_diff": 74,
+        "effective_region": 1604,
+        "no_region_function_bce_only": 940,
+        "truncated": 1137,
+        "target_1_functions": 1100,
+        "target_1_effective_region": 788,
+        "target_0_functions": 1444,
+        "target_0_effective_region": 816
+      },
+      "actual_fraction": 0.1
+    }
+  },
+  "classification_positive_weight": 1.3132530120481927,
+  "classification_weight_rule": "Train negatives / positives; same weighted BCE for all three methods"
+}

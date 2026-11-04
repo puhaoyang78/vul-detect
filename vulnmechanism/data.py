@@ -11,6 +11,7 @@ import random
 from .artifacts import write_json
 
 DATASETS = ("primevul", "megavul")
+RGCL_DATASETS = ("secvuleval", "megavul")
 SPLITS = ("train", "valid", "test")
 
 
@@ -170,6 +171,253 @@ def write_jsonl(path, rows):
             handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
 
+def load_rgcl_native(raw_root, dataset):
+    """Original binary members only; repair counterparts supply no new labels."""
+    import math
+
+    raw_root = Path(raw_root)
+    rows, counterparts, issues = [], {}, Counter()
+    if dataset == "secvuleval":
+        import pyarrow.parquet as pq
+
+        paths = sorted((raw_root / "SecVulEval/data").glob("*.parquet"))
+        if [p.name for p in paths] != ["train-00000-of-00001.parquet"]:
+            raise ValueError("inspect changed SecVulEval release/splits before preparation")
+        native = pq.read_table(paths[0]).to_pylist()
+        by_id = {r["idx"]: r for r in native}
+        if len(by_id) != len(native):
+            raise ValueError("SecVulEval idx must be unique")
+        reliable, referenced = {}, set()
+        for r in native:
+            if type(r["is_vulnerable"]) is not bool:
+                raise ValueError("SecVulEval requires native boolean labels")
+            fixed = r["fixed_func_idx"]
+            other = by_id.get(int(fixed)) if fixed is not None and math.isfinite(fixed) and fixed == int(fixed) else None
+            if not r["is_vulnerable"]:
+                continue
+            if other is None:
+                issues["missing_fixed_id"] += 1
+            elif other["is_vulnerable"]:
+                issues["fixed_label_not_zero"] += 1
+            elif any(r[k] != other[k] for k in ("project_url", "filepath", "func_name", "commit_id")):
+                issues["repair_identity_mismatch"] += 1
+            elif r["func_body"] == other["func_body"]:
+                issues["unchanged_repair_source"] += 1
+            else:
+                reliable[r["idx"]] = other["idx"]
+                referenced.add(other["idx"])
+        reverse = {}
+        for old, new in reliable.items():
+            reverse.setdefault(new, []).append(old)
+        for r in native:
+            idx = r["idx"]
+            partner = reliable.get(idx)
+            if partner is None and idx in reverse:
+                # Multiple antecedents must imply identical positive targets.
+                candidates = reverse[idx]
+                if len(candidates) == 1:
+                    partner = candidates[0]
+                else:
+                    masks = {tuple(_line_diff(r["func_body"], by_id[i]["func_body"])[0]) for i in candidates}
+                    if len(masks) == 1:
+                        partner = candidates[0]
+                    else:
+                        issues["ambiguous_repaired_diff"] += 1
+            key = f"secvuleval:{idx}"
+            row = dict(sample_key=key, pair_key=key, target=int(r["is_vulnerable"]),
+                func=r["func_body"], project=r["project_url"], commit_id=r["commit_id"],
+                cves=sorted(set(r["cve_list"] or [])), file_name=r["filepath"],
+                func_name=r["func_name"], source_row=idx,
+                normal_kind="vulnerable" if r["is_vulnerable"] else "repaired" if idx in referenced else "ordinary",
+                repair_key=f"secvuleval:{partner}" if partner is not None else None)
+            rows.append(row)
+            if partner is not None:
+                counterparts[key] = by_id[partner]["func_body"]
+        source = str(paths[0])
+    elif dataset == "megavul":
+        source = str(raw_root / "megavul/megavul.json")
+        repaired = {}
+        for i, r in enumerate(json_array(source), 1):
+            if type(r["is_vul"]) is not bool:
+                raise ValueError("MegaVul requires native boolean labels")
+            label = int(r["is_vul"])
+            code = r["func_before"] if label else r["func"]
+            key = f"megavul:{i}"
+            identity = (r["repo_name"], r["commit_hash"], r["file_path"], r["func_name"])
+            row = dict(sample_key=key, pair_key=key, target=label, func=code,
+                project=r["repo_name"], commit_id=r["commit_hash"], cves=[r["cve_id"]] if r["cve_id"] else [],
+                file_name=r["file_path"], func_name=r["func_name"], source_row=i,
+                normal_kind="vulnerable" if label else "ordinary", repair_key=None)
+            rows.append(row)
+            if label:
+                after = r["func"]
+                if isinstance(after, str) and after.strip() and after != code:
+                    counterparts[key] = after
+                    repaired.setdefault(identity, set()).add(after)
+                else:
+                    issues["missing_or_unchanged_repair_source"] += 1
+            if i % 100000 == 0:
+                print(f"MegaVul: loaded {i} native members", flush=True)
+        for r in rows:
+            identity = (r["project"], r["commit_id"], r["file_name"], r["func_name"])
+            if r["target"] == 0 and r["func"] in repaired.get(identity, set()):
+                r["normal_kind"] = "repaired"
+                issues["negative_matches_repaired_source"] += 1
+        # func in an is_vul=True record is a counterpart, not a native target=0
+        # member. In particular, never synthesize negatives from these records.
+    else:
+        raise ValueError(f"unknown RGCL dataset: {dataset}")
+    for r in rows:
+        if not isinstance(r["func"], str) or not r["func"].strip():
+            raise ValueError(f"{r['sample_key']}: empty native source")
+        if not r["file_name"].endswith((".c", ".h", ".C", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx", ".c++")):
+            raise ValueError(f"{r['sample_key']}: inspect unsupported language {r['file_name']}")
+    return rows, counterparts, dict(source=source, official_evaluation_split=False,
+        native_labels="is_vulnerable" if dataset == "secvuleval" else "is_vul",
+        raw_functions=len(rows), native_class_counts=dict(Counter(str(r["target"]) for r in rows)),
+        normal_kinds=dict(Counter(r["normal_kind"] for r in rows)), reliable_counterparts=len(counterparts),
+        issues=dict(issues), labels_reconstructed=False, synthesized_fixed_negatives=0)
+
+
+def split_rgcl_groups(rows, counterparts, seed=42):
+    """80/10/10 class targets; connected CVE/commit/repair/duplicate groups."""
+    parent = list(range(len(rows)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a, b):
+        a, b = find(a), find(b)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+
+    import hashlib
+    index, keys, duplicate_codes = {}, {r["sample_key"]: i for i, r in enumerate(rows)}, Counter()
+    for i, r in enumerate(rows):
+        values = [("cve", c.upper()) for c in r["cves"] if c]
+        if r["commit_id"]:
+            values.append(("commit", r["commit_id"]))
+        for code in (r["func"], counterparts.get(r["sample_key"])):
+            if code is not None:
+                digest = hashlib.sha256(" ".join(code.split()).encode()).digest()
+                values.append(("code", digest))
+        duplicate_codes[hashlib.sha256(" ".join(r["func"].split()).encode()).digest()] += 1
+        for value in values:
+            if value in index:
+                union(i, index[value])
+            else:
+                index[value] = i
+        if r["repair_key"] in keys:
+            union(i, keys[r["repair_key"]])
+    groups = {}
+    for i in range(len(rows)):
+        groups.setdefault(find(i), []).append(i)
+    order = sorted(groups)
+    random.Random(seed).shuffle(order)
+    order.sort(key=lambda k: -len(groups[k]))
+    total = Counter(r["target"] for r in rows)
+    targets = {s: {y: total[y] * fraction for y in (0, 1)} for s, fraction in zip(SPLITS, (.8, .1, .1))}
+    counts = {s: Counter() for s in SPLITS}
+    for key in order:
+        labels = Counter(rows[i]["target"] for i in groups[key])
+        cost = lambda s: sum(((counts[s][y] + labels[y] - targets[s][y]) ** 2 -
+                              (counts[s][y] - targets[s][y]) ** 2) / max(1, targets[s][y]) for y in (0, 1))
+        split = min(SPLITS, key=cost)
+        counts[split].update(labels)
+        for i in groups[key]:
+            rows[i].update(split=split, group_key=f"group:{key}")
+    if any(not counts[s][0] or not counts[s][1] for s in SPLITS):
+        raise ValueError("connected groups cannot provide both labels in every split")
+    # Recheck every grouping key; no CVE, commit, counterpart or duplicate may cross.
+    for i, r in enumerate(rows):
+        assert rows[find(i)]["split"] == r["split"]
+        if r["repair_key"] in keys:
+            assert r["split"] == rows[keys[r["repair_key"]]]["split"]
+    return dict(seed=seed, target_ratios=[.8, .1, .1], groups=len(groups),
+        largest_groups=sorted((len(g) for g in groups.values()), reverse=True)[:10],
+        grouping="transitive union of CVE, fix commit, repair link and whitespace-normalized source (including counterparts)",
+        cross_split_group_overlap=0, members_removed=0,
+        duplicate_code_groups=sum(n > 1 for n in duplicate_codes.values()))
+
+
+def prepare_rgcl(raw_root, output_dir, dataset, model_path):
+    """Native function classification and separate reliable Diff annotations."""
+    from transformers import RobertaTokenizerFast
+
+    dest = Path(output_dir) / dataset
+    if any((dest / f"{s}.jsonl").exists() for s in SPLITS):
+        raise FileExistsError(f"{dest}: native members already prepared")
+    rows, counterparts, statistics = load_rgcl_native(raw_root, dataset)
+    statistics["split_protocol"] = split_rgcl_groups(rows, counterparts)
+    if dataset == "megavul":
+        # Group the complete native corpus before sampling, including negatives
+        # that will not be used for classification.
+        full_rows = rows
+        rows = balanced(full_rows, seed=42, label_key="target")
+        selected_keys = {r["sample_key"] for r in rows}
+        statistics["negative_sampling"] = dict(seed=42,
+            protocol="group full native C/C++ corpus first; retain all positives; independently sample equal native negatives within each split",
+            selected_functions=len(rows), positive_members_removed=0,
+            negative_members_removed=len(full_rows) - len(rows),
+            splits={s: dict(
+                before=dict(Counter(str(r["target"]) for r in full_rows if r["split"] == s)),
+                selected=dict(Counter(str(r["target"]) for r in rows if r["split"] == s)))
+                for s in SPLITS})
+        dest.mkdir(parents=True, exist_ok=True)
+        with (dest / "grouped_members.csv").open("w", newline="", encoding="utf-8") as f:
+            fields = ["sample_key", "target", "split", "group_key", "selected"]
+            writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(dict(r, selected=int(r["sample_key"] in selected_keys)) for r in full_rows)
+    tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
+    statistics.update(model_path=str(model_path), input_tokens=512, splits={})
+    for split in SPLITS:
+        selected = [r for r in rows if r["split"] == split]
+        clean, annotated, coverage = [], [], Counter()
+        for r in selected:
+            other = counterparts.get(r["sample_key"])
+            truth = _line_diff(r["func"], other)[0] if other is not None else []
+            annotation = dict(r, lines_ground_truth=truth, diff_reliable=other is not None)
+            f = paired_features(annotation, tokenizer, "baseline")
+            mask = f["line_labels"]
+            visible = set(f["line_numbers"])
+            complete = {n for n, ok in zip(f["line_numbers"], f["line_complete"]) if ok}
+            coverage.update(functions=1, reliable_counterpart=other is not None,
+                with_diff_lines=bool(truth), visible_diff=bool(set(truth) & visible),
+                partial_visible_diff=bool(set(truth) & (visible - complete)),
+                effective_region=1 in mask and 0 in mask,
+                no_region_function_bce_only=not (1 in mask and 0 in mask),
+                truncated=f["source_tokens"] > 510)
+            for y in (0, 1):
+                if r["target"] == y:
+                    coverage[f"target_{y}_functions"] += 1
+                    coverage[f"target_{y}_effective_region"] += int(1 in mask and 0 in mask)
+            clean.append(r)
+            annotated.append(annotation)
+            if len(clean) % 2000 == 0:
+                print(f"{dataset} {split}: mapped {len(clean)}/{len(selected)} functions", flush=True)
+        write_jsonl(dest / f"{split}.jsonl", clean)
+        write_jsonl(dest / f"{split}.lines.jsonl", annotated)
+        statistics["splits"][split] = dict(functions=len(selected),
+            class_counts=dict(Counter(str(r["target"]) for r in selected)),
+            normal_kinds=dict(Counter(r["normal_kind"] for r in selected)), coverage=dict(coverage),
+            actual_fraction=len(selected) / len(rows))
+        print(f"{dataset} {split}: {statistics['splits'][split]}", flush=True)
+    train = statistics["splits"]["train"]["class_counts"]
+    statistics["classification_positive_weight"] = train["0"] / train["1"]
+    statistics["classification_weight_rule"] = "Train negatives / positives; same weighted BCE for all three methods"
+    write_json(dest / "statistics.json", statistics)
+    with (dest / "members.csv").open("w", newline="", encoding="utf-8") as f:
+        fields = ["sample_key", "target", "split", "group_key", "normal_kind", "repair_key"]
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    return statistics
+
+
 def split_projects(rows, seed=42):
     """Greedily fill 80/10/10 positive targets; never split a project."""
     positives = Counter(r["project"] for r in rows if r["label"] == 1)
@@ -284,15 +532,15 @@ def _append_native(rows, iterator, dataset, path, raw_root):
             print(f"{dataset} {path.name}: read {number}", flush=True)
 
 
-def balanced(rows, seed=42):
+def balanced(rows, seed=42, *, label_key="label"):
     """Retain every positive; sample only the negatives, independently per Split."""
     selected = set()
     for split in SPLITS:
         positive = [
-            i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 1
+            i for i, r in enumerate(rows) if r["split"] == split and r[label_key] == 1
         ]
         negative = [
-            i for i, r in enumerate(rows) if r["split"] == split and r["label"] == 0
+            i for i, r in enumerate(rows) if r["split"] == split and r[label_key] == 0
         ]
         if not positive or len(negative) < len(positive):
             raise ValueError(f"{split}: need positives and at least as many negatives")
@@ -1334,6 +1582,14 @@ def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512",
         if variant == "baseline" and "lines_ground_truth" in row:
             gt = set(row["lines_ground_truth"])
             f["line_labels"] = [int(n in gt) for n in f["line_numbers"]]
+            if "diff_reliable" in row:
+                complete = {n for n, ok in zip(f["line_numbers"], f["line_complete"]) if ok}
+                visible = gt.intersection(f["line_numbers"])
+                # A partial edited line cannot be relabeled as background.
+                # Skip its function's auxiliary term; classification is retained.
+                active = row["diff_reliable"] and bool(visible) and visible.issubset(complete)
+                if not active:
+                    f["line_labels"] = [0] * len(f["line_numbers"])
     if variant == "oracle":
         selected = set(row["lines_ground_truth"])
     elif variant == "predicted":
@@ -1365,7 +1621,7 @@ def paired_features(row, tokenizer, variant, *, encoding=None, input_mode="512",
     return f
 
 
-def paired_statistics(rows, features):
+def paired_statistics(rows, features, *, paired=True):
     """Summarize known Diff labels and actual source-token visibility."""
     counts = Counter()
     signatures = []
@@ -1399,9 +1655,10 @@ def paired_statistics(rows, features):
         )
         signatures.append(tuple(f["input_ids"]))
         counts["max_windows"] = max(counts["max_windows"], len(f["windows"]))
-    counts["identical_pairs"] = sum(
-        signatures[i] == signatures[i + 1] for i in range(0, len(signatures), 2)
-    )
+    if paired:
+        counts["identical_pairs"] = sum(
+            signatures[i] == signatures[i + 1] for i in range(0, len(signatures), 2)
+        )
     return dict(counts)
 
 

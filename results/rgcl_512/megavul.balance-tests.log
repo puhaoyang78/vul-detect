@@ -1,0 +1,8 @@
+megavul train: {'functions': 32, 'class_counts': {'0': 16, '1': 16}, 'normal_kinds': {'ordinary': 16, 'vulnerable': 16}, 'coverage': {'functions': 32, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 32, 'truncated': 0, 'target_0_functions': 16, 'target_0_effective_region': 0, 'target_1_functions': 16, 'target_1_effective_region': 0}, 'actual_fraction': 0.8}
+megavul valid: {'functions': 4, 'class_counts': {'0': 2, '1': 2}, 'normal_kinds': {'ordinary': 2, 'vulnerable': 2}, 'coverage': {'functions': 4, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 4, 'truncated': 0, 'target_0_functions': 2, 'target_0_effective_region': 0, 'target_1_functions': 2, 'target_1_effective_region': 0}, 'actual_fraction': 0.1}
+megavul test: {'functions': 4, 'class_counts': {'1': 2, '0': 2}, 'normal_kinds': {'vulnerable': 2, 'ordinary': 2}, 'coverage': {'functions': 4, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 4, 'truncated': 0, 'target_1_functions': 2, 'target_1_effective_region': 0, 'target_0_functions': 2, 'target_0_effective_region': 0}, 'actual_fraction': 0.1}
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.059s
+
+OK

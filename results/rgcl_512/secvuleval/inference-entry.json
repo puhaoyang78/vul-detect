@@ -1,0 +1,37 @@
+{
+  "test_used": false,
+  "methods": {
+    "plm_baseline": {
+      "checkpoint_epoch": 1,
+      "source_member": "secvuleval:0",
+      "source_split": "train",
+      "probability": 0.6349661946296692,
+      "direct_probability": 0.6349661946296692,
+      "max_delta": 0.0,
+      "strict_threshold_verified": true,
+      "public_cli_infer_passed": true
+    },
+    "context_only": {
+      "checkpoint_epoch": 1,
+      "source_member": "secvuleval:0",
+      "source_split": "train",
+      "probability": 0.6810733079910278,
+      "direct_probability": 0.6810733079910278,
+      "max_delta": 0.0,
+      "strict_threshold_verified": true,
+      "public_cli_infer_passed": true
+    },
+    "rgcl": {
+      "checkpoint_epoch": 4,
+      "checkpoint": "results/rgcl_512/seed123456/secvuleval/rgcl/best-mcc.pt",
+      "source_member": "secvuleval:0",
+      "source_split": "train",
+      "probability": 0.9347411394119263,
+      "direct_probability": 0.9347411394119263,
+      "max_delta": 0.0,
+      "strict_threshold_verified": true,
+      "diff_independent_inference": true,
+      "public_cli_infer_passed": true
+    }
+  }
+}

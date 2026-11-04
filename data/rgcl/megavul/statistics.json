@@ -1,0 +1,166 @@
+{
+  "source": "/home/PublicData/PHY-data/vul_detect/data/megavul/megavul.json",
+  "official_evaluation_split": false,
+  "native_labels": "is_vul",
+  "raw_functions": 353873,
+  "native_class_counts": {
+    "1": 17975,
+    "0": 335898
+  },
+  "normal_kinds": {
+    "vulnerable": 17975,
+    "ordinary": 335898
+  },
+  "reliable_counterparts": 17975,
+  "issues": {},
+  "labels_reconstructed": false,
+  "synthesized_fixed_negatives": 0,
+  "split_protocol": {
+    "seed": 42,
+    "target_ratios": [
+      0.8,
+      0.1,
+      0.1
+    ],
+    "groups": 6895,
+    "largest_groups": [
+      4655,
+      4293,
+      3361,
+      2936,
+      2089,
+      2003,
+      1831,
+      1705,
+      1670,
+      1472
+    ],
+    "grouping": "transitive union of CVE, fix commit, repair link and whitespace-normalized source (including counterparts)",
+    "cross_split_group_overlap": 0,
+    "members_removed": 0,
+    "duplicate_code_groups": 12273
+  },
+  "negative_sampling": {
+    "seed": 42,
+    "protocol": "group full native C/C++ corpus first; retain all positives; independently sample equal native negatives within each split",
+    "selected_functions": 35950,
+    "positive_members_removed": 0,
+    "negative_members_removed": 317923,
+    "splits": {
+      "train": {
+        "before": {
+          "1": 14380,
+          "0": 268702
+        },
+        "selected": {
+          "1": 14380,
+          "0": 14380
+        }
+      },
+      "valid": {
+        "before": {
+          "1": 1798,
+          "0": 33596
+        },
+        "selected": {
+          "1": 1798,
+          "0": 1798
+        }
+      },
+      "test": {
+        "before": {
+          "1": 1797,
+          "0": 33600
+        },
+        "selected": {
+          "1": 1797,
+          "0": 1797
+        }
+      }
+    }
+  },
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "input_tokens": 512,
+  "splits": {
+    "train": {
+      "functions": 28760,
+      "class_counts": {
+        "1": 14380,
+        "0": 14380
+      },
+      "normal_kinds": {
+        "vulnerable": 14380,
+        "ordinary": 14380
+      },
+      "coverage": {
+        "functions": 28760,
+        "reliable_counterpart": 14380,
+        "with_diff_lines": 10371,
+        "visible_diff": 8111,
+        "partial_visible_diff": 235,
+        "effective_region": 7843,
+        "no_region_function_bce_only": 20917,
+        "truncated": 9350,
+        "target_1_functions": 14380,
+        "target_1_effective_region": 7843,
+        "target_0_functions": 14380,
+        "target_0_effective_region": 0
+      },
+      "actual_fraction": 0.8
+    },
+    "valid": {
+      "functions": 3596,
+      "class_counts": {
+        "1": 1798,
+        "0": 1798
+      },
+      "normal_kinds": {
+        "vulnerable": 1798,
+        "ordinary": 1798
+      },
+      "coverage": {
+        "functions": 3596,
+        "reliable_counterpart": 1798,
+        "with_diff_lines": 1331,
+        "visible_diff": 998,
+        "partial_visible_diff": 29,
+        "effective_region": 969,
+        "no_region_function_bce_only": 2627,
+        "truncated": 1258,
+        "target_1_functions": 1798,
+        "target_1_effective_region": 969,
+        "target_0_functions": 1798,
+        "target_0_effective_region": 0
+      },
+      "actual_fraction": 0.10002781641168289
+    },
+    "test": {
+      "functions": 3594,
+      "class_counts": {
+        "1": 1797,
+        "0": 1797
+      },
+      "normal_kinds": {
+        "vulnerable": 1797,
+        "ordinary": 1797
+      },
+      "coverage": {
+        "functions": 3594,
+        "reliable_counterpart": 1797,
+        "with_diff_lines": 1258,
+        "visible_diff": 1002,
+        "partial_visible_diff": 25,
+        "effective_region": 967,
+        "no_region_function_bce_only": 2627,
+        "truncated": 1134,
+        "target_1_functions": 1797,
+        "target_1_effective_region": 967,
+        "target_0_functions": 1797,
+        "target_0_effective_region": 0
+      },
+      "actual_fraction": 0.09997218358831711
+    }
+  },
+  "classification_positive_weight": 1.0,
+  "classification_weight_rule": "Train negatives / positives; same weighted BCE for all three methods"
+}

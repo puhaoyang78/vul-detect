@@ -553,6 +553,254 @@ def prepare_candidates(data_dir, output_dir, model_path, dataset, *, test_limit=
     _robustness_fixed_candidates(rows, materials, root, tokenizer, budget)
 
 
+def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
+    """Real native Train examples through the three shared models and restore."""
+    import tempfile
+    import time
+    import numpy as np
+    from .training import RGCL_METHODS, LOSVERAdamW, paired_collate, paired_forward
+    from .data import paired_features
+
+    device = core.resolve_device(device)
+    if device.type != "cuda":
+        raise ValueError("native RGCL smoke requires a real GPU")
+    started = time.monotonic()
+    data = json.loads((Path(data_dir) / dataset / "statistics.json").read_text())
+    all_rows = read_jsonl(Path(data_dir) / dataset / "train.lines.jsonl")
+    tokenizer = core.RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
+    selected = []
+    for kind in ("vulnerable", "repaired", "ordinary"):
+        candidates = (r for r in all_rows if r["normal_kind"] == kind)
+        for row in candidates:
+            feature = paired_features(row, tokenizer, "baseline")
+            if kind != "vulnerable" or (1 in feature["line_labels"] and 0 in feature["line_labels"]):
+                selected.append(row)
+                break
+    if not selected or selected[0]["target"] != 1:
+        raise ValueError("GPU smoke needs a reliable, visible positive training region")
+    features = [paired_features(r, tokenizer, "baseline") for r in selected]
+    batch = paired_collate(features)
+    result = dict(device=str(device), gpu=torch.cuda.get_device_name(device), dataset=dataset,
+        train_members=[r["sample_key"] for r in selected], classification_positive_weight=data["classification_positive_weight"],
+        test_used=False, methods={})
+    initial_context, initial_rng = None, None
+    encoder_initial = None
+    for method in RGCL_METHODS:
+        core.seed_everything(123456)
+        np.random.seed(123456)
+        model, _ = core.losver_model(model_path, "baseline", cls_baseline=method == "plm_baseline",
+            class_weight=data["classification_positive_weight"], bounded_attention=method != "plm_baseline",
+            attention_context=method != "plm_baseline", attention_region="diff" if method == "rgcl" else None)
+        current_rng = torch.get_rng_state()
+        current_encoder = next(model.encoder.parameters()).detach().cpu().clone()
+        if encoder_initial is None:
+            encoder_initial, initial_rng = current_encoder, current_rng
+        else:
+            torch.testing.assert_close(current_encoder, encoder_initial, rtol=0, atol=0)
+            torch.testing.assert_close(current_rng, initial_rng, rtol=0, atol=0)
+        model.native_binary = True
+        model.to(device).eval()
+        with torch.no_grad():
+            initial = paired_forward(model, batch, "baseline", device, with_labels=False)
+            if method == "context_only":
+                initial_context = initial.detach().cpu()
+            elif method == "rgcl":
+                torch.testing.assert_close(initial.cpu(), initial_context, rtol=0, atol=0)
+        optimizer = LOSVERAdamW(model.parameters(), lr=2e-5)
+        model.train()
+        gradients, updates = [], []
+        head = model.classifier.out_proj if method == "plm_baseline" else model.classifier
+        for step in range(2):
+            before = head.weight.detach().clone()
+            if method == "plm_baseline":
+                loss, _ = paired_forward(model, batch, "baseline", device)
+            else:
+                loss, _, parts = paired_forward(model, batch, "baseline", device, return_attention=True)
+                torch.testing.assert_close(loss, parts["bce"] + (.1 * parts["region_loss"] if method == "rgcl" else 0))
+                if method == "rgcl" and int(parts["region_functions"]) < 1:
+                    raise ValueError("GPU smoke did not exercise a real auxiliary target")
+            loss.backward()
+            if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
+                raise ValueError("nonfinite native GPU gradients")
+            gradients.append(float(head.weight.grad.abs().sum()))
+            if gradients[-1] <= 0 or not any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.encoder.parameters()):
+                raise ValueError("native classifier/encoder did not receive gradients")
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1., error_if_nonfinite=True)
+            optimizer.step()
+            optimizer.zero_grad()
+            updates.append(float((head.weight.detach() - before).abs().sum()))
+        if not all(v > 0 for v in updates):
+            raise ValueError("native classifier did not update")
+        model.eval()
+        with torch.no_grad():
+            p = paired_forward(model, batch, "baseline", device, with_labels=False)
+            altered = dict(batch, line_labels=1 - batch["line_labels"])
+            q = paired_forward(model, altered, "baseline", device, with_labels=False)
+            torch.testing.assert_close(p, q, rtol=0, atol=0)
+            one = paired_forward(model, paired_collate(features[:1]), "baseline", device, with_labels=False)
+            torch.testing.assert_close(one, p[:1], rtol=1e-5, atol=1e-6)
+        cp = dict(line_mapping="source_offsets", variant="baseline", input_mode="512", model_path=str(model_path),
+            pooling=model.pooling, native_binary=True, cls_baseline=method == "plm_baseline",
+            training_config=dict(class_weight=data["classification_positive_weight"]),
+            state_dict={k: v.detach().cpu() for k, v in model.state_dict().items()})
+        if method != "plm_baseline":
+            cp["bounded_attention"] = dict(k=5, region_supervision=model.attention_region,
+                context=dict(dimension=32))
+        with tempfile.TemporaryDirectory(prefix="rgcl-smoke-") as tmp:
+            filename = Path(tmp) / "model.pt"
+            torch.save(cp, filename)
+            saved = torch.load(filename, map_location="cpu", weights_only=False)
+            restored, _ = load_paired(saved, device)
+            with torch.no_grad():
+                q = paired_forward(restored, batch, "baseline", device, with_labels=False)
+            torch.testing.assert_close(p, q, rtol=0, atol=0)
+            del restored
+        result["methods"][method] = dict(head_gradient_l1=gradients, head_update_l1=updates,
+            finite_gradients=True, save_reload_equal=True, diff_independent_inference=True,
+            single_function_max_delta=float((p[:1] - one).abs().max()), parameters=sum(p.numel() for p in model.parameters()))
+        del model, optimizer, cp, saved
+        torch.cuda.empty_cache()
+    result.update(initial_context_rgcl_equal=True, initialization_cpu_rng_equal=True,
+                  encoder_initialization_equal=True, seconds=time.monotonic() - started)
+    write_json(Path(output_dir) / dataset / "gpu-smoke.json", result)
+    return result
+
+
+def evaluate_rgcl(data_dir, output_dir, dataset, methods, *, device="auto", splits=("valid", "test")):
+    """Selected-MCC evaluation on native functions, never Diff annotations."""
+    from .data import RGCL_DATASETS
+    if dataset not in RGCL_DATASETS or not splits or any(s not in ("valid", "test") for s in splits):
+        raise ValueError("native RGCL evaluation requires complete Valid/Test")
+    device = core.resolve_device(device)
+    root = Path(output_dir) / dataset
+    for method in methods:
+        run = root / method
+        training = json.loads((run / "training.metrics.json").read_text())
+        if not training.get("native_binary") or training["completed_epochs"] != training["epochs"]:
+            raise ValueError("finish native training before evaluation")
+        checkpoint = torch.load(run / "best-mcc.pt", map_location="cpu", weights_only=False)
+        if checkpoint["dataset"] != dataset or checkpoint["selection_metric"] != "mcc":
+            raise ValueError("native evaluation checkpoint or dataset differs")
+        model, tokenizer = load_paired(checkpoint, device)
+        for split in splits:
+            rows = read_jsonl(Path(data_dir) / dataset / f"{split}.jsonl")
+            if any("lines_ground_truth" in r or "diff_reliable" in r for r in rows):
+                raise ValueError("native evaluation must read source-only records")
+            value, predictions = validate_paired(model, rows, tokenizer, "baseline", device)
+            if split == "valid" and value["mcc"] != checkpoint["validation"]["mcc"]:
+                raise ValueError("selected checkpoint does not reproduce full Valid MCC")
+            write_json(run / f"{split}.metrics.json", dict(selected_epoch=checkpoint["selected_epoch"],
+                selection="Valid MCC only", metrics=value, inference="single function source only; no Diff/counterpart"))
+            write_jsonl(run / f"{split}.predictions.jsonl", predictions)
+        del model, checkpoint
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+
+def rgcl_report(output_dir, data_dir, dataset):
+    """Compare complete native cohorts with a shared, fixed evaluation rule."""
+    from .training import RGCL_METHODS
+    from .data import RGCL_DATASETS
+    if dataset not in RGCL_DATASETS:
+        raise ValueError("choose one native RGCL dataset")
+    root = Path(output_dir) / dataset
+    data = json.loads((Path(data_dir) / dataset / "statistics.json").read_text())
+    result = dict(dataset=dataset, data=data, training={}, splits={}, deltas={})
+    reference = None
+    for method in RGCL_METHODS:
+        run = root / method
+        config = json.loads((run / "training.metrics.json").read_text())
+        common = {k: config[k] for k in ("training_config", "training_members", "validation_members",
+                  "model_path", "optimizer_steps", "completed_epochs", "decision_threshold", "comparison", "selection")}
+        if reference is None:
+            reference = common
+        elif common != reference:
+            raise ValueError("native methods have unmatched members or training/evaluation protocol")
+        chosen = json.loads((run / "best-mcc.json").read_text())
+        history = [r for r in read_jsonl(run / "best.training.jsonl") if r["event"] == "epoch"]
+        if [r["epoch"] for r in history] != list(range(1, config["epochs"] + 1)):
+            raise ValueError("all native epochs must finish")
+        selected = max(history, key=lambda r: r["validation"]["mcc"])
+        if selected["epoch"] != chosen["epoch"]:
+            raise ValueError("native selection is not the earliest maximum Valid MCC")
+        result["training"][method] = dict(selected_epoch=chosen["epoch"], parameters=config["parameters"],
+            optimizer_steps=config["optimizer_steps"], epochs=config["completed_epochs"],
+            epoch_seconds=sum(r["epoch_seconds"] for r in history),
+            wall_seconds=json.loads((run / "commands.json").read_text())["wall_seconds"],
+            history=[dict(epoch=r["epoch"], validation=r["validation"],
+                          train_components=r.get("train_components"), train_loss=r["train_loss"]) for r in history])
+        for split in ("valid", "test"):
+            rows = read_jsonl(Path(data_dir) / dataset / f"{split}.jsonl")
+            saved = json.loads((run / f"{split}.metrics.json").read_text())
+            pred = read_jsonl(run / f"{split}.predictions.jsonl")
+            if ([r["sample_key"] for r in rows] != [r["sample_key"] for r in pred]
+                    or any(r["target"] != p["target"] for r, p in zip(rows, pred))
+                    or saved["selected_epoch"] != chosen["epoch"]):
+                raise ValueError("native prediction members, labels or selection differ")
+            actual = metrics([r["target"] for r in rows], [p["probability"] for p in pred], strict=True)
+            if any(saved["metrics"][k] != v for k, v in actual.items()):
+                raise ValueError("native saved metrics do not reproduce from predictions")
+            if split == "valid" and actual["mcc"] != chosen["validation"]["mcc"]:
+                raise ValueError("native Valid selection metrics differ")
+            result["splits"].setdefault(split, {})[method] = saved["metrics"]
+    for split, values in result["splits"].items():
+        result["deltas"][split] = {name: {key: values["rgcl"][key] - values[name][key]
+            for key in ("accuracy", "precision", "recall", "f1", "mcc", "auc", "auprc", "normal_fpr")}
+            for name in ("plm_baseline", "context_only")}
+    result["second_seed_valid_support"] = all(result["deltas"]["valid"][name]["mcc"] >= .01
+        for name in ("plm_baseline", "context_only"))
+    write_json(root / "comparison.json", result)
+    cohort = ("原始标签与全部成员保留" if dataset == "secvuleval" else
+        "仅 C/C++；先对全量原始成员分组划分，再在各划分内独立用 Seed42 下采样正常函数，保留全部漏洞函数，形成固定 1:1 子集；不生成修复后负例")
+    lines = [f"# {dataset}: RGCL 原生函数二分类", "",
+        cohort + "；同 CVE、提交、修复关联和空白归一化重复代码合并后，Seed42 按 8:1:1 目标分组划分。本地发布文件未附独立官方评价成员。",
+        "", "| Split | 函数 | 漏洞 | 正常 | 普通正常 | 修复后正常 | 有可靠对侧 | 有效可见区域 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for split, d in data["splits"].items():
+        c, n, v = d["class_counts"], d["normal_kinds"], d["coverage"]
+        lines.append(f"| {split} | {d['functions']} | {c['1']} | {c['0']} | {n.get('ordinary',0)} | {n.get('repaired',0)} | {v['reliable_counterpart']} | {v['effective_region']} ({100*v['effective_region']/d['functions']:.1f}%) |")
+    lines.extend(["", "区域覆盖率只作数据统计；Diff 辅助损失只用于 Train。PR-AUC 沿用现有 average_precision_score（AP）口径。"])
+    if "negative_sampling" in data:
+        lines.extend(["", "| Split | 抽样前漏洞 | 抽样前正常 | 保留漏洞 | 抽取正常 |",
+                      "|---|---:|---:|---:|---:|"])
+        for split, d in data["negative_sampling"]["splits"].items():
+            lines.append(f"| {split} | {d['before']['1']} | {d['before']['0']} | {d['selected']['1']} | {d['selected']['0']} |")
+        lines.extend(["", "实际子集成员见 data/rgcl/megavul/members.csv；全量分组及入选标记见 grouped_members.csv。先划分后抽样，不按 Test 结果修改成员。"])
+    cfg = reference["training_config"]
+    lines.extend(["", f"预训练 UniXcoder；512 Token；Seed{cfg['seed']}；Batch{cfg['batch_size']}；{cfg['epochs']['baseline']} Epoch；"
+        f"LOSVERAdamW lr={cfg['learning_rate']}、epsilon={cfg['adam_epsilon']}，warmup={cfg['warmup_fraction']}，FP32。"
+        f"三组相同 Train 负/正分类权重 {cfg['class_weight']:.6f}；完整 Valid MCC 选模（不舍入，同分取早）；固定 probability >0.5。",
+        "", "PLM Baseline 使用 CLS 和标准 RobertaClassificationHead（Dense→Tanh→1，标准 head Dropout）。"
+        "参照 [LOSVER run_base.py](https://github.com/waroad/losver/blob/a158905cb45b4400f481f18eeb1cb4473ccfccdc/detection/run_base.py)。"
+        "Context-only 和 RGCL 的编码器、参数及 K=5 Token 加权有界上下文 MIL 完全一致；只后者加 0.1 原 Diff 区域损失。"
+        "无可靠区域、截断修改行和无正/背景区域的函数仍保留 BCE。MegaVul 的修复对侧不自动转成新负例。",
+        "", "| Split | Method | Epoch | Accuracy | Precision | Recall | F1 | MCC | ROC-AUC | PR-AUC | 正常 FPR |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"])
+    for split, values in result["splits"].items():
+        for method, m in values.items():
+            lines.append(f"| {split} | {method} | {result['training'][method]['selected_epoch']} | " +
+                " | ".join(f"{m[k]:.4f}" for k in ("accuracy", "precision", "recall", "f1", "mcc", "auc", "auprc", "normal_fpr")) + " |")
+    lines.extend(["", "| Split | Method | 正常类型 | 函数 | 误报数 | FPR |",
+                  "|---|---|---|---:|---:|---:|"])
+    for split, values in result["splits"].items():
+        for method, m in values.items():
+            for kind, v in m["normal_kinds"].items():
+                fpr = f"{v['fpr']:.4f}" if v["fpr"] is not None else "—"
+                lines.append(f"| {split} | {method} | {kind} | {v['functions']} | {v['false_positives']} | {fpr} |")
+    lines.extend(["", "| Method | 参数量 | 完整 Epoch | 优化步数 | 总耗时（分钟） |",
+                  "|---|---:|---:|---:|---:|"])
+    for method, t in result["training"].items():
+        lines.append(f"| {method} | {t['parameters']} | {t['epochs']} | {t['optimizer_steps']} | {t['wall_seconds']/60:.2f} |")
+    for split, changes in result["deltas"].items():
+        lines.append("")
+        for method, d in changes.items():
+            lines.append(f"{split} RGCL vs {method}: MCC {d['mcc']:+.4f}，Recall {d['recall']*100:+.2f}pp，正常 FPR {d['normal_fpr']*100:+.2f}pp，AUC {d['auc']:+.4f}。")
+    lines.extend(["", "Valid/Test 推理只读取单函数源码，不读取 Diff、修复版本或外部上下文。Test 在完整训练和 Valid 选模后评价，不参与调参。",
+        "", "第二种子触发规则在结果之前固定：RGCL 的 Valid MCC 相比两个对照均提高至少 0.01，再完整复现三组；否则报告单种子结果，不声称稳定收益。", ""])
+    (root / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    return result
+
+
 def evaluate(
     data_dir,
     output_dir,
@@ -565,6 +813,11 @@ def evaluate(
     test_limit=None,
     splits=("valid", "test"),
 ):
+    from .training import RGCL_METHODS
+    if any(m in RGCL_METHODS for m in methods):
+        if not all(m in RGCL_METHODS for m in methods) or valid_limit is not None or test_limit is not None:
+            raise ValueError("native RGCL evaluates complete, matched native members")
+        return evaluate_rgcl(data_dir, output_dir, dataset, methods, device=device, splits=splits)
     if dataset == "primevul_paired":
         if valid_limit is not None or test_limit is not None:
             raise ValueError("LOSVER evaluation keeps all official paired members")
@@ -861,7 +1114,17 @@ def validate_paired(model, rows, tokenizer, variant, device, *, loader=None):
             ),
         )
     else:
-        result = paired_metrics(rows, scores)
+        result = (metrics([r["target"] for r in rows], scores, strict=True)
+                  if getattr(model, "native_binary", False) else paired_metrics(rows, scores))
+        if getattr(model, "native_binary", False):
+            result["comparison"] = ">"
+            result["normal_fpr"] = result["fp"] / (result["fp"] + result["tn"])
+            result["normal_kinds"] = {}
+            for kind in ("ordinary", "repaired"):
+                values = [p for r, p in zip(rows, scores) if r.get("normal_kind") == kind and r["target"] == 0]
+                result["normal_kinds"][kind] = dict(functions=len(values),
+                    false_positives=sum(p > .5 for p in values),
+                    fpr=sum(p > .5 for p in values) / len(values) if values else None)
         result["loss"] = loss / len(loader)
         predictions = [
             dict(
@@ -917,6 +1180,9 @@ def load_paired(checkpoint, device):
         checkpoint["model_path"],
         checkpoint["variant"],
         window_micro_batch=checkpoint.get("window_micro_batch", 8),
+        **(dict(cls_baseline=checkpoint.get("cls_baseline", False),
+                class_weight=checkpoint["training_config"]["class_weight"])
+           if checkpoint.get("native_binary") else {}),
         **(
             dict(dropout_probability=checkpoint["training_config"]["dropout_probability"])
             if checkpoint.get("training_config", {}).get("dropout_probability", 0.0)
@@ -939,6 +1205,7 @@ def load_paired(checkpoint, device):
            if checkpoint.get("insertion_localization") else {}),
     )
     model.input_mode = checkpoint["input_mode"]
+    model.native_binary = checkpoint.get("native_binary", False)
     model.weak_supervision = checkpoint.get("weak_supervision", False)
     if checkpoint["variant"] != "localizer":
         model.pooling = checkpoint.get("pooling", "hard_weight")

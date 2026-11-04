@@ -1,0 +1,22 @@
+MegaVul: loaded 100000 native members
+MegaVul: loaded 200000 native members
+MegaVul: loaded 300000 native members
+megavul train: mapped 2000/28760 functions
+megavul train: mapped 4000/28760 functions
+megavul train: mapped 6000/28760 functions
+megavul train: mapped 8000/28760 functions
+megavul train: mapped 10000/28760 functions
+megavul train: mapped 12000/28760 functions
+megavul train: mapped 14000/28760 functions
+megavul train: mapped 16000/28760 functions
+megavul train: mapped 18000/28760 functions
+megavul train: mapped 20000/28760 functions
+megavul train: mapped 22000/28760 functions
+megavul train: mapped 24000/28760 functions
+megavul train: mapped 26000/28760 functions
+megavul train: mapped 28000/28760 functions
+megavul train: {'functions': 28760, 'class_counts': {'1': 14380, '0': 14380}, 'normal_kinds': {'vulnerable': 14380, 'ordinary': 14380}, 'coverage': {'functions': 28760, 'reliable_counterpart': 14380, 'with_diff_lines': 10371, 'visible_diff': 8111, 'partial_visible_diff': 235, 'effective_region': 7843, 'no_region_function_bce_only': 20917, 'truncated': 9350, 'target_1_functions': 14380, 'target_1_effective_region': 7843, 'target_0_functions': 14380, 'target_0_effective_region': 0}, 'actual_fraction': 0.8}
+megavul valid: mapped 2000/3596 functions
+megavul valid: {'functions': 3596, 'class_counts': {'1': 1798, '0': 1798}, 'normal_kinds': {'vulnerable': 1798, 'ordinary': 1798}, 'coverage': {'functions': 3596, 'reliable_counterpart': 1798, 'with_diff_lines': 1331, 'visible_diff': 998, 'partial_visible_diff': 29, 'effective_region': 969, 'no_region_function_bce_only': 2627, 'truncated': 1258, 'target_1_functions': 1798, 'target_1_effective_region': 969, 'target_0_functions': 1798, 'target_0_effective_region': 0}, 'actual_fraction': 0.10002781641168289}
+megavul test: mapped 2000/3594 functions
+megavul test: {'functions': 3594, 'class_counts': {'1': 1797, '0': 1797}, 'normal_kinds': {'vulnerable': 1797, 'ordinary': 1797}, 'coverage': {'functions': 3594, 'reliable_counterpart': 1797, 'with_diff_lines': 1258, 'visible_diff': 1002, 'partial_visible_diff': 25, 'effective_region': 967, 'no_region_function_bce_only': 2627, 'truncated': 1134, 'target_1_functions': 1797, 'target_1_effective_region': 967, 'target_0_functions': 1797, 'target_0_effective_region': 0}, 'actual_fraction': 0.09997218358831711}

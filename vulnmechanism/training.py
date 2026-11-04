@@ -39,6 +39,7 @@ METHODS = (
     "random_aug_vat",
     "hard_aug_vat",
 )
+RGCL_METHODS = ("plm_baseline", "context_only", "rgcl")
 TRAINING = dict(
     seed=42,
     epochs=3,
@@ -190,6 +191,22 @@ def train(
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
+    if method in RGCL_METHODS:
+        from .data import RGCL_DATASETS
+        if (dataset not in RGCL_DATASETS or paired_input != "512" or config is not None
+                or hard_selection != "hardest" or vat_direction != "finite_difference"
+                or train_limit is not None or valid_limit is not None or marginalize_inputs
+                or any(x is not None for x in (line_auxiliary, line_auxiliary_weight, oof_fold,
+                    localizer_dir, train_localizer_dir, insertion_supervision, rccl, local_mil,
+                    localizer_dropout, localizer_weight_decay, localizer_rdrop, attention_suppression))
+                or attention_local or attention_context_scale or attention_ema or attention_diagnostics
+                or bounded_attention or attention_context or attention_region is not None
+                or attention_max_rate != 5 or attention_region_weighting != "token"):
+            raise ValueError("native RGCL uses all members, 512 tokens and only its fixed three methods")
+        return train_losver(data_dir, output_dir, model_path, method, dataset=dataset,
+            device=device, resume=resume, save_every=save_every,
+            epochs_override=paired_epochs, seed=paired_seed,
+            window_micro_batch=window_micro_batch, function_micro_batch=function_micro_batch)
     if method in LOSVER_METHODS:
         if (
             dataset != "primevul_paired"
@@ -1214,6 +1231,7 @@ def train_losver(
     model_path,
     method,
     *,
+    dataset="primevul_paired",
     device="auto",
     config=None,
     input_mode="512",
@@ -1253,8 +1271,21 @@ def train_losver(
     from .evaluation import validate_paired, localize_paired
     import platform
 
-    variant = LOSVER_VARIANTS[method]
+    native = method in RGCL_METHODS
+    if native:
+        from .data import RGCL_DATASETS
+        if dataset not in RGCL_DATASETS or input_mode != "512":
+            raise ValueError("native RGCL requires SecVulEval/MegaVul with 512 inputs")
+        bounded_attention = method != "plm_baseline"
+        attention_context = bounded_attention
+        attention_region = "diff" if method == "rgcl" else None
+    elif dataset != "primevul_paired":
+        raise ValueError("original LOSVER keeps the official paired protocol")
+    variant = "baseline" if native else LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
+    if native:
+        prepared = json.loads((Path(data_dir) / dataset / "statistics.json").read_text())
+        settings["class_weight"] = prepared["classification_positive_weight"]
     if seed is not None:
         if not 0 <= seed < 2**32:
             raise ValueError("paired seed must be in [0, 2**32)")
@@ -1274,7 +1305,7 @@ def train_losver(
     if train_localizer_dir is not None and localizer_dir is None:
         raise ValueError("Train prediction override requires the shared Valid/inference localizer directory")
     joint = line_auxiliary is not None
-    if bounded_attention and (method != "unixcoder" or input_mode != "512" or joint
+    if bounded_attention and ((method != "unixcoder" and not native) or input_mode != "512" or joint
                               or line_auxiliary_weight is not None):
         raise ValueError("bounded attention requires the original 512 unixcoder without line auxiliary")
     if attention_context and (not bounded_attention or attention_suppression is not None or attention_ema):
@@ -1337,7 +1368,7 @@ def train_losver(
     if bounded_attention:
         pooling = "bounded_attention"
     neighbour = method in ("diff_neighbour_localizer", "diff_neighbour")
-    weak = not neighbour and method not in (
+    weak = not native and not neighbour and method not in (
         "unixcoder", "losver_localizer", "losver", "losver_oracle"
     )
     if neighbour:
@@ -1378,11 +1409,14 @@ def train_losver(
     if rccl is not None and (function_micro_batch % 2 or settings["eval_batch_size"] % 2):
         raise ValueError("RCCL micro-batches must contain complete repair pairs")
     accumulation = settings["batch_size"] // function_micro_batch
-    root = Path(output_dir) / "primevul_paired"
+    root = Path(output_dir) / dataset
     run = root / method
     run.mkdir(parents=True, exist_ok=True)
     if resume and (run / "training.metrics.json").exists():
         completed=json.loads((run / "training.metrics.json").read_text())
+        if native and (completed.get("native_binary") is not True
+                       or completed["training_config"] != settings):
+            raise ValueError(f"{run}: completed native configuration differs")
         saved=completed.get("attention_regularization",{})
         if (saved.get("suppression")!=attention_suppression
                 or bool(saved.get("ema_components"))!=attention_ema
@@ -1410,7 +1444,13 @@ def train_losver(
         raise FileExistsError(
             f"{run}: training already started; use --resume with last.pt"
         )
-    if joint or bounded_attention:
+    if native:
+        train_rows = read_jsonl(Path(data_dir) / dataset / "train.lines.jsonl")
+        valid_rows = read_jsonl(Path(data_dir) / dataset / "valid.jsonl")
+        counts = Counter(r["target"] for r in train_rows)
+        if counts[0] / counts[1] != settings["class_weight"]:
+            raise ValueError("native class weight differs from complete Train")
+    elif joint or bounded_attention:
         train_rows = paired_rows(data_dir, output_dir, "localizer", "train")
         valid_rows = paired_rows(data_dir, output_dir, "localizer", "valid")
     elif neighbour and variant == "localizer":
@@ -1463,6 +1503,7 @@ def train_losver(
         variant,
         window_micro_batch=window_micro_batch,
         gradient_checkpointing=input_mode == "l1",
+        **(dict(cls_baseline=method == "plm_baseline", class_weight=settings["class_weight"]) if native else {}),
         **(dict(dropout_probability=settings["dropout_probability"]) if settings["dropout_probability"] else {}),
         **(dict(line_auxiliary_weight=line_auxiliary_weight) if joint else {}),
         **(dict(bounded_attention=True, attention_region=attention_region,
@@ -1477,6 +1518,7 @@ def train_losver(
         **(dict(attention_suppression=attention_suppression) if attention_suppression else {}),
     )
     model.input_mode = input_mode
+    model.native_binary = native
     model.weak_supervision = weak and variant == "localizer"
     if variant != "localizer":
         model.pooling = pooling
@@ -1550,15 +1592,14 @@ def train_losver(
         ("train", loader, train_rows),
         ("valid", valid_loader, valid_rows),
     ):
-        annotations = read_jsonl(
-            Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl"
-        )
+        annotations = ([dict(r, lines_ground_truth=r.get("lines_ground_truth", [])) for r in rows]
+                       if native else read_jsonl(Path(data_dir) / "primevul_paired" / f"{split}.lines.jsonl"))
         selected = {r["sample_key"] for r in rows}
         annotations = [r for r in annotations if r["sample_key"] in selected]
         if [r["sample_key"] for r in annotations] != [r["sample_key"] for r in rows]:
             raise ValueError("input coverage annotations and training members differ")
         # Annotation statistics only; no Diff feature enters a normal detector.
-        input_coverage[split] = paired_statistics(annotations, data_loader.dataset)
+        input_coverage[split] = paired_statistics(annotations, data_loader.dataset, paired=not native)
         if model.weak_supervision:
             fs = data_loader.dataset
             counts = Counter(int(y) for f in fs for y in f["labels"])
@@ -1602,7 +1643,7 @@ def train_losver(
             else "first 510 source tokens"
         ),
         classifier_head="code-only pooling + shared Linear(hidden_size, 1)",
-        dataset="primevul_paired",
+        dataset=dataset,
         method=method,
         supervision=supervision if weak or neighbour else "original_diff",
         weak_supervision=model.weak_supervision,
@@ -1664,6 +1705,14 @@ def train_losver(
             ),
         ),
     )
+    if native:
+        metadata.update(native_binary=True, cls_baseline=method == "plm_baseline",
+            protocol="rgcl_native_binary", selection="full Valid MCC; unrounded",
+            classifier_head=("CLS + RobertaClassificationHead(hidden -> tanh -> 1); standard .1 head dropout"
+                             if method == "plm_baseline" else metadata["classifier_head"]),
+            source_data_statistics=prepared,
+            localizer_attention="none; no localizer or extra encoding",
+            supervision="reliable direct Diff only" if attention_region else "function labels only")
     if regularized:
         metadata["localizer_regularization"] = dict(
             dropout=settings["dropout_probability"],
@@ -1805,7 +1854,7 @@ def train_losver(
         metadata["validation_rng"] = (
             "beta grid preserves exactly one validation-loader RNG advance"
         )
-    best = (
+    best = {"mcc": -math.inf} if native else (
         {"f1": -1.0}
         if variant == "localizer"
         else ({"p_c": -1.0} if joint or bounded_attention else {"accuracy": -1.0, "f1": -1.0, "p_c": -1.0})
@@ -2075,7 +2124,7 @@ def train_losver(
         history.add(event)
         print(json.dumps(event), flush=True)
         for key in best:
-            score = round(validation[key], 4)
+            score = validation[key] if native else round(validation[key], 4)
             if score > best[key]:
                 best[key] = score
                 chosen[key] = epoch
@@ -2117,7 +2166,7 @@ def train_losver(
         if rccl is not None:
             state["paired_batch_order"] = []
         save_training_state(run, model, optimizer, metadata, state, scheduler=scheduler, ema=ema)
-    required = "f1" if variant == "localizer" else "p_c"
+    required = "mcc" if native else "f1" if variant == "localizer" else "p_c"
     if required not in chosen:
         raise RuntimeError(f"{method}: no finite validation checkpoint was selected")
     summary = dict(

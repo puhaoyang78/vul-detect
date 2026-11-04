@@ -1,0 +1,38 @@
+{"time": "2026-11-03T15:28:35.407500+00:00", "event": "existing_training_finished", "method": "plm_baseline", "seconds": 7130.257464013062}
+{"time": "2026-11-03T15:28:35.429263+00:00", "event": "training_started", "dataset": "secvuleval", "seed": 123456, "method": "rgcl", "gpu": 0, "pid": 1890924}
+{"time": "2026-11-03T15:30:50.478158+00:00", "event": "existing_training_finished", "method": "context_only", "seconds": 7290.928451734129}
+{"time": "2026-11-03T17:19:38.027618+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123456/secvuleval/rgcl", "code": 0, "seconds": 6662.56177791534}
+{"time": "2026-11-03T17:19:38.113258+00:00", "event": "valid_seed_decision", "dataset": "secvuleval", "seed": 123456, "valid_mcc": {"plm_baseline": 0.11418762734545078, "context_only": 0.10102235335907668, "rgcl": 0.12635566188197767}, "deltas": {"plm_baseline": 0.012168034536526887, "context_only": 0.025333308522900985}, "second_seed": true, "decision_inputs": "full Valid only; no Test prediction used"}
+{"time": "2026-11-03T17:19:38.185358+00:00", "event": "training_started", "dataset": "secvuleval", "seed": 123457, "method": "plm_baseline", "gpu": 0, "pid": 1955859}
+{"time": "2026-11-03T17:19:38.205631+00:00", "event": "training_started", "dataset": "secvuleval", "seed": 123457, "method": "context_only", "gpu": 1, "pid": 1955860}
+{"time": "2026-11-03T19:19:13.332704+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123457/secvuleval/plm_baseline", "code": 0, "seconds": 7175.127966675907}
+{"time": "2026-11-03T19:19:13.374560+00:00", "event": "training_started", "dataset": "secvuleval", "seed": 123457, "method": "rgcl", "gpu": 0, "pid": 2028008}
+{"time": "2026-11-03T19:22:10.171834+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123457/secvuleval/context_only", "code": 0, "seconds": 7351.953589178156}
+{"time": "2026-11-03T21:20:54.525603+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123457/secvuleval/rgcl", "code": 0, "seconds": 7301.129752172623}
+{"time": "2026-11-03T21:20:54.591819+00:00", "event": "valid_seed_decision", "dataset": "secvuleval", "seed": 123457, "valid_mcc": {"plm_baseline": 0.09456751141404378, "context_only": 0.10383268766382679, "rgcl": 0.11339581899714915}, "deltas": {"plm_baseline": 0.018828307583105372, "context_only": 0.009563131333322358}, "second_seed": false, "decision_inputs": "full Valid only; no Test prediction used"}
+{"time": "2026-11-03T21:20:54.602506+00:00", "event": "stage_started", "name": "secvuleval.seed123456.evaluate"}
+{"time": "2026-11-03T21:25:38.321379+00:00", "event": "stage_finished", "name": "secvuleval.seed123456.evaluate", "code": 0, "seconds": 283.68478940892965}
+{"time": "2026-11-03T21:25:38.331771+00:00", "event": "stage_started", "name": "secvuleval.seed123456.report"}
+{"time": "2026-11-03T21:25:54.243721+00:00", "event": "stage_finished", "name": "secvuleval.seed123456.report", "code": 0, "seconds": 15.896316205151379}
+{"time": "2026-11-03T21:25:54.272074+00:00", "event": "stage_started", "name": "secvuleval.seed123457.evaluate"}
+{"time": "2026-11-03T21:30:54.476025+00:00", "event": "stage_finished", "name": "secvuleval.seed123457.evaluate", "code": 0, "seconds": 300.1889055990614}
+{"time": "2026-11-03T21:30:54.486104+00:00", "event": "stage_started", "name": "secvuleval.seed123457.report"}
+{"time": "2026-11-03T21:31:10.236665+00:00", "event": "stage_finished", "name": "secvuleval.seed123457.report", "code": 0, "seconds": 15.724445004016161}
+{"time": "2026-11-03T21:31:10.253305+00:00", "event": "pipeline_failed", "error": "FileNotFoundError: [Errno 2] No such file or directory: 'results/rgcl_512/commands.json.tmp' -> 'results/rgcl_512/commands.json'"}
+{"time": "2026-11-03T21:34:22.414870+00:00", "event": "pipeline_resumed", "next_stage": "megavul.prepare", "secvuleval_seeds": [123456, 123457]}
+{"time": "2026-11-03T21:34:22.430195+00:00", "event": "stage_started", "name": "megavul.prepare"}
+{"time": "2026-11-03T21:40:14.850903+00:00", "event": "stage_finished", "name": "megavul.prepare", "code": 0, "seconds": 352.39850158104673}
+{"time": "2026-11-03T21:40:14.863295+00:00", "event": "stage_started", "name": "megavul.gpu-smoke"}
+{"time": "2026-11-03T21:40:51.615036+00:00", "event": "stage_finished", "name": "megavul.gpu-smoke", "code": 0, "seconds": 36.72955570416525}
+{"time": "2026-11-03T21:40:51.697092+00:00", "event": "training_started", "dataset": "megavul", "seed": 123456, "method": "plm_baseline", "gpu": 0, "pid": 2111520}
+{"time": "2026-11-03T21:40:51.740885+00:00", "event": "training_started", "dataset": "megavul", "seed": 123456, "method": "context_only", "gpu": 1, "pid": 2111521}
+{"time": "2026-11-04T00:07:28.092255+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123456/megavul/plm_baseline", "code": 0, "seconds": 8796.36457061069}
+{"time": "2026-11-04T00:07:28.170778+00:00", "event": "training_started", "dataset": "megavul", "seed": 123456, "method": "rgcl", "gpu": 0, "pid": 2199506}
+{"time": "2026-11-04T00:09:15.673965+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123456/megavul/context_only", "code": 0, "seconds": 8903.903818781953}
+{"time": "2026-11-04T02:52:34.272071+00:00", "event": "training_finished", "directory": "results/rgcl_512/seed123456/megavul/rgcl", "code": 0, "seconds": 9906.055280313827}
+{"time": "2026-11-04T02:52:34.378254+00:00", "event": "valid_seed_decision", "dataset": "megavul", "seed": 123456, "valid_mcc": {"plm_baseline": 0.47937644619880754, "context_only": 0.5071683185115009, "rgcl": 0.5021758732806381}, "deltas": {"plm_baseline": 0.022799427081830526, "context_only": -0.004992445230862841}, "second_seed": false, "decision_inputs": "full Valid only; no Test prediction used"}
+{"time": "2026-11-04T02:52:34.392223+00:00", "event": "stage_started", "name": "megavul.seed123456.evaluate"}
+{"time": "2026-11-04T02:57:23.607409+00:00", "event": "stage_finished", "name": "megavul.seed123456.evaluate", "code": 0, "seconds": 289.1624923083}
+{"time": "2026-11-04T02:57:23.622639+00:00", "event": "stage_started", "name": "megavul.seed123456.report"}
+{"time": "2026-11-04T02:57:39.730173+00:00", "event": "stage_finished", "name": "megavul.seed123456.report", "code": 0, "seconds": 16.073859910015017}
+{"time": "2026-11-04T02:57:39.756098+00:00", "event": "pipeline_complete", "megavul_seeds": [123456]}
