@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "unchanged_function_opposite_native_labels",
+    "cve": "CVE-2012-2121",
+    "project": "torvalds/linux",
+    "commit_id": "09ca8e1173bcb12e2a449698c9ae3b86a8a10195",
+    "file_name": "virt/kvm/iommu.c",
+    "function_name": "kvm_iommu_put_pages",
+    "before_key": "reposvul:37:1:before:7",
+    "after_key": "reposvul:37:1:after:7",
+    "before_target": 1,
+    "after_target": 0,
+    "exact_source_equal": true,
+    "source_in_both_parent_files": true,
+    "commit_url": "https://github.com/torvalds/linux/commit/09ca8e1173bcb12e2a449698c9ae3b86a8a10195",
+    "interpretation": "The patch inserts a wrapper and changes a caller; this function body is unchanged. Single-function input cannot identify the version."
+  },
+  {
+    "kind": "same_fix_and_function_opposite_labels_across_cve_entries",
+    "project": "autotrace/autotrace",
+    "commit_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532",
+    "file_name": "src/pxl-outline.c",
+    "function_name": "concat_pixel_outline",
+    "exact_source_equal": true,
+    "official_split": "train",
+    "members": [
+      {
+        "sample_key": "reposvul:official:train:180",
+        "cve": "CVE-2019-19005",
+        "target": 1,
+        "function_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532_291",
+        "function_numbers": {
+          "function_start": 450,
+          "function_end": 470
+        }
+      },
+      {
+        "sample_key": "reposvul:official:train:35998",
+        "cve": "CVE-2019-19004",
+        "target": 0,
+        "function_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532_291",
+        "function_numbers": {
+          "function_start": 450,
+          "function_end": 470
+        }
+      }
+    ],
+    "interpretation": "The same project, fix commit, file and exact function body have different native targets under different CVE entries; no unconditional source-only classifier can satisfy both."
+  }
+]

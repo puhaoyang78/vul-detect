@@ -1,0 +1,30 @@
+{
+  "author_repository": "https://github.com/Eshe0922/ReposVul",
+  "official_download": "https://drive.google.com/file/d/1sQynG6Fe2h2zmZ7MFGtAHGIhL3PAZuXF/view",
+  "archive_name": "ReposVul_c_cpp.tar.gz",
+  "archive_bytes": 684170847,
+  "members": [
+    {
+      "name": "./random",
+      "size": 0,
+      "regular": false
+    },
+    {
+      "name": "./random/test_c_cpp_repository2.jsonl",
+      "size": 295798032,
+      "regular": true
+    },
+    {
+      "name": "./random/train_c_cpp_repository2.jsonl",
+      "size": 2434924717,
+      "regular": true
+    },
+    {
+      "name": "./random/valid_c_cpp_repository2.jsonl",
+      "size": 310899673,
+      "regular": true
+    }
+  ],
+  "connector_limit_bytes": 268435456,
+  "download": "public original release; raw archive remains local"
+}

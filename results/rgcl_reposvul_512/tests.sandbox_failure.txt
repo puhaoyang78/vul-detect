@@ -1,0 +1,155 @@
+..ReposVul official train: {'functions': 1, 'counts': {'target_1': 1, 'language_c': 1, 'exact_local_source_match': 1, 'native_label_agrees_with_local': 1, 'unique_local_changed_counterpart': 1, 'positive_effective_region': 1}}
+ReposVul official valid: {'functions': 1, 'counts': {'target_1': 1, 'language_c': 1, 'exact_local_source_match': 1, 'native_label_agrees_with_local': 1, 'unique_local_changed_counterpart': 1, 'positive_effective_region': 1}}
+ReposVul official test: {'functions': 1, 'counts': {'target_1': 1, 'language_c': 1, 'exact_local_source_match': 1, 'native_label_agrees_with_local': 1, 'unique_local_changed_counterpart': 1, 'positive_effective_region': 1}}
+.....megavul train: {'functions': 32, 'class_counts': {'0': 16, '1': 16}, 'normal_kinds': {'ordinary': 16, 'vulnerable': 16}, 'coverage': {'functions': 32, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 32, 'truncated': 0, 'target_0_functions': 16, 'target_0_effective_region': 0, 'target_1_functions': 16, 'target_1_effective_region': 0}, 'actual_fraction': 0.8}
+megavul valid: {'functions': 4, 'class_counts': {'0': 2, '1': 2}, 'normal_kinds': {'ordinary': 2, 'vulnerable': 2}, 'coverage': {'functions': 4, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 4, 'truncated': 0, 'target_0_functions': 2, 'target_0_effective_region': 0, 'target_1_functions': 2, 'target_1_effective_region': 0}, 'actual_fraction': 0.1}
+megavul test: {'functions': 4, 'class_counts': {'1': 2, '0': 2}, 'normal_kinds': {'vulnerable': 2, 'ordinary': 2}, 'coverage': {'functions': 4, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 4, 'truncated': 0, 'target_1_functions': 2, 'target_1_effective_region': 0, 'target_0_functions': 2, 'target_0_effective_region': 0}, 'actual_fraction': 0.1}
+.../home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/multiprocessing/reductions.py", line 619, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/multiprocessing/reductions.py", line 619, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/multiprocessing/reductions.py", line 619, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey, backlog=128)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 464, in __init__
+    self._listener = SocketListener(address, family, backlog)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey, backlog=128)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey, backlog=128)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 605, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 464, in __init__
+    self._listener = SocketListener(address, family, backlog)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 464, in __init__
+    self._listener = SocketListener(address, family, backlog)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 605, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 605, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+PermissionError: [Errno 1] Operation not permitted
+PermissionError: [Errno 1] Operation not permitted
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/__main__.py", line 18, in <module>
+    main(module=None)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/main.py", line 102, in __init__
+    self.runTests()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/main.py", line 274, in runTests
+    self.result = testRunner.run(self.test)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/runner.py", line 217, in run
+    test(result)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/suite.py", line 122, in run
+    test(result)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/suite.py", line 122, in run
+    test(result)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/suite.py", line 122, in run
+    test(result)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/case.py", line 678, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/case.py", line 623, in run
+    self._callTestMethod(testMethod)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/unittest/case.py", line 579, in _callTestMethod
+    if method() is not None:
+       ^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/tests/test_rgcl.py", line 311, in test_native_training_uses_mcc_and_shared_original_loop
+    result = train_losver(root / "data", root / "out", "tiny", "rgcl", dataset="secvuleval",
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/training.py", line 1949, in train_losver
+    group = list(islice(iterator, accumulation))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 732, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1482, in _next_data
+    idx, data = self._get_data()
+                ^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1444, in _get_data
+    success, data = self._try_get_data()
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1275, in _try_get_data
+    data = self._data_queue.get(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 113, in get
+    if not self._poll(timeout):
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 257, in poll
+    return self._poll(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 440, in _poll
+    r = wait([self], timeout)
+        ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 948, in wait
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/selectors.py", line 415, in select
+    fd_event_list = self._selector.poll(timeout)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

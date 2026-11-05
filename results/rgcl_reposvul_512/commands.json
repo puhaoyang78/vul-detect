@@ -1,0 +1,57 @@
+{
+  "method": "RGCL (Repair-Guided Contextual Learning; original Context + Diff)",
+  "code_base_commit": "623799603b842d60db03c3e258ef689053a8af60",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "fixed_method": {
+    "k": 5,
+    "region_weight": 0.1,
+    "region_weighting": "token"
+  },
+  "requested_training_protocol": {
+    "seeds": [
+      42,
+      1234,
+      123456
+    ],
+    "input_tokens": 512,
+    "batch_size": 8,
+    "epochs": 16,
+    "optimizer": "existing LOSVERAdamW",
+    "learning_rate": 2e-05,
+    "selection": "full Valid MCC",
+    "threshold": 0.5,
+    "comparison": ">"
+  },
+  "full_training_runs": 0,
+  "performance_metrics_and_seed_mean_std": null,
+  "reason": "Data eligibility failed: opposite native labels for identical single-function inputs; official split leakage; incomplete local repair coverage. No labels or members were repaired or sampled.",
+  "commands": {
+    "inspection": "python -m vulnmechanism.cli rgcl-study inspect --dataset reposvul --raw-root /home/PublicData/PHY-data/vul_detect/data/reposvul --official-dir data/rgcl/reposvul_official --output-dir results/rgcl_reposvul_512",
+    "tests": "python -m unittest tests.test_reposvul tests.test_rgcl tests.test_bounded_attention tests.test_losver",
+    "focused_retest": "python -m unittest tests.test_reposvul",
+    "frozen_gpu": "CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 TOKENIZERS_PARALLELISM=false python -m vulnmechanism.cli rgcl-study check --dataset reposvul --official-dir data/rgcl/reposvul_official --output-dir results/rgcl_reposvul_512 --device cuda:0"
+  },
+  "tests": {
+    "passed": true,
+    "unique_tests": 71,
+    "full_suite_seconds": 15.775,
+    "focused_retest_tests": 4,
+    "focused_retest_seconds": 0.185,
+    "initial_sandbox_failure": "multiprocessing resource-sharing Unix socket PermissionError; interrupted PID3429594; identical suite passed outside the sandbox",
+    "failure_log": "tests.sandbox_failure.txt"
+  },
+  "gpu_smoke": {
+    "passed": true,
+    "type": "frozen historical model inference only; no optimization steps",
+    "test_used": false
+  },
+  "environment": {
+    "python": "3.11.14",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.3",
+    "cuda": "12.8"
+  },
+  "raw_data_and_historical_results_modified": false,
+  "test_used_for_model_selection": false,
+  "reproducibility": "Two complete inspection passes reproduced native counts, repair coverage, label conflicts and official overlaps; the second pass additionally checked every official record field."
+}

@@ -466,3 +466,10 @@ __pycache__/
 !/results/rgcl_multiseed_512/**/*.jsonl
 !/results/rgcl_multiseed_512/**/*.md
 !/results/rgcl_multiseed_512/**/*.txt
+
+# ReposVul eligibility inspection; source datasets and model weights stay local.
+!/results/rgcl_reposvul_512/
+!/results/rgcl_reposvul_512/*.json
+!/results/rgcl_reposvul_512/*.jsonl
+!/results/rgcl_reposvul_512/*.md
+!/results/rgcl_reposvul_512/*.txt

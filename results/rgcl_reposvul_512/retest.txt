@@ -1,0 +1,8 @@
+..ReposVul official train: {'functions': 1, 'counts': {'target_1': 1, 'language_c': 1, 'exact_local_source_match': 1, 'native_label_agrees_with_local': 1, 'target_1_local_label_disagreement': 0, 'unique_local_changed_counterpart': 1, 'positive_effective_region': 1}, 'fields': {'function_id': 1, 'function': 1, 'target': 1, 'project': 1, 'commit_id': 1, 'cve_id': 1, 'file_name': 1, 'file_language': 1}}
+ReposVul official valid: {'functions': 1, 'counts': {'target_1': 1, 'language_c': 1, 'exact_local_source_match': 1, 'native_label_agrees_with_local': 1, 'target_1_local_label_disagreement': 0, 'unique_local_changed_counterpart': 1, 'positive_effective_region': 1}, 'fields': {'function_id': 1, 'function': 1, 'target': 1, 'project': 1, 'commit_id': 1, 'cve_id': 1, 'file_name': 1, 'file_language': 1}}
+ReposVul official test: {'functions': 1, 'counts': {'target_1': 1, 'language_c': 1, 'exact_local_source_match': 1, 'native_label_agrees_with_local': 1, 'target_1_local_label_disagreement': 0, 'unique_local_changed_counterpart': 1, 'positive_effective_region': 1}, 'fields': {'function_id': 1, 'function': 1, 'target': 1, 'project': 1, 'commit_id': 1, 'cve_id': 1, 'file_name': 1, 'file_language': 1}}
+..
+----------------------------------------------------------------------
+Ran 4 tests in 0.185s
+
+OK

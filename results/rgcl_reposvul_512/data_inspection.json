@@ -1,0 +1,2072 @@
+{
+  "source": "/home/PublicData/PHY-data/vul_detect/data/reposvul/ReposVul_c.jsonl",
+  "source_bytes": 1498622806,
+  "counts": {
+    "records": 4010,
+    "cc_files": 7737,
+    "before_target_0": 89423,
+    "language_c_functions": 181236,
+    "before_target_1": 1270,
+    "after_target_0": 91001,
+    "language_h_functions": 458
+  },
+  "file_languages": {
+    "c": 6496,
+    "cs": 2,
+    "h": 1019,
+    "txt": 135,
+    "drivers/acpi/kconfig": 1,
+    "drivers/acpi/makefile": 1,
+    "changelog": 124,
+    "html": 6,
+    "tsv": 1,
+    "in": 58,
+    "s": 22,
+    "am": 52,
+    "sh": 75,
+    "bootstrap": 3,
+    "news": 22,
+    "phpt": 54,
+    "conf": 8,
+    "testcases/files/logs/postfix": 1,
+    "testcases/files/logs/cyrus-imap": 1,
+    "stdout": 1,
+    "pgc": 1,
+    "out": 167,
+    "sql": 32,
+    "magic/magdir/commands": 2,
+    "cmake": 12,
+    "ac": 34,
+    "def": 2,
+    "test/suites/encoding-flags/compact-object/env": 1,
+    "test/suites/encoding-flags/indent-compact-object/env": 1,
+    "test/suites/encoding-flags/indent-object/env": 1,
+    "test/suites/encoding-flags/object/env": 1,
+    "inc": 22,
+    "man": 4,
+    "magic/magdir/android": 1,
+    "magic/magdir/fortran": 1,
+    "magic/magdir/graphviz": 1,
+    "magic/magdir/marc21": 1,
+    "magic/magdir/scientific": 1,
+    "magic/magdir/troff": 1,
+    "changes": 12,
+    "status": 4,
+    "1": 4,
+    "3": 5,
+    "md": 42,
+    "yml": 5,
+    "docs/log-message-tags/next-number": 2,
+    "src/tests/lxc-test-symlink": 1,
+    "gitignore": 17,
+    "m4": 6,
+    "drivers/staging/rdma/hfi1/todo": 1,
+    "cpp": 123,
+    "php": 101,
+    "expect": 6,
+    "cc": 92,
+    "pp": 1,
+    "result": 3,
+    "opt": 1,
+    "test": 16,
+    "skl": 1,
+    "uu": 2,
+    "fs/makefile": 1,
+    "release-notes": 1,
+    "t": 6,
+    "thanks": 5,
+    "configure": 11,
+    "rb": 13,
+    "pl": 7,
+    "re": 5,
+    "gitattributes": 2,
+    "policycoreutils/sandbox/sandbox": 1,
+    "bin/ssh/sshd/makefile": 1,
+    "changes/buf-sentinel": 1,
+    "pm": 7,
+    "xs": 1,
+    "xml": 48,
+    "docs/changelog": 1,
+    "makefile": 7,
+    "spec": 15,
+    "cxx": 3,
+    "tests/data/test1440": 1,
+    "tests/data/test1441": 1,
+    "l": 3,
+    "y": 4,
+    "js": 36,
+    "yodl/version": 1,
+    "yodl/changelog": 1,
+    "net/sunrpc/kconfig": 1,
+    "net/sunrpc/xprtrdma/makefile": 1,
+    "xfpt": 1,
+    "changes/trove-2017-004": 1,
+    "changes/trove-2017-005": 1,
+    "go": 13,
+    "texi": 3,
+    "contributors": 1,
+    "c++": 2,
+    "adoc": 5,
+    "changes/trove-2017-008": 1,
+    "tests/testlist": 113,
+    "cfg": 4,
+    "fifo": 1,
+    "utils/kamctl/kamctlrc": 1,
+    "loc": 1,
+    "err": 4,
+    "rdr": 2,
+    "dtd": 1,
+    "lintian-overrides": 1,
+    "parse": 1,
+    "wddx": 1,
+    "lua": 2,
+    "dist": 1,
+    "nuspec": 1,
+    "py": 82,
+    "build": 3,
+    "wrapper": 3,
+    "ui": 6,
+    "ts": 49,
+    "rst": 8,
+    "libmspack/changelog": 8,
+    "at": 12,
+    "ver": 1,
+    "debian/news": 1,
+    "debian/changelog": 3,
+    "texk/dvipsk/changelog": 1,
+    "texk/web2c/pdftexdir/changelog": 1,
+    "vcxproj": 9,
+    "synopsis": 1,
+    "5": 4,
+    "8": 2,
+    "libdw/changelog": 1,
+    "src/changelog": 1,
+    "drivers/char/kconfig": 1,
+    "maintainers": 5,
+    "readme": 1,
+    "management/univention-directory-notifier/debian/changelog": 1,
+    "utils/axodraw2/changelog": 1,
+    "utils/axodraw2/tlpatches/tl-changes": 1,
+    "utils/axodraw2/axodraw2-src/changelog": 1,
+    "utils/axodraw2/axodraw2-src/readme": 1,
+    "tex": 1,
+    "sty": 1,
+    "ax2-std": 1,
+    "utils/axodraw2/configure": 1,
+    "manifest": 15,
+    "tests": 1,
+    "sub": 2,
+    "uuid": 13,
+    "idl": 3,
+    "vim": 50,
+    "4": 1,
+    "mm": 1,
+    "json": 4,
+    "postinst": 1,
+    "debian/rules": 1,
+    "sym": 4,
+    "todo": 3,
+    "gitted/refs/heads/dotgit_alternate_data_stream": 1,
+    "tests/tartests/badextracttest/data/args": 1,
+    "tests/tartests/badextracttest/expect/return": 1,
+    "tests/tartests/badextracttest/expect/stderr": 1,
+    "tests/tartests/compressedextracttest/data/args": 1,
+    "tests/tartests/compressedextracttest/expect/return": 1,
+    "tests/tartests/compressedextracttest/expect/stdout": 1,
+    "tests/tartests/extracttest/data/args": 1,
+    "tests/tartests/extracttest/expect/return": 1,
+    "tests/tartests/extracttest/expect/stdout": 1,
+    "tests/tartests/sconscript": 1,
+    "bsd": 2,
+    "lock": 2,
+    "edl": 1,
+    "authors": 1,
+    "arch/powerpc/kconfig": 1,
+    "tests/data/test1168": 1,
+    "d": 1,
+    "tests/data/test1400": 1,
+    "tests/data/test1401": 1,
+    "tests/data/test1402": 1,
+    "tests/data/test1403": 1,
+    "tests/data/test1404": 1,
+    "tests/data/test1405": 1,
+    "tests/data/test1406": 1,
+    "tests/data/test1407": 1,
+    "tests/data/test1420": 1,
+    "doc/changelog": 1,
+    "bfd/changelog": 7,
+    "opcodes/changelog": 1,
+    "mak": 5,
+    "mk": 7,
+    "pem": 9,
+    "tests/make_test": 1,
+    "tests/recipes/021_fips": 1,
+    "tests/recipes/028_redirect_chain": 1,
+    "tests/recipes/029_no_redirect_chain": 1,
+    "tests/test_library": 1,
+    "cnf": 1,
+    "license": 2,
+    "nsi": 1,
+    "boot": 3,
+    "tests/github-#70/run": 2,
+    "binutils/changelog": 2,
+    "drivers/gpu/drm/nouveau/kbuild": 1,
+    "drivers/gpu/drm/nouveau/kconfig": 1,
+    "tests/regression/issue_547/sconscript": 1,
+    "proto": 1,
+    "patch": 3,
+    "tests/data/test2081": 1,
+    "src/test/isolation/isolation_schedule": 1,
+    "d/python-segfaults": 1,
+    "jsm": 2,
+    "bats": 1,
+    "install": 2,
+    "svtest": 1,
+    "sieve": 1,
+    "arch/powerpc/configs/pasemi_defconfig": 1,
+    "arch/powerpc/configs/ppc6xx_defconfig": 1,
+    "arch/x86/configs/i386_defconfig": 1,
+    "arch/x86/configs/x86_64_defconfig": 1,
+    "drivers/video/console/kconfig": 1,
+    "arch/arm/configs/footbridge_defconfig": 1,
+    "arch/arm/mach-footbridge/kconfig": 1,
+    "arch/arm/mach-footbridge/makefile": 1,
+    "inf": 1,
+    "dec": 1,
+    "uni": 1,
+    "ci": 1,
+    "squashfs-tools/makefile": 2,
+    "g": 3,
+    "wheel": 1,
+    "markdown": 1,
+    "tcl": 17,
+    "bugfix": 2,
+    "feature": 1,
+    "tensorflow/core/framework/build": 1,
+    "hh": 2,
+    "pro": 2,
+    "test/db/formats/elf/crash": 1,
+    "f": 1,
+    "test/fixtures/keys/makefile": 1,
+    "d/symlink_traversal": 1,
+    "adouble": 1,
+    "yaml": 2,
+    "test/verify/check-connection": 1,
+    "test/verify/check-embed": 1,
+    "m": 21,
+    "src/cpu/x86/kconfig": 1,
+    "test/db/formats/ne": 1,
+    "pdsc": 1,
+    "scvd": 1,
+    "fs": 9,
+    "java": 18,
+    "pas": 9,
+    "d/ldap_spn": 2,
+    "toml": 2,
+    "fmf": 2,
+    "stdlib/makefile": 1,
+    "tests/expected/findmnt/filter-options": 1,
+    "tests/expected/findmnt/filter-options-nameval-neg": 1,
+    "tests/expected/findmnt/filter-types-neg": 1,
+    "tests/expected/findmnt/outputs-default": 1,
+    "tests/expected/findmnt/outputs-force-tree": 1,
+    "tests/expected/findmnt/outputs-kernel": 1,
+    "tests/expected/libmount/tabdiff-mount": 1,
+    "tests/expected/libmount/tabdiff-move": 1,
+    "tests/expected/libmount/tabdiff-remount": 1,
+    "tests/expected/libmount/tabdiff-umount": 1,
+    "tests/expected/libmount/tabfiles-parse-mountinfo": 1,
+    "tests/expected/libmount/tabfiles-py-parse-mountinfo": 1,
+    "tests/ts/findmnt/files/mountinfo": 1,
+    "tests/ts/findmnt/files/mountinfo-nonroot": 1,
+    "tests/ts/libmount/files/mountinfo": 1,
+    "test/new/db/anal/x86_32": 1,
+    "linux/readme": 1,
+    "bgpd/changelog": 1,
+    "lib/changelog": 1,
+    "tests/changelog": 1,
+    "pbxproj": 2,
+    "erl": 7,
+    "config": 2,
+    "imp/docs/changes": 1,
+    "imp/docs/release_notes": 1,
+    "dist/docker/dockerfile": 1,
+    "git-version-gen": 2,
+    "relnotes": 2,
+    "test/db/cmd/dwarf": 1,
+    "sma": 1,
+    "tests/data/test387": 1,
+    "tests/data/test418": 1,
+    "docs/libcurl/symbols-in-versions": 3,
+    "notice": 1,
+    "exports": 1,
+    "exact": 2,
+    "debian/compat": 1,
+    "tests/bad_dns_request_test": 1,
+    "tests/slow_client_test": 1,
+    "test/db/anal/wasm": 2,
+    "xsd": 1,
+    "tests/data/test1397": 2,
+    "but": 1,
+    "poc": 2,
+    "list": 1,
+    "vtc": 2,
+    "src/testdir/crash/bt_quickfix_poc": 1,
+    "dump": 1,
+    "test/broker/makefile": 1,
+    "kernel/makefile": 2,
+    "tests/data/test728": 1,
+    "rs": 3,
+    "cabal": 1,
+    "runtime/doc/tags": 1,
+    "d/dirsync": 1,
+    "source4/rpc_server/wscript_build": 1,
+    "acls": 1
+  },
+  "issues": {
+    "positive_missing_or_ambiguous_declaration": 124,
+    "missing_function_before_array": 222,
+    "missing_function_after_array": 222
+  },
+  "native_labels": "function_before/after[].target; file target never supplies a function label",
+  "official_split_in_local_file": false,
+  "association_rule": "unique exact declaration within the same file and both sources present in corresponding full files; unmatched declarations remain unknown",
+  "labels_reconstructed": false,
+  "synthesized_classification_members": 0,
+  "functions": 181694,
+  "class_counts": {
+    "0": 180424,
+    "1": 1270
+  },
+  "normal_kinds": {
+    "ordinary": 179278,
+    "vulnerable": 1270,
+    "repaired": 1146
+  },
+  "label_quality": {
+    "exact": {
+      "unique_sources": 67654,
+      "duplicate_groups": 62578,
+      "conflicting_groups": 296,
+      "conflicting_functions": 820,
+      "conflicting_positive_functions": 338,
+      "examples": [
+        [
+          {
+            "sample_key": "reposvul:18:0:before:4",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4081"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "7ed47b7d142ec99ad6880bbbec51e9f12b3af74c",
+            "file_name": "crypto/ghash-generic.c"
+          },
+          {
+            "sample_key": "reposvul:487:33:before:4",
+            "target": 0,
+            "cves": [
+              "CVE-2013-7421"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "5d26a105b5a73e5635eae0629b42fa0a90e07b7b",
+            "file_name": "arch/x86/crypto/ghash-clmulni-intel_glue.c"
+          },
+          {
+            "sample_key": "reposvul:487:33:after:4",
+            "target": 0,
+            "cves": [
+              "CVE-2013-7421"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "5d26a105b5a73e5635eae0629b42fa0a90e07b7b",
+            "file_name": "arch/x86/crypto/ghash-clmulni-intel_glue.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:37:1:before:7",
+            "target": 1,
+            "cves": [
+              "CVE-2012-2121"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "09ca8e1173bcb12e2a449698c9ae3b86a8a10195",
+            "file_name": "virt/kvm/iommu.c"
+          },
+          {
+            "sample_key": "reposvul:37:1:after:7",
+            "target": 0,
+            "cves": [
+              "CVE-2012-2121"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "09ca8e1173bcb12e2a449698c9ae3b86a8a10195",
+            "file_name": "virt/kvm/iommu.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:4",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:before:4",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:4",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:6",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:6",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:7",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:7",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:8",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:8",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:9",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:52:4:after:9",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:before:9",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:9",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:92:0:before:25",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "1df2ae31c724e57be9d7ac00d78db8a5dabdd050",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:92:0:after:25",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "1df2ae31c724e57be9d7ac00d78db8a5dabdd050",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:93:0:before:25",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "adee11b2085bee90bd8f4f52123ffb07882d6256",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:93:0:after:25",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "adee11b2085bee90bd8f4f52123ffb07882d6256",
+            "file_name": "fs/udf/super.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:92:0:before:26",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "1df2ae31c724e57be9d7ac00d78db8a5dabdd050",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:93:0:after:26",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "adee11b2085bee90bd8f4f52123ffb07882d6256",
+            "file_name": "fs/udf/super.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:99:5:before:39",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/cipso_ipv4.c"
+          },
+          {
+            "sample_key": "reposvul:99:5:after:39",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/cipso_ipv4.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:99:8:before:4",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          },
+          {
+            "sample_key": "reposvul:99:8:after:4",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:99:8:before:9",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          },
+          {
+            "sample_key": "reposvul:99:8:after:9",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          }
+        ]
+      ]
+    },
+    "normalized": {
+      "unique_sources": 67488,
+      "duplicate_groups": 62483,
+      "conflicting_groups": 316,
+      "conflicting_functions": 865,
+      "conflicting_positive_functions": 360,
+      "examples": [
+        [
+          {
+            "sample_key": "reposvul:18:0:before:4",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4081"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "7ed47b7d142ec99ad6880bbbec51e9f12b3af74c",
+            "file_name": "crypto/ghash-generic.c"
+          },
+          {
+            "sample_key": "reposvul:487:33:before:4",
+            "target": 0,
+            "cves": [
+              "CVE-2013-7421"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "5d26a105b5a73e5635eae0629b42fa0a90e07b7b",
+            "file_name": "arch/x86/crypto/ghash-clmulni-intel_glue.c"
+          },
+          {
+            "sample_key": "reposvul:487:33:after:4",
+            "target": 0,
+            "cves": [
+              "CVE-2013-7421"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "5d26a105b5a73e5635eae0629b42fa0a90e07b7b",
+            "file_name": "arch/x86/crypto/ghash-clmulni-intel_glue.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:37:1:before:7",
+            "target": 1,
+            "cves": [
+              "CVE-2012-2121"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "09ca8e1173bcb12e2a449698c9ae3b86a8a10195",
+            "file_name": "virt/kvm/iommu.c"
+          },
+          {
+            "sample_key": "reposvul:37:1:after:7",
+            "target": 0,
+            "cves": [
+              "CVE-2012-2121"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "09ca8e1173bcb12e2a449698c9ae3b86a8a10195",
+            "file_name": "virt/kvm/iommu.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:4",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:before:4",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:4",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:6",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:6",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:7",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:7",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:8",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:8",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:52:4:before:9",
+            "target": 1,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:52:4:after:9",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4914"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "e0bccd315db0c2f919e7fcf9cb60db21d9986f52",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:before:9",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          },
+          {
+            "sample_key": "reposvul:53:0:after:9",
+            "target": 0,
+            "cves": [
+              "CVE-2011-4913"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "be20250c13f88375345ad99950190685eda51eb8",
+            "file_name": "net/rose/rose_subr.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:92:0:before:25",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "1df2ae31c724e57be9d7ac00d78db8a5dabdd050",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:92:0:after:25",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "1df2ae31c724e57be9d7ac00d78db8a5dabdd050",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:93:0:before:25",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "adee11b2085bee90bd8f4f52123ffb07882d6256",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:93:0:after:25",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "adee11b2085bee90bd8f4f52123ffb07882d6256",
+            "file_name": "fs/udf/super.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:92:0:before:26",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "1df2ae31c724e57be9d7ac00d78db8a5dabdd050",
+            "file_name": "fs/udf/super.c"
+          },
+          {
+            "sample_key": "reposvul:93:0:after:26",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3400"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "adee11b2085bee90bd8f4f52123ffb07882d6256",
+            "file_name": "fs/udf/super.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:99:5:before:39",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/cipso_ipv4.c"
+          },
+          {
+            "sample_key": "reposvul:99:5:after:39",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/cipso_ipv4.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:99:8:before:4",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          },
+          {
+            "sample_key": "reposvul:99:8:after:4",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          }
+        ],
+        [
+          {
+            "sample_key": "reposvul:99:8:before:9",
+            "target": 1,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          },
+          {
+            "sample_key": "reposvul:99:8:after:9",
+            "target": 0,
+            "cves": [
+              "CVE-2012-3552"
+            ],
+            "project": "torvalds/linux",
+            "commit_id": "f6d8bd051c391c1c0458a30b2a7abcd939329259",
+            "file_name": "net/ipv4/ip_options.c"
+          }
+        ]
+      ]
+    }
+  },
+  "input_tokens": 512,
+  "coverage": {
+    "matched_positive_pairs": 1146,
+    "identical_source_opposite_label_pairs": 262,
+    "target_1_effective_region": 514,
+    "target_1_has_diff_lines": 713,
+    "target_0_effective_region": 617,
+    "target_0_has_diff_lines": 860,
+    "identical_512_model_input_pairs": 452
+  },
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "coverage_denominator": "all native C/C++ functions; only conservatively matched pairs are tokenized for region coverage",
+  "official": {
+    "directory": "data/rgcl/reposvul_official",
+    "splits": {
+      "train": {
+        "functions": 185791,
+        "counts": {
+          "target_0": 180259,
+          "language_c": 169440,
+          "exact_local_source_match": 78610,
+          "native_label_agrees_with_local": 78265,
+          "target_0_local_label_disagreement": 0,
+          "unique_local_changed_counterpart": 748,
+          "language_cpp": 12205,
+          "target_1": 5532,
+          "target_1_local_label_disagreement": 345,
+          "positive_effective_region": 434,
+          "language_cc": 3586,
+          "language_h": 560
+        },
+        "fields": {
+          "function_id": 185791,
+          "function": 185791,
+          "target": 185791,
+          "function_numbers": 185791,
+          "line_numbers": 185791,
+          "commit_id": 185791,
+          "cve_id": 185791,
+          "cve_language": 185791,
+          "cve_description": 185791,
+          "cvss": 185791,
+          "publish_date": 185791,
+          "cwe_id": 185791,
+          "cwe_description": 185791,
+          "cwe_consequence": 185791,
+          "cwe_method": 185791,
+          "cwe_solution": 185791,
+          "AV": 185791,
+          "AC": 185791,
+          "PR": 185791,
+          "UI": 185791,
+          "S": 185791,
+          "C": 185791,
+          "I": 185791,
+          "A": 185791,
+          "commit_message": 185791,
+          "commit_date": 185791,
+          "parents": 185791,
+          "project": 185791,
+          "outdated": 185791,
+          "url": 185791,
+          "file_path": 185791,
+          "file_name": 185791,
+          "file_language": 185791,
+          "file_target": 185791,
+          "static": 185791,
+          "caller": 185791,
+          "callee": 185791,
+          "caller_of_change": 185791,
+          "callee_of_change": 185791
+        }
+      },
+      "valid": {
+        "functions": 23224,
+        "counts": {
+          "target_0": 22503,
+          "language_c": 21179,
+          "exact_local_source_match": 9873,
+          "native_label_agrees_with_local": 9834,
+          "target_0_local_label_disagreement": 0,
+          "unique_local_changed_counterpart": 98,
+          "language_cpp": 1518,
+          "language_cc": 457,
+          "target_1": 721,
+          "target_1_local_label_disagreement": 39,
+          "language_h": 70,
+          "positive_effective_region": 63
+        },
+        "fields": {
+          "function_id": 23224,
+          "function": 23224,
+          "target": 23224,
+          "function_numbers": 23224,
+          "line_numbers": 23224,
+          "commit_id": 23224,
+          "cve_id": 23224,
+          "cve_language": 23224,
+          "cve_description": 23224,
+          "cvss": 23224,
+          "publish_date": 23224,
+          "cwe_id": 23224,
+          "cwe_description": 23224,
+          "cwe_consequence": 23224,
+          "cwe_method": 23224,
+          "cwe_solution": 23224,
+          "AV": 23224,
+          "AC": 23224,
+          "PR": 23224,
+          "UI": 23224,
+          "S": 23224,
+          "C": 23224,
+          "I": 23224,
+          "A": 23224,
+          "commit_message": 23224,
+          "commit_date": 23224,
+          "parents": 23224,
+          "project": 23224,
+          "outdated": 23224,
+          "url": 23224,
+          "file_path": 23224,
+          "file_name": 23224,
+          "file_language": 23224,
+          "file_target": 23224,
+          "static": 23224,
+          "caller": 23224,
+          "callee": 23224,
+          "caller_of_change": 23224,
+          "callee_of_change": 23224
+        }
+      },
+      "test": {
+        "functions": 23224,
+        "counts": {
+          "target_1": 670,
+          "language_c": 21143,
+          "exact_local_source_match": 9839,
+          "native_label_agrees_with_local": 9803,
+          "target_1_local_label_disagreement": 36,
+          "unique_local_changed_counterpart": 92,
+          "target_0": 22554,
+          "language_cpp": 1549,
+          "target_0_local_label_disagreement": 0,
+          "language_cc": 461,
+          "positive_effective_region": 59,
+          "language_h": 71
+        },
+        "fields": {
+          "function_id": 23224,
+          "function": 23224,
+          "target": 23224,
+          "function_numbers": 23224,
+          "line_numbers": 23224,
+          "commit_id": 23224,
+          "cve_id": 23224,
+          "cve_language": 23224,
+          "cve_description": 23224,
+          "cvss": 23224,
+          "publish_date": 23224,
+          "cwe_id": 23224,
+          "cwe_description": 23224,
+          "cwe_consequence": 23224,
+          "cwe_method": 23224,
+          "cwe_solution": 23224,
+          "AV": 23224,
+          "AC": 23224,
+          "PR": 23224,
+          "UI": 23224,
+          "S": 23224,
+          "C": 23224,
+          "I": 23224,
+          "A": 23224,
+          "commit_message": 23224,
+          "commit_date": 23224,
+          "parents": 23224,
+          "project": 23224,
+          "outdated": 23224,
+          "url": 23224,
+          "file_path": 23224,
+          "file_name": 23224,
+          "file_language": 23224,
+          "file_target": 23224,
+          "static": 23224,
+          "caller": 23224,
+          "callee": 23224,
+          "caller_of_change": 23224,
+          "callee_of_change": 23224
+        }
+      }
+    },
+    "overlap": {
+      "train:valid": {
+        "cve": 2888,
+        "commit": 2962,
+        "exact_source": 10029,
+        "normalized_source": 10077,
+        "function_id": 2869
+      },
+      "train:test": {
+        "cve": 2886,
+        "commit": 2974,
+        "exact_source": 10096,
+        "normalized_source": 10144,
+        "function_id": 2949
+      },
+      "valid:test": {
+        "cve": 2633,
+        "commit": 2687,
+        "exact_source": 2881,
+        "normalized_source": 2898,
+        "function_id": 871
+      }
+    },
+    "label_quality": {
+      "exact": {
+        "unique_sources": 142905,
+        "duplicate_groups": 39312,
+        "conflicting_groups": 1173,
+        "conflicting_functions": 3969,
+        "conflicting_positive_functions": 1501,
+        "examples": [
+          [
+            {
+              "sample_key": "reposvul:official:train:180",
+              "target": 1,
+              "cves": [
+                "CVE-2019-19005"
+              ],
+              "project": "autotrace/autotrace",
+              "commit_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532",
+              "file_name": "src/pxl-outline.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:35998",
+              "target": 0,
+              "cves": [
+                "CVE-2019-19004"
+              ],
+              "project": "autotrace/autotrace",
+              "commit_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532",
+              "file_name": "src/pxl-outline.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:205",
+              "target": 0,
+              "cves": [
+                "CVE-2014-3647"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "234f3ce485d54017f15cf5e0699cff4100121601",
+              "file_name": "arch/x86/kvm/emulate.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:133883",
+              "target": 1,
+              "cves": [
+                "CVE-2014-3647"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "d1442d85cc30ea75f7d399474ca738e0bc96f715",
+              "file_name": "arch/x86/kvm/emulate.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:219",
+              "target": 0,
+              "cves": [
+                "CVE-2022-1852"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "fee060cd52d69c114b62d1a2948ea9648b5131f9",
+              "file_name": "arch/x86/kvm/x86.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:153024",
+              "target": 1,
+              "cves": [
+                "CVE-2022-39189"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "6cd88243c7e03845a450795e134b488fc2afb736",
+              "file_name": "arch/x86/kvm/x86.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:356",
+              "target": 1,
+              "cves": [
+                "CVE-2017-6903"
+              ],
+              "project": "iortcw/iortcw",
+              "commit_id": "b6ff2bcb1e4e6976d61e316175c6d7c99860fe20",
+              "file_name": "SP/code/sys/sys_main.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:99983",
+              "target": 0,
+              "cves": [
+                "CVE-2017-6903"
+              ],
+              "project": "iortcw/iortcw",
+              "commit_id": "b6ff2bcb1e4e6976d61e316175c6d7c99860fe20",
+              "file_name": "MP/code/sys/sys_main.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:177308",
+              "target": 1,
+              "cves": [
+                "CVE-2017-6903"
+              ],
+              "project": "ioquake/ioq3",
+              "commit_id": "376267d534476a875d8b9228149c4ee18b74a4fd",
+              "file_name": "code/sys/sys_main.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:371",
+              "target": 0,
+              "cves": [
+                "CVE-2013-6368"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "fda4e2e85589191b123d31cdc21fd33ee70f50fd",
+              "file_name": "arch/x86/kvm/lapic.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:61263",
+              "target": 1,
+              "cves": [
+                "CVE-2013-6376"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "17d68b763f09a9ce824ae23eb62c9efc57b69271",
+              "file_name": "arch/x86/kvm/lapic.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:184841",
+              "target": 0,
+              "cves": [
+                "CVE-2013-6367"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "b963a22e6d1a266a67e9eecc88134713fd54775c",
+              "file_name": "arch/x86/kvm/lapic.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:422",
+              "target": 0,
+              "cves": [
+                "CVE-2022-0521"
+              ],
+              "project": "radareorg/radare2",
+              "commit_id": "6c4428f018d385fc80a33ecddcb37becea685dd5",
+              "file_name": "shlr/java/class.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:56805",
+              "target": 1,
+              "cves": [
+                "CVE-2022-0519"
+              ],
+              "project": "radareorg/radare2",
+              "commit_id": "6c4428f018d385fc80a33ecddcb37becea685dd5",
+              "file_name": "shlr/java/class.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:424",
+              "target": 1,
+              "cves": [
+                "CVE-2012-2390"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "c50ac050811d6485616a193eb0f37bfbd191cc89",
+              "file_name": "mm/hugetlb.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:18527",
+              "target": 0,
+              "cves": [
+                "CVE-2012-2133"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "90481622d75715bfcb68501280a917dbfe516029",
+              "file_name": "mm/hugetlb.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:562",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4652"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "07f4d9d74a04aa7c72c5dae0ef97565f28f17b92",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:178104",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4653"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "fd9f26e4eca5d08a27d12c0933fceef76ed9663d",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:3398",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4655"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "82262a46627bebb0febcc26664746c25cef08563",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:12970",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4654"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "82262a46627bebb0febcc26664746c25cef08563",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:21353",
+              "target": 1,
+              "cves": [
+                "CVE-2014-4656"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "ac902c112d90a89e59916f751c2745f4dbdbb4bd",
+              "file_name": "sound/core/control.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:714",
+              "target": 1,
+              "cves": [
+                "CVE-2012-2133"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "90481622d75715bfcb68501280a917dbfe516029",
+              "file_name": "mm/hugetlb.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:68377",
+              "target": 0,
+              "cves": [
+                "CVE-2012-2390"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "c50ac050811d6485616a193eb0f37bfbd191cc89",
+              "file_name": "mm/hugetlb.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:778",
+              "target": 1,
+              "cves": [
+                "CVE-2019-18844"
+              ],
+              "project": "projectacrn/acrn-hypervisor",
+              "commit_id": "2b3dedfb9ba13f15887f22b935d373f36c9a59fa",
+              "file_name": "devicemodel/hw/pci/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:141174",
+              "target": 0,
+              "cves": [
+                "CVE-2019-18844"
+              ],
+              "project": "projectacrn/acrn-hypervisor",
+              "commit_id": "6199e653418eda58cd698d8769820904453e2535",
+              "file_name": "devicemodel/hw/pci/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:test:16439",
+              "target": 1,
+              "cves": [
+                "CVE-2019-18844"
+              ],
+              "project": "shuox/acrn-hypervisor",
+              "commit_id": "97b153237c256c586e528eac7fc2f51aedb2b2fc",
+              "file_name": "devicemodel/hw/pci/core.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:792",
+              "target": 0,
+              "cves": [
+                "CVE-2018-5730"
+              ],
+              "project": "krb5/krb5",
+              "commit_id": "e1caf6fb74981da62039846931ebdffed71309d1",
+              "file_name": "src/lib/kadm5/srv/svr_principal.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:113532",
+              "target": 1,
+              "cves": [
+                "CVE-2014-5351"
+              ],
+              "project": "krb5/krb5",
+              "commit_id": "af0ed4df4dfae762ab5fb605f5a0c8f59cb4f6ca",
+              "file_name": "src/lib/kadm5/srv/svr_principal.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:120952",
+              "target": 0,
+              "cves": [
+                "CVE-2018-5729"
+              ],
+              "project": "krb5/krb5",
+              "commit_id": "e1caf6fb74981da62039846931ebdffed71309d1",
+              "file_name": "src/lib/kadm5/srv/svr_principal.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:814",
+              "target": 0,
+              "cves": [
+                "CVE-2018-5729"
+              ],
+              "project": "krb5/krb5",
+              "commit_id": "e1caf6fb74981da62039846931ebdffed71309d1",
+              "file_name": "src/lib/kadm5/srv/svr_principal.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:98877",
+              "target": 0,
+              "cves": [
+                "CVE-2018-5730"
+              ],
+              "project": "krb5/krb5",
+              "commit_id": "e1caf6fb74981da62039846931ebdffed71309d1",
+              "file_name": "src/lib/kadm5/srv/svr_principal.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:145881",
+              "target": 1,
+              "cves": [
+                "CVE-2014-5351"
+              ],
+              "project": "krb5/krb5",
+              "commit_id": "af0ed4df4dfae762ab5fb605f5a0c8f59cb4f6ca",
+              "file_name": "src/lib/kadm5/srv/svr_principal.c"
+            }
+          ]
+        ]
+      },
+      "normalized": {
+        "unique_sources": 142379,
+        "duplicate_groups": 39416,
+        "conflicting_groups": 1183,
+        "conflicting_functions": 4014,
+        "conflicting_positive_functions": 1512,
+        "examples": [
+          [
+            {
+              "sample_key": "reposvul:official:train:180",
+              "target": 1,
+              "cves": [
+                "CVE-2019-19005"
+              ],
+              "project": "autotrace/autotrace",
+              "commit_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532",
+              "file_name": "src/pxl-outline.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:35998",
+              "target": 0,
+              "cves": [
+                "CVE-2019-19004"
+              ],
+              "project": "autotrace/autotrace",
+              "commit_id": "2d552f0eeb0b65fa25d2bbaa0bc9288674396532",
+              "file_name": "src/pxl-outline.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:205",
+              "target": 0,
+              "cves": [
+                "CVE-2014-3647"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "234f3ce485d54017f15cf5e0699cff4100121601",
+              "file_name": "arch/x86/kvm/emulate.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:133883",
+              "target": 1,
+              "cves": [
+                "CVE-2014-3647"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "d1442d85cc30ea75f7d399474ca738e0bc96f715",
+              "file_name": "arch/x86/kvm/emulate.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:219",
+              "target": 0,
+              "cves": [
+                "CVE-2022-1852"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "fee060cd52d69c114b62d1a2948ea9648b5131f9",
+              "file_name": "arch/x86/kvm/x86.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:153024",
+              "target": 1,
+              "cves": [
+                "CVE-2022-39189"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "6cd88243c7e03845a450795e134b488fc2afb736",
+              "file_name": "arch/x86/kvm/x86.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:356",
+              "target": 1,
+              "cves": [
+                "CVE-2017-6903"
+              ],
+              "project": "iortcw/iortcw",
+              "commit_id": "b6ff2bcb1e4e6976d61e316175c6d7c99860fe20",
+              "file_name": "SP/code/sys/sys_main.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:99983",
+              "target": 0,
+              "cves": [
+                "CVE-2017-6903"
+              ],
+              "project": "iortcw/iortcw",
+              "commit_id": "b6ff2bcb1e4e6976d61e316175c6d7c99860fe20",
+              "file_name": "MP/code/sys/sys_main.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:177308",
+              "target": 1,
+              "cves": [
+                "CVE-2017-6903"
+              ],
+              "project": "ioquake/ioq3",
+              "commit_id": "376267d534476a875d8b9228149c4ee18b74a4fd",
+              "file_name": "code/sys/sys_main.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:371",
+              "target": 0,
+              "cves": [
+                "CVE-2013-6368"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "fda4e2e85589191b123d31cdc21fd33ee70f50fd",
+              "file_name": "arch/x86/kvm/lapic.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:61263",
+              "target": 1,
+              "cves": [
+                "CVE-2013-6376"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "17d68b763f09a9ce824ae23eb62c9efc57b69271",
+              "file_name": "arch/x86/kvm/lapic.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:184841",
+              "target": 0,
+              "cves": [
+                "CVE-2013-6367"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "b963a22e6d1a266a67e9eecc88134713fd54775c",
+              "file_name": "arch/x86/kvm/lapic.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:422",
+              "target": 0,
+              "cves": [
+                "CVE-2022-0521"
+              ],
+              "project": "radareorg/radare2",
+              "commit_id": "6c4428f018d385fc80a33ecddcb37becea685dd5",
+              "file_name": "shlr/java/class.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:56805",
+              "target": 1,
+              "cves": [
+                "CVE-2022-0519"
+              ],
+              "project": "radareorg/radare2",
+              "commit_id": "6c4428f018d385fc80a33ecddcb37becea685dd5",
+              "file_name": "shlr/java/class.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:424",
+              "target": 1,
+              "cves": [
+                "CVE-2012-2390"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "c50ac050811d6485616a193eb0f37bfbd191cc89",
+              "file_name": "mm/hugetlb.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:18527",
+              "target": 0,
+              "cves": [
+                "CVE-2012-2133"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "90481622d75715bfcb68501280a917dbfe516029",
+              "file_name": "mm/hugetlb.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:562",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4652"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "07f4d9d74a04aa7c72c5dae0ef97565f28f17b92",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:178104",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4653"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "fd9f26e4eca5d08a27d12c0933fceef76ed9663d",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:3398",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4655"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "82262a46627bebb0febcc26664746c25cef08563",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:12970",
+              "target": 0,
+              "cves": [
+                "CVE-2014-4654"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "82262a46627bebb0febcc26664746c25cef08563",
+              "file_name": "sound/core/control.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:21353",
+              "target": 1,
+              "cves": [
+                "CVE-2014-4656"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "ac902c112d90a89e59916f751c2745f4dbdbb4bd",
+              "file_name": "sound/core/control.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:645",
+              "target": 0,
+              "cves": [
+                "CVE-2017-6001"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "321027c1fe77f892f4ea07846aeae08cefbbb290",
+              "file_name": "kernel/events/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:65091",
+              "target": 0,
+              "cves": [
+                "CVE-2016-6787"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f63a8daa5812afef4f06c962351687e1ff9ccb2b",
+              "file_name": "kernel/events/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:89067",
+              "target": 0,
+              "cves": [
+                "CVE-2017-18255"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "1572e45a924f254d9570093abde46430c3172e3d",
+              "file_name": "kernel/events/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:148221",
+              "target": 0,
+              "cves": [
+                "CVE-2015-8963"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "12ca6ad2e3a896256f086497a7c7406a547ee373",
+              "file_name": "kernel/events/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:5009",
+              "target": 1,
+              "cves": [
+                "CVE-2016-6786"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f63a8daa5812afef4f06c962351687e1ff9ccb2b",
+              "file_name": "kernel/events/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:18476",
+              "target": 0,
+              "cves": [
+                "CVE-2015-9004"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "c3c87e770458aa004bd7ed3f29945ff436fd6511",
+              "file_name": "kernel/events/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:test:18900",
+              "target": 0,
+              "cves": [
+                "CVE-2013-2094"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "8176cced706b5e5d15887584150764894e94e02f",
+              "file_name": "kernel/events/core.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:713",
+              "target": 0,
+              "cves": [
+                "CVE-2013-7270"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f3d3342602f8bcbf37d7c46641cb9bca7618eb1c",
+              "file_name": "net/bluetooth/sco.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:68128",
+              "target": 0,
+              "cves": [
+                "CVE-2013-7271"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f3d3342602f8bcbf37d7c46641cb9bca7618eb1c",
+              "file_name": "net/bluetooth/sco.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:86536",
+              "target": 0,
+              "cves": [
+                "CVE-2013-7269"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f3d3342602f8bcbf37d7c46641cb9bca7618eb1c",
+              "file_name": "net/bluetooth/sco.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:126460",
+              "target": 0,
+              "cves": [
+                "CVE-2013-7266"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f3d3342602f8bcbf37d7c46641cb9bca7618eb1c",
+              "file_name": "net/bluetooth/sco.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:165194",
+              "target": 0,
+              "cves": [
+                "CVE-2013-7268"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f3d3342602f8bcbf37d7c46641cb9bca7618eb1c",
+              "file_name": "net/bluetooth/sco.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:8143",
+              "target": 1,
+              "cves": [
+                "CVE-2015-8575"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "5233252fce714053f0151680933571a2da9cbfb4",
+              "file_name": "net/bluetooth/sco.c"
+            },
+            {
+              "sample_key": "reposvul:official:valid:9005",
+              "target": 0,
+              "cves": [
+                "CVE-2013-7267"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "f3d3342602f8bcbf37d7c46641cb9bca7618eb1c",
+              "file_name": "net/bluetooth/sco.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:714",
+              "target": 1,
+              "cves": [
+                "CVE-2012-2133"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "90481622d75715bfcb68501280a917dbfe516029",
+              "file_name": "mm/hugetlb.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:68377",
+              "target": 0,
+              "cves": [
+                "CVE-2012-2390"
+              ],
+              "project": "torvalds/linux",
+              "commit_id": "c50ac050811d6485616a193eb0f37bfbd191cc89",
+              "file_name": "mm/hugetlb.c"
+            }
+          ],
+          [
+            {
+              "sample_key": "reposvul:official:train:778",
+              "target": 1,
+              "cves": [
+                "CVE-2019-18844"
+              ],
+              "project": "projectacrn/acrn-hypervisor",
+              "commit_id": "2b3dedfb9ba13f15887f22b935d373f36c9a59fa",
+              "file_name": "devicemodel/hw/pci/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:train:141174",
+              "target": 0,
+              "cves": [
+                "CVE-2019-18844"
+              ],
+              "project": "projectacrn/acrn-hypervisor",
+              "commit_id": "6199e653418eda58cd698d8769820904453e2535",
+              "file_name": "devicemodel/hw/pci/core.c"
+            },
+            {
+              "sample_key": "reposvul:official:test:16439",
+              "target": 1,
+              "cves": [
+                "CVE-2019-18844"
+              ],
+              "project": "shuox/acrn-hypervisor",
+              "commit_id": "97b153237c256c586e528eac7fc2f51aedb2b2fc",
+              "file_name": "devicemodel/hw/pci/core.c"
+            }
+          ]
+        ]
+      }
+    },
+    "repair_versions_in_release": false,
+    "local_repair_matching": "same project, fix commit, file and exact original function; never by function_id alone",
+    "reliable_grouped_split": false
+  },
+  "grouped_split_feasibility": {
+    "seed": 42,
+    "target_ratios": [
+      0.8,
+      0.1,
+      0.1
+    ],
+    "groups": 892,
+    "largest_groups": [
+      12752,
+      5650,
+      5055,
+      4120,
+      3925,
+      3739,
+      3306,
+      3272,
+      3181,
+      2921
+    ],
+    "grouping": "transitive union of CVE, fix commit, repair link and whitespace-normalized source (including counterparts)",
+    "cross_split_group_overlap": 0,
+    "members_removed": 0,
+    "duplicate_code_groups": 62483,
+    "feasible": true,
+    "splits": {
+      "train": {
+        "functions": 145355,
+        "class_counts": {
+          "0": 144339,
+          "1": 1016
+        }
+      },
+      "valid": {
+        "functions": 18170,
+        "class_counts": {
+          "0": 18043,
+          "1": 127
+        }
+      },
+      "test": {
+        "functions": 18169,
+        "class_counts": {
+          "0": 18042,
+          "1": 127
+        }
+      }
+    }
+  },
+  "training_started": false,
+  "classification_members_prepared": false,
+  "negative_downsampling_performed": false,
+  "test_predictions_used": false
+}

@@ -190,12 +190,14 @@ def build_parser():
     p.add_argument("--checkpoint", type=Path, default=Path("results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt"))
     p.add_argument("--output-dir", type=Path, default=Path("results/repair_transfer_512"))
     p.add_argument("--device", default="auto")
-    p = sub.add_parser("rgcl-study", help="fixed three-seed PrimeVul/SecVulEval comparison")
-    p.add_argument("stage", choices=("inventory", "check", "run", "report"))
+    p = sub.add_parser("rgcl-study", help="fixed RGCL comparisons and ReposVul data inspection")
+    p.add_argument("stage", choices=("inventory", "check", "run", "report", "inspect"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results/rgcl_multiseed_512"))
     p.add_argument("--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine")
-    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval"), default="primevul_paired")
+    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval", "reposvul"), default="primevul_paired")
+    p.add_argument("--raw-root", type=Path, help="ReposVul directory for inspection only")
+    p.add_argument("--official-dir", type=Path, help="original official Train/Valid/Test JSONL directory")
     p.add_argument("--seed", type=int, choices=(42, 1234, 123456), default=123456)
     p.add_argument("--methods", nargs="+", choices=RGCL_METHODS, default=list(RGCL_METHODS))
     p.add_argument("--device", default="auto")
@@ -325,6 +327,19 @@ def main():
         else:
             getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
     elif args.command == "rgcl-study":
+        if args.stage == "inspect":
+            from .reposvul import inspect
+            if args.dataset != "reposvul" or args.raw_root is None:
+                raise ValueError("inspection requires --dataset reposvul and --raw-root")
+            print(json.dumps(inspect(args.raw_root, args.output_dir, args.model,
+                                     official_dir=args.official_dir), indent=2))
+            return
+        if args.dataset == "reposvul":
+            if args.stage == "check" and args.official_dir is not None:
+                from .reposvul import check
+                print(json.dumps(check(args.official_dir, args.output_dir, device=args.device), indent=2))
+                return
+            raise ValueError("ReposVul is inspection-only until label and repair quality are resolved")
         from . import rgcl_study
         common = dict(data_dir=args.data_dir, output_dir=args.output_dir, model_path=args.model)
         if args.stage == "check":
