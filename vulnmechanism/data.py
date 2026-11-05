@@ -11,7 +11,7 @@ import random
 from .artifacts import write_json
 
 DATASETS = ("primevul", "megavul")
-RGCL_DATASETS = ("secvuleval", "megavul")
+RGCL_DATASETS = ("secvuleval", "megavul", "cleanvul")
 SPLITS = ("train", "valid", "test")
 
 

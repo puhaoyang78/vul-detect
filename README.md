@@ -8,6 +8,8 @@
 
 ReposVul 使用 `rgcl-study inspect --dataset reposvul --raw-root /home/PublicData/PHY-data/vul_detect/data/reposvul --official-dir data/rgcl/reposvul_official --output-dir results/rgcl_reposvul_512` 检查原始标签、修复对应、512 可见区域和官方划分重叠；命令前缀为 `python -m vulnmechanism.cli`。官方归档链接和本地目录见[数据检查报告](results/rgcl_reposvul_512/report.md)。当前版本存在源码相同但标签相反及官方划分泄漏问题，本轮停在数据质量检查阶段。`rgcl-study check --dataset reposvul --official-dir data/rgcl/reposvul_official --output-dir results/rgcl_reposvul_512 --device cuda:0` 仅用官方 Train 源码验证冻结历史模型推理。
 
+CleanVul 使用评分≥3的全部 C/C++ 发布记录，沿用修复前=1、修复后=0；解析、函数名及词法变化检查仅作诊断，不删除分类成员。`rgcl-study prepare --dataset cleanvul --seed 42 --raw-root /home/PublicData/PHY-data/vul_detect/data/cleanvul` 构建固定分组划分。`rgcl-study check/run/report --dataset cleanvul --output-dir results/rgcl_cleanvul_512` 复用同一三种子训练、Valid MCC 选模和单函数评价入口；`run` 需分别指定 `--seed 42/1234/123456`。数据、监督覆盖率及完整结果见[CleanVul报告](results/rgcl_cleanvul_512/report.md)。
+
 ## 环境
 
 ```bash

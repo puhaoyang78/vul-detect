@@ -1,0 +1,21 @@
+# Environment: /home/phy/miniconda3/envs/vul-detect/bin/python
+# Pretrained: /home/PublicData/PHY-data/resource/unixcoder-base-nine
+# Split Seed42, training seeds 42/1234/123456; K=5, lambda=0.1, token-weighted region loss.
+# The original untrained 2383-pair export was replaced after verifying all 3136 release rows;
+# no raw source or historical PrimeVul/SecVulEval experiment was modified.
+
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 /home/phy/miniconda3/envs/vul-detect/bin/python -m unittest tests.test_cleanvul tests.test_rgcl tests.test_bounded_attention tests.test_losver tests.test_reposvul
+python -m vulnmechanism.cli rgcl-study prepare --dataset cleanvul --seed 42 --raw-root /home/PublicData/PHY-data/vul_detect/data/cleanvul --data-dir data
+python -m vulnmechanism.cli rgcl-study inventory --dataset cleanvul --output-dir results/rgcl_cleanvul_512
+python -m vulnmechanism.cli rgcl-study check --dataset cleanvul --output-dir results/rgcl_cleanvul_512 --device cuda:0
+
+# These independent queues use separate GPUs; every command uses OMP_NUM_THREADS=2 MKL_NUM_THREADS=2.
+# GPU0
+python -m vulnmechanism.cli rgcl-study run --dataset cleanvul --seed 42 --output-dir results/rgcl_cleanvul_512 --device cuda:0 --save-every 500
+python -m vulnmechanism.cli rgcl-study run --dataset cleanvul --seed 123456 --methods plm_baseline context_only --output-dir results/rgcl_cleanvul_512 --device cuda:0 --save-every 500
+# GPU1
+python -m vulnmechanism.cli rgcl-study run --dataset cleanvul --seed 1234 --output-dir results/rgcl_cleanvul_512 --device cuda:1 --save-every 500
+python -m vulnmechanism.cli rgcl-study run --dataset cleanvul --seed 123456 --methods rgcl --output-dir results/rgcl_cleanvul_512 --device cuda:1 --save-every 500
+
+# After all nine full runs finish
+python -m vulnmechanism.cli rgcl-study report --dataset cleanvul --output-dir results/rgcl_cleanvul_512

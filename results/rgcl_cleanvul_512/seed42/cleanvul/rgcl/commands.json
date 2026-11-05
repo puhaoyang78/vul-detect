@@ -1,0 +1,11 @@
+{
+  "dataset": "cleanvul",
+  "seed": 42,
+  "method": "rgcl",
+  "device": "cuda:0",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 2701.8764246506616,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

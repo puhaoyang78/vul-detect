@@ -1,0 +1,715 @@
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.7747526168823242, "learning_rate": 1.993620414673046e-08}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.6440979242324829, "learning_rate": 1.9936204146730465e-06}
+{"event": "step", "epoch": 1, "step": 200, "batch": 200, "loss": 0.8098738193511963, "learning_rate": 3.987240829346093e-06}
+{"event": "step", "epoch": 1, "step": 300, "batch": 300, "loss": 0.6860950589179993, "learning_rate": 5.98086124401914e-06}
+{"event": "step", "epoch": 1, "step": 400, "batch": 400, "loss": 0.7309809923171997, "learning_rate": 7.974481658692186e-06}
+{"event": "step", "epoch": 1, "step": 500, "batch": 500, "loss": 0.7488726377487183, "learning_rate": 9.968102073365231e-06}
+{"event": "step", "epoch": 1, "step": 600, "batch": 600, "loss": 0.7172537446022034, "learning_rate": 1.196172248803828e-05}
+
+plm_baseline · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70361 │ 627   │ 0.5000    │ 0.0288 │ 0.5278 │ 0.4942 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 1, "train_loss": 0.703610466950628, "optimizer_steps": 627, "global_step": 627, "validation_threshold": 0.5, "validation": {"accuracy": 0.5143312101910829, "precision": 0.5155709342560554, "recall": 0.4745222929936306, "f1": 0.494195688225539, "mcc": 0.028753700113777154, "auc": 0.5277952452432148, "auprc": 0.522054293055213, "tp": 149, "tn": 174, "fp": 140, "fn": 165, "confusion_matrix": [[174, 140], [165, 149]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.445859872611465, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 140, "fpr": 0.445859872611465}}, "loss": 0.6923250669165503}, "fusion_validation": null, "training_seconds": 154.2303357841447, "epoch_seconds": 157.87254903744906}
+{"event": "step", "epoch": 2, "step": 700, "batch": 73, "loss": 0.7353934049606323, "learning_rate": 1.3955342902711325e-05}
+{"event": "step", "epoch": 2, "step": 800, "batch": 173, "loss": 0.7728657722473145, "learning_rate": 1.594896331738437e-05}
+{"event": "step", "epoch": 2, "step": 900, "batch": 273, "loss": 0.6988120079040527, "learning_rate": 1.7942583732057417e-05}
+{"event": "step", "epoch": 2, "step": 1000, "batch": 373, "loss": 0.7159360647201538, "learning_rate": 1.9936204146730462e-05}
+{"event": "step", "epoch": 2, "step": 1100, "batch": 473, "loss": 0.7175903916358948, "learning_rate": 1.9785575048732947e-05}
+{"event": "step", "epoch": 2, "step": 1200, "batch": 573, "loss": 0.708924412727356, "learning_rate": 1.956406166932483e-05}
+
+plm_baseline · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.70221 │ 627   │ 0.5000    │ 0.0000 │ 0.5343 │ 0.0187 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 2, "train_loss": 0.7022116627229268, "optimizer_steps": 627, "global_step": 1254, "validation_threshold": 0.5, "validation": {"accuracy": 0.5, "precision": 0.5, "recall": 0.009554140127388535, "f1": 0.01875, "mcc": 0.0, "auc": 0.5342762383869528, "auprc": 0.534097537908969, "tp": 3, "tn": 311, "fp": 3, "fn": 311, "confusion_matrix": [[311, 3], [311, 3]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.009554140127388535, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 3, "fpr": 0.009554140127388535}}, "loss": 0.6960695023778118}, "fusion_validation": null, "training_seconds": 124.20733647421002, "epoch_seconds": 127.95081622991711}
+{"event": "step", "epoch": 3, "step": 1300, "batch": 46, "loss": 0.6310429573059082, "learning_rate": 1.9342548289916712e-05}
+{"event": "step", "epoch": 3, "step": 1400, "batch": 146, "loss": 0.7240470051765442, "learning_rate": 1.91210349105086e-05}
+{"event": "step", "epoch": 3, "step": 1500, "batch": 246, "loss": 0.5833870768547058, "learning_rate": 1.889952153110048e-05}
+{"event": "step", "epoch": 3, "step": 1600, "batch": 346, "loss": 0.7165954113006592, "learning_rate": 1.8678008151692367e-05}
+{"event": "step", "epoch": 3, "step": 1700, "batch": 446, "loss": 0.6709206104278564, "learning_rate": 1.8456494772284247e-05}
+{"event": "step", "epoch": 3, "step": 1800, "batch": 546, "loss": 0.6878961324691772, "learning_rate": 1.8234981392876133e-05}
+
+plm_baseline · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69848 │ 627   │ 0.5000    │ 0.0577 │ 0.5468 │ 0.4277 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 3, "train_loss": 0.6984798547944003, "optimizer_steps": 627, "global_step": 1881, "validation_threshold": 0.5, "validation": {"accuracy": 0.5270700636942676, "precision": 0.5414634146341464, "recall": 0.3535031847133758, "f1": 0.42774566473988435, "mcc": 0.057730033187437524, "auc": 0.546802101505132, "auprc": 0.5421859253666705, "tp": 111, "tn": 220, "fp": 94, "fn": 203, "confusion_matrix": [[220, 94], [203, 111]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.29936305732484075, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 94, "fpr": 0.29936305732484075}}, "loss": 0.6906776692293868}, "fusion_validation": null, "training_seconds": 128.26497448328882, "epoch_seconds": 131.986219227314}
+{"event": "step", "epoch": 4, "step": 1900, "batch": 19, "loss": 0.6925849914550781, "learning_rate": 1.8013468013468016e-05}
+{"event": "step", "epoch": 4, "step": 2000, "batch": 119, "loss": 0.7014957666397095, "learning_rate": 1.7791954634059902e-05}
+{"event": "step", "epoch": 4, "step": 2100, "batch": 219, "loss": 0.742743968963623, "learning_rate": 1.7570441254651785e-05}
+{"event": "step", "epoch": 4, "step": 2200, "batch": 319, "loss": 0.6933284997940063, "learning_rate": 1.7348927875243667e-05}
+{"event": "step", "epoch": 4, "step": 2300, "batch": 419, "loss": 0.6887154579162598, "learning_rate": 1.712741449583555e-05}
+{"event": "step", "epoch": 4, "step": 2400, "batch": 519, "loss": 0.6884702444076538, "learning_rate": 1.6905901116427436e-05}
+{"event": "step", "epoch": 4, "step": 2500, "batch": 619, "loss": 0.7451406717300415, "learning_rate": 1.668438773701932e-05}
+
+plm_baseline · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69309 │ 627   │ 0.5000    │ 0.0421 │ 0.5351 │ 0.4729 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 4, "train_loss": 0.6930856192321108, "optimizer_steps": 627, "global_step": 2508, "validation_threshold": 0.5, "validation": {"accuracy": 0.5207006369426752, "precision": 0.5252918287937743, "recall": 0.4299363057324841, "f1": 0.4728546409807356, "mcc": 0.042100750313054866, "auc": 0.5350572031319729, "auprc": 0.5401321548427862, "tp": 135, "tn": 192, "fp": 122, "fn": 179, "confusion_matrix": [[192, 122], [179, 135]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.3885350318471338, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 122, "fpr": 0.3885350318471338}}, "loss": 0.6910207007504716}, "fusion_validation": null, "training_seconds": 161.05131061701104, "epoch_seconds": 164.88841271679848}
+{"event": "step", "epoch": 5, "step": 2600, "batch": 92, "loss": 0.6530762910842896, "learning_rate": 1.64628743576112e-05}
+{"event": "step", "epoch": 5, "step": 2700, "batch": 192, "loss": 0.7543325424194336, "learning_rate": 1.6241360978203088e-05}
+{"event": "step", "epoch": 5, "step": 2800, "batch": 292, "loss": 0.6249521970748901, "learning_rate": 1.601984759879497e-05}
+{"event": "step", "epoch": 5, "step": 2900, "batch": 392, "loss": 0.7023262977600098, "learning_rate": 1.5798334219386853e-05}
+{"event": "step", "epoch": 5, "step": 3000, "batch": 492, "loss": 0.6179035305976868, "learning_rate": 1.5576820839978736e-05}
+{"event": "step", "epoch": 5, "step": 3100, "batch": 592, "loss": 0.6965710520744324, "learning_rate": 1.5355307460570622e-05}
+
+plm_baseline · Epoch 5 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.68735 │ 627   │ 0.5000    │ 0.0432 │ 0.5459 │ 0.6381 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 5, "train_loss": 0.6873543123214059, "optimizer_steps": 627, "global_step": 3135, "validation_threshold": 0.5, "validation": {"accuracy": 0.5159235668789809, "precision": 0.5095057034220533, "recall": 0.8535031847133758, "f1": 0.6380952380952383, "mcc": 0.04317248447899274, "auc": 0.5459298551665381, "auprc": 0.5486278089713656, "tp": 268, "tn": 56, "fp": 258, "fn": 46, "confusion_matrix": [[56, 258], [46, 268]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.821656050955414, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 258, "fpr": 0.821656050955414}}, "loss": 0.7132895588874817}, "fusion_validation": null, "training_seconds": 133.31095003988594, "epoch_seconds": 137.10885276272893}
+{"event": "step", "epoch": 6, "step": 3200, "batch": 65, "loss": 0.6820263862609863, "learning_rate": 1.5133794081162505e-05}
+{"event": "step", "epoch": 6, "step": 3300, "batch": 165, "loss": 0.6906138062477112, "learning_rate": 1.491228070175439e-05}
+{"event": "step", "epoch": 6, "step": 3400, "batch": 265, "loss": 0.6853657364845276, "learning_rate": 1.469076732234627e-05}
+{"event": "step", "epoch": 6, "step": 3500, "batch": 365, "loss": 0.6943433284759521, "learning_rate": 1.4469253942938155e-05}
+{"event": "step", "epoch": 6, "step": 3600, "batch": 465, "loss": 0.541739284992218, "learning_rate": 1.424774056353004e-05}
+{"event": "step", "epoch": 6, "step": 3700, "batch": 565, "loss": 0.6814942359924316, "learning_rate": 1.4026227184121924e-05}
+
+plm_baseline · Epoch 6 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.67397 │ 627   │ 0.5000    │ 0.0932 │ 0.5635 │ 0.4339 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 6, "train_loss": 0.6739712797188493, "optimizer_steps": 627, "global_step": 3762, "validation_threshold": 0.5, "validation": {"accuracy": 0.5429936305732485, "precision": 0.5699481865284974, "recall": 0.3503184713375796, "f1": 0.4339250493096647, "mcc": 0.09318381380509036, "auc": 0.5634964907298471, "auprc": 0.5610340524553423, "tp": 110, "tn": 231, "fp": 83, "fn": 204, "confusion_matrix": [[231, 83], [204, 110]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.2643312101910828, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 83, "fpr": 0.2643312101910828}}, "loss": 0.7732800252829926}, "fusion_validation": null, "training_seconds": 123.61098695918918, "epoch_seconds": 127.39233739301562}
+{"event": "step", "epoch": 7, "step": 3800, "batch": 38, "loss": 0.5775241851806641, "learning_rate": 1.3804713804713808e-05}
+{"event": "step", "epoch": 7, "step": 3900, "batch": 138, "loss": 0.6989902257919312, "learning_rate": 1.358320042530569e-05}
+{"event": "step", "epoch": 7, "step": 4000, "batch": 238, "loss": 0.7252963185310364, "learning_rate": 1.3361687045897574e-05}
+{"event": "step", "epoch": 7, "step": 4100, "batch": 338, "loss": 0.7575638294219971, "learning_rate": 1.3140173666489458e-05}
+{"event": "step", "epoch": 7, "step": 4200, "batch": 438, "loss": 0.6060411930084229, "learning_rate": 1.2918660287081342e-05}
+{"event": "step", "epoch": 7, "step": 4300, "batch": 538, "loss": 0.5818414688110352, "learning_rate": 1.2697146907673225e-05}
+
+plm_baseline · Epoch 7 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.63928 │ 627   │ 0.5000    │ 0.0703 │ 0.5519 │ 0.5133 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 7, "train_loss": 0.6392757598387948, "optimizer_steps": 627, "global_step": 4389, "validation_threshold": 0.5, "validation": {"accuracy": 0.535031847133758, "precision": 0.5384615384615384, "recall": 0.49044585987261147, "f1": 0.5133333333333334, "mcc": 0.07034392728702914, "auc": 0.5518530163495476, "auprc": 0.5491567695871651, "tp": 154, "tn": 182, "fp": 132, "fn": 160, "confusion_matrix": [[182, 132], [160, 154]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.42038216560509556, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 132, "fpr": 0.42038216560509556}}, "loss": 0.7476138276389882}, "fusion_validation": null, "training_seconds": 134.84337976621464, "epoch_seconds": 138.94024088978767}
+{"event": "step", "epoch": 8, "step": 4400, "batch": 11, "loss": 0.5609725713729858, "learning_rate": 1.247563352826511e-05}
+{"event": "step", "epoch": 8, "step": 4500, "batch": 111, "loss": 0.42942795157432556, "learning_rate": 1.2254120148856994e-05}
+{"event": "step", "epoch": 8, "step": 4600, "batch": 211, "loss": 0.6770110726356506, "learning_rate": 1.2032606769448875e-05}
+{"event": "step", "epoch": 8, "step": 4700, "batch": 311, "loss": 0.3241662085056305, "learning_rate": 1.181109339004076e-05}
+{"event": "step", "epoch": 8, "step": 4800, "batch": 411, "loss": 0.6024845242500305, "learning_rate": 1.1589580010632644e-05}
+{"event": "step", "epoch": 8, "step": 4900, "batch": 511, "loss": 0.5930551290512085, "learning_rate": 1.1368066631224528e-05}
+{"event": "step", "epoch": 8, "step": 5000, "batch": 611, "loss": 0.5308647751808167, "learning_rate": 1.1146553251816413e-05}
+
+plm_baseline · Epoch 8 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.60480 │ 627   │ 0.5000    │ 0.0960 │ 0.5608 │ 0.6156 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 8, "train_loss": 0.6048040390489965, "optimizer_steps": 627, "global_step": 5016, "validation_threshold": 0.5, "validation": {"accuracy": 0.5445859872611465, "precision": 0.5325581395348837, "recall": 0.7292993630573248, "f1": 0.6155913978494624, "mcc": 0.09596021413447757, "auc": 0.5607986125197777, "auprc": 0.5677080441509808, "tp": 229, "tn": 113, "fp": 201, "fn": 85, "confusion_matrix": [[113, 201], [85, 229]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6401273885350318, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 201, "fpr": 0.6401273885350318}}, "loss": 0.7709887589834914}, "fusion_validation": null, "training_seconds": 164.1685843858868, "epoch_seconds": 168.1335584167391}
+{"event": "step", "epoch": 9, "step": 5100, "batch": 84, "loss": 0.5884525179862976, "learning_rate": 1.0925039872408296e-05}
+{"event": "step", "epoch": 9, "step": 5200, "batch": 184, "loss": 0.5223167538642883, "learning_rate": 1.0703526493000178e-05}
+{"event": "step", "epoch": 9, "step": 5300, "batch": 284, "loss": 0.5621916055679321, "learning_rate": 1.0482013113592063e-05}
+{"event": "step", "epoch": 9, "step": 5400, "batch": 384, "loss": 0.22974485158920288, "learning_rate": 1.0260499734183947e-05}
+{"event": "step", "epoch": 9, "step": 5500, "batch": 484, "loss": 0.6502827405929565, "learning_rate": 1.003898635477583e-05}
+{"event": "step", "epoch": 9, "step": 5600, "batch": 584, "loss": 0.6135128736495972, "learning_rate": 9.817472975367713e-06}
+
+plm_baseline · Epoch 9 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.56060 │ 627   │ 0.5000    │ 0.1191 │ 0.5789 │ 0.5249 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 9, "train_loss": 0.5605999721270619, "optimizer_steps": 627, "global_step": 5643, "validation_threshold": 0.5, "validation": {"accuracy": 0.5589171974522293, "precision": 0.5687732342007435, "recall": 0.4872611464968153, "f1": 0.5248713550600344, "mcc": 0.11906342181643334, "auc": 0.5789027952452432, "auprc": 0.5768746926746063, "tp": 153, "tn": 198, "fp": 116, "fn": 161, "confusion_matrix": [[198, 116], [161, 153]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.36942675159235666, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 116, "fpr": 0.36942675159235666}}, "loss": 0.9107606754272799}, "fusion_validation": null, "training_seconds": 133.9695207667537, "epoch_seconds": 137.8454534849152}
+{"event": "step", "epoch": 10, "step": 5700, "batch": 57, "loss": 0.15344107151031494, "learning_rate": 9.595959595959597e-06}
+{"event": "step", "epoch": 10, "step": 5800, "batch": 157, "loss": 0.3547345995903015, "learning_rate": 9.374446216551481e-06}
+{"event": "step", "epoch": 10, "step": 5900, "batch": 257, "loss": 0.6088939905166626, "learning_rate": 9.152932837143364e-06}
+{"event": "step", "epoch": 10, "step": 6000, "batch": 357, "loss": 0.5686620473861694, "learning_rate": 8.931419457735249e-06}
+{"event": "step", "epoch": 10, "step": 6100, "batch": 457, "loss": 0.4224623143672943, "learning_rate": 8.709906078327133e-06}
+{"event": "step", "epoch": 10, "step": 6200, "batch": 557, "loss": 0.9264816641807556, "learning_rate": 8.488392698919016e-06}
+
+plm_baseline · Epoch 10 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.51760 │ 627   │ 0.5000    │ 0.0740 │ 0.5610 │ 0.5676 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 10, "train_loss": 0.5175963088608625, "optimizer_steps": 627, "global_step": 6270, "validation_threshold": 0.5, "validation": {"accuracy": 0.5366242038216561, "precision": 0.532033426183844, "recall": 0.60828025477707, "f1": 0.5676077265973254, "mcc": 0.07401239734535045, "auc": 0.5610420301026411, "auprc": 0.5690332319302842, "tp": 191, "tn": 146, "fp": 168, "fn": 123, "confusion_matrix": [[146, 168], [123, 191]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.535031847133758, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 168, "fpr": 0.535031847133758}}, "loss": 1.2725413456747803}, "fusion_validation": null, "training_seconds": 126.91231107432395, "epoch_seconds": 130.74638567119837}
+{"event": "step", "epoch": 11, "step": 6300, "batch": 30, "loss": 0.6191937327384949, "learning_rate": 8.2668793195109e-06}
+{"event": "step", "epoch": 11, "step": 6400, "batch": 130, "loss": 0.3217944800853729, "learning_rate": 8.045365940102785e-06}
+{"event": "step", "epoch": 11, "step": 6500, "batch": 230, "loss": 0.21304255723953247, "learning_rate": 7.823852560694667e-06}
+{"event": "step", "epoch": 11, "step": 6600, "batch": 330, "loss": 0.4804772734642029, "learning_rate": 7.602339181286551e-06}
+{"event": "step", "epoch": 11, "step": 6700, "batch": 430, "loss": 0.48059749603271484, "learning_rate": 7.3808258018784354e-06}
+{"event": "step", "epoch": 11, "step": 6800, "batch": 530, "loss": 1.088216781616211, "learning_rate": 7.159312422470318e-06}
+
+plm_baseline · Epoch 11 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.48618 │ 627   │ 0.5000    │ 0.0959 │ 0.5724 │ 0.5671 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 11, "train_loss": 0.48617748514507, "optimizer_steps": 627, "global_step": 6897, "validation_threshold": 0.5, "validation": {"accuracy": 0.5477707006369427, "precision": 0.543859649122807, "recall": 0.5923566878980892, "f1": 0.5670731707317073, "mcc": 0.09592353720958519, "auc": 0.5723508053065033, "auprc": 0.5700224401519028, "tp": 186, "tn": 158, "fp": 156, "fn": 128, "confusion_matrix": [[158, 156], [128, 186]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.4968152866242038, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 156, "fpr": 0.4968152866242038}}, "loss": 1.3110205897047549}, "fusion_validation": null, "training_seconds": 129.55457770917565, "epoch_seconds": 133.52697364334017}
+{"event": "step", "epoch": 12, "step": 6900, "batch": 3, "loss": 0.2824520468711853, "learning_rate": 6.937799043062203e-06}
+{"event": "step", "epoch": 12, "step": 7000, "batch": 103, "loss": 0.26278436183929443, "learning_rate": 6.716285663654086e-06}
+{"event": "step", "epoch": 12, "step": 7100, "batch": 203, "loss": 0.27474480867385864, "learning_rate": 6.494772284245969e-06}
+{"event": "step", "epoch": 12, "step": 7200, "batch": 303, "loss": 0.3039409816265106, "learning_rate": 6.273258904837853e-06}
+{"event": "step", "epoch": 12, "step": 7300, "batch": 403, "loss": 0.6245073080062866, "learning_rate": 6.051745525429738e-06}
+{"event": "step", "epoch": 12, "step": 7400, "batch": 503, "loss": 0.36938440799713135, "learning_rate": 5.8302321460216205e-06}
+{"event": "step", "epoch": 12, "step": 7500, "batch": 603, "loss": 0.6494733691215515, "learning_rate": 5.608718766613505e-06}
+
+plm_baseline · Epoch 12 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.44710 │ 627   │ 0.5000    │ 0.0715 │ 0.5644 │ 0.5768 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 12, "train_loss": 0.44709659874011454, "optimizer_steps": 627, "global_step": 7524, "validation_threshold": 0.5, "validation": {"accuracy": 0.535031847133758, "precision": 0.5292553191489362, "recall": 0.6337579617834395, "f1": 0.5768115942028986, "mcc": 0.0714707744286663, "auc": 0.5643991642662989, "auprc": 0.5632270631026616, "tp": 199, "tn": 137, "fp": 177, "fn": 115, "confusion_matrix": [[137, 177], [115, 199]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5636942675159236, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 177, "fpr": 0.5636942675159236}}, "loss": 1.248991908151892}, "fusion_validation": null, "training_seconds": 156.32752867694944, "epoch_seconds": 160.36099072126672}
+{"event": "step", "epoch": 13, "step": 7600, "batch": 76, "loss": 0.2805396616458893, "learning_rate": 5.387205387205388e-06}
+{"event": "step", "epoch": 13, "step": 7700, "batch": 176, "loss": 0.5269525051116943, "learning_rate": 5.165692007797271e-06}
+{"event": "step", "epoch": 13, "step": 7800, "batch": 276, "loss": 0.21353036165237427, "learning_rate": 4.944178628389156e-06}
+{"event": "step", "epoch": 13, "step": 7900, "batch": 376, "loss": 0.3282628059387207, "learning_rate": 4.722665248981039e-06}
+{"event": "step", "epoch": 13, "step": 8000, "batch": 476, "loss": 0.38366854190826416, "learning_rate": 4.501151869572923e-06}
+{"event": "step", "epoch": 13, "step": 8100, "batch": 576, "loss": 0.6118409633636475, "learning_rate": 4.279638490164807e-06}
+
+plm_baseline · Epoch 13 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.40911 │ 627   │ 0.5000    │ 0.0968 │ 0.5666 │ 0.5811 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 13, "train_loss": 0.40911075280328685, "optimizer_steps": 627, "global_step": 8151, "validation_threshold": 0.5, "validation": {"accuracy": 0.5477707006369427, "precision": 0.5412087912087912, "recall": 0.6273885350318471, "f1": 0.5811209439528023, "mcc": 0.09677620764234547, "auc": 0.5665594953142116, "auprc": 0.5634960461277918, "tp": 197, "tn": 147, "fp": 167, "fn": 117, "confusion_matrix": [[147, 167], [117, 197]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5318471337579618, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 167, "fpr": 0.5318471337579618}}, "loss": 1.4772070004970212}, "fusion_validation": null, "training_seconds": 134.46437997790053, "epoch_seconds": 138.48120000725612}
+{"event": "step", "epoch": 14, "step": 8200, "batch": 49, "loss": 0.36487388610839844, "learning_rate": 4.05812511075669e-06}
+{"event": "step", "epoch": 14, "step": 8300, "batch": 149, "loss": 0.5433031320571899, "learning_rate": 3.836611731348574e-06}
+{"event": "step", "epoch": 14, "step": 8400, "batch": 249, "loss": 0.4881328344345093, "learning_rate": 3.6150983519404577e-06}
+{"event": "step", "epoch": 14, "step": 8500, "batch": 349, "loss": 0.2762880325317383, "learning_rate": 3.3935849725323417e-06}
+{"event": "step", "epoch": 14, "step": 8600, "batch": 449, "loss": 0.4882084131240845, "learning_rate": 3.1720715931242253e-06}
+{"event": "step", "epoch": 14, "step": 8700, "batch": 549, "loss": 0.16680170595645905, "learning_rate": 2.950558213716109e-06}
+
+plm_baseline · Epoch 14 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.37771 │ 627   │ 0.5000    │ 0.1085 │ 0.5688 │ 0.5395 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 14, "train_loss": 0.37770861060398686, "optimizer_steps": 627, "global_step": 8778, "validation_threshold": 0.5, "validation": {"accuracy": 0.554140127388535, "precision": 0.5578231292517006, "recall": 0.5222929936305732, "f1": 0.5394736842105262, "mcc": 0.10850056967641564, "auc": 0.568800965556412, "auprc": 0.5699562115972001, "tp": 164, "tn": 184, "fp": 130, "fn": 150, "confusion_matrix": [[184, 130], [150, 164]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.4140127388535032, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 130, "fpr": 0.4140127388535032}}, "loss": 1.725182420090784}, "fusion_validation": null, "training_seconds": 131.90317272394896, "epoch_seconds": 135.93670293223113}
+{"event": "step", "epoch": 15, "step": 8800, "batch": 22, "loss": 0.5619320273399353, "learning_rate": 2.729044834307993e-06}
+{"event": "step", "epoch": 15, "step": 8900, "batch": 122, "loss": 0.23188969492912292, "learning_rate": 2.5075314548998765e-06}
+{"event": "step", "epoch": 15, "step": 9000, "batch": 222, "loss": 0.21448379755020142, "learning_rate": 2.28601807549176e-06}
+{"event": "step", "epoch": 15, "step": 9100, "batch": 322, "loss": 0.22010773420333862, "learning_rate": 2.0645046960836436e-06}
+{"event": "step", "epoch": 15, "step": 9200, "batch": 422, "loss": 0.550745964050293, "learning_rate": 1.8429913166755276e-06}
+{"event": "step", "epoch": 15, "step": 9300, "batch": 522, "loss": 0.37584078311920166, "learning_rate": 1.621477937267411e-06}
+{"event": "step", "epoch": 15, "step": 9400, "batch": 622, "loss": 0.4051056206226349, "learning_rate": 1.3999645578592948e-06}
+
+plm_baseline · Epoch 15 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.35365 │ 627   │ 0.5000    │ 0.0989 │ 0.5681 │ 0.5626 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 15, "train_loss": 0.3536531795841156, "optimizer_steps": 627, "global_step": 9405, "validation_threshold": 0.5, "validation": {"accuracy": 0.5493630573248408, "precision": 0.5465465465465466, "recall": 0.5796178343949044, "f1": 0.562596599690881, "mcc": 0.09890735068715649, "auc": 0.5681214248042517, "auprc": 0.5613234892794747, "tp": 182, "tn": 163, "fp": 151, "fn": 132, "confusion_matrix": [[163, 151], [132, 182]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.48089171974522293, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 151, "fpr": 0.48089171974522293}}, "loss": 1.9518597412712966}, "fusion_validation": null, "training_seconds": 130.4843118148856, "epoch_seconds": 134.58696494391188}
+{"event": "step", "epoch": 16, "step": 9500, "batch": 95, "loss": 0.09270213544368744, "learning_rate": 1.1784511784511786e-06}
+{"event": "step", "epoch": 16, "step": 9600, "batch": 195, "loss": 0.418266236782074, "learning_rate": 9.569377990430624e-07}
+{"event": "step", "epoch": 16, "step": 9700, "batch": 295, "loss": 0.5180588960647583, "learning_rate": 7.354244196349461e-07}
+{"event": "step", "epoch": 16, "step": 9800, "batch": 395, "loss": 0.4035853147506714, "learning_rate": 5.139110402268298e-07}
+{"event": "step", "epoch": 16, "step": 9900, "batch": 495, "loss": 0.36009418964385986, "learning_rate": 2.923976608187135e-07}
+{"event": "step", "epoch": 16, "step": 10000, "batch": 595, "loss": 0.9830228686332703, "learning_rate": 7.088428141059721e-08}
+
+plm_baseline · Epoch 16 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.32481 │ 627   │ 0.5000    │ 0.0966 │ 0.5666 │ 0.5786 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "plm_baseline", "epoch": 16, "train_loss": 0.3248126255686245, "optimizer_steps": 627, "global_step": 10032, "validation_threshold": 0.5, "validation": {"accuracy": 0.5477707006369427, "precision": 0.5416666666666666, "recall": 0.6210191082802548, "f1": 0.5786350148367951, "mcc": 0.09658342616078197, "auc": 0.5665645665138546, "auprc": 0.5574860334609313, "tp": 195, "tn": 149, "fp": 165, "fn": 119, "confusion_matrix": [[149, 165], [119, 195]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5254777070063694, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 165, "fpr": 0.5254777070063694}}, "loss": 2.0805501915231535}, "fusion_validation": null, "training_seconds": 150.73999115917832, "epoch_seconds": 154.57724241819233}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.7646138072013855, "learning_rate": 1.993620414673046e-08, "bce": 0.7646138072013855, "region_loss": 0.0}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.6579490900039673, "learning_rate": 1.9936204146730465e-06, "bce": 0.6579490900039673, "region_loss": 0.0}
+{"event": "step", "epoch": 1, "step": 200, "batch": 200, "loss": 0.7171388268470764, "learning_rate": 3.987240829346093e-06, "bce": 0.7171388268470764, "region_loss": 0.0}
+{"event": "step", "epoch": 1, "step": 300, "batch": 300, "loss": 0.6227554678916931, "learning_rate": 5.98086124401914e-06, "bce": 0.6227554678916931, "region_loss": 0.0}
+{"event": "step", "epoch": 1, "step": 400, "batch": 400, "loss": 0.6536810398101807, "learning_rate": 7.974481658692186e-06, "bce": 0.6536810398101807, "region_loss": 0.0}
+{"event": "step", "epoch": 1, "step": 500, "batch": 500, "loss": 0.7005391120910645, "learning_rate": 9.968102073365231e-06, "bce": 0.7005391120910645, "region_loss": 0.0}
+{"event": "step", "epoch": 1, "step": 600, "batch": 600, "loss": 0.7604552507400513, "learning_rate": 1.196172248803828e-05, "bce": 0.7604552507400513, "region_loss": 0.0}
+
+context_only · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71347 │ 627   │ 0.5000    │ 0.0271 │ 0.5236 │ 0.4138 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 1, "train_loss": 0.7134737455103386, "optimizer_steps": 627, "global_step": 627, "validation_threshold": 0.5, "validation": {"accuracy": 0.5127388535031847, "precision": 0.5192307692307693, "recall": 0.34394904458598724, "f1": 0.4137931034482758, "mcc": 0.02706659809803834, "auc": 0.5235861495395351, "auprc": 0.52666344826725, "tp": 108, "tn": 214, "fp": 100, "fn": 206, "confusion_matrix": [[214, 100], [206, 108]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.3184713375796178, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 100, "fpr": 0.3184713375796178}}, "loss": 0.6941411744190168}, "fusion_validation": null, "training_seconds": 133.37011408014223, "epoch_seconds": 137.47431888012215, "train_components": {"bce": 0.7134737455103386, "region_loss": 0.0}}
+{"event": "step", "epoch": 2, "step": 700, "batch": 73, "loss": 0.7169303894042969, "learning_rate": 1.3955342902711325e-05, "bce": 0.7169303894042969, "region_loss": 0.0}
+{"event": "step", "epoch": 2, "step": 800, "batch": 173, "loss": 0.725644588470459, "learning_rate": 1.594896331738437e-05, "bce": 0.725644588470459, "region_loss": 0.0}
+{"event": "step", "epoch": 2, "step": 900, "batch": 273, "loss": 0.7154234647750854, "learning_rate": 1.7942583732057417e-05, "bce": 0.7154234647750854, "region_loss": 0.0}
+{"event": "step", "epoch": 2, "step": 1000, "batch": 373, "loss": 0.7841910719871521, "learning_rate": 1.9936204146730462e-05, "bce": 0.7841910719871521, "region_loss": 0.0}
+{"event": "step", "epoch": 2, "step": 1100, "batch": 473, "loss": 0.7724872827529907, "learning_rate": 1.9785575048732947e-05, "bce": 0.7724872827529907, "region_loss": 0.0}
+{"event": "step", "epoch": 2, "step": 1200, "batch": 573, "loss": 0.6996367573738098, "learning_rate": 1.956406166932483e-05, "bce": 0.6996367573738098, "region_loss": 0.0}
+
+context_only · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.71141 │ 627   │ 0.5000    │ 0.0000 │ 0.5283 │ 0.0063 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 2, "train_loss": 0.7114090033980648, "optimizer_steps": 627, "global_step": 1254, "validation_threshold": 0.5, "validation": {"accuracy": 0.5, "precision": 0.5, "recall": 0.0031847133757961785, "f1": 0.006329113924050633, "mcc": 0.0, "auc": 0.5282516532110836, "auprc": 0.534124096884023, "tp": 1, "tn": 313, "fp": 1, "fn": 313, "confusion_matrix": [[313, 1], [313, 1]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.0031847133757961785, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 1, "fpr": 0.0031847133757961785}}, "loss": 0.7032530088967914}, "fusion_validation": null, "training_seconds": 118.53421494504437, "epoch_seconds": 122.99680483806878, "train_components": {"bce": 0.7114090033980648, "region_loss": 0.0}}
+{"event": "step", "epoch": 3, "step": 1300, "batch": 46, "loss": 0.6374483704566956, "learning_rate": 1.9342548289916712e-05, "bce": 0.6374483704566956, "region_loss": 0.0}
+{"event": "step", "epoch": 3, "step": 1400, "batch": 146, "loss": 0.7158989906311035, "learning_rate": 1.91210349105086e-05, "bce": 0.7158989906311035, "region_loss": 0.0}
+{"event": "step", "epoch": 3, "step": 1500, "batch": 246, "loss": 0.5644102692604065, "learning_rate": 1.889952153110048e-05, "bce": 0.5644102692604065, "region_loss": 0.0}
+{"event": "step", "epoch": 3, "step": 1600, "batch": 346, "loss": 0.7000415325164795, "learning_rate": 1.8678008151692367e-05, "bce": 0.7000415325164795, "region_loss": 0.0}
+{"event": "step", "epoch": 3, "step": 1700, "batch": 446, "loss": 0.66269850730896, "learning_rate": 1.8456494772284247e-05, "bce": 0.66269850730896, "region_loss": 0.0}
+{"event": "step", "epoch": 3, "step": 1800, "batch": 546, "loss": 0.7295494079589844, "learning_rate": 1.8234981392876133e-05, "bce": 0.7295494079589844, "region_loss": 0.0}
+
+context_only · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69727 │ 627   │ 0.5000    │ 0.0587 │ 0.5448 │ 0.5747 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 3, "train_loss": 0.6972728535128933, "optimizer_steps": 627, "global_step": 1881, "validation_threshold": 0.5, "validation": {"accuracy": 0.5286624203821656, "precision": 0.5235602094240838, "recall": 0.6369426751592356, "f1": 0.5747126436781609, "mcc": 0.05871827250077844, "auc": 0.5448192624447239, "auprc": 0.5487194282702113, "tp": 200, "tn": 132, "fp": 182, "fn": 114, "confusion_matrix": [[132, 182], [114, 200]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5796178343949044, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 182, "fpr": 0.5796178343949044}}, "loss": 0.6919006931630871}, "fusion_validation": null, "training_seconds": 118.31982390210032, "epoch_seconds": 122.55246231285855, "train_components": {"bce": 0.6972728535128933, "region_loss": 0.0}}
+{"event": "step", "epoch": 4, "step": 1900, "batch": 19, "loss": 0.7038698196411133, "learning_rate": 1.8013468013468016e-05, "bce": 0.7038698196411133, "region_loss": 0.0}
+{"event": "step", "epoch": 4, "step": 2000, "batch": 119, "loss": 0.6905498504638672, "learning_rate": 1.7791954634059902e-05, "bce": 0.6905498504638672, "region_loss": 0.0}
+{"event": "step", "epoch": 4, "step": 2100, "batch": 219, "loss": 0.7368068695068359, "learning_rate": 1.7570441254651785e-05, "bce": 0.7368068695068359, "region_loss": 0.0}
+{"event": "step", "epoch": 4, "step": 2200, "batch": 319, "loss": 0.677910327911377, "learning_rate": 1.7348927875243667e-05, "bce": 0.677910327911377, "region_loss": 0.0}
+{"event": "step", "epoch": 4, "step": 2300, "batch": 419, "loss": 0.6944891810417175, "learning_rate": 1.712741449583555e-05, "bce": 0.6944891810417175, "region_loss": 0.0}
+{"event": "step", "epoch": 4, "step": 2400, "batch": 519, "loss": 0.6692313551902771, "learning_rate": 1.6905901116427436e-05, "bce": 0.6692313551902771, "region_loss": 0.0}
+{"event": "step", "epoch": 4, "step": 2500, "batch": 619, "loss": 0.7341021299362183, "learning_rate": 1.668438773701932e-05, "bce": 0.7341021299362183, "region_loss": 0.0}
+
+context_only · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69135 │ 627   │ 0.5000    │ 0.0204 │ 0.5402 │ 0.4054 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 4, "train_loss": 0.6913461512165586, "optimizer_steps": 627, "global_step": 2508, "validation_threshold": 0.5, "validation": {"accuracy": 0.5095541401273885, "precision": 0.5147058823529411, "recall": 0.3343949044585987, "f1": 0.4054054054054054, "mcc": 0.020401083734352718, "auc": 0.5401993995699622, "auprc": 0.5606014978947045, "tp": 105, "tn": 215, "fp": 99, "fn": 209, "confusion_matrix": [[215, 99], [209, 105]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.31528662420382164, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 99, "fpr": 0.31528662420382164}}, "loss": 0.6907365254209011}, "fusion_validation": null, "training_seconds": 136.00115993991494, "epoch_seconds": 140.35752803692594, "train_components": {"bce": 0.6913461512165586, "region_loss": 0.0}}
+{"event": "step", "epoch": 5, "step": 2600, "batch": 92, "loss": 0.6689977049827576, "learning_rate": 1.64628743576112e-05, "bce": 0.6689977049827576, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 2700, "batch": 192, "loss": 0.7514395117759705, "learning_rate": 1.6241360978203088e-05, "bce": 0.7514395117759705, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 2800, "batch": 292, "loss": 0.6146072149276733, "learning_rate": 1.601984759879497e-05, "bce": 0.6146072149276733, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 2900, "batch": 392, "loss": 0.5822651982307434, "learning_rate": 1.5798334219386853e-05, "bce": 0.5822651982307434, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 3000, "batch": 492, "loss": 0.5990794897079468, "learning_rate": 1.5576820839978736e-05, "bce": 0.5990794897079468, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 3100, "batch": 592, "loss": 0.7665916085243225, "learning_rate": 1.5355307460570622e-05, "bce": 0.7665916085243225, "region_loss": 0.0}
+
+context_only · Epoch 5 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.68036 │ 627   │ 0.5000    │ 0.0889 │ 0.5618 │ 0.6590 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 5, "train_loss": 0.6803640584911456, "optimizer_steps": 627, "global_step": 3135, "validation_threshold": 0.5, "validation": {"accuracy": 0.5286624203821656, "precision": 0.516245487364621, "recall": 0.910828025477707, "f1": 0.6589861751152074, "mcc": 0.08890000038962347, "auc": 0.5618128524483752, "auprc": 0.5576295634143488, "tp": 286, "tn": 46, "fp": 268, "fn": 28, "confusion_matrix": [[46, 268], [28, 286]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.8535031847133758, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 268, "fpr": 0.8535031847133758}}, "loss": 0.6914916423302663}, "fusion_validation": null, "training_seconds": 117.5884623778984, "epoch_seconds": 121.87501648813486, "train_components": {"bce": 0.6803640584911456, "region_loss": 0.0}}
+{"event": "step", "epoch": 6, "step": 3200, "batch": 65, "loss": 0.6899653673171997, "learning_rate": 1.5133794081162505e-05, "bce": 0.6899653673171997, "region_loss": 0.0}
+{"event": "step", "epoch": 6, "step": 3300, "batch": 165, "loss": 0.6924419403076172, "learning_rate": 1.491228070175439e-05, "bce": 0.6924419403076172, "region_loss": 0.0}
+{"event": "step", "epoch": 6, "step": 3400, "batch": 265, "loss": 0.6636660695075989, "learning_rate": 1.469076732234627e-05, "bce": 0.6636660695075989, "region_loss": 0.0}
+{"event": "step", "epoch": 6, "step": 3500, "batch": 365, "loss": 0.6630669832229614, "learning_rate": 1.4469253942938155e-05, "bce": 0.6630669832229614, "region_loss": 0.0}
+{"event": "step", "epoch": 6, "step": 3600, "batch": 465, "loss": 0.607277512550354, "learning_rate": 1.424774056353004e-05, "bce": 0.607277512550354, "region_loss": 0.0}
+{"event": "step", "epoch": 6, "step": 3700, "batch": 565, "loss": 0.7241616249084473, "learning_rate": 1.4026227184121924e-05, "bce": 0.7241616249084473, "region_loss": 0.0}
+
+context_only · Epoch 6 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.66609 │ 627   │ 0.5000    │ 0.0773 │ 0.5501 │ 0.3467 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 6, "train_loss": 0.6660879651230108, "optimizer_steps": 627, "global_step": 3762, "validation_threshold": 0.5, "validation": {"accuracy": 0.5318471337579618, "precision": 0.5735294117647058, "recall": 0.2484076433121019, "f1": 0.3466666666666667, "mcc": 0.07731753330571374, "auc": 0.55010852367236, "auprc": 0.5507391668007621, "tp": 78, "tn": 256, "fp": 58, "fn": 236, "confusion_matrix": [[256, 58], [236, 78]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.18471337579617833, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 58, "fpr": 0.18471337579617833}}, "loss": 0.7194798264322402}, "fusion_validation": null, "training_seconds": 118.42813914874569, "epoch_seconds": 122.69606291782111, "train_components": {"bce": 0.6660879651230108, "region_loss": 0.0}}
+{"event": "step", "epoch": 7, "step": 3800, "batch": 38, "loss": 0.5854424238204956, "learning_rate": 1.3804713804713808e-05, "bce": 0.5854424238204956, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 3900, "batch": 138, "loss": 0.5967115759849548, "learning_rate": 1.358320042530569e-05, "bce": 0.5967115759849548, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 4000, "batch": 238, "loss": 0.7910573482513428, "learning_rate": 1.3361687045897574e-05, "bce": 0.7910573482513428, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 4100, "batch": 338, "loss": 0.7028142809867859, "learning_rate": 1.3140173666489458e-05, "bce": 0.7028142809867859, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 4200, "batch": 438, "loss": 0.6076830625534058, "learning_rate": 1.2918660287081342e-05, "bce": 0.6076830625534058, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 4300, "batch": 538, "loss": 0.7583572268486023, "learning_rate": 1.2697146907673225e-05, "bce": 0.7583572268486023, "region_loss": 0.0}
+
+context_only · Epoch 7 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.64005 │ 627   │ 0.5000    │ 0.0969 │ 0.5677 │ 0.6058 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 7, "train_loss": 0.6400484146113601, "optimizer_steps": 627, "global_step": 4389, "validation_threshold": 0.5, "validation": {"accuracy": 0.5461783439490446, "precision": 0.5354523227383863, "recall": 0.697452229299363, "f1": 0.6058091286307054, "mcc": 0.09689788248121999, "auc": 0.5676853016349548, "auprc": 0.5624045281552353, "tp": 219, "tn": 124, "fp": 190, "fn": 95, "confusion_matrix": [[124, 190], [95, 219]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6050955414012739, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 190, "fpr": 0.6050955414012739}}, "loss": 0.7816402097291584}, "fusion_validation": null, "training_seconds": 117.4840336740017, "epoch_seconds": 121.85615535313264, "train_components": {"bce": 0.6400484146113601, "region_loss": 0.0}}
+{"event": "step", "epoch": 8, "step": 4400, "batch": 11, "loss": 0.46996915340423584, "learning_rate": 1.247563352826511e-05, "bce": 0.46996915340423584, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4500, "batch": 111, "loss": 0.4766339063644409, "learning_rate": 1.2254120148856994e-05, "bce": 0.4766339063644409, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4600, "batch": 211, "loss": 1.0424866676330566, "learning_rate": 1.2032606769448875e-05, "bce": 1.0424866676330566, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4700, "batch": 311, "loss": 0.3516066372394562, "learning_rate": 1.181109339004076e-05, "bce": 0.3516066372394562, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4800, "batch": 411, "loss": 0.7232000827789307, "learning_rate": 1.1589580010632644e-05, "bce": 0.7232000827789307, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4900, "batch": 511, "loss": 0.7164874076843262, "learning_rate": 1.1368066631224528e-05, "bce": 0.7164874076843262, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 5000, "batch": 611, "loss": 0.5528843998908997, "learning_rate": 1.1146553251816413e-05, "bce": 0.5528843998908997, "region_loss": 0.0}
+
+context_only · Epoch 8 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.60346 │ 627   │ 0.5000    │ 0.0910 │ 0.5752 │ 0.5855 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 8, "train_loss": 0.6034633520117216, "optimizer_steps": 627, "global_step": 5016, "validation_threshold": 0.5, "validation": {"accuracy": 0.5445859872611465, "precision": 0.5372340425531915, "recall": 0.643312101910828, "f1": 0.5855072463768115, "mcc": 0.09096280381830256, "auc": 0.5752413891030062, "auprc": 0.5778002735384506, "tp": 202, "tn": 140, "fp": 174, "fn": 112, "confusion_matrix": [[140, 174], [112, 202]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.554140127388535, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 174, "fpr": 0.554140127388535}}, "loss": 0.8114847276784196}, "fusion_validation": null, "training_seconds": 134.42043405398726, "epoch_seconds": 138.73729710606858, "train_components": {"bce": 0.6034633520117216, "region_loss": 0.0}}
+{"event": "step", "epoch": 9, "step": 5100, "batch": 84, "loss": 0.6499442458152771, "learning_rate": 1.0925039872408296e-05, "bce": 0.6499442458152771, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5200, "batch": 184, "loss": 0.5345577001571655, "learning_rate": 1.0703526493000178e-05, "bce": 0.5345577001571655, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5300, "batch": 284, "loss": 0.5711246728897095, "learning_rate": 1.0482013113592063e-05, "bce": 0.5711246728897095, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5400, "batch": 384, "loss": 0.31320643424987793, "learning_rate": 1.0260499734183947e-05, "bce": 0.31320643424987793, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5500, "batch": 484, "loss": 0.7038288712501526, "learning_rate": 1.003898635477583e-05, "bce": 0.7038288712501526, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5600, "batch": 584, "loss": 0.7195413112640381, "learning_rate": 9.817472975367713e-06, "bce": 0.7195413112640381, "region_loss": 0.0}
+
+context_only · Epoch 9 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.56699 │ 627   │ 0.5000    │ 0.1015 │ 0.5652 │ 0.4017 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 9, "train_loss": 0.5669854275727766, "optimizer_steps": 627, "global_step": 5643, "validation_threshold": 0.5, "validation": {"accuracy": 0.5445859872611465, "precision": 0.5853658536585366, "recall": 0.3057324840764331, "f1": 0.40167364016736395, "mcc": 0.10150258834900477, "auc": 0.5651902714106048, "auprc": 0.5661830830872381, "tp": 96, "tn": 246, "fp": 68, "fn": 218, "confusion_matrix": [[246, 68], [218, 96]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.21656050955414013, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 68, "fpr": 0.21656050955414013}}, "loss": 0.9023065035101734}, "fusion_validation": null, "training_seconds": 118.85497356206179, "epoch_seconds": 123.12174814101309, "train_components": {"bce": 0.5669854275727766, "region_loss": 0.0}}
+{"event": "step", "epoch": 10, "step": 5700, "batch": 57, "loss": 0.21596181392669678, "learning_rate": 9.595959595959597e-06, "bce": 0.21596181392669678, "region_loss": 0.0}
+{"event": "step", "epoch": 10, "step": 5800, "batch": 157, "loss": 0.5795930624008179, "learning_rate": 9.374446216551481e-06, "bce": 0.5795930624008179, "region_loss": 0.0}
+{"event": "step", "epoch": 10, "step": 5900, "batch": 257, "loss": 0.4654064178466797, "learning_rate": 9.152932837143364e-06, "bce": 0.4654064178466797, "region_loss": 0.0}
+{"event": "step", "epoch": 10, "step": 6000, "batch": 357, "loss": 0.2640867233276367, "learning_rate": 8.931419457735249e-06, "bce": 0.2640867233276367, "region_loss": 0.0}
+{"event": "step", "epoch": 10, "step": 6100, "batch": 457, "loss": 0.48689526319503784, "learning_rate": 8.709906078327133e-06, "bce": 0.48689526319503784, "region_loss": 0.0}
+{"event": "step", "epoch": 10, "step": 6200, "batch": 557, "loss": 2.1098780632019043, "learning_rate": 8.488392698919016e-06, "bce": 2.1098780632019043, "region_loss": 0.0}
+
+context_only · Epoch 10 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.52208 │ 627   │ 0.5000    │ 0.1403 │ 0.5785 │ 0.5794 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 10, "train_loss": 0.5220799769320936, "optimizer_steps": 627, "global_step": 6270, "validation_threshold": 0.5, "validation": {"accuracy": 0.5700636942675159, "precision": 0.5670731707317073, "recall": 0.5923566878980892, "f1": 0.5794392523364486, "mcc": 0.1402668768739344, "auc": 0.5785275264716621, "auprc": 0.5738421033627963, "tp": 186, "tn": 172, "fp": 142, "fn": 128, "confusion_matrix": [[172, 142], [128, 186]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.45222929936305734, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 142, "fpr": 0.45222929936305734}}, "loss": 1.2901283355453346}, "fusion_validation": null, "training_seconds": 118.54801402287558, "epoch_seconds": 122.79788182210177, "train_components": {"bce": 0.5220799769320936, "region_loss": 0.0}}
+{"event": "step", "epoch": 11, "step": 6300, "batch": 30, "loss": 0.641464352607727, "learning_rate": 8.2668793195109e-06, "bce": 0.641464352607727, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6400, "batch": 130, "loss": 0.4238932132720947, "learning_rate": 8.045365940102785e-06, "bce": 0.4238932132720947, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6500, "batch": 230, "loss": 0.22075003385543823, "learning_rate": 7.823852560694667e-06, "bce": 0.22075003385543823, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6600, "batch": 330, "loss": 0.5313817262649536, "learning_rate": 7.602339181286551e-06, "bce": 0.5313817262649536, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6700, "batch": 430, "loss": 0.402743399143219, "learning_rate": 7.3808258018784354e-06, "bce": 0.402743399143219, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6800, "batch": 530, "loss": 0.9686563014984131, "learning_rate": 7.159312422470318e-06, "bce": 0.9686563014984131, "region_loss": 0.0}
+
+context_only · Epoch 11 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.48343 │ 627   │ 0.5000    │ 0.1089 │ 0.5811 │ 0.5770 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 11, "train_loss": 0.4834314722692567, "optimizer_steps": 627, "global_step": 6897, "validation_threshold": 0.5, "validation": {"accuracy": 0.554140127388535, "precision": 0.5488505747126436, "recall": 0.60828025477707, "f1": 0.5770392749244713, "mcc": 0.10892066379545268, "auc": 0.5810935534910138, "auprc": 0.5857326857342324, "tp": 191, "tn": 157, "fp": 157, "fn": 123, "confusion_matrix": [[157, 157], [123, 191]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 157, "fpr": 0.5}}, "loss": 1.4602515052391003}, "fusion_validation": null, "training_seconds": 118.01036444865167, "epoch_seconds": 122.3094894560054, "train_components": {"bce": 0.4834314722692567, "region_loss": 0.0}}
+{"event": "step", "epoch": 12, "step": 6900, "batch": 3, "loss": 0.3762603998184204, "learning_rate": 6.937799043062203e-06, "bce": 0.3762603998184204, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7000, "batch": 103, "loss": 0.2818731665611267, "learning_rate": 6.716285663654086e-06, "bce": 0.2818731665611267, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7100, "batch": 203, "loss": 0.3485172986984253, "learning_rate": 6.494772284245969e-06, "bce": 0.3485172986984253, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7200, "batch": 303, "loss": 0.3085736334323883, "learning_rate": 6.273258904837853e-06, "bce": 0.3085736334323883, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7300, "batch": 403, "loss": 0.999416708946228, "learning_rate": 6.051745525429738e-06, "bce": 0.999416708946228, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7400, "batch": 503, "loss": 0.26733118295669556, "learning_rate": 5.8302321460216205e-06, "bce": 0.26733118295669556, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7500, "batch": 603, "loss": 0.47152483463287354, "learning_rate": 5.608718766613505e-06, "bce": 0.47152483463287354, "region_loss": 0.0}
+
+context_only · Epoch 12 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.44533 │ 627   │ 0.5000    │ 0.0803 │ 0.5770 │ 0.5680 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 12, "train_loss": 0.4453313974797298, "optimizer_steps": 627, "global_step": 7524, "validation_threshold": 0.5, "validation": {"accuracy": 0.5398089171974523, "precision": 0.5352112676056338, "recall": 0.6050955414012739, "f1": 0.5680119581464873, "mcc": 0.08030535543114134, "auc": 0.5770061665787658, "auprc": 0.5828969198599442, "tp": 190, "tn": 149, "fp": 165, "fn": 124, "confusion_matrix": [[149, 165], [124, 190]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5254777070063694, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 165, "fpr": 0.5254777070063694}}, "loss": 1.3735771782790558}, "fusion_validation": null, "training_seconds": 132.7570499042049, "epoch_seconds": 137.13191503705457, "train_components": {"bce": 0.4453313974797298, "region_loss": 0.0}}
+{"event": "step", "epoch": 13, "step": 7600, "batch": 76, "loss": 0.29847073554992676, "learning_rate": 5.387205387205388e-06, "bce": 0.29847073554992676, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 7700, "batch": 176, "loss": 0.4947353005409241, "learning_rate": 5.165692007797271e-06, "bce": 0.4947353005409241, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 7800, "batch": 276, "loss": 0.18701410293579102, "learning_rate": 4.944178628389156e-06, "bce": 0.18701410293579102, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 7900, "batch": 376, "loss": 0.5548256635665894, "learning_rate": 4.722665248981039e-06, "bce": 0.5548256635665894, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 8000, "batch": 476, "loss": 0.5912429690361023, "learning_rate": 4.501151869572923e-06, "bce": 0.5912429690361023, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 8100, "batch": 576, "loss": 0.21486231684684753, "learning_rate": 4.279638490164807e-06, "bce": 0.21486231684684753, "region_loss": 0.0}
+
+context_only · Epoch 13 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.41169 │ 627   │ 0.5000    │ 0.1127 │ 0.5850 │ 0.5867 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 13, "train_loss": 0.4116910113700542, "optimizer_steps": 627, "global_step": 8151, "validation_threshold": 0.5, "validation": {"accuracy": 0.5557324840764332, "precision": 0.5484764542936288, "recall": 0.6305732484076433, "f1": 0.5866666666666667, "mcc": 0.11273501130354557, "auc": 0.5850389468132582, "auprc": 0.5871312084352949, "tp": 198, "tn": 151, "fp": 163, "fn": 116, "confusion_matrix": [[151, 163], [116, 198]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5191082802547771, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 163, "fpr": 0.5191082802547771}}, "loss": 1.7830007483687582}, "fusion_validation": null, "training_seconds": 118.82568273460492, "epoch_seconds": 123.2316177347675, "train_components": {"bce": 0.4116910113700542, "region_loss": 0.0}}
+{"event": "step", "epoch": 14, "step": 8200, "batch": 49, "loss": 0.6680383086204529, "learning_rate": 4.05812511075669e-06, "bce": 0.6680383086204529, "region_loss": 0.0}
+{"event": "step", "epoch": 14, "step": 8300, "batch": 149, "loss": 0.4017089009284973, "learning_rate": 3.836611731348574e-06, "bce": 0.4017089009284973, "region_loss": 0.0}
+{"event": "step", "epoch": 14, "step": 8400, "batch": 249, "loss": 0.5919839143753052, "learning_rate": 3.6150983519404577e-06, "bce": 0.5919839143753052, "region_loss": 0.0}
+{"event": "step", "epoch": 14, "step": 8500, "batch": 349, "loss": 0.24091702699661255, "learning_rate": 3.3935849725323417e-06, "bce": 0.24091702699661255, "region_loss": 0.0}
+{"event": "step", "epoch": 14, "step": 8600, "batch": 449, "loss": 0.6704543232917786, "learning_rate": 3.1720715931242253e-06, "bce": 0.6704543232917786, "region_loss": 0.0}
+{"event": "step", "epoch": 14, "step": 8700, "batch": 549, "loss": 0.2551794946193695, "learning_rate": 2.950558213716109e-06, "bce": 0.2551794946193695, "region_loss": 0.0}
+
+context_only · Epoch 14 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.38787 │ 627   │ 0.5000    │ 0.0927 │ 0.5749 │ 0.5649 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 14, "train_loss": 0.387867499142978, "optimizer_steps": 627, "global_step": 8778, "validation_threshold": 0.5, "validation": {"accuracy": 0.5461783439490446, "precision": 0.5425219941348973, "recall": 0.589171974522293, "f1": 0.564885496183206, "mcc": 0.09270002687143795, "auc": 0.5749269747251411, "auprc": 0.5788394173597559, "tp": 185, "tn": 158, "fp": 156, "fn": 129, "confusion_matrix": [[158, 156], [129, 185]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.4968152866242038, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 156, "fpr": 0.4968152866242038}}, "loss": 1.9193007655536072}, "fusion_validation": null, "training_seconds": 121.90574283711612, "epoch_seconds": 126.19726279610768, "train_components": {"bce": 0.387867499142978, "region_loss": 0.0}}
+{"event": "step", "epoch": 15, "step": 8800, "batch": 22, "loss": 0.8879074454307556, "learning_rate": 2.729044834307993e-06, "bce": 0.8879074454307556, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 8900, "batch": 122, "loss": 0.1812489926815033, "learning_rate": 2.5075314548998765e-06, "bce": 0.1812489926815033, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9000, "batch": 222, "loss": 0.2137848287820816, "learning_rate": 2.28601807549176e-06, "bce": 0.2137848287820816, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9100, "batch": 322, "loss": 0.1869777888059616, "learning_rate": 2.0645046960836436e-06, "bce": 0.1869777888059616, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9200, "batch": 422, "loss": 0.25428104400634766, "learning_rate": 1.8429913166755276e-06, "bce": 0.25428104400634766, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9300, "batch": 522, "loss": 0.3056005537509918, "learning_rate": 1.621477937267411e-06, "bce": 0.3056005537509918, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9400, "batch": 622, "loss": 0.9759620428085327, "learning_rate": 1.3999645578592948e-06, "bce": 0.9759620428085327, "region_loss": 0.0}
+
+context_only · Epoch 15 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.35579 │ 627   │ 0.5000    │ 0.1059 │ 0.5802 │ 0.5787 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 15, "train_loss": 0.35579497867153936, "optimizer_steps": 627, "global_step": 9405, "validation_threshold": 0.5, "validation": {"accuracy": 0.552547770700637, "precision": 0.546742209631728, "recall": 0.6146496815286624, "f1": 0.5787106446776612, "mcc": 0.10591567547636531, "auc": 0.5802162359527769, "auprc": 0.5786423520560722, "tp": 193, "tn": 154, "fp": 160, "fn": 121, "confusion_matrix": [[154, 160], [121, 193]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5095541401273885, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 160, "fpr": 0.5095541401273885}}, "loss": 2.106651979156687}, "fusion_validation": null, "training_seconds": 120.31985444109887, "epoch_seconds": 124.4475700170733, "train_components": {"bce": 0.35579497867153936, "region_loss": 0.0}}
+{"event": "step", "epoch": 16, "step": 9500, "batch": 95, "loss": 0.29919230937957764, "learning_rate": 1.1784511784511786e-06, "bce": 0.29919230937957764, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 9600, "batch": 195, "loss": 0.41198256611824036, "learning_rate": 9.569377990430624e-07, "bce": 0.41198256611824036, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 9700, "batch": 295, "loss": 0.33515068888664246, "learning_rate": 7.354244196349461e-07, "bce": 0.33515068888664246, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 9800, "batch": 395, "loss": 0.5342714786529541, "learning_rate": 5.139110402268298e-07, "bce": 0.5342714786529541, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 9900, "batch": 495, "loss": 0.3928331136703491, "learning_rate": 2.923976608187135e-07, "bce": 0.3928331136703491, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 10000, "batch": 595, "loss": 0.4759584665298462, "learning_rate": 7.088428141059721e-08, "bce": 0.4759584665298462, "region_loss": 0.0}
+
+context_only · Epoch 16 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.32612 │ 627   │ 0.5000    │ 0.0892 │ 0.5805 │ 0.5503 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "context_only", "epoch": 16, "train_loss": 0.32611722654403646, "optimizer_steps": 627, "global_step": 10032, "validation_threshold": 0.5, "validation": {"accuracy": 0.5445859872611465, "precision": 0.5434782608695652, "recall": 0.5573248407643312, "f1": 0.550314465408805, "mcc": 0.089200929988258, "auc": 0.5804900807334983, "auprc": 0.5786113474933128, "tp": 175, "tn": 167, "fp": 147, "fn": 139, "confusion_matrix": [[167, 147], [139, 175]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.4681528662420382, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 147, "fpr": 0.4681528662420382}}, "loss": 2.2513827111902116}, "fusion_validation": null, "training_seconds": 138.2646849611774, "epoch_seconds": 142.43232061807066, "train_components": {"bce": 0.32611722654403646, "region_loss": 0.0}}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{"event": "step", "epoch": 1, "step": 1, "batch": 1, "loss": 0.8339285254478455, "learning_rate": 1.993620414673046e-08, "bce": 0.7646138072013855, "region_loss": 0.6931471824645996}
+{"event": "step", "epoch": 1, "step": 100, "batch": 100, "loss": 0.7271603941917419, "learning_rate": 1.9936204146730465e-06, "bce": 0.657939076423645, "region_loss": 0.6922134160995483}
+{"event": "step", "epoch": 1, "step": 200, "batch": 200, "loss": 0.7858434319496155, "learning_rate": 3.987240829346093e-06, "bce": 0.7171828746795654, "region_loss": 0.68660569190979}
+{"event": "step", "epoch": 1, "step": 300, "batch": 300, "loss": 0.6908080577850342, "learning_rate": 5.98086124401914e-06, "bce": 0.6223434209823608, "region_loss": 0.6846466064453125}
+{"event": "step", "epoch": 1, "step": 400, "batch": 400, "loss": 0.721017599105835, "learning_rate": 7.974481658692186e-06, "bce": 0.6541475653648376, "region_loss": 0.668700635433197}
+{"event": "step", "epoch": 1, "step": 500, "batch": 500, "loss": 0.7659780979156494, "learning_rate": 9.968102073365231e-06, "bce": 0.701461672782898, "region_loss": 0.6451644897460938}
+{"event": "step", "epoch": 1, "step": 600, "batch": 600, "loss": 0.8304533362388611, "learning_rate": 1.196172248803828e-05, "bce": 0.7661786079406738, "region_loss": 0.6427473425865173}
+
+rgcl · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.78105 │ 627   │ 0.5000    │ 0.0268 │ 0.5267 │ 0.4226 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 1, "train_loss": 0.7810465499544829, "optimizer_steps": 627, "global_step": 627, "validation_threshold": 0.5, "validation": {"accuracy": 0.5127388535031847, "precision": 0.5185185185185185, "recall": 0.35668789808917195, "f1": 0.4226415094339622, "mcc": 0.026817266223637653, "auc": 0.5266897237210435, "auprc": 0.529508552459719, "tp": 112, "tn": 210, "fp": 104, "fn": 202, "confusion_matrix": [[210, 104], [202, 112]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.33121019108280253, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 104, "fpr": 0.33121019108280253}}, "loss": 0.6937655798996551}, "fusion_validation": null, "training_seconds": 143.2802744996734, "epoch_seconds": 147.75393188092858, "train_components": {"bce": 0.7136328637219692, "region_loss": 0.6741368694548782}}
+{"event": "step", "epoch": 2, "step": 700, "batch": 73, "loss": 0.7822520732879639, "learning_rate": 1.3955342902711325e-05, "bce": 0.7341617345809937, "region_loss": 0.4809032082557678}
+{"event": "step", "epoch": 2, "step": 800, "batch": 173, "loss": 0.7420717477798462, "learning_rate": 1.594896331738437e-05, "bce": 0.7029983997344971, "region_loss": 0.3907334804534912}
+{"event": "step", "epoch": 2, "step": 900, "batch": 273, "loss": 0.8184735178947449, "learning_rate": 1.7942583732057417e-05, "bce": 0.7390115857124329, "region_loss": 0.794619083404541}
+{"event": "step", "epoch": 2, "step": 1000, "batch": 373, "loss": 0.6528220772743225, "learning_rate": 1.9936204146730462e-05, "bce": 0.6157752275466919, "region_loss": 0.37046822905540466}
+{"event": "step", "epoch": 2, "step": 1100, "batch": 473, "loss": 0.7807421088218689, "learning_rate": 1.9785575048732947e-05, "bce": 0.744335412979126, "region_loss": 0.3640668988227844}
+{"event": "step", "epoch": 2, "step": 1200, "batch": 573, "loss": 0.7218477725982666, "learning_rate": 1.956406166932483e-05, "bce": 0.6991809010505676, "region_loss": 0.22666878998279572}
+
+rgcl · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.75494 │ 627   │ 0.5000    │ 0.0525 │ 0.5556 │ 0.1644 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 2, "train_loss": 0.7549423449917844, "optimizer_steps": 627, "global_step": 1254, "validation_threshold": 0.5, "validation": {"accuracy": 0.5143312101910829, "precision": 0.5882352941176471, "recall": 0.09554140127388536, "f1": 0.16438356164383564, "mcc": 0.05246498038293459, "auc": 0.5555955616860725, "auprc": 0.5528755470529165, "tp": 30, "tn": 293, "fp": 21, "fn": 284, "confusion_matrix": [[293, 21], [284, 30]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.06687898089171974, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 21, "fpr": 0.06687898089171974}}, "loss": 0.6962268194065818}, "fusion_validation": null, "training_seconds": 130.22508276812732, "epoch_seconds": 135.69815029017627, "train_components": {"bce": 0.71319489910652, "region_loss": 0.41747446816289824}}
+{"event": "step", "epoch": 3, "step": 1300, "batch": 46, "loss": 0.6111526489257812, "learning_rate": 1.9342548289916712e-05, "bce": 0.5951125025749207, "region_loss": 0.16040128469467163}
+{"event": "step", "epoch": 3, "step": 1400, "batch": 146, "loss": 0.7645688652992249, "learning_rate": 1.91210349105086e-05, "bce": 0.7181539535522461, "region_loss": 0.4641492962837219}
+{"event": "step", "epoch": 3, "step": 1500, "batch": 246, "loss": 0.5774921178817749, "learning_rate": 1.889952153110048e-05, "bce": 0.5341788530349731, "region_loss": 0.4331328570842743}
+{"event": "step", "epoch": 3, "step": 1600, "batch": 346, "loss": 0.6980127096176147, "learning_rate": 1.8678008151692367e-05, "bce": 0.6805934906005859, "region_loss": 0.17419220507144928}
+{"event": "step", "epoch": 3, "step": 1700, "batch": 446, "loss": 0.675544798374176, "learning_rate": 1.8456494772284247e-05, "bce": 0.6614137291908264, "region_loss": 0.14131051301956177}
+{"event": "step", "epoch": 3, "step": 1800, "batch": 546, "loss": 0.7594122290611267, "learning_rate": 1.8234981392876133e-05, "bce": 0.7392893433570862, "region_loss": 0.20122860372066498}
+
+rgcl · Epoch 3 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.72319 │ 627   │ 0.5000    │ 0.0957 │ 0.5610 │ 0.6146 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 3, "train_loss": 0.7231930901179093, "optimizer_steps": 627, "global_step": 1881, "validation_threshold": 0.5, "validation": {"accuracy": 0.5445859872611465, "precision": 0.5327102803738317, "recall": 0.7261146496815286, "f1": 0.61455525606469, "mcc": 0.09570202978345285, "auc": 0.5609558197087103, "auprc": 0.5673595150344379, "tp": 228, "tn": 114, "fp": 200, "fn": 86, "confusion_matrix": [[114, 200], [86, 228]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6369426751592356, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 200, "fpr": 0.6369426751592356}}, "loss": 0.6906055702438837}, "fusion_validation": null, "training_seconds": 131.98634982015938, "epoch_seconds": 136.28947515925393, "train_components": {"bce": 0.6940840497446592, "region_loss": 0.29109040505558764}}
+{"event": "step", "epoch": 4, "step": 1900, "batch": 19, "loss": 0.8016924858093262, "learning_rate": 1.8013468013468016e-05, "bce": 0.7698135375976562, "region_loss": 0.31878918409347534}
+{"event": "step", "epoch": 4, "step": 2000, "batch": 119, "loss": 0.7199754118919373, "learning_rate": 1.7791954634059902e-05, "bce": 0.6909980773925781, "region_loss": 0.28977325558662415}
+{"event": "step", "epoch": 4, "step": 2100, "batch": 219, "loss": 0.6122519373893738, "learning_rate": 1.7570441254651785e-05, "bce": 0.5913883447647095, "region_loss": 0.2086360901594162}
+{"event": "step", "epoch": 4, "step": 2200, "batch": 319, "loss": 0.6311144828796387, "learning_rate": 1.7348927875243667e-05, "bce": 0.6247655749320984, "region_loss": 0.06348907947540283}
+{"event": "step", "epoch": 4, "step": 2300, "batch": 419, "loss": 0.6902581453323364, "learning_rate": 1.712741449583555e-05, "bce": 0.6872893571853638, "region_loss": 0.0296877920627594}
+{"event": "step", "epoch": 4, "step": 2400, "batch": 519, "loss": 0.7101918458938599, "learning_rate": 1.6905901116427436e-05, "bce": 0.6728556156158447, "region_loss": 0.3733622431755066}
+{"event": "step", "epoch": 4, "step": 2500, "batch": 619, "loss": 0.6071232557296753, "learning_rate": 1.668438773701932e-05, "bce": 0.6071232557296753, "region_loss": 0.0}
+
+rgcl · Epoch 4 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.68834 │ 627   │ 0.5000    │ 0.0608 │ 0.5638 │ 0.5956 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 4, "train_loss": 0.6883434754524504, "optimizer_steps": 627, "global_step": 2508, "validation_threshold": 0.5, "validation": {"accuracy": 0.5286624203821656, "precision": 0.5215311004784688, "recall": 0.6942675159235668, "f1": 0.5956284153005464, "mcc": 0.0607539776171812, "auc": 0.5638311899062842, "auprc": 0.575728389885743, "tp": 218, "tn": 114, "fp": 200, "fn": 96, "confusion_matrix": [[114, 200], [96, 218]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6369426751592356, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 200, "fpr": 0.6369426751592356}}, "loss": 0.6901374957229518}, "fusion_validation": null, "training_seconds": 159.99508978798985, "epoch_seconds": 164.3462357390672, "train_components": {"bce": 0.6682782176483951, "region_loss": 0.20065258424974194}}
+{"event": "step", "epoch": 5, "step": 2600, "batch": 92, "loss": 0.6126837730407715, "learning_rate": 1.64628743576112e-05, "bce": 0.595878005027771, "region_loss": 0.16805781424045563}
+{"event": "step", "epoch": 5, "step": 2700, "batch": 192, "loss": 0.5795248746871948, "learning_rate": 1.6241360978203088e-05, "bce": 0.5440652370452881, "region_loss": 0.3545965552330017}
+{"event": "step", "epoch": 5, "step": 2800, "batch": 292, "loss": 0.56485515832901, "learning_rate": 1.601984759879497e-05, "bce": 0.56485515832901, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 2900, "batch": 392, "loss": 0.5012026429176331, "learning_rate": 1.5798334219386853e-05, "bce": 0.4949742555618286, "region_loss": 0.06228375434875488}
+{"event": "step", "epoch": 5, "step": 3000, "batch": 492, "loss": 0.575778603553772, "learning_rate": 1.5576820839978736e-05, "bce": 0.575778603553772, "region_loss": 0.0}
+{"event": "step", "epoch": 5, "step": 3100, "batch": 592, "loss": 0.7726086974143982, "learning_rate": 1.5355307460570622e-05, "bce": 0.7726086974143982, "region_loss": 0.0}
+
+rgcl · Epoch 5 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.64887 │ 627   │ 0.5000    │ 0.0510 │ 0.5466 │ 0.6388 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 5, "train_loss": 0.6488665819073027, "optimizer_steps": 627, "global_step": 3135, "validation_threshold": 0.5, "validation": {"accuracy": 0.5191082802547771, "precision": 0.5114942528735632, "recall": 0.8503184713375797, "f1": 0.638755980861244, "mcc": 0.05101443274928474, "auc": 0.5465789687208407, "auprc": 0.5516643782631954, "tp": 267, "tn": 59, "fp": 255, "fn": 47, "confusion_matrix": [[59, 255], [47, 267]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.8121019108280255, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 255, "fpr": 0.8121019108280255}}, "loss": 0.8330391743515111}, "fusion_validation": null, "training_seconds": 132.29880164004862, "epoch_seconds": 136.6774772470817, "train_components": {"bce": 0.6330751387886644, "region_loss": 0.15791441645473983}}
+{"event": "step", "epoch": 6, "step": 3200, "batch": 65, "loss": 0.5396310091018677, "learning_rate": 1.5133794081162505e-05, "bce": 0.5281367301940918, "region_loss": 0.1149430125951767}
+{"event": "step", "epoch": 6, "step": 3300, "batch": 165, "loss": 0.5609138011932373, "learning_rate": 1.491228070175439e-05, "bce": 0.5389443635940552, "region_loss": 0.2196940779685974}
+{"event": "step", "epoch": 6, "step": 3400, "batch": 265, "loss": 0.6642751097679138, "learning_rate": 1.469076732234627e-05, "bce": 0.63796067237854, "region_loss": 0.26314422488212585}
+{"event": "step", "epoch": 6, "step": 3500, "batch": 365, "loss": 0.6831243634223938, "learning_rate": 1.4469253942938155e-05, "bce": 0.6805053949356079, "region_loss": 0.026189876720309258}
+{"event": "step", "epoch": 6, "step": 3600, "batch": 465, "loss": 0.42340806126594543, "learning_rate": 1.424774056353004e-05, "bce": 0.41498464345932007, "region_loss": 0.08423419296741486}
+{"event": "step", "epoch": 6, "step": 3700, "batch": 565, "loss": 0.4103938937187195, "learning_rate": 1.4026227184121924e-05, "bce": 0.40811216831207275, "region_loss": 0.022817326709628105}
+
+rgcl · Epoch 6 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.60238 │ 627   │ 0.5000    │ 0.0975 │ 0.5592 │ 0.6091 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 6, "train_loss": 0.6023836383266312, "optimizer_steps": 627, "global_step": 3762, "validation_threshold": 0.5, "validation": {"accuracy": 0.5461783439490446, "precision": 0.5349397590361445, "recall": 0.7070063694267515, "f1": 0.6090534979423867, "mcc": 0.09754031366150566, "auc": 0.5592265406304515, "auprc": 0.565729223951742, "tp": 222, "tn": 121, "fp": 193, "fn": 92, "confusion_matrix": [[121, 193], [92, 222]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6146496815286624, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 193, "fpr": 0.6146496815286624}}, "loss": 1.0411944521378866}, "fusion_validation": null, "training_seconds": 131.95412267977372, "epoch_seconds": 136.3287687636912, "train_components": {"bce": 0.5891234236375757, "region_loss": 0.13260214941502227}}
+{"event": "step", "epoch": 7, "step": 3800, "batch": 38, "loss": 0.539030134677887, "learning_rate": 1.3804713804713808e-05, "bce": 0.507354736328125, "region_loss": 0.31675419211387634}
+{"event": "step", "epoch": 7, "step": 3900, "batch": 138, "loss": 0.8064165115356445, "learning_rate": 1.358320042530569e-05, "bce": 0.8064165115356445, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 4000, "batch": 238, "loss": 0.4141860008239746, "learning_rate": 1.3361687045897574e-05, "bce": 0.4141860008239746, "region_loss": 0.0}
+{"event": "step", "epoch": 7, "step": 4100, "batch": 338, "loss": 0.8531392812728882, "learning_rate": 1.3140173666489458e-05, "bce": 0.8519847989082336, "region_loss": 0.011544853448867798}
+{"event": "step", "epoch": 7, "step": 4200, "batch": 438, "loss": 0.5285647511482239, "learning_rate": 1.2918660287081342e-05, "bce": 0.5244765877723694, "region_loss": 0.04088151454925537}
+{"event": "step", "epoch": 7, "step": 4300, "batch": 538, "loss": 0.6007260084152222, "learning_rate": 1.2697146907673225e-05, "bce": 0.596956729888916, "region_loss": 0.03769256919622421}
+
+rgcl · Epoch 7 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.55327 │ 627   │ 0.5000    │ 0.1129 │ 0.5590 │ 0.6218 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 7, "train_loss": 0.5532731013030907, "optimizer_steps": 627, "global_step": 4389, "validation_threshold": 0.5, "validation": {"accuracy": 0.552547770700637, "precision": 0.5384615384615384, "recall": 0.7356687898089171, "f1": 0.6218034993270524, "mcc": 0.11294285339485874, "auc": 0.5589729806483021, "auprc": 0.5579827851425282, "tp": 231, "tn": 116, "fp": 198, "fn": 83, "confusion_matrix": [[116, 198], [83, 231]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6305732484076433, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 198, "fpr": 0.6305732484076433}}, "loss": 0.8174590166611008}, "fusion_validation": null, "training_seconds": 135.2360633648932, "epoch_seconds": 139.65379455778748, "train_components": {"bce": 0.5416415427741632, "region_loss": 0.11631559353956133}}
+{"event": "step", "epoch": 8, "step": 4400, "batch": 11, "loss": 0.24629974365234375, "learning_rate": 1.247563352826511e-05, "bce": 0.23955093324184418, "region_loss": 0.06748814880847931}
+{"event": "step", "epoch": 8, "step": 4500, "batch": 111, "loss": 0.389611154794693, "learning_rate": 1.2254120148856994e-05, "bce": 0.389611154794693, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4600, "batch": 211, "loss": 0.2533307671546936, "learning_rate": 1.2032606769448875e-05, "bce": 0.2533307671546936, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 4700, "batch": 311, "loss": 0.16249006986618042, "learning_rate": 1.181109339004076e-05, "bce": 0.159402534365654, "region_loss": 0.030875399708747864}
+{"event": "step", "epoch": 8, "step": 4800, "batch": 411, "loss": 0.6418832540512085, "learning_rate": 1.1589580010632644e-05, "bce": 0.6089668273925781, "region_loss": 0.3291645646095276}
+{"event": "step", "epoch": 8, "step": 4900, "batch": 511, "loss": 0.4797750413417816, "learning_rate": 1.1368066631224528e-05, "bce": 0.4797750413417816, "region_loss": 0.0}
+{"event": "step", "epoch": 8, "step": 5000, "batch": 611, "loss": 0.871101975440979, "learning_rate": 1.1146553251816413e-05, "bce": 0.8642919063568115, "region_loss": 0.06810075044631958}
+
+rgcl · Epoch 8 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.49306 │ 627   │ 0.5000    │ 0.0944 │ 0.5581 │ 0.5887 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 8, "train_loss": 0.49306305678504886, "optimizer_steps": 627, "global_step": 5016, "validation_threshold": 0.5, "validation": {"accuracy": 0.5461783439490446, "precision": 0.5382585751978892, "recall": 0.6496815286624203, "f1": 0.5887445887445888, "mcc": 0.0944014617994328, "auc": 0.5581007343097084, "auprc": 0.5613622752278448, "tp": 204, "tn": 139, "fp": 175, "fn": 110, "confusion_matrix": [[139, 175], [110, 204]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5573248407643312, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 175, "fpr": 0.5573248407643312}}, "loss": 1.0012636312955543}, "fusion_validation": null, "training_seconds": 155.210251735989, "epoch_seconds": 159.55206185998395, "train_components": {"bce": 0.48233765578773796, "region_loss": 0.10725401642459759}}
+{"event": "step", "epoch": 9, "step": 5100, "batch": 84, "loss": 0.32832658290863037, "learning_rate": 1.0925039872408296e-05, "bce": 0.29915323853492737, "region_loss": 0.29173359274864197}
+{"event": "step", "epoch": 9, "step": 5200, "batch": 184, "loss": 0.26211708784103394, "learning_rate": 1.0703526493000178e-05, "bce": 0.26211708784103394, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5300, "batch": 284, "loss": 0.29748108983039856, "learning_rate": 1.0482013113592063e-05, "bce": 0.29471832513809204, "region_loss": 0.027627622708678246}
+{"event": "step", "epoch": 9, "step": 5400, "batch": 384, "loss": 0.20526352524757385, "learning_rate": 1.0260499734183947e-05, "bce": 0.20526352524757385, "region_loss": 0.0}
+{"event": "step", "epoch": 9, "step": 5500, "batch": 484, "loss": 0.5706579089164734, "learning_rate": 1.003898635477583e-05, "bce": 0.5601569414138794, "region_loss": 0.10500940680503845}
+{"event": "step", "epoch": 9, "step": 5600, "batch": 584, "loss": 0.7704925537109375, "learning_rate": 9.817472975367713e-06, "bce": 0.7651064395904541, "region_loss": 0.0538608692586422}
+
+rgcl · Epoch 9 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.45412 │ 627   │ 0.5000    │ 0.1115 │ 0.5656 │ 0.5564 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 9, "train_loss": 0.45412436006754114, "optimizer_steps": 627, "global_step": 5643, "validation_threshold": 0.5, "validation": {"accuracy": 0.5557324840764332, "precision": 0.5555555555555556, "recall": 0.5573248407643312, "f1": 0.5564387917329093, "mcc": 0.11146553341827281, "auc": 0.5655908961824009, "auprc": 0.5562523509767254, "tp": 175, "tn": 174, "fp": 140, "fn": 139, "confusion_matrix": [[174, 140], [139, 175]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.445859872611465, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 140, "fpr": 0.445859872611465}}, "loss": 1.044642833214772}, "fusion_validation": null, "training_seconds": 142.31562133319676, "epoch_seconds": 146.72056902386248, "train_components": {"bce": 0.4443274212412928, "region_loss": 0.09796938883198056}}
+{"event": "step", "epoch": 10, "step": 5700, "batch": 57, "loss": 0.06249471753835678, "learning_rate": 9.595959595959597e-06, "bce": 0.05877978354692459, "region_loss": 0.0371493399143219}
+{"event": "step", "epoch": 10, "step": 5800, "batch": 157, "loss": 0.2594848871231079, "learning_rate": 9.374446216551481e-06, "bce": 0.2463396191596985, "region_loss": 0.1314527839422226}
+{"event": "step", "epoch": 10, "step": 5900, "batch": 257, "loss": 0.5115131139755249, "learning_rate": 9.152932837143364e-06, "bce": 0.5014036297798157, "region_loss": 0.10109500586986542}
+{"event": "step", "epoch": 10, "step": 6000, "batch": 357, "loss": 0.3232135772705078, "learning_rate": 8.931419457735249e-06, "bce": 0.32306572794914246, "region_loss": 0.0014783613150939345}
+{"event": "step", "epoch": 10, "step": 6100, "batch": 457, "loss": 0.3050680160522461, "learning_rate": 8.709906078327133e-06, "bce": 0.2753946781158447, "region_loss": 0.29673323035240173}
+{"event": "step", "epoch": 10, "step": 6200, "batch": 557, "loss": 0.42781299352645874, "learning_rate": 8.488392698919016e-06, "bce": 0.42781299352645874, "region_loss": 0.0}
+
+rgcl · Epoch 10 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.42155 │ 627   │ 0.5000    │ 0.0721 │ 0.5563 │ 0.5840 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 10, "train_loss": 0.42154628866050614, "optimizer_steps": 627, "global_step": 6270, "validation_threshold": 0.5, "validation": {"accuracy": 0.535031847133758, "precision": 0.5283505154639175, "recall": 0.6528662420382165, "f1": 0.5840455840455842, "mcc": 0.07209434445029798, "auc": 0.5563460992332345, "auprc": 0.5592497648243071, "tp": 205, "tn": 131, "fp": 183, "fn": 109, "confusion_matrix": [[131, 183], [109, 205]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5828025477707006, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 183, "fpr": 0.5828025477707006}}, "loss": 1.4368248287635514}, "fusion_validation": null, "training_seconds": 141.15834925789386, "epoch_seconds": 145.58502280991524, "train_components": {"bce": 0.4121537929931076, "region_loss": 0.09392495120812781}}
+{"event": "step", "epoch": 11, "step": 6300, "batch": 30, "loss": 0.28599461913108826, "learning_rate": 8.2668793195109e-06, "bce": 0.28599461913108826, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6400, "batch": 130, "loss": 0.21464316546916962, "learning_rate": 8.045365940102785e-06, "bce": 0.21464316546916962, "region_loss": 0.0}
+{"event": "step", "epoch": 11, "step": 6500, "batch": 230, "loss": 0.2108219861984253, "learning_rate": 7.823852560694667e-06, "bce": 0.20449675619602203, "region_loss": 0.0632522702217102}
+{"event": "step", "epoch": 11, "step": 6600, "batch": 330, "loss": 0.10274998098611832, "learning_rate": 7.602339181286551e-06, "bce": 0.10165833681821823, "region_loss": 0.010916422121226788}
+{"event": "step", "epoch": 11, "step": 6700, "batch": 430, "loss": 0.5613200068473816, "learning_rate": 7.3808258018784354e-06, "bce": 0.5585711598396301, "region_loss": 0.027488652616739273}
+{"event": "step", "epoch": 11, "step": 6800, "batch": 530, "loss": 0.3677900433540344, "learning_rate": 7.159312422470318e-06, "bce": 0.3677900433540344, "region_loss": 0.0}
+
+rgcl · Epoch 11 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.37175 │ 627   │ 0.5000    │ 0.0827 │ 0.5519 │ 0.5947 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 11, "train_loss": 0.37174901033809593, "optimizer_steps": 627, "global_step": 6897, "validation_threshold": 0.5, "validation": {"accuracy": 0.5398089171974523, "precision": 0.531328320802005, "recall": 0.6751592356687898, "f1": 0.5946704067321177, "mcc": 0.08270577196662263, "auc": 0.5519240131445495, "auprc": 0.555234554795105, "tp": 212, "tn": 127, "fp": 187, "fn": 102, "confusion_matrix": [[127, 187], [102, 212]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5955414012738853, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 187, "fpr": 0.5955414012738853}}, "loss": 1.8552093038076087}, "fusion_validation": null, "training_seconds": 143.5982348220423, "epoch_seconds": 147.98649643128738, "train_components": {"bce": 0.36312215924233293, "region_loss": 0.08626851201063654}}
+{"event": "step", "epoch": 12, "step": 6900, "batch": 3, "loss": 0.18812775611877441, "learning_rate": 6.937799043062203e-06, "bce": 0.18812775611877441, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7000, "batch": 103, "loss": 0.18695548176765442, "learning_rate": 6.716285663654086e-06, "bce": 0.1792207956314087, "region_loss": 0.07734682410955429}
+{"event": "step", "epoch": 12, "step": 7100, "batch": 203, "loss": 0.18915444612503052, "learning_rate": 6.494772284245969e-06, "bce": 0.18915444612503052, "region_loss": 0.0}
+{"event": "step", "epoch": 12, "step": 7200, "batch": 303, "loss": 0.3183566927909851, "learning_rate": 6.273258904837853e-06, "bce": 0.30559366941452026, "region_loss": 0.12763015925884247}
+{"event": "step", "epoch": 12, "step": 7300, "batch": 403, "loss": 0.3756878674030304, "learning_rate": 6.051745525429738e-06, "bce": 0.3690012991428375, "region_loss": 0.06686577200889587}
+{"event": "step", "epoch": 12, "step": 7400, "batch": 503, "loss": 0.36570170521736145, "learning_rate": 5.8302321460216205e-06, "bce": 0.3541305363178253, "region_loss": 0.11571157723665237}
+{"event": "step", "epoch": 12, "step": 7500, "batch": 603, "loss": 0.17610442638397217, "learning_rate": 5.608718766613505e-06, "bce": 0.16850119829177856, "region_loss": 0.07603232562541962}
+
+rgcl · Epoch 12 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.34423 │ 627   │ 0.5000    │ 0.0929 │ 0.5645 │ 0.6006 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 12, "train_loss": 0.34423317173362206, "optimizer_steps": 627, "global_step": 7524, "validation_threshold": 0.5, "validation": {"accuracy": 0.5445859872611465, "precision": 0.5348258706467661, "recall": 0.6847133757961783, "f1": 0.6005586592178771, "mcc": 0.09289466763654892, "auc": 0.5645310154570166, "auprc": 0.5635613352154147, "tp": 215, "tn": 127, "fp": 187, "fn": 99, "confusion_matrix": [[127, 187], [99, 215]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5955414012738853, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 187, "fpr": 0.5955414012738853}}, "loss": 1.7412405776072153}, "fusion_validation": null, "training_seconds": 151.75390968378633, "epoch_seconds": 156.1148622520268, "train_components": {"bce": 0.33622434264270995, "region_loss": 0.08008828964971891}}
+{"event": "step", "epoch": 13, "step": 7600, "batch": 76, "loss": 0.3204379975795746, "learning_rate": 5.387205387205388e-06, "bce": 0.3204379975795746, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 7700, "batch": 176, "loss": 0.745232105255127, "learning_rate": 5.165692007797271e-06, "bce": 0.7372652888298035, "region_loss": 0.07966788113117218}
+{"event": "step", "epoch": 13, "step": 7800, "batch": 276, "loss": 0.22250282764434814, "learning_rate": 4.944178628389156e-06, "bce": 0.22250282764434814, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 7900, "batch": 376, "loss": 0.2604919970035553, "learning_rate": 4.722665248981039e-06, "bce": 0.25987982749938965, "region_loss": 0.0061218165792524815}
+{"event": "step", "epoch": 13, "step": 8000, "batch": 476, "loss": 0.32487115263938904, "learning_rate": 4.501151869572923e-06, "bce": 0.32487115263938904, "region_loss": 0.0}
+{"event": "step", "epoch": 13, "step": 8100, "batch": 576, "loss": 0.19666080176830292, "learning_rate": 4.279638490164807e-06, "bce": 0.19666080176830292, "region_loss": 0.0}
+
+rgcl · Epoch 13 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.33099 │ 627   │ 0.5000    │ 0.0937 │ 0.5612 │ 0.6189 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 13, "train_loss": 0.3309902541229481, "optimizer_steps": 627, "global_step": 8151, "validation_threshold": 0.5, "validation": {"accuracy": 0.5429936305732485, "precision": 0.530751708428246, "recall": 0.7420382165605095, "f1": 0.6188579017264276, "mcc": 0.09373474493521754, "auc": 0.5612448780883607, "auprc": 0.5589452567250758, "tp": 233, "tn": 108, "fp": 206, "fn": 81, "confusion_matrix": [[108, 206], [81, 233]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6560509554140127, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 206, "fpr": 0.6560509554140127}}, "loss": 1.9331757241412053}, "fusion_validation": null, "training_seconds": 137.92246776400134, "epoch_seconds": 142.3067735126242, "train_components": {"bce": 0.3232336115378714, "region_loss": 0.07756642375858627}}
+{"event": "step", "epoch": 14, "step": 8200, "batch": 49, "loss": 0.163203626871109, "learning_rate": 4.05812511075669e-06, "bce": 0.1615019589662552, "region_loss": 0.017016645520925522}
+{"event": "step", "epoch": 14, "step": 8300, "batch": 149, "loss": 0.6905706524848938, "learning_rate": 3.836611731348574e-06, "bce": 0.6905706524848938, "region_loss": 0.0}
+{"event": "step", "epoch": 14, "step": 8400, "batch": 249, "loss": 0.6150994300842285, "learning_rate": 3.6150983519404577e-06, "bce": 0.610747218132019, "region_loss": 0.043522417545318604}
+{"event": "step", "epoch": 14, "step": 8500, "batch": 349, "loss": 0.14643050730228424, "learning_rate": 3.3935849725323417e-06, "bce": 0.12049855291843414, "region_loss": 0.2593194842338562}
+{"event": "step", "epoch": 14, "step": 8600, "batch": 449, "loss": 0.46266117691993713, "learning_rate": 3.1720715931242253e-06, "bce": 0.4452945291996002, "region_loss": 0.1736663430929184}
+{"event": "step", "epoch": 14, "step": 8700, "batch": 549, "loss": 0.17437522113323212, "learning_rate": 2.950558213716109e-06, "bce": 0.1557471603155136, "region_loss": 0.18628063797950745}
+
+rgcl · Epoch 14 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.28545 │ 627   │ 0.5000    │ 0.0835 │ 0.5633 │ 0.6003 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 14, "train_loss": 0.28545288132831154, "optimizer_steps": 627, "global_step": 8778, "validation_threshold": 0.5, "validation": {"accuracy": 0.5398089171974523, "precision": 0.530562347188264, "recall": 0.6910828025477707, "f1": 0.6002766251728906, "mcc": 0.08353265731139654, "auc": 0.5632936427441276, "auprc": 0.5625174438036333, "tp": 217, "tn": 122, "fp": 192, "fn": 97, "confusion_matrix": [[122, 192], [97, 217]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.6114649681528662, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 192, "fpr": 0.6114649681528662}}, "loss": 2.19420701340784}, "fusion_validation": null, "training_seconds": 119.95843276102096, "epoch_seconds": 124.2743894350715, "train_components": {"bce": 0.27844654015677406, "region_loss": 0.07006340552244361}}
+{"event": "step", "epoch": 15, "step": 8800, "batch": 22, "loss": 0.482532262802124, "learning_rate": 2.729044834307993e-06, "bce": 0.472094863653183, "region_loss": 0.10437384247779846}
+{"event": "step", "epoch": 15, "step": 8900, "batch": 122, "loss": 0.24663636088371277, "learning_rate": 2.5075314548998765e-06, "bce": 0.2196546345949173, "region_loss": 0.2698172330856323}
+{"event": "step", "epoch": 15, "step": 9000, "batch": 222, "loss": 0.10586286336183548, "learning_rate": 2.28601807549176e-06, "bce": 0.10586286336183548, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9100, "batch": 322, "loss": 0.2585141062736511, "learning_rate": 2.0645046960836436e-06, "bce": 0.2547968029975891, "region_loss": 0.03717317804694176}
+{"event": "step", "epoch": 15, "step": 9200, "batch": 422, "loss": 0.4639199674129486, "learning_rate": 1.8429913166755276e-06, "bce": 0.4607315957546234, "region_loss": 0.031883805990219116}
+{"event": "step", "epoch": 15, "step": 9300, "batch": 522, "loss": 0.36330708861351013, "learning_rate": 1.621477937267411e-06, "bce": 0.36330708861351013, "region_loss": 0.0}
+{"event": "step", "epoch": 15, "step": 9400, "batch": 622, "loss": 0.6432368755340576, "learning_rate": 1.3999645578592948e-06, "bce": 0.5992062091827393, "region_loss": 0.4403064250946045}
+
+rgcl · Epoch 15 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.27218 │ 627   │ 0.5000    │ 0.1042 │ 0.5674 │ 0.5937 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 15, "train_loss": 0.2721819119067984, "optimizer_steps": 627, "global_step": 9405, "validation_threshold": 0.5, "validation": {"accuracy": 0.5509554140127388, "precision": 0.5421052631578948, "recall": 0.6560509554140127, "f1": 0.5936599423631124, "mcc": 0.10423950481140859, "auc": 0.5674013144549475, "auprc": 0.5631710022749399, "tp": 206, "tn": 140, "fp": 174, "fn": 108, "confusion_matrix": [[140, 174], [108, 206]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.554140127388535, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 174, "fpr": 0.554140127388535}}, "loss": 2.3553381328341327}, "fusion_validation": null, "training_seconds": 130.99306388106197, "epoch_seconds": 135.33864202722907, "train_components": {"bce": 0.26529511550494395, "region_loss": 0.06886796157586535}}
+{"event": "step", "epoch": 16, "step": 9500, "batch": 95, "loss": 0.24548688530921936, "learning_rate": 1.1784511784511786e-06, "bce": 0.20919226109981537, "region_loss": 0.3629462420940399}
+{"event": "step", "epoch": 16, "step": 9600, "batch": 195, "loss": 0.04031095653772354, "learning_rate": 9.569377990430624e-07, "bce": 0.03878162056207657, "region_loss": 0.015293377451598644}
+{"event": "step", "epoch": 16, "step": 9700, "batch": 295, "loss": 0.2253846675157547, "learning_rate": 7.354244196349461e-07, "bce": 0.2253846675157547, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 9800, "batch": 395, "loss": 0.24558788537979126, "learning_rate": 5.139110402268298e-07, "bce": 0.24363337457180023, "region_loss": 0.01954510249197483}
+{"event": "step", "epoch": 16, "step": 9900, "batch": 495, "loss": 0.4502079486846924, "learning_rate": 2.923976608187135e-07, "bce": 0.4502079486846924, "region_loss": 0.0}
+{"event": "step", "epoch": 16, "step": 10000, "batch": 595, "loss": 0.4334203898906708, "learning_rate": 7.088428141059721e-08, "bce": 0.38302674889564514, "region_loss": 0.5039364695549011}
+
+rgcl · Epoch 16 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.24334 │ 627   │ 0.5000    │ 0.0945 │ 0.5671 │ 0.5899 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+{"event": "epoch", "variant": "rgcl", "epoch": 16, "train_loss": 0.2433367036171846, "optimizer_steps": 627, "global_step": 10032, "validation_threshold": 0.5, "validation": {"accuracy": 0.5461783439490446, "precision": 0.5380577427821522, "recall": 0.6528662420382165, "f1": 0.5899280575539568, "mcc": 0.09453378209371838, "auc": 0.5670970424763682, "auprc": 0.5629483847706129, "tp": 205, "tn": 138, "fp": 176, "fn": 109, "confusion_matrix": [[138, 176], [109, 205]], "samples": 628, "threshold": 0.5, "comparison": ">", "normal_fpr": 0.5605095541401274, "normal_kinds": {"ordinary": {"functions": 0, "false_positives": 0, "fpr": null}, "repaired": {"functions": 314, "false_positives": 176, "fpr": 0.5605095541401274}}, "loss": 2.6359316080431396}, "fusion_validation": null, "training_seconds": 146.61452581500635, "epoch_seconds": 150.95882901130244, "train_components": {"bce": 0.23659131195093264, "region_loss": 0.0674539169010133}}
+Some weights of the model checkpoint at /home/PublicData/PHY-data/resource/unixcoder-base-nine were not used when initializing RobertaModel: ['pooler.dense.bias', 'pooler.dense.weight']
+- This IS expected if you are initializing RobertaModel from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaModel from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+{
+  "dataset": "cleanvul",
+  "seed": 42,
+  "methods": [
+    "plm_baseline",
+    "context_only",
+    "rgcl"
+  ],
+  "complete": true
+}

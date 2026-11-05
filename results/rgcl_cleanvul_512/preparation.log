@@ -1,0 +1,88 @@
+CleanVul: mapped 1000/6272 functions
+CleanVul: mapped 2000/6272 functions
+CleanVul: mapped 3000/6272 functions
+CleanVul: mapped 4000/6272 functions
+CleanVul: mapped 5000/6272 functions
+CleanVul: mapped 6000/6272 functions
+{
+  "retained_pairs": 3136,
+  "retained_by_language": {
+    "c": 3073,
+    "cpp": 63
+  },
+  "diagnostic_reasons": {
+    "retained": 2383,
+    "parse_incomplete_or_not_single_function": 697,
+    "function_name_mismatch": 50,
+    "comments_or_formatting_only": 5,
+    "unknown_function_name": 1
+  },
+  "classification_positive_weight": 1.0,
+  "splits": {
+    "train": {
+      "pairs": 2508,
+      "functions": 5016,
+      "class_counts": {
+        "1": 2508,
+        "0": 2508
+      },
+      "fraction": 0.7997448979591837,
+      "normal_kinds": {
+        "vulnerable": 2508,
+        "repaired": 2508
+      },
+      "coverage": {
+        "reliable_counterpart": 5016,
+        "effective_region": 3292,
+        "no_region_function_bce_only": 1724,
+        "truncated": 2744
+      }
+    },
+    "valid": {
+      "pairs": 314,
+      "functions": 628,
+      "class_counts": {
+        "1": 314,
+        "0": 314
+      },
+      "fraction": 0.10012755102040816,
+      "normal_kinds": {
+        "vulnerable": 314,
+        "repaired": 314
+      },
+      "coverage": {
+        "reliable_counterpart": 628,
+        "effective_region": 428,
+        "no_region_function_bce_only": 200,
+        "truncated": 289
+      }
+    },
+    "test": {
+      "pairs": 314,
+      "functions": 628,
+      "class_counts": {
+        "1": 314,
+        "0": 314
+      },
+      "fraction": 0.10012755102040816,
+      "normal_kinds": {
+        "vulnerable": 314,
+        "repaired": 314
+      },
+      "coverage": {
+        "reliable_counterpart": 628,
+        "effective_region": 417,
+        "no_region_function_bce_only": 211,
+        "truncated": 317
+      }
+    }
+  },
+  "cross_split_overlap_groups": {
+    "pair_key": 0,
+    "commit_id": 0,
+    "commit_group": 0,
+    "cves": 0,
+    "exact_source": 0,
+    "normalized_source": 0
+  }
+}

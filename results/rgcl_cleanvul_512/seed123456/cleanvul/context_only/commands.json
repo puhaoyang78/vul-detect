@@ -1,0 +1,11 @@
+{
+  "dataset": "cleanvul",
+  "seed": 123456,
+  "method": "context_only",
+  "device": "cuda:0",
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 2374.4520575432107,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

@@ -751,7 +751,8 @@ def rgcl_report(output_dir, data_dir, dataset):
     result["second_seed_valid_support"] = all(result["deltas"]["valid"][name]["mcc"] >= .01
         for name in ("plm_baseline", "context_only"))
     write_json(root / "comparison.json", result)
-    cohort = ("原始标签与全部成员保留" if dataset == "secvuleval" else
+    cohort = ("评分≥3 的 C/C++ 发布记录全部保留，before=1、after=0；解析、名称与词法变化检查不淘汰分类成员" if dataset == "cleanvul" else
+        "原始标签与全部成员保留" if dataset == "secvuleval" else
         "仅 C/C++；先对全量原始成员分组划分，再在各划分内独立用 Seed42 下采样正常函数，保留全部漏洞函数，形成固定 1:1 子集；不生成修复后负例")
     lines = [f"# {dataset}: RGCL 原生函数二分类", "",
         cohort + "；同 CVE、提交、修复关联和空白归一化重复代码合并后，Seed42 按 8:1:1 目标分组划分。本地发布文件未附独立官方评价成员。",

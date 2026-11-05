@@ -1,0 +1,715 @@
+{
+  "raw_root": "/home/PublicData/PHY-data/vul_detect/data/cleanvul",
+  "files": {
+    "vulnerability_score_0.csv": {
+      "score": 0,
+      "counts": {
+        "rows": 9681,
+        "cc_rows": 964,
+        "cc_with_cve_field": 0,
+        "cc_missing_before": 0,
+        "cc_missing_after": 0,
+        "cc_identical_source": 0
+      },
+      "languages": {
+        "js": 2013,
+        "java": 4870,
+        "py": 1777,
+        "c": 945,
+        "cs": 57,
+        "cpp": 19
+      }
+    },
+    "vulnerability_score_1.csv": {
+      "score": 1,
+      "counts": {
+        "rows": 10241,
+        "cc_rows": 372,
+        "cc_with_cve_field": 0,
+        "cc_missing_before": 0,
+        "cc_missing_after": 0,
+        "cc_identical_source": 0
+      },
+      "languages": {
+        "java": 9322,
+        "c": 366,
+        "py": 237,
+        "js": 289,
+        "cs": 21,
+        "cpp": 6
+      }
+    },
+    "vulnerability_score_2.csv": {
+      "score": 2,
+      "counts": {
+        "rows": 8079,
+        "cc_rows": 1111,
+        "cc_with_cve_field": 0,
+        "cc_missing_before": 0,
+        "cc_missing_after": 0,
+        "cc_identical_source": 0
+      },
+      "languages": {
+        "java": 5808,
+        "c": 1088,
+        "js": 598,
+        "py": 520,
+        "cpp": 23,
+        "cs": 42
+      }
+    },
+    "vulnerability_score_3.csv": {
+      "score": 3,
+      "counts": {
+        "rows": 1830,
+        "cc_rows": 69,
+        "cc_with_cve_field": 0,
+        "cc_missing_before": 0,
+        "cc_missing_after": 0,
+        "cc_identical_source": 0
+      },
+      "languages": {
+        "java": 1657,
+        "py": 52,
+        "js": 42,
+        "c": 67,
+        "cs": 10,
+        "cpp": 2
+      }
+    },
+    "vulnerability_score_4.csv": {
+      "score": 4,
+      "counts": {
+        "rows": 6368,
+        "cc_rows": 3067,
+        "cc_with_cve_field": 0,
+        "cc_missing_before": 0,
+        "cc_missing_after": 0,
+        "cc_identical_source": 0
+      },
+      "languages": {
+        "c": 3006,
+        "java": 1242,
+        "js": 976,
+        "py": 970,
+        "cs": 113,
+        "cpp": 61
+      }
+    }
+  },
+  "high_confidence_cc_pairs": 3136,
+  "retained_pairs": 3136,
+  "diagnostic_reasons": {
+    "retained": 2383,
+    "parse_incomplete_or_not_single_function": 697,
+    "function_name_mismatch": 50,
+    "comments_or_formatting_only": 5,
+    "unknown_function_name": 1
+  },
+  "classification_members_removed": 0,
+  "score_definition": {
+    "source": "https://arxiv.org/html/2411.17274v3#S3",
+    "meaning": "LLM confidence that the change fixes a vulnerability; not severity or human confirmation",
+    "score_3": "high likelihood",
+    "score_4": "very high likelihood",
+    "minimum": 3
+  },
+  "association_rule": "released CSV row supplies the before/after association; no parser/name/change-type classification filter",
+  "label_provenance": "score>=3 repair-before target=1 and repair-after target=0; confidence-based repair labels, not manual ground truth",
+  "raw_sources_modified": false,
+  "duplicates_removed": false,
+  "split_protocol": {
+    "seed": 42,
+    "target_ratios": [
+      0.8,
+      0.1,
+      0.1
+    ],
+    "groups": 1846,
+    "largest_groups": [
+      54,
+      50,
+      44,
+      42,
+      36,
+      34,
+      32,
+      30,
+      28,
+      28
+    ],
+    "grouping": "transitive union of CVE, fix commit, repair link and whitespace-normalized source (including counterparts)",
+    "cross_split_group_overlap": 0,
+    "members_removed": 0,
+    "duplicate_code_groups": 1,
+    "commit_references": "repository-qualified shortest observed compatible hash prefix; original commit_id preserved"
+  },
+  "retained_by_score": {
+    "3": 69,
+    "4": 3067
+  },
+  "retained_by_language": {
+    "c": 3073,
+    "cpp": 63
+  },
+  "commit_reference_kinds": {
+    "full": 3091,
+    "abbreviated": 45
+  },
+  "cross_split_overlap_groups": {
+    "pair_key": 0,
+    "commit_id": 0,
+    "commit_group": 0,
+    "cves": 0,
+    "exact_source": 0,
+    "normalized_source": 0
+  },
+  "input_tokens": 512,
+  "source_token_budget": 510,
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "seed": 42,
+  "K": 5,
+  "region_loss_weight": 0.1,
+  "coverage": {
+    "all": {
+      "all": {
+        "functions": 6272,
+        "effective_region": 4137,
+        "effective_percent": 65.95982142857143,
+        "complete_line_effective_region": 4137,
+        "with_diff_lines": 5402,
+        "with_visible_diff": 4417,
+        "partially_visible_diff": 272,
+        "truncated": 3350,
+        "reasons": {
+          "effective": 4137,
+          "no_changed_source_lines_on_this_side": 870,
+          "partially_visible_changed_line": 272,
+          "changed_lines_outside_visible_input": 985,
+          "no_visible_background": 8
+        }
+      },
+      "1": {
+        "functions": 3136,
+        "effective_region": 1793,
+        "effective_percent": 57.17474489795919,
+        "complete_line_effective_region": 1793,
+        "with_diff_lines": 2313,
+        "with_visible_diff": 1884,
+        "partially_visible_diff": 87,
+        "truncated": 1632,
+        "reasons": {
+          "effective": 1793,
+          "no_changed_source_lines_on_this_side": 823,
+          "partially_visible_changed_line": 87,
+          "changed_lines_outside_visible_input": 429,
+          "no_visible_background": 4
+        }
+      },
+      "0": {
+        "functions": 3136,
+        "effective_region": 2344,
+        "effective_percent": 74.74489795918367,
+        "complete_line_effective_region": 2344,
+        "with_diff_lines": 3089,
+        "with_visible_diff": 2533,
+        "partially_visible_diff": 185,
+        "truncated": 1718,
+        "reasons": {
+          "effective": 2344,
+          "changed_lines_outside_visible_input": 556,
+          "partially_visible_changed_line": 185,
+          "no_changed_source_lines_on_this_side": 47,
+          "no_visible_background": 4
+        }
+      },
+      "repaired": {
+        "functions": 3136,
+        "effective_region": 2344,
+        "effective_percent": 74.74489795918367,
+        "complete_line_effective_region": 2344,
+        "with_diff_lines": 3089,
+        "with_visible_diff": 2533,
+        "partially_visible_diff": 185,
+        "truncated": 1718,
+        "reasons": {
+          "effective": 2344,
+          "changed_lines_outside_visible_input": 556,
+          "partially_visible_changed_line": 185,
+          "no_changed_source_lines_on_this_side": 47,
+          "no_visible_background": 4
+        }
+      },
+      "ordinary": {
+        "functions": 0,
+        "effective_region": 0,
+        "effective_percent": null,
+        "complete_line_effective_region": 0,
+        "with_diff_lines": 0,
+        "with_visible_diff": 0,
+        "partially_visible_diff": 0,
+        "truncated": 0,
+        "reasons": {}
+      },
+      "paired": {
+        "functions": 6272,
+        "effective_region": 4137,
+        "effective_percent": 65.95982142857143,
+        "complete_line_effective_region": 4137,
+        "with_diff_lines": 5402,
+        "with_visible_diff": 4417,
+        "partially_visible_diff": 272,
+        "truncated": 3350,
+        "reasons": {
+          "effective": 4137,
+          "no_changed_source_lines_on_this_side": 870,
+          "partially_visible_changed_line": 272,
+          "changed_lines_outside_visible_input": 985,
+          "no_visible_background": 8
+        }
+      },
+      "paired_before": {
+        "functions": 3136,
+        "effective_region": 1793,
+        "effective_percent": 57.17474489795919,
+        "complete_line_effective_region": 1793,
+        "with_diff_lines": 2313,
+        "with_visible_diff": 1884,
+        "partially_visible_diff": 87,
+        "truncated": 1632,
+        "reasons": {
+          "effective": 1793,
+          "no_changed_source_lines_on_this_side": 823,
+          "partially_visible_changed_line": 87,
+          "changed_lines_outside_visible_input": 429,
+          "no_visible_background": 4
+        }
+      }
+    },
+    "train": {
+      "all": {
+        "functions": 5016,
+        "effective_region": 3292,
+        "effective_percent": 65.62998405103669,
+        "complete_line_effective_region": 3292,
+        "with_diff_lines": 4345,
+        "with_visible_diff": 3526,
+        "partially_visible_diff": 227,
+        "truncated": 2744,
+        "reasons": {
+          "effective": 3292,
+          "no_changed_source_lines_on_this_side": 671,
+          "partially_visible_changed_line": 227,
+          "changed_lines_outside_visible_input": 819,
+          "no_visible_background": 7
+        }
+      },
+      "1": {
+        "functions": 2508,
+        "effective_region": 1440,
+        "effective_percent": 57.41626794258373,
+        "complete_line_effective_region": 1440,
+        "with_diff_lines": 1876,
+        "with_visible_diff": 1513,
+        "partially_visible_diff": 70,
+        "truncated": 1340,
+        "reasons": {
+          "effective": 1440,
+          "no_changed_source_lines_on_this_side": 632,
+          "partially_visible_changed_line": 70,
+          "changed_lines_outside_visible_input": 363,
+          "no_visible_background": 3
+        }
+      },
+      "0": {
+        "functions": 2508,
+        "effective_region": 1852,
+        "effective_percent": 73.84370015948963,
+        "complete_line_effective_region": 1852,
+        "with_diff_lines": 2469,
+        "with_visible_diff": 2013,
+        "partially_visible_diff": 157,
+        "truncated": 1404,
+        "reasons": {
+          "effective": 1852,
+          "changed_lines_outside_visible_input": 456,
+          "partially_visible_changed_line": 157,
+          "no_changed_source_lines_on_this_side": 39,
+          "no_visible_background": 4
+        }
+      },
+      "repaired": {
+        "functions": 2508,
+        "effective_region": 1852,
+        "effective_percent": 73.84370015948963,
+        "complete_line_effective_region": 1852,
+        "with_diff_lines": 2469,
+        "with_visible_diff": 2013,
+        "partially_visible_diff": 157,
+        "truncated": 1404,
+        "reasons": {
+          "effective": 1852,
+          "changed_lines_outside_visible_input": 456,
+          "partially_visible_changed_line": 157,
+          "no_changed_source_lines_on_this_side": 39,
+          "no_visible_background": 4
+        }
+      },
+      "ordinary": {
+        "functions": 0,
+        "effective_region": 0,
+        "effective_percent": null,
+        "complete_line_effective_region": 0,
+        "with_diff_lines": 0,
+        "with_visible_diff": 0,
+        "partially_visible_diff": 0,
+        "truncated": 0,
+        "reasons": {}
+      },
+      "paired": {
+        "functions": 5016,
+        "effective_region": 3292,
+        "effective_percent": 65.62998405103669,
+        "complete_line_effective_region": 3292,
+        "with_diff_lines": 4345,
+        "with_visible_diff": 3526,
+        "partially_visible_diff": 227,
+        "truncated": 2744,
+        "reasons": {
+          "effective": 3292,
+          "no_changed_source_lines_on_this_side": 671,
+          "partially_visible_changed_line": 227,
+          "changed_lines_outside_visible_input": 819,
+          "no_visible_background": 7
+        }
+      },
+      "paired_before": {
+        "functions": 2508,
+        "effective_region": 1440,
+        "effective_percent": 57.41626794258373,
+        "complete_line_effective_region": 1440,
+        "with_diff_lines": 1876,
+        "with_visible_diff": 1513,
+        "partially_visible_diff": 70,
+        "truncated": 1340,
+        "reasons": {
+          "effective": 1440,
+          "no_changed_source_lines_on_this_side": 632,
+          "partially_visible_changed_line": 70,
+          "changed_lines_outside_visible_input": 363,
+          "no_visible_background": 3
+        }
+      }
+    },
+    "valid": {
+      "all": {
+        "functions": 628,
+        "effective_region": 428,
+        "effective_percent": 68.15286624203821,
+        "complete_line_effective_region": 428,
+        "with_diff_lines": 525,
+        "with_visible_diff": 445,
+        "partially_visible_diff": 17,
+        "truncated": 289,
+        "reasons": {
+          "no_changed_source_lines_on_this_side": 103,
+          "effective": 428,
+          "changed_lines_outside_visible_input": 80,
+          "partially_visible_changed_line": 17
+        }
+      },
+      "1": {
+        "functions": 314,
+        "effective_region": 177,
+        "effective_percent": 56.36942675159236,
+        "complete_line_effective_region": 177,
+        "with_diff_lines": 217,
+        "with_visible_diff": 184,
+        "partially_visible_diff": 7,
+        "truncated": 139,
+        "reasons": {
+          "no_changed_source_lines_on_this_side": 97,
+          "effective": 177,
+          "changed_lines_outside_visible_input": 33,
+          "partially_visible_changed_line": 7
+        }
+      },
+      "0": {
+        "functions": 314,
+        "effective_region": 251,
+        "effective_percent": 79.93630573248407,
+        "complete_line_effective_region": 251,
+        "with_diff_lines": 308,
+        "with_visible_diff": 261,
+        "partially_visible_diff": 10,
+        "truncated": 150,
+        "reasons": {
+          "effective": 251,
+          "changed_lines_outside_visible_input": 47,
+          "no_changed_source_lines_on_this_side": 6,
+          "partially_visible_changed_line": 10
+        }
+      },
+      "repaired": {
+        "functions": 314,
+        "effective_region": 251,
+        "effective_percent": 79.93630573248407,
+        "complete_line_effective_region": 251,
+        "with_diff_lines": 308,
+        "with_visible_diff": 261,
+        "partially_visible_diff": 10,
+        "truncated": 150,
+        "reasons": {
+          "effective": 251,
+          "changed_lines_outside_visible_input": 47,
+          "no_changed_source_lines_on_this_side": 6,
+          "partially_visible_changed_line": 10
+        }
+      },
+      "ordinary": {
+        "functions": 0,
+        "effective_region": 0,
+        "effective_percent": null,
+        "complete_line_effective_region": 0,
+        "with_diff_lines": 0,
+        "with_visible_diff": 0,
+        "partially_visible_diff": 0,
+        "truncated": 0,
+        "reasons": {}
+      },
+      "paired": {
+        "functions": 628,
+        "effective_region": 428,
+        "effective_percent": 68.15286624203821,
+        "complete_line_effective_region": 428,
+        "with_diff_lines": 525,
+        "with_visible_diff": 445,
+        "partially_visible_diff": 17,
+        "truncated": 289,
+        "reasons": {
+          "no_changed_source_lines_on_this_side": 103,
+          "effective": 428,
+          "changed_lines_outside_visible_input": 80,
+          "partially_visible_changed_line": 17
+        }
+      },
+      "paired_before": {
+        "functions": 314,
+        "effective_region": 177,
+        "effective_percent": 56.36942675159236,
+        "complete_line_effective_region": 177,
+        "with_diff_lines": 217,
+        "with_visible_diff": 184,
+        "partially_visible_diff": 7,
+        "truncated": 139,
+        "reasons": {
+          "no_changed_source_lines_on_this_side": 97,
+          "effective": 177,
+          "changed_lines_outside_visible_input": 33,
+          "partially_visible_changed_line": 7
+        }
+      }
+    },
+    "test": {
+      "all": {
+        "functions": 628,
+        "effective_region": 417,
+        "effective_percent": 66.40127388535032,
+        "complete_line_effective_region": 417,
+        "with_diff_lines": 532,
+        "with_visible_diff": 446,
+        "partially_visible_diff": 28,
+        "truncated": 317,
+        "reasons": {
+          "effective": 417,
+          "no_changed_source_lines_on_this_side": 96,
+          "changed_lines_outside_visible_input": 86,
+          "partially_visible_changed_line": 28,
+          "no_visible_background": 1
+        }
+      },
+      "1": {
+        "functions": 314,
+        "effective_region": 176,
+        "effective_percent": 56.05095541401274,
+        "complete_line_effective_region": 176,
+        "with_diff_lines": 220,
+        "with_visible_diff": 187,
+        "partially_visible_diff": 10,
+        "truncated": 153,
+        "reasons": {
+          "effective": 176,
+          "no_changed_source_lines_on_this_side": 94,
+          "partially_visible_changed_line": 10,
+          "changed_lines_outside_visible_input": 33,
+          "no_visible_background": 1
+        }
+      },
+      "0": {
+        "functions": 314,
+        "effective_region": 241,
+        "effective_percent": 76.7515923566879,
+        "complete_line_effective_region": 241,
+        "with_diff_lines": 312,
+        "with_visible_diff": 259,
+        "partially_visible_diff": 18,
+        "truncated": 164,
+        "reasons": {
+          "effective": 241,
+          "changed_lines_outside_visible_input": 53,
+          "partially_visible_changed_line": 18,
+          "no_changed_source_lines_on_this_side": 2
+        }
+      },
+      "repaired": {
+        "functions": 314,
+        "effective_region": 241,
+        "effective_percent": 76.7515923566879,
+        "complete_line_effective_region": 241,
+        "with_diff_lines": 312,
+        "with_visible_diff": 259,
+        "partially_visible_diff": 18,
+        "truncated": 164,
+        "reasons": {
+          "effective": 241,
+          "changed_lines_outside_visible_input": 53,
+          "partially_visible_changed_line": 18,
+          "no_changed_source_lines_on_this_side": 2
+        }
+      },
+      "ordinary": {
+        "functions": 0,
+        "effective_region": 0,
+        "effective_percent": null,
+        "complete_line_effective_region": 0,
+        "with_diff_lines": 0,
+        "with_visible_diff": 0,
+        "partially_visible_diff": 0,
+        "truncated": 0,
+        "reasons": {}
+      },
+      "paired": {
+        "functions": 628,
+        "effective_region": 417,
+        "effective_percent": 66.40127388535032,
+        "complete_line_effective_region": 417,
+        "with_diff_lines": 532,
+        "with_visible_diff": 446,
+        "partially_visible_diff": 28,
+        "truncated": 317,
+        "reasons": {
+          "effective": 417,
+          "no_changed_source_lines_on_this_side": 96,
+          "changed_lines_outside_visible_input": 86,
+          "partially_visible_changed_line": 28,
+          "no_visible_background": 1
+        }
+      },
+      "paired_before": {
+        "functions": 314,
+        "effective_region": 176,
+        "effective_percent": 56.05095541401274,
+        "complete_line_effective_region": 176,
+        "with_diff_lines": 220,
+        "with_visible_diff": 187,
+        "partially_visible_diff": 10,
+        "truncated": 153,
+        "reasons": {
+          "effective": 176,
+          "no_changed_source_lines_on_this_side": 94,
+          "partially_visible_changed_line": 10,
+          "changed_lines_outside_visible_input": 33,
+          "no_visible_background": 1
+        }
+      }
+    }
+  },
+  "class_counts": {
+    "1": 3136,
+    "0": 3136
+  },
+  "cve_sources": {
+    "missing": 5438,
+    "commit_message": 834
+  },
+  "label_quality": {
+    "exact": {
+      "unique_sources": 6272,
+      "duplicate_groups": 0,
+      "conflicting_groups": 0,
+      "conflicting_functions": 0,
+      "conflicting_positive_functions": 0,
+      "examples": []
+    },
+    "normalized": {
+      "unique_sources": 6271,
+      "duplicate_groups": 1,
+      "conflicting_groups": 0,
+      "conflicting_functions": 0,
+      "conflicting_positive_functions": 0,
+      "examples": []
+    }
+  },
+  "splits": {
+    "train": {
+      "pairs": 2508,
+      "functions": 5016,
+      "class_counts": {
+        "1": 2508,
+        "0": 2508
+      },
+      "fraction": 0.7997448979591837,
+      "normal_kinds": {
+        "vulnerable": 2508,
+        "repaired": 2508
+      },
+      "coverage": {
+        "reliable_counterpart": 5016,
+        "effective_region": 3292,
+        "no_region_function_bce_only": 1724,
+        "truncated": 2744
+      }
+    },
+    "valid": {
+      "pairs": 314,
+      "functions": 628,
+      "class_counts": {
+        "1": 314,
+        "0": 314
+      },
+      "fraction": 0.10012755102040816,
+      "normal_kinds": {
+        "vulnerable": 314,
+        "repaired": 314
+      },
+      "coverage": {
+        "reliable_counterpart": 628,
+        "effective_region": 428,
+        "no_region_function_bce_only": 200,
+        "truncated": 289
+      }
+    },
+    "test": {
+      "pairs": 314,
+      "functions": 628,
+      "class_counts": {
+        "1": 314,
+        "0": 314
+      },
+      "fraction": 0.10012755102040816,
+      "normal_kinds": {
+        "vulnerable": 314,
+        "repaired": 314
+      },
+      "coverage": {
+        "reliable_counterpart": 628,
+        "effective_region": 417,
+        "no_region_function_bce_only": 211,
+        "truncated": 317
+      }
+    }
+  },
+  "classification_positive_weight": 1.0,
+  "classification_weight_rule": "Train negatives / positives; same BCE for all three methods",
+  "official_evaluation_split": false
+}

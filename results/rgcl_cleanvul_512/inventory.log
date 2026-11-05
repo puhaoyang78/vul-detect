@@ -1,0 +1,106 @@
+{
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "excluded_historical_seed": 123457,
+  "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+  "input_tokens": 512,
+  "batch_size": 8,
+  "epochs": 16,
+  "learning_rate": 2e-05,
+  "k": 5,
+  "region_weight": 0.1,
+  "region_weighting": "token",
+  "threshold": 0.5,
+  "comparison": ">",
+  "sampler": "original function RandomSampler",
+  "patch": "stopped; results/weights preserved separately; not part of RGCL",
+  "test_used_for_selection": false,
+  "experiments": [
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed42/cleanvul/plm_baseline",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed42/cleanvul/context_only",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed42/cleanvul/rgcl",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed1234/cleanvul/plm_baseline",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed1234/cleanvul/context_only",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed1234/cleanvul/rgcl",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed123456/cleanvul/plm_baseline",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed123456/cleanvul/context_only",
+      "complete": false,
+      "resumable": false
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "results/rgcl_cleanvul_512/seed123456/cleanvul/rgcl",
+      "complete": false,
+      "resumable": false
+    }
+  ],
+  "reused": 0,
+  "missing": 9
+}

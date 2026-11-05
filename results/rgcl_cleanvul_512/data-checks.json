@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "exported_functions": 6272,
+  "source_text_matches_release": true,
+  "all_high_confidence_cc_members_retained": true,
+  "classification_labels": "released before=1/after=0 convention, not a native binary CSV column",
+  "evaluation_records_source_only": true,
+  "raw_sources_modified": false
+}

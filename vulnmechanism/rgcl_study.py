@@ -15,6 +15,7 @@ from .training import RGCL_METHODS, LOSVER_CONFIG, train_losver
 
 SEEDS = (42, 1234, 123456)
 DATASETS = ("primevul_paired", "secvuleval")
+SUPPORTED_DATASETS = (*DATASETS, "cleanvul")
 
 
 def data_root(data_dir, dataset):
@@ -91,9 +92,11 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
         epoch_seconds=sum(r["epoch_seconds"] for r in epochs), checkpoint_checked=checkpoint)
 
 
-def inventory(data_dir, output_dir, model_path):
+def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS):
     entries = []
-    for dataset in DATASETS:
+    if not datasets or any(d not in SUPPORTED_DATASETS for d in datasets):
+        raise ValueError("choose a prepared RGCL study dataset")
+    for dataset in datasets:
         for seed in SEEDS:
             for method in RGCL_METHODS:
                 path = run_path(output_dir, dataset, seed, method)
@@ -115,13 +118,13 @@ def inventory(data_dir, output_dir, model_path):
     return result
 
 
-def check(data_dir, output_dir, model_path, *, device="auto"):
-    """Exercise both datasets plus the original RGCL checkpoint, without Test."""
+def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS):
+    """Exercise selected datasets and the original RGCL checkpoint, without Test."""
     from . import evaluation, model as core
     from .training import paired_loader, paired_collate, paired_forward
 
     results = {}
-    for dataset in DATASETS:
+    for dataset in datasets:
         results[dataset] = evaluation.check_rgcl(data_root(data_dir, dataset), output_dir, model_path, dataset, device=device)
     original = run_path(output_dir, "primevul_paired", 123456, "rgcl")
     cp = torch.load(original/"best-p_c.pt", map_location="cpu", weights_only=False)
@@ -146,8 +149,8 @@ def check(data_dir, output_dir, model_path, *, device="auto"):
 def run(data_dir, output_dir, model_path, dataset, seed, methods, *, device="auto", save_every=500):
     from .evaluation import evaluate
 
-    if dataset not in DATASETS or seed not in SEEDS or any(m not in RGCL_METHODS for m in methods):
-        raise ValueError("only the fixed two-dataset, three-seed RGCL comparison is allowed")
+    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or any(m not in RGCL_METHODS for m in methods):
+        raise ValueError("only the fixed three-seed RGCL comparison is allowed")
     if not json.loads((Path(output_dir)/"gpu-smoke.json").read_text())["passed"]:
         raise ValueError("complete real GPU verification before full training")
     for method in methods:
@@ -175,12 +178,12 @@ def run(data_dir, output_dir, model_path, dataset, seed, methods, *, device="aut
     return dict(dataset=dataset, seed=seed, methods=list(methods), complete=True)
 
 
-def report(data_dir, output_dir, model_path):
+def report(data_dir, output_dir, model_path, *, datasets=DATASETS):
     """Recompute probabilities at the fixed threshold and summarize three seeds."""
     from .metrics import metrics, paired_metrics
 
     root = Path(output_dir)
-    result = inventory(data_dir, output_dir, model_path)
+    result = inventory(data_dir, output_dir, model_path, datasets=datasets)
     if result["missing"]:
         raise ValueError("finish all missing combinations before reporting three-seed results")
     records = []
@@ -206,10 +209,10 @@ def report(data_dir, output_dir, model_path):
             fpr = value["patched_fpr"] if dataset == "primevul_paired" else value["fp"]/(value["fp"]+value["tn"])
             records.append(dict(dataset=dataset, seed=entry["seed"], method=entry["method"], split=split,
                 selected_epoch=entry["selected_epoch"], reused=entry["reused"], run=str(path),
-                metrics={**{k:value[k] for k in ("mcc","f1","auc","auprc","recall")},
+                metrics={**{k:value[k] for k in ("accuracy","precision","mcc","f1","auc","auprc","recall")},
                          "fpr":fpr, **({"p_c":value["p_c"]} if dataset == "primevul_paired" else {})}))
     aggregate = []
-    for dataset in DATASETS:
+    for dataset in datasets:
         for split in ("valid", "test"):
             for method in RGCL_METHODS:
                 members = [r for r in records if (r["dataset"],r["split"],r["method"]) == (dataset,split,method)]
@@ -222,31 +225,59 @@ def report(data_dir, output_dir, model_path):
     lines = ["# RGCL fixed three-seed comparison", "", "RGCL is the original Context + Diff: K=5, lambda=0.1, token-weighted region loss. "
         "CLS reuses the SecVulEval RobertaClassificationHead. Context-only differs from RGCL only by removing Diff loss. "
         "UniXcoder, 512 tokens, Batch8, 16 epochs, AdamW lr=2e-5, original function sampling; threshold strictly >0.5. "
-        "PrimeVul selects full Valid P-C; SecVulEval selects full Valid MCC. Test never selects a checkpoint or configuration.", "",
-        "Seeds are 42, 1234 and 123456. Five completed original runs are reused; thirteen missing combinations are trained. "
+        "PrimeVul selects full Valid P-C; other datasets select full Valid MCC. Test never selects a checkpoint or configuration.", "",
+        f"Seeds are 42, 1234 and 123456. {result.get('reused', 0)} original runs are reused; completed new runs use the identical shared trainer. "
         "Seed123457, historical Global Mean and the stopped Patch study are preserved and excluded from the three-seed mean. "
         "Historical result paths and completed optimization budgets are recorded in experiments.json. "
         "Standard deviations below use ddof=1. New resumable checkpoints are saved every 500 steps and at epoch boundaries; "
         "this changes disk I/O only, with the original optimization budget and RNG behavior. "
-        "PrimeVul FPR uses the complete repaired side of official pairs; SecVulEval FPR uses all original normal functions, "
+        "PrimeVul FPR uses the complete repaired side of official pairs; other datasets use all retained normal functions, "
         "including ordinary and repaired functions. PR-AUC retains the existing average-precision (AP) definition.", "",
-        "| Dataset | Split | Seed | Method | Epoch | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR |",
-        "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        "| Dataset | Split | Seed | Method | Epoch | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR | Accuracy | Precision |",
+        "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    if "cleanvul" in datasets:
+        data = json.loads((data_root(data_dir, "cleanvul")/"cleanvul/statistics.json").read_text())
+        result["cleanvul_data"] = data
+        checks = data["diagnostic_reasons"]
+        flagged = sum(n for name,n in checks.items() if name != "retained")
+        details = ["", "## CleanVul 成员及监督口径", "",
+            f"采用评分≥3的全部 C/C++ 发布记录：{data['retained_pairs']} 对，{sum(data['class_counts'].values())} 个函数。"
+            "发布文件没有独立0/1字段；沿用修复前=1、修复后=0的约定。源码逐字保留，未进行新的质量筛选。"
+            f"评分定义见 [CleanVul 原论文]({data['score_definition']['source']})。", "",
+            f"此前{flagged}条排除来自可执行检查：解析不完整/非单函数{checks.get('parse_incomplete_or_not_single_function',0)}、"
+            f"名称不同{checks.get('function_name_mismatch',0)}、名称未知{checks.get('unknown_function_name',0)}、"
+            f"词法序列不变{checks.get('comments_or_formatting_only',0)}。"
+            "这些是语法与对应关系诊断，不能判定分类标签错误；本轮全部恢复，检查代码仅记录原因，不过滤分类成员。"
+            "对应来源及诊断见 pairs.csv，最终成员见 data/rgcl/cleanvul/members.csv。"
+            "区域监督直接沿用同一发布行的前后版本及原 _line_diff / paired_features；不额外要求解析成功或同名。"
+            "512可见区域须同时含修改行和背景行，保留原有部分可见修改行门控；无有效区域仍参与BCE。", "",
+            "Seed42按CVE、仓库限定提交、修复关系和空白归一化重复代码传递分组，目标8:1:1。"
+            f"由于恢复了原先排除的成员，重新对全部成员分组；旧{checks.get('retained',0)}对口径未用于任何训练。"
+            "跨划分重叠组为0；不依据Valid/Test结果修改成员。", "",
+            "| Split | Pairs | Vulnerable | Repaired | Effective before | Effective after | Effective / functions |",
+            "|---|---:|---:|---:|---:|---:|---:|"]
+        for split in ("train", "valid", "test"):
+            s=data["splits"][split]; c=data["coverage"][split]
+            details.append(f"| {split} | {s['pairs']} | {s['class_counts']['1']} | {s['class_counts']['0']} | "
+                f"{c['1']['effective_region']} | {c['0']['effective_region']} | {c['all']['effective_region']}/{s['functions']} ({c['all']['effective_percent']:.2f}%) |")
+        details.extend(["", "三种方法沿用同一函数随机采样、训练预算与预训练权重；Context-only与RGCL仅相差0.1倍真实Diff区域损失。"
+            "不增加Patch、RCCL或局部头。历史PrimeVul/SecVulEval成员、权重与结果均保留。", ""])
+        lines[4:4] = details
     for r in records:
         m=r["metrics"];pc=f"{m['p_c']:.2%}" if "p_c" in m else "—"
         lines.append(f"| {r['dataset']} | {r['split']} | {r['seed']} | {r['method']} | {r['selected_epoch']} | {pc} | "+
-                     " | ".join(f"{m[k]:.6f}" for k in ("mcc","f1","auc","auprc","recall","fpr"))+" |")
-    lines += ["", "| Dataset | Split | Method | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR |",
-              "|---|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+                     " | ".join(f"{m[k]:.6f}" for k in ("mcc","f1","auc","auprc","recall","fpr","accuracy","precision"))+" |")
+    lines += ["", "| Dataset | Split | Method | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR | Accuracy | Precision |",
+              "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for r in aggregate:
         values=[]
-        for key in ("p_c","mcc","f1","auc","auprc","recall","fpr"):
+        for key in ("p_c","mcc","f1","auc","auprc","recall","fpr","accuracy","precision"):
             v=r["metrics"].get(key)
             values.append((f"{100*v['mean']:.2f}% ± {100*v['std']:.2f}pp" if key=="p_c" else
                            f"{v['mean']:.6f} ± {v['std']:.6f}") if v else "—")
         lines.append(f"| {r['dataset']} | {r['split']} | {r['method']} | "+" | ".join(values)+" |")
     deltas=[]
-    for dataset in DATASETS:
+    for dataset in datasets:
         for split in ("valid","test"):
             values={r["method"]:r["metrics"] for r in aggregate if r["dataset"]==dataset and r["split"]==split}
             for before,after in (("plm_baseline","context_only"),("context_only","rgcl"),("plm_baseline","rgcl")):

@@ -47,7 +47,7 @@ def build_parser():
         p.add_argument("--data-dir", type=Path, default=Path("data"))
         p.add_argument("--output-dir", type=Path, default=Path("results"))
         p.add_argument(
-            "--dataset", choices=(*DATASETS, "secvuleval", "primevul_paired", "all"), default="all"
+            "--dataset", choices=(*DATASETS, "secvuleval", "cleanvul", "primevul_paired", "all"), default="all"
         )
         if command in ("train", "candidates"):
             p.add_argument(
@@ -160,7 +160,7 @@ def build_parser():
     p.add_argument("--attention-regularization",action="store_true")
     p.add_argument("--device",default="auto")
     p.add_argument(
-        "--dataset", choices=(*DATASETS, "secvuleval", "primevul_paired", "all"), default="all"
+        "--dataset", choices=(*DATASETS, "secvuleval", "cleanvul", "primevul_paired", "all"), default="all"
     )
     p = sub.add_parser("infer")
     p.add_argument("--checkpoint", type=Path, required=True)
@@ -190,13 +190,13 @@ def build_parser():
     p.add_argument("--checkpoint", type=Path, default=Path("results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt"))
     p.add_argument("--output-dir", type=Path, default=Path("results/repair_transfer_512"))
     p.add_argument("--device", default="auto")
-    p = sub.add_parser("rgcl-study", help="fixed RGCL comparisons and ReposVul data inspection")
-    p.add_argument("stage", choices=("inventory", "check", "run", "report", "inspect"))
+    p = sub.add_parser("rgcl-study", help="fixed RGCL comparisons and repair-pair data inspection")
+    p.add_argument("stage", choices=("inventory", "check", "run", "report", "inspect", "prepare"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results/rgcl_multiseed_512"))
     p.add_argument("--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine")
-    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval", "reposvul"), default="primevul_paired")
-    p.add_argument("--raw-root", type=Path, help="ReposVul directory for inspection only")
+    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval", "reposvul", "cleanvul"), default="primevul_paired")
+    p.add_argument("--raw-root", type=Path, help="raw dataset directory for inspection/preparation")
     p.add_argument("--official-dir", type=Path, help="original official Train/Valid/Test JSONL directory")
     p.add_argument("--seed", type=int, choices=(42, 1234, 123456), default=123456)
     p.add_argument("--methods", nargs="+", choices=RGCL_METHODS, default=list(RGCL_METHODS))
@@ -327,6 +327,18 @@ def main():
         else:
             getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
     elif args.command == "rgcl-study":
+        if args.dataset == "cleanvul" and args.stage in {"inspect", "prepare"}:
+            if args.raw_root is None or args.seed != 42:
+                raise ValueError("CleanVul inspect/prepare requires --raw-root and fixed split --seed 42")
+            from . import cleanvul
+            if args.stage == "inspect":
+                result = cleanvul.inspect(args.raw_root, args.data_dir, args.output_dir, args.model)
+            else:
+                result = cleanvul.prepare(args.raw_root, args.data_dir, args.model)
+            print(json.dumps(result, indent=2))
+            return
+        if args.stage == "prepare":
+            raise ValueError("rgcl-study prepare is only for CleanVul repair pairs")
         if args.stage == "inspect":
             from .reposvul import inspect
             if args.dataset != "reposvul" or args.raw_root is None:
@@ -342,13 +354,14 @@ def main():
             raise ValueError("ReposVul is inspection-only until label and repair quality are resolved")
         from . import rgcl_study
         common = dict(data_dir=args.data_dir, output_dir=args.output_dir, model_path=args.model)
+        selected = dict(datasets=("cleanvul",)) if args.dataset == "cleanvul" else {}
         if args.stage == "check":
-            result = rgcl_study.check(**common, device=args.device)
+            result = rgcl_study.check(**common, **selected, device=args.device)
         elif args.stage == "run":
             result = rgcl_study.run(**common, dataset=args.dataset, seed=args.seed, methods=args.methods,
                                      device=args.device, save_every=args.save_every)
         else:
-            result = getattr(rgcl_study, args.stage)(**common)
+            result = getattr(rgcl_study, args.stage)(**common, **selected)
         print(json.dumps(result, indent=2))
     elif args.command == "check-paired":
         from .evaluation import check_paired, check_repair_regions, check_bounded_attention, check_insertion_localization

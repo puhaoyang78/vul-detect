@@ -473,3 +473,17 @@ __pycache__/
 !/results/rgcl_reposvul_512/*.jsonl
 !/results/rgcl_reposvul_512/*.md
 !/results/rgcl_reposvul_512/*.txt
+
+# CleanVul fixed RGCL comparison; exported source and checkpoints stay local.
+!/data/rgcl/cleanvul/
+/data/rgcl/cleanvul/**
+!/data/rgcl/cleanvul/statistics.json
+!/data/rgcl/cleanvul/members.csv
+!/results/rgcl_cleanvul_512/
+!/results/rgcl_cleanvul_512/**/
+!/results/rgcl_cleanvul_512/**/*.json
+!/results/rgcl_cleanvul_512/**/*.jsonl
+!/results/rgcl_cleanvul_512/**/*.csv
+!/results/rgcl_cleanvul_512/**/*.md
+!/results/rgcl_cleanvul_512/**/*.log
+!/results/rgcl_cleanvul_512/**/*.txt
