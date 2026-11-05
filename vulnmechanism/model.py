@@ -10,10 +10,12 @@ from torch import nn
 from types import SimpleNamespace
 from transformers import (
     AutoModel,
+    AutoConfig,
     AutoTokenizer,
     RobertaConfig,
     RobertaModel,
     RobertaTokenizerFast,
+    T5Model,
 )
 import torch.nn.functional as F
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead
@@ -510,19 +512,24 @@ class LOSVERDetector(nn.Module):
     def __init__(self, encoder, config, args):
         super().__init__()
         self.encoder = encoder
+        self.config = config
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.cls_baseline = getattr(args, "cls_baseline", False)
         if self.cls_baseline:
             # Match run_base.py's RobertaForSequenceClassification head. Keep
             # encoder initialization and the shared sampler RNG unchanged.
             with torch.random.fork_rng(devices=[]):
-                head_config = RobertaConfig.from_dict(config.to_dict())
-                head_config.num_labels = 1
-                self.classifier = RobertaClassificationHead(head_config)
-                for module in self.classifier.modules():
-                    if isinstance(module, nn.Linear):
-                        nn.init.normal_(module.weight, std=config.initializer_range)
-                        nn.init.zeros_(module.bias)
+                if config.model_type == "t5":
+                    # Official CodeT5 DefectModel's two-class linear head.
+                    self.classifier = nn.Linear(config.hidden_size, 2)
+                else:
+                    head_config = RobertaConfig.from_dict(config.to_dict())
+                    head_config.num_labels = 1
+                    self.classifier = RobertaClassificationHead(head_config)
+                    for module in self.classifier.modules():
+                        if isinstance(module, nn.Linear):
+                            nn.init.normal_(module.weight, std=config.initializer_range)
+                            nn.init.zeros_(module.bias)
         self.class_weight = args.class_weight
         self.window_micro_batch = getattr(args, "window_micro_batch", 8)
         self.gradient_checkpointing = getattr(args, "gradient_checkpointing", False)
@@ -898,6 +905,9 @@ class LOSVERDetector(nn.Module):
 
         def encode(ids, attention, valid, weights):
             encoded = self.encoder(ids, attention_mask=attention,
+                                   **(dict(decoder_input_ids=self.encoder._shift_right(ids),
+                                           decoder_attention_mask=attention, use_cache=False)
+                                      if self.config.model_type == "t5" else {}),
                                    **(dict(output_hidden_states=True) if diagnostic_layers else {}))
             states = encoded[0]
             if diagnostic_layers:
@@ -907,6 +917,15 @@ class LOSVERDetector(nn.Module):
             if bounded:
                 return states
             if self.cls_baseline:
+                if self.config.model_type == "t5":
+                    eos = ids.eq(self.config.eos_token_id) & attention.bool()
+                    if not eos.any(-1).all():
+                        raise ValueError("CodeT5 classification requires a visible source EOS")
+                    # Retain the last appended EOS even if source text contains
+                    # literal special tokens; never index padding as a class token.
+                    positions = torch.arange(ids.shape[1], device=ids.device)
+                    last = positions.expand_as(ids).masked_fill(~eos, -1).max(-1).values
+                    return states[torch.arange(len(ids), device=ids.device), last]
                 return states[:, 0]
             occupied = valid.any(-1)
             pooled = states.new_zeros((len(states), states.shape[-1]))
@@ -996,7 +1015,11 @@ class LOSVERDetector(nn.Module):
                 mass[:, None],
                 function_count,
             )
-        logits = self.classifier(pooled[:, None] if self.cls_baseline else pooled)
+        logits = self.classifier(pooled[:, None] if self.cls_baseline and self.config.model_type != "t5" else pooled)
+        if self.cls_baseline and self.config.model_type == "t5":
+            # This binary logit gives the official two-class softmax probability
+            # and CE while retaining the shared weighted BCE implementation.
+            logits = logits[:, 1:2] - logits[:, 0:1]
         if self.local_mil is not None:
             residual = attention_details["local_logit"]
             if self.local_mil_version == 1:
@@ -1090,8 +1113,8 @@ def losver_model(
     cls_baseline=False,
     class_weight=1.0,
 ):
-    """Shared UniXcoder encoder and source-offset tokenizer; no task prefix."""
-    config = RobertaConfig.from_pretrained(model_path)
+    """Shared pretrained function models and source-offset tokenizer; no prefix."""
+    config = AutoConfig.from_pretrained(model_path)
     tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
     if window_micro_batch < 1:
         raise ValueError("window micro-batch must be positive")
@@ -1135,6 +1158,13 @@ def losver_model(
         attention_region_weighting=attention_region_weighting,
         attention_suppression=attention_suppression,
     )
+    if config.model_type == "t5":
+        if not (cls_baseline or bounded_attention) or gradient_checkpointing:
+            raise ValueError("CodeT5 requires the standard 512 classification or Context MIL method")
+        encoder = T5Model.from_pretrained(model_path, config=config, attn_implementation="eager")
+        return LOSVERDetector(encoder, config, args), tokenizer
+    if config.model_type != "roberta":
+        raise ValueError("supported function backbones are RoBERTa (CodeBERT/UniXcoder) and CodeT5")
     encoder = RobertaModel.from_pretrained(
         model_path, config=config, attn_implementation="eager", add_pooling_layer=False
     )

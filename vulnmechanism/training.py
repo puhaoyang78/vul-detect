@@ -1717,6 +1717,11 @@ def train_losver(
     elif method == "plm_baseline":
         metadata.update(cls_baseline=True,
             classifier_head="CLS + RobertaClassificationHead(hidden -> tanh -> 1); standard .1 head dropout")
+    if model.encoder.config.model_type == "t5":
+        metadata.update(classification_architecture="codet5_defect" if method == "plm_baseline" else "codet5_context",
+            classifier_head=("last source-EOS decoder state + Linear(hidden,2); sigmoid(class1-class0), weighted function BCE"
+                             if method == "plm_baseline" else "same-pass decoder token states + original bounded Context MIL + Linear(hidden,1)"),
+            decoder_input="same source shifted right; source attention mask; no LM loss or generation")
     if regularized:
         metadata["localizer_regularization"] = dict(
             dropout=settings["dropout_probability"],

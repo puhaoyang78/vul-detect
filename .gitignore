@@ -487,3 +487,12 @@ __pycache__/
 !/results/rgcl_cleanvul_512/**/*.md
 !/results/rgcl_cleanvul_512/**/*.log
 !/results/rgcl_cleanvul_512/**/*.txt
+
+# Three-dataset CodeBERT/CodeT5 classification baselines; weights stay local.
+!/results/plm_baselines_512/
+!/results/plm_baselines_512/**/
+!/results/plm_baselines_512/**/*.json
+!/results/plm_baselines_512/**/*.jsonl
+!/results/plm_baselines_512/**/*.md
+!/results/plm_baselines_512/**/*.log
+!/results/plm_baselines_512/**/*.txt

@@ -553,7 +553,7 @@ def prepare_candidates(data_dir, output_dir, model_path, dataset, *, test_limit=
     _robustness_fixed_candidates(rows, materials, root, tokenizer, budget)
 
 
-def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
+def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", methods=None):
     """Real native Train examples through the three shared models and restore."""
     import tempfile
     import time
@@ -561,6 +561,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
     from .training import RGCL_METHODS, LOSVERAdamW, paired_collate, paired_forward
     from .data import paired_features
 
+    methods = RGCL_METHODS if methods is None else tuple(methods)
+    if not methods or any(m not in RGCL_METHODS for m in methods):
+        raise ValueError("choose an existing function classification method for GPU smoke")
     device = core.resolve_device(device)
     if device.type != "cuda":
         raise ValueError("native RGCL smoke requires a real GPU")
@@ -579,6 +582,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
                 break
     if not selected or selected[0]["target"] != 1:
         raise ValueError("GPU smoke needs a reliable, visible positive training region")
+    used = {r["sample_key"] for r in selected}
+    selected.extend(r for r in all_rows if r["sample_key"] not in used)
+    selected = selected[:8]
     features = [paired_features(r, tokenizer, "baseline") for r in selected]
     batch = paired_collate(features)
     result = dict(device=str(device), gpu=torch.cuda.get_device_name(device), dataset=dataset,
@@ -586,7 +592,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
         test_used=False, methods={})
     initial_context, initial_rng = None, None
     encoder_initial = None
-    for method in RGCL_METHODS:
+    for method in methods:
         core.seed_everything(123456)
         np.random.seed(123456)
         model, _ = core.losver_model(model_path, "baseline", cls_baseline=method == "plm_baseline",
@@ -610,7 +616,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
         optimizer = LOSVERAdamW(model.parameters(), lr=2e-5)
         model.train()
         gradients, updates = [], []
-        head = model.classifier.out_proj if method == "plm_baseline" else model.classifier
+        head = (model.classifier.out_proj if hasattr(model.classifier, "out_proj") else model.classifier)
         for step in range(2):
             before = head.weight.detach().clone()
             if method == "plm_baseline":
@@ -655,14 +661,19 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto"):
             with torch.no_grad():
                 q = paired_forward(restored, batch, "baseline", device, with_labels=False)
             torch.testing.assert_close(p, q, rtol=0, atol=0)
+            cp["protocol"] = "rgcl_native_binary" if dataset != "primevul_paired" else "losver"
+            torch.save(cp, filename)
+            source_only = core.predict_checkpoint(filename, [dict(raw_source=selected[0]["func"])], device=device).sigmoid()
+            torch.testing.assert_close(source_only, p[:1, 0].cpu(), rtol=1e-5, atol=1e-6)
             del restored
         result["methods"][method] = dict(head_gradient_l1=gradients, head_update_l1=updates,
             finite_gradients=True, save_reload_equal=True, diff_independent_inference=True,
             single_function_max_delta=float((p[:1] - one).abs().max()), parameters=sum(p.numel() for p in model.parameters()))
         del model, optimizer, cp, saved
         torch.cuda.empty_cache()
-    result.update(initial_context_rgcl_equal=True, initialization_cpu_rng_equal=True,
-                  encoder_initialization_equal=True, seconds=time.monotonic() - started)
+    result.update(initial_context_rgcl_equal=True if {"context_only", "rgcl"}.issubset(methods) else None,
+                  initialization_cpu_rng_equal=True if len(methods) > 1 else None,
+                  encoder_initialization_equal=True if len(methods) > 1 else None, seconds=time.monotonic() - started)
     write_json(Path(output_dir) / dataset / "gpu-smoke.json", result)
     return result
 

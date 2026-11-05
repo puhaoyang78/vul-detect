@@ -16,14 +16,25 @@ from .training import RGCL_METHODS, LOSVER_CONFIG, train_losver
 SEEDS = (42, 1234, 123456)
 DATASETS = ("primevul_paired", "secvuleval")
 SUPPORTED_DATASETS = (*DATASETS, "cleanvul")
+BACKBONE_MODELS = {
+    "unixcoder": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+    "codebert": "/home/PublicData/PHY-data/resource/codebert-base",
+    "codet5": "/home/PublicData/PHY-data/resource/codet5-base",
+}
+
+
+def study_methods(backbone):
+    if backbone not in BACKBONE_MODELS:
+        raise ValueError("choose a local UniXcoder, CodeBERT or CodeT5 backbone")
+    return RGCL_METHODS
 
 
 def data_root(data_dir, dataset):
     return Path(data_dir) if dataset == "primevul_paired" else Path(data_dir)/"rgcl"
 
 
-def run_path(output_dir, dataset, seed, method):
-    if seed == 123456:
+def run_path(output_dir, dataset, seed, method, *, backbone="unixcoder"):
+    if seed == 123456 and backbone == "unixcoder":
         if dataset == "primevul_paired" and method != "plm_baseline":
             old = "context_bce" if method == "context_only" else "context_diff"
             return Path("results/attention_context_512")/old/dataset/"unixcoder"
@@ -79,7 +90,10 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
             raise ValueError(f"{path}: checkpoint and selection record disagree")
         state = cp["state_dict"]
         if method == "plm_baseline":
-            if tuple(state["classifier.dense.weight"].shape) != (768, 768) or tuple(state["classifier.out_proj.weight"].shape) != (1, 768):
+            if cp.get("classification_architecture") == "codet5_defect":
+                if tuple(state["classifier.weight"].shape) != (2, 768):
+                    raise ValueError("CodeT5 checkpoint does not contain the defect classification head")
+            elif tuple(state["classifier.dense.weight"].shape) != (768, 768) or tuple(state["classifier.out_proj.weight"].shape) != (1, 768):
                 raise ValueError("CLS checkpoint does not contain the standard classification head")
         elif any(tuple(state[name].shape) != (32, 768) for name in ("context_u.weight", "context_v.weight")):
             raise ValueError("RGCL checkpoint context projections differ")
@@ -92,14 +106,14 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
         epoch_seconds=sum(r["epoch_seconds"] for r in epochs), checkpoint_checked=checkpoint)
 
 
-def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS):
+def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder"):
     entries = []
     if not datasets or any(d not in SUPPORTED_DATASETS for d in datasets):
         raise ValueError("choose a prepared RGCL study dataset")
     for dataset in datasets:
         for seed in SEEDS:
-            for method in RGCL_METHODS:
-                path = run_path(output_dir, dataset, seed, method)
+            for method in study_methods(backbone):
+                path = run_path(output_dir, dataset, seed, method, backbone=backbone)
                 reused = not path.is_relative_to(Path(output_dir))
                 if (path/"training.metrics.json").exists():
                     info = inspect_run(path, data_dir, dataset, seed, method, model_path)
@@ -108,9 +122,10 @@ def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS):
                 else:
                     info = dict(run=str(path), complete=False, resumable=(path/"last.pt").exists())
                 entries.append(dict(dataset=dataset, seed=seed, method=method, reused=reused, **info))
-    result = dict(seeds=list(SEEDS), excluded_historical_seed=123457, model_path=str(model_path),
-        input_tokens=512, batch_size=8, epochs=16, learning_rate=2e-5, k=5, region_weight=.1,
-        region_weighting="token", threshold=.5, comparison=">", sampler="original function RandomSampler",
+    result = dict(seeds=list(SEEDS), excluded_historical_seed=123457, model_path=str(model_path), backbone=backbone,
+        input_tokens=512, batch_size=8, epochs=16, learning_rate=2e-5,
+        k=5, region_weight=.1, region_weighting="token",
+        threshold=.5, comparison=">", sampler="original function RandomSampler",
         patch="stopped; results/weights preserved separately; not part of RGCL",
         test_used_for_selection=False, experiments=entries,
         reused=sum(e["reused"] for e in entries), missing=sum(not e["complete"] for e in entries))
@@ -118,14 +133,19 @@ def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS):
     return result
 
 
-def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS):
+def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS, backbone="unixcoder"):
     """Exercise selected datasets and the original RGCL checkpoint, without Test."""
     from . import evaluation, model as core
     from .training import paired_loader, paired_collate, paired_forward
 
     results = {}
     for dataset in datasets:
-        results[dataset] = evaluation.check_rgcl(data_root(data_dir, dataset), output_dir, model_path, dataset, device=device)
+        results[dataset] = evaluation.check_rgcl(data_root(data_dir, dataset), output_dir, model_path, dataset,
+            device=device, methods=study_methods(backbone))
+    if backbone != "unixcoder":
+        write_json(Path(output_dir)/"gpu-smoke.json", dict(passed=True, results=results,
+            model_path=str(model_path), backbone=backbone, test_used=False))
+        return results
     original = run_path(output_dir, "primevul_paired", 123456, "rgcl")
     cp = torch.load(original/"best-p_c.pt", map_location="cpu", weights_only=False)
     model, tokenizer = evaluation.load_paired(cp, core.resolve_device(device))
@@ -146,15 +166,18 @@ def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS)
     return results
 
 
-def run(data_dir, output_dir, model_path, dataset, seed, methods, *, device="auto", save_every=500):
+def run(data_dir, output_dir, model_path, dataset, seed, methods=None, *, device="auto", save_every=500, backbone="unixcoder"):
     from .evaluation import evaluate
 
-    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or any(m not in RGCL_METHODS for m in methods):
+    methods = study_methods(backbone) if methods is None else methods
+    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or not methods or any(m not in study_methods(backbone) for m in methods):
         raise ValueError("only the fixed three-seed RGCL comparison is allowed")
-    if not json.loads((Path(output_dir)/"gpu-smoke.json").read_text())["passed"]:
+    smoke = json.loads((Path(output_dir)/"gpu-smoke.json").read_text())
+    if not smoke["passed"] or (backbone != "unixcoder" and
+        (smoke.get("backbone") != backbone or smoke.get("model_path") != str(model_path) or dataset not in smoke["results"])):
         raise ValueError("complete real GPU verification before full training")
     for method in methods:
-        path = run_path(output_dir, dataset, seed, method)
+        path = run_path(output_dir, dataset, seed, method, backbone=backbone)
         reused = not path.is_relative_to(Path(output_dir))
         if reused:
             inspect_run(path, data_dir, dataset, seed, method, model_path)
@@ -178,12 +201,13 @@ def run(data_dir, output_dir, model_path, dataset, seed, methods, *, device="aut
     return dict(dataset=dataset, seed=seed, methods=list(methods), complete=True)
 
 
-def report(data_dir, output_dir, model_path, *, datasets=DATASETS):
+def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder"):
     """Recompute probabilities at the fixed threshold and summarize three seeds."""
     from .metrics import metrics, paired_metrics
 
     root = Path(output_dir)
-    result = inventory(data_dir, output_dir, model_path, datasets=datasets)
+    result = inventory(data_dir, output_dir, model_path, datasets=datasets, backbone=backbone)
+    methods = study_methods(backbone)
     if result["missing"]:
         raise ValueError("finish all missing combinations before reporting three-seed results")
     records = []
@@ -214,7 +238,7 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS):
     aggregate = []
     for dataset in datasets:
         for split in ("valid", "test"):
-            for method in RGCL_METHODS:
+            for method in methods:
                 members = [r for r in records if (r["dataset"],r["split"],r["method"]) == (dataset,split,method)]
                 if sorted(r["seed"] for r in members) != sorted(SEEDS):
                     raise ValueError("the mean must include exactly seeds 42, 1234 and 123456")
@@ -263,6 +287,24 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS):
         details.extend(["", "三种方法沿用同一函数随机采样、训练预算与预训练权重；Context-only与RGCL仅相差0.1倍真实Diff区域损失。"
             "不增加Patch、RCCL或局部头。历史PrimeVul/SecVulEval成员、权重与结果均保留。", ""])
         lines[4:4] = details
+    if backbone != "unixcoder":
+        lines = [f"# {backbone} fixed three-seed CLS / Context-only / RGCL comparison", "",
+            "Same frozen PrimeVul/SecVulEval/CleanVul members as the UniXcoder study; seeds 42, 1234, 123456; "
+            "512 tokens, Batch8, 16 epochs, original AdamW lr=2e-5 and function sampling. "
+            "PrimeVul selects full Valid P-C rounded to four decimals; other datasets select unrounded full Valid MCC. "
+            "Threshold strictly >0.5. Test is evaluated only after Valid selection. PR-AUC is average precision; std uses ddof=1.", "",
+            ("CodeBERT uses CLS + the existing RobertaClassificationHead and weighted function BCE."
+             if backbone == "codebert" else
+             "CodeT5 uses the official defect readout: same-source shifted decoder input, last source-EOS decoder state, "
+             "Linear(hidden,2). Weighted BCE on class1-class0 is equivalent to weighted two-class cross-entropy. "
+             "Context-only/RGCL reuse token-aligned decoder states from the same forward; no extra encoding or model head. "
+             "No language-model loss or generation is used. "
+             "[Official model](https://github.com/salesforce/CodeT5/blob/main/CodeT5/models.py)."), "",
+            "Context-only and RGCL share the original rank-32 Context Attention and bounded line MIL, K=5, "
+            "function BCE. RGCL adds only 0.1 times the original token-weighted Diff region loss. "
+            "Inference reads one function only. No historical data or weights are overwritten.", "",
+            "| Dataset | Split | Seed | Method | Epoch | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR | Accuracy | Precision |",
+            "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for r in records:
         m=r["metrics"];pc=f"{m['p_c']:.2%}" if "p_c" in m else "—"
         lines.append(f"| {r['dataset']} | {r['split']} | {r['seed']} | {r['method']} | {r['selected_epoch']} | {pc} | "+

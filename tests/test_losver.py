@@ -313,7 +313,7 @@ class LOSVERTests(unittest.TestCase):
         outputs = []
         states = []
         with patch.object(
-            core.RobertaConfig, "from_pretrained", return_value=c
+            core.AutoConfig, "from_pretrained", return_value=c
         ), patch.object(
             core.RobertaTokenizerFast, "from_pretrained", return_value=t
         ), patch.object(

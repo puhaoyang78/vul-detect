@@ -194,12 +194,15 @@ def build_parser():
     p.add_argument("stage", choices=("inventory", "check", "run", "report", "inspect", "prepare"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results/rgcl_multiseed_512"))
-    p.add_argument("--model", default="/home/PublicData/PHY-data/resource/unixcoder-base-nine")
-    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval", "reposvul", "cleanvul"), default="primevul_paired")
+    p.add_argument("--model", help="local pretrained path; defaults to the selected backbone")
+    p.add_argument("--backbone", choices=("unixcoder", "codebert", "codet5"), default="unixcoder",
+                   help="pretrained backbone for the shared CLS, Context-only and RGCL comparison")
+    p.add_argument("--dataset", choices=("primevul_paired", "secvuleval", "reposvul", "cleanvul", "all"), default="primevul_paired")
     p.add_argument("--raw-root", type=Path, help="raw dataset directory for inspection/preparation")
     p.add_argument("--official-dir", type=Path, help="original official Train/Valid/Test JSONL directory")
     p.add_argument("--seed", type=int, choices=(42, 1234, 123456), default=123456)
-    p.add_argument("--methods", nargs="+", choices=RGCL_METHODS, default=list(RGCL_METHODS))
+    p.add_argument("--methods", nargs="+", choices=RGCL_METHODS,
+                   help="default: CLS baseline, Context-only and RGCL for the selected backbone")
     p.add_argument("--device", default="auto")
     p.add_argument("--save-every", type=int, default=500)
     p = sub.add_parser(
@@ -327,6 +330,10 @@ def main():
         else:
             getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
     elif args.command == "rgcl-study":
+        from . import rgcl_study
+        args.model = args.model or rgcl_study.BACKBONE_MODELS[args.backbone]
+        if args.backbone != "unixcoder" and args.stage in {"prepare", "inspect"}:
+            raise ValueError("baseline comparisons reuse prepared splits; do not prepare new data")
         if args.dataset == "cleanvul" and args.stage in {"inspect", "prepare"}:
             if args.raw_root is None or args.seed != 42:
                 raise ValueError("CleanVul inspect/prepare requires --raw-root and fixed split --seed 42")
@@ -352,9 +359,11 @@ def main():
                 print(json.dumps(check(args.official_dir, args.output_dir, device=args.device), indent=2))
                 return
             raise ValueError("ReposVul is inspection-only until label and repair quality are resolved")
-        from . import rgcl_study
         common = dict(data_dir=args.data_dir, output_dir=args.output_dir, model_path=args.model)
-        selected = dict(datasets=("cleanvul",)) if args.dataset == "cleanvul" else {}
+        if args.backbone != "unixcoder":
+            common["backbone"] = args.backbone
+        selected = (dict(datasets=rgcl_study.SUPPORTED_DATASETS) if args.dataset == "all" else
+                    dict(datasets=(args.dataset,)) if args.dataset == "cleanvul" or args.backbone != "unixcoder" else {})
         if args.stage == "check":
             result = rgcl_study.check(**common, **selected, device=args.device)
         elif args.stage == "run":

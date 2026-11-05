@@ -10,6 +10,8 @@ ReposVul 使用 `rgcl-study inspect --dataset reposvul --raw-root /home/PublicDa
 
 CleanVul 使用评分≥3的全部 C/C++ 发布记录，沿用修复前=1、修复后=0；解析、函数名及词法变化检查仅作诊断，不删除分类成员。`rgcl-study prepare --dataset cleanvul --seed 42 --raw-root /home/PublicData/PHY-data/vul_detect/data/cleanvul` 构建固定分组划分。`rgcl-study check/run/report --dataset cleanvul --output-dir results/rgcl_cleanvul_512` 复用同一三种子训练、Valid MCC 选模和单函数评价入口；`run` 需分别指定 `--seed 42/1234/123456`。数据、监督覆盖率及完整结果见[CleanVul报告](results/rgcl_cleanvul_512/report.md)。
 
+CodeBERT 与 CodeT5 的补充三组对照复用相同数据成员和训练器：`rgcl-study check --backbone codebert --dataset all --output-dir results/plm_baselines_512/codebert --device cuda:0` 检查三个数据集；`rgcl-study run --backbone codebert --dataset primevul_paired --seed 42 --output-dir results/plm_baselines_512/codebert --device cuda:0` 运行指定种子、数据集的 CLS/Context-only/RGCL 三组；`rgcl-study report --backbone codebert --dataset all --output-dir results/plm_baselines_512/codebert` 汇总三种子。CodeT5 将 backbone 和结果目录改为 `codet5`。CodeBERT 沿用 CLS + RoBERTa 分类头；CodeT5 使用[官方缺陷检测读出](https://github.com/salesforce/CodeT5/blob/main/CodeT5/models.py)的同函数右移解码器与末尾 EOS 表示、双类别线性头，使用函数 BCE，不计算生成损失。CodeT5 Context-only/RGCL 直接使用同一次前向的解码器 Token 表示进行原有物理行聚合；不额外编码。Context-only 与 RGCL 仅相差原始 0.1 倍 Token 加权 Diff 区域损失，K=5。两个骨干 × 三个数据集 × 三种子 × 三种方法，共54组。三个数据集均固定 512 Token、Batch8、16 Epoch、AdamW lr=2e-5、Seed42/1234/123456、严格 >0.5 阈值，选模规则与正式 UniXcoder 对照一致；不修改 RGCL 或历史实验。
+
 ## 环境
 
 ```bash
