@@ -1,0 +1,11 @@
+Start codet5 primevul_paired seed42 on GPU1
+Start codebert cleanvul seed42 on GPU1
+Start codet5 cleanvul seed42 on GPU1
+Start codebert primevul_paired seed1234 on GPU1
+Start codet5 secvuleval seed1234 on GPU1
+Start codebert secvuleval seed1234 on GPU1
+Start codet5 primevul_paired seed123456 on GPU1
+Start codebert cleanvul seed1234 on GPU1
+Start codet5 cleanvul seed123456 on GPU1
+Start codebert secvuleval seed123456 on GPU1
+GPU1 queue complete

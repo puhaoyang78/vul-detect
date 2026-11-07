@@ -1,0 +1,11 @@
+{
+  "dataset": "cleanvul",
+  "seed": 123456,
+  "method": "context_only",
+  "device": "cuda:0",
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 2544.015939439647,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

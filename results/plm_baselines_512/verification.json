@@ -1,0 +1,188 @@
+{
+  "model_tests_passed": true,
+  "model_tests": 72,
+  "final_tests_passed": true,
+  "original_rgcl": {
+    "passed": true,
+    "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+    "split": "valid",
+    "functions": 8,
+    "max_probability_delta": 1.9744038581848145e-07,
+    "inference": "single function source only",
+    "test_used": false
+  },
+  "gpu": {
+    "codebert": {
+      "primevul_paired": {
+        "batch_size": 8,
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "methods": {
+          "plm_baseline": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 5.960464477539063e-08
+          },
+          "context_only": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 5.960464477539063e-08
+          },
+          "rgcl": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 5.960464477539063e-08
+          }
+        }
+      },
+      "secvuleval": {
+        "batch_size": 8,
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "methods": {
+          "plm_baseline": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 0.0
+          },
+          "context_only": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 0.0
+          },
+          "rgcl": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 0.0
+          }
+        }
+      },
+      "cleanvul": {
+        "batch_size": 8,
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "methods": {
+          "plm_baseline": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 0.0
+          },
+          "context_only": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 0.0
+          },
+          "rgcl": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 5.960464477539063e-08
+          }
+        }
+      }
+    },
+    "codet5": {
+      "primevul_paired": {
+        "batch_size": 8,
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "methods": {
+          "plm_baseline": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 1.862645149230957e-08
+          },
+          "context_only": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 8.940696716308594e-08
+          },
+          "rgcl": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 1.4901161193847656e-08
+          }
+        }
+      },
+      "secvuleval": {
+        "batch_size": 8,
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "methods": {
+          "plm_baseline": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 1.3709068298339844e-06
+          },
+          "context_only": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 2.9802322387695312e-08
+          },
+          "rgcl": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 8.940696716308594e-08
+          }
+        }
+      },
+      "cleanvul": {
+        "batch_size": 8,
+        "initial_context_rgcl_equal": true,
+        "initialization_cpu_rng_equal": true,
+        "methods": {
+          "plm_baseline": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 5.960464477539063e-08
+          },
+          "context_only": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 2.9802322387695312e-08
+          },
+          "rgcl": {
+            "finite_gradients": true,
+            "save_reload_equal": true,
+            "diff_independent_inference": true,
+            "head_updated": true,
+            "single_function_max_delta": 8.940696716308594e-08
+          }
+        }
+      }
+    }
+  }
+}

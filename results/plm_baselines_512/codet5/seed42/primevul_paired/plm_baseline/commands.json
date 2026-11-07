@@ -1,0 +1,11 @@
+{
+  "dataset": "primevul_paired",
+  "seed": 42,
+  "method": "plm_baseline",
+  "device": "cuda:1",
+  "model_path": "/home/PublicData/PHY-data/resource/codet5-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 7579.095506545156,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

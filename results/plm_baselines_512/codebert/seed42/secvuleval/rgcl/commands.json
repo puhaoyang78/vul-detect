@@ -1,0 +1,11 @@
+{
+  "dataset": "secvuleval",
+  "seed": 42,
+  "method": "rgcl",
+  "device": "cuda:0",
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 7016.203547730111,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

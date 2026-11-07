@@ -1,0 +1,11 @@
+{
+  "dataset": "secvuleval",
+  "seed": 123456,
+  "method": "plm_baseline",
+  "device": "cuda:1",
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 6691.56494563492,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

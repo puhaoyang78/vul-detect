@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "checkpoint": "results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt",
+  "split": "valid",
+  "functions": 8,
+  "max_probability_delta": 1.9744038581848145e-07,
+  "inference": "single function source only",
+  "test_used": false
+}

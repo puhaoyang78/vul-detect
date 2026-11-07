@@ -1,0 +1,11 @@
+{
+  "dataset": "cleanvul",
+  "seed": 1234,
+  "method": "rgcl",
+  "device": "cuda:1",
+  "model_path": "/home/PublicData/PHY-data/resource/codebert-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 1921.0836295611225,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

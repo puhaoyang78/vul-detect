@@ -1,0 +1,11 @@
+{
+  "dataset": "secvuleval",
+  "seed": 1234,
+  "method": "context_only",
+  "device": "cuda:1",
+  "model_path": "/home/PublicData/PHY-data/resource/codet5-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 14959.977537775412,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

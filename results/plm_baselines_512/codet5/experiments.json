@@ -1,0 +1,1448 @@
+{
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "excluded_historical_seed": 123457,
+  "model_path": "/home/PublicData/PHY-data/resource/codet5-base",
+  "backbone": "codet5",
+  "input_tokens": 512,
+  "batch_size": 8,
+  "epochs": 16,
+  "learning_rate": 2e-05,
+  "k": 5,
+  "region_weight": 0.1,
+  "region_weighting": "token",
+  "threshold": 0.5,
+  "comparison": ">",
+  "sampler": "original function RandomSampler",
+  "patch": "stopped; results/weights preserved separately; not part of RGCL",
+  "test_used_for_selection": false,
+  "experiments": [
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/plm_baseline",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 88,
+          "p_v": 242,
+          "p_b": 187,
+          "p_r": 45
+        },
+        "p_c": 0.15658362989323843,
+        "p_v": 0.4306049822064057,
+        "p_b": 0.33274021352313166,
+        "p_r": 0.0800711743772242,
+        "accuracy": 0.5382562277580071,
+        "precision": 0.5348460291734197,
+        "recall": 0.5871886120996441,
+        "f1": 0.5597964376590331,
+        "mcc": 0.0768815081132739,
+        "auc": 0.5413463608616912,
+        "auprc": 0.5259268468910115,
+        "pair_ranking_accuracy": 0.42526690391459077,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5106761565836299,
+        "loss": 0.8442389197806095
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6747.4065591814,
+      "epoch_seconds": 6967.087801729329,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/context_only",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 52,
+          "p_v": 245,
+          "p_b": 248,
+          "p_r": 17
+        },
+        "p_c": 0.09252669039145907,
+        "p_v": 0.4359430604982206,
+        "p_b": 0.4412811387900356,
+        "p_r": 0.030249110320284697,
+        "accuracy": 0.5311387900355872,
+        "precision": 0.5313059033989267,
+        "recall": 0.5284697508896797,
+        "f1": 0.5298840321141838,
+        "mcc": 0.06227846739244612,
+        "auc": 0.5451425387216474,
+        "auprc": 0.5437092373953831,
+        "pair_ranking_accuracy": 0.45907473309608543,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.46619217081850534,
+        "loss": 0.7063301484635536
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6809.559002416208,
+      "epoch_seconds": 7039.2191784475,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/rgcl",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 70,
+          "p_v": 249,
+          "p_b": 228,
+          "p_r": 15
+        },
+        "p_c": 0.12455516014234876,
+        "p_v": 0.4430604982206406,
+        "p_b": 0.40569395017793597,
+        "p_r": 0.026690391459074734,
+        "accuracy": 0.548932384341637,
+        "precision": 0.5471698113207547,
+        "recall": 0.5676156583629893,
+        "f1": 0.5572052401746724,
+        "mcc": 0.09793316259106902,
+        "auc": 0.5665993338483555,
+        "auprc": 0.5561172186355279,
+        "pair_ranking_accuracy": 0.48576512455516013,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.4697508896797153,
+        "loss": 0.71183361778868
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6916.082609889563,
+      "epoch_seconds": 7141.972458025441,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/plm_baseline",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 81,
+          "p_v": 239,
+          "p_b": 199,
+          "p_r": 43
+        },
+        "p_c": 0.14412811387900357,
+        "p_v": 0.42526690391459077,
+        "p_b": 0.3540925266903915,
+        "p_r": 0.07651245551601424,
+        "accuracy": 0.5338078291814946,
+        "precision": 0.53156146179402,
+        "recall": 0.5693950177935944,
+        "f1": 0.5498281786941581,
+        "mcc": 0.06778757524048007,
+        "auc": 0.5363723863679537,
+        "auprc": 0.5269852626536151,
+        "pair_ranking_accuracy": 0.3879003558718861,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.501779359430605,
+        "loss": 1.0352380854863648
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6763.795536223333,
+      "epoch_seconds": 6988.433536584955,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/context_only",
+      "complete": true,
+      "selected_epoch": 14,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 62,
+          "p_v": 276,
+          "p_b": 207,
+          "p_r": 17
+        },
+        "p_c": 0.1103202846975089,
+        "p_v": 0.49110320284697506,
+        "p_b": 0.3683274021352313,
+        "p_r": 0.030249110320284697,
+        "accuracy": 0.5400355871886121,
+        "precision": 0.5356576862123613,
+        "recall": 0.6014234875444839,
+        "f1": 0.5666387259010897,
+        "mcc": 0.08068157629077242,
+        "auc": 0.5543907751928168,
+        "auprc": 0.5531935898530327,
+        "pair_ranking_accuracy": 0.4875444839857651,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5213523131672598,
+        "loss": 0.6997878792438101
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6126.185827939771,
+      "epoch_seconds": 6358.799999324139,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/rgcl",
+      "complete": true,
+      "selected_epoch": 13,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 69,
+          "p_v": 320,
+          "p_b": 157,
+          "p_r": 16
+        },
+        "p_c": 0.12277580071174377,
+        "p_v": 0.5693950177935944,
+        "p_b": 0.2793594306049822,
+        "p_r": 0.028469750889679714,
+        "accuracy": 0.547153024911032,
+        "precision": 0.5365517241379311,
+        "recall": 0.6921708185053381,
+        "f1": 0.6045066045066045,
+        "mcc": 0.0985417835454205,
+        "auc": 0.5656684945732704,
+        "auprc": 0.5544141527889639,
+        "pair_ranking_accuracy": 0.4306049822064057,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.597864768683274,
+        "loss": 0.8606390634961162
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6259.777916911524,
+      "epoch_seconds": 6497.579977944493,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/plm_baseline",
+      "complete": true,
+      "selected_epoch": 13,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 82,
+          "p_v": 278,
+          "p_b": 154,
+          "p_r": 48
+        },
+        "p_c": 0.14590747330960854,
+        "p_v": 0.49466192170818507,
+        "p_b": 0.27402135231316727,
+        "p_r": 0.08540925266903915,
+        "accuracy": 0.5302491103202847,
+        "precision": 0.5247813411078717,
+        "recall": 0.6405693950177936,
+        "f1": 0.5769230769230769,
+        "mcc": 0.062026861086139626,
+        "auc": 0.53430491001887,
+        "auprc": 0.5277295539197551,
+        "pair_ranking_accuracy": 0.398576512455516,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5800711743772242,
+        "loss": 0.8354968927430768
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6943.42849873472,
+      "epoch_seconds": 7167.699462898541,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/context_only",
+      "complete": true,
+      "selected_epoch": 15,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 77,
+          "p_v": 256,
+          "p_b": 213,
+          "p_r": 16
+        },
+        "p_c": 0.13701067615658363,
+        "p_v": 0.4555160142348754,
+        "p_b": 0.3790035587188612,
+        "p_r": 0.028469750889679714,
+        "accuracy": 0.5542704626334519,
+        "precision": 0.5504132231404959,
+        "recall": 0.5925266903914591,
+        "f1": 0.570694087403599,
+        "mcc": 0.10886003478633059,
+        "auc": 0.5739257354896721,
+        "auprc": 0.560654511601843,
+        "pair_ranking_accuracy": 0.4555160142348754,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.48398576512455516,
+        "loss": 0.703919564789914
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6770.296756284777,
+      "epoch_seconds": 7002.434273497667,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/rgcl",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 89,
+          "p_v": 258,
+          "p_b": 192,
+          "p_r": 23
+        },
+        "p_c": 0.1583629893238434,
+        "p_v": 0.45907473309608543,
+        "p_b": 0.3416370106761566,
+        "p_r": 0.04092526690391459,
+        "accuracy": 0.5587188612099644,
+        "precision": 0.552547770700637,
+        "recall": 0.6174377224199288,
+        "f1": 0.5831932773109244,
+        "mcc": 0.11825602464094244,
+        "auc": 0.5747790048251669,
+        "auprc": 0.5572644209582946,
+        "pair_ranking_accuracy": 0.44661921708185054,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5,
+        "loss": 0.9228293468766179
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6826.258736953139,
+      "epoch_seconds": 7057.801837182138,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/plm_baseline",
+      "complete": true,
+      "selected_epoch": 5,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.532625786163522,
+        "precision": 0.47281612706169823,
+        "recall": 0.7036363636363636,
+        "f1": 0.5655827548410669,
+        "mcc": 0.10962779431293003,
+        "auc": 0.5786206245278267,
+        "auprc": 0.5046726450773564,
+        "tp": 774,
+        "tn": 581,
+        "fp": 863,
+        "fn": 326,
+        "confusion_matrix": [
+          [
+            581,
+            863
+          ],
+          [
+            326,
+            774
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.5976454293628809,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 183,
+            "fpr": 0.45073891625615764
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 680,
+            "fpr": 0.6551059730250481
+          }
+        },
+        "loss": 0.8205659723366207
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13819.788459213916,
+      "epoch_seconds": 14306.930889992509,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/context_only",
+      "complete": true,
+      "selected_epoch": 9,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5538522012578616,
+        "precision": 0.4856909239574816,
+        "recall": 0.54,
+        "f1": 0.511407662505381,
+        "mcc": 0.10352237748734941,
+        "auc": 0.5804359733064719,
+        "auprc": 0.5030231784269523,
+        "tp": 594,
+        "tn": 815,
+        "fp": 629,
+        "fn": 506,
+        "confusion_matrix": [
+          [
+            815,
+            629
+          ],
+          [
+            506,
+            594
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.435595567867036,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 133,
+            "fpr": 0.3275862068965517
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 496,
+            "fpr": 0.47784200385356457
+          }
+        },
+        "loss": 0.9186723213291393
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 15792.008727382403,
+      "epoch_seconds": 16294.627883635927,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/rgcl",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5691823899371069,
+        "precision": 0.5020120724346077,
+        "recall": 0.4536363636363636,
+        "f1": 0.4765998089780325,
+        "mcc": 0.11254127990239543,
+        "auc": 0.5767143037018383,
+        "auprc": 0.4924435878376574,
+        "tp": 499,
+        "tn": 949,
+        "fp": 495,
+        "fn": 601,
+        "confusion_matrix": [
+          [
+            949,
+            495
+          ],
+          [
+            601,
+            499
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.342797783933518,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 102,
+            "fpr": 0.2512315270935961
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 393,
+            "fpr": 0.3786127167630058
+          }
+        },
+        "loss": 0.80584903478435
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 14235.198044051882,
+      "epoch_seconds": 14743.666976511013,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/plm_baseline",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5750786163522013,
+        "precision": 0.5103825136612021,
+        "recall": 0.42454545454545456,
+        "f1": 0.4635235732009925,
+        "mcc": 0.11798870664138511,
+        "auc": 0.5845649710400402,
+        "auprc": 0.5074056204460079,
+        "tp": 467,
+        "tn": 996,
+        "fp": 448,
+        "fn": 633,
+        "confusion_matrix": [
+          [
+            996,
+            448
+          ],
+          [
+            633,
+            467
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.31024930747922436,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 80,
+            "fpr": 0.19704433497536947
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 368,
+            "fpr": 0.35452793834296725
+          }
+        },
+        "loss": 1.0603711237228892
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13688.210047060158,
+      "epoch_seconds": 14172.49024272617,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/context_only",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5817610062893082,
+        "precision": 0.5256410256410257,
+        "recall": 0.33545454545454545,
+        "f1": 0.4095449500554939,
+        "mcc": 0.1162023259140463,
+        "auc": 0.591935595567867,
+        "auprc": 0.5137249634453074,
+        "tp": 369,
+        "tn": 1111,
+        "fp": 333,
+        "fn": 731,
+        "confusion_matrix": [
+          [
+            1111,
+            333
+          ],
+          [
+            731,
+            369
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.23060941828254847,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 60,
+            "fpr": 0.1477832512315271
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 273,
+            "fpr": 0.2630057803468208
+          }
+        },
+        "loss": 0.8072773588809578
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13975.430119136814,
+      "epoch_seconds": 14475.394974203315,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/rgcl",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5569968553459119,
+        "precision": 0.4897025171624714,
+        "recall": 0.5836363636363636,
+        "f1": 0.53255910410618,
+        "mcc": 0.11929079557000381,
+        "auc": 0.5850047217325611,
+        "auprc": 0.4962255967046456,
+        "tp": 642,
+        "tn": 775,
+        "fp": 669,
+        "fn": 458,
+        "confusion_matrix": [
+          [
+            775,
+            669
+          ],
+          [
+            458,
+            642
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.4632963988919668,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 150,
+            "fpr": 0.3694581280788177
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 519,
+            "fpr": 0.5
+          }
+        },
+        "loss": 1.1020794809567478
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 15522.660528568551,
+      "epoch_seconds": 16017.222687235102,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/plm_baseline",
+      "complete": true,
+      "selected_epoch": 7,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5628930817610063,
+        "precision": 0.4929411764705882,
+        "recall": 0.3809090909090909,
+        "f1": 0.4297435897435897,
+        "mcc": 0.08657907954574616,
+        "auc": 0.566193653991438,
+        "auprc": 0.49162409444979455,
+        "tp": 419,
+        "tn": 1013,
+        "fp": 431,
+        "fn": 681,
+        "confusion_matrix": [
+          [
+            1013,
+            431
+          ],
+          [
+            681,
+            419
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.2984764542936288,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 89,
+            "fpr": 0.21921182266009853
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 342,
+            "fpr": 0.32947976878612717
+          }
+        },
+        "loss": 0.9601270860799078
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13830.100006867666,
+      "epoch_seconds": 14323.957755369134,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/context_only",
+      "complete": true,
+      "selected_epoch": 5,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.4882075471698113,
+        "precision": 0.45354185832566696,
+        "recall": 0.8963636363636364,
+        "f1": 0.6023213194868662,
+        "mcc": 0.10349417236774217,
+        "auc": 0.5666148325358852,
+        "auprc": 0.4903758781141909,
+        "tp": 986,
+        "tn": 256,
+        "fp": 1188,
+        "fn": 114,
+        "confusion_matrix": [
+          [
+            256,
+            1188
+          ],
+          [
+            114,
+            986
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.8227146814404432,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 297,
+            "fpr": 0.7315270935960592
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 891,
+            "fpr": 0.8583815028901735
+          }
+        },
+        "loss": 0.7188180707535654
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 15638.931155199185,
+      "epoch_seconds": 16143.986311899964,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/rgcl",
+      "complete": true,
+      "selected_epoch": 5,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.48663522012578614,
+        "precision": 0.45438441098317095,
+        "recall": 0.9327272727272727,
+        "f1": 0.6110780226325193,
+        "mcc": 0.12474688154048036,
+        "auc": 0.5881582095190128,
+        "auprc": 0.5104165705213273,
+        "tp": 1026,
+        "tn": 212,
+        "fp": 1232,
+        "fn": 74,
+        "confusion_matrix": [
+          [
+            212,
+            1232
+          ],
+          [
+            74,
+            1026
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.853185595567867,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 308,
+            "fpr": 0.7586206896551724
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 924,
+            "fpr": 0.8901734104046243
+          }
+        },
+        "loss": 0.7285161002439523
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 14163.393533498049,
+      "epoch_seconds": 14670.784008378629,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/plm_baseline",
+      "complete": true,
+      "selected_epoch": 9,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5286624203821656,
+        "precision": 0.5849056603773585,
+        "recall": 0.19745222929936307,
+        "f1": 0.29523809523809524,
+        "mcc": 0.0765216491239271,
+        "auc": 0.519970384194085,
+        "auprc": 0.5326068330948295,
+        "tp": 62,
+        "tn": 270,
+        "fp": 44,
+        "fn": 252,
+        "confusion_matrix": [
+          [
+            270,
+            44
+          ],
+          [
+            252,
+            62
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.14012738853503184,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 44,
+            "fpr": 0.14012738853503184
+          }
+        },
+        "loss": 0.733064639417431
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 4083.152455886826,
+      "epoch_seconds": 4211.385285971686,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/context_only",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5286624203821656,
+        "precision": 0.5200892857142857,
+        "recall": 0.7420382165605095,
+        "f1": 0.6115485564304463,
+        "mcc": 0.06338656910463875,
+        "auc": 0.5413505618889205,
+        "auprc": 0.5329614852217576,
+        "tp": 233,
+        "tn": 99,
+        "fp": 215,
+        "fn": 81,
+        "confusion_matrix": [
+          [
+            99,
+            215
+          ],
+          [
+            81,
+            233
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.6847133757961783,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 215,
+            "fpr": 0.6847133757961783
+          }
+        },
+        "loss": 0.7499359136895288
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3593.235867213458,
+      "epoch_seconds": 3731.6636041062884,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/rgcl",
+      "complete": true,
+      "selected_epoch": 9,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5968992248062015,
+        "recall": 0.24522292993630573,
+        "f1": 0.3476297968397291,
+        "mcc": 0.09853598917627025,
+        "auc": 0.5339263256115867,
+        "auprc": 0.5368871430042469,
+        "tp": 77,
+        "tn": 262,
+        "fp": 52,
+        "fn": 237,
+        "confusion_matrix": [
+          [
+            262,
+            52
+          ],
+          [
+            237,
+            77
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.16560509554140126,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 52,
+            "fpr": 0.16560509554140126
+          }
+        },
+        "loss": 0.7929840631122831
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3620.7824415825307,
+      "epoch_seconds": 3751.7976255626418,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/plm_baseline",
+      "complete": true,
+      "selected_epoch": 12,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5333333333333333,
+        "recall": 0.6369426751592356,
+        "f1": 0.5805515239477503,
+        "mcc": 0.08116412559294567,
+        "auc": 0.5207006369426752,
+        "auprc": 0.5169562036403063,
+        "tp": 200,
+        "tn": 139,
+        "fp": 175,
+        "fn": 114,
+        "confusion_matrix": [
+          [
+            139,
+            175
+          ],
+          [
+            114,
+            200
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.5573248407643312,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 175,
+            "fpr": 0.5573248407643312
+          }
+        },
+        "loss": 0.9497147213809097
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3540.731116077397,
+      "epoch_seconds": 3671.5167263220064,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/context_only",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5292740046838408,
+        "recall": 0.7197452229299363,
+        "f1": 0.6099865047233468,
+        "mcc": 0.085335166944076,
+        "auc": 0.5453365248083086,
+        "auprc": 0.5377973737337687,
+        "tp": 226,
+        "tn": 113,
+        "fp": 201,
+        "fn": 88,
+        "confusion_matrix": [
+          [
+            113,
+            201
+          ],
+          [
+            88,
+            226
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.6401273885350318,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 201,
+            "fpr": 0.6401273885350318
+          }
+        },
+        "loss": 0.7022107500064222
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3596.2147359941155,
+      "epoch_seconds": 3734.2451029727235,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/rgcl",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5477707006369427,
+        "precision": 0.556390977443609,
+        "recall": 0.4713375796178344,
+        "f1": 0.5103448275862069,
+        "mcc": 0.09667766467497557,
+        "auc": 0.5614122276765792,
+        "auprc": 0.5596364200924574,
+        "tp": 148,
+        "tn": 196,
+        "fp": 118,
+        "fn": 166,
+        "confusion_matrix": [
+          [
+            196,
+            118
+          ],
+          [
+            166,
+            148
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.37579617834394907,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 118,
+            "fpr": 0.37579617834394907
+          }
+        },
+        "loss": 0.8166630569892593
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3667.3588968981057,
+      "epoch_seconds": 3801.056012660265,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/plm_baseline",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5270700636942676,
+        "precision": 0.5215189873417722,
+        "recall": 0.6560509554140127,
+        "f1": 0.5811001410437235,
+        "mcc": 0.056036682100740545,
+        "auc": 0.5210454785183983,
+        "auprc": 0.5207865559982858,
+        "tp": 206,
+        "tn": 125,
+        "fp": 189,
+        "fn": 108,
+        "confusion_matrix": [
+          [
+            125,
+            189
+          ],
+          [
+            108,
+            206
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.6019108280254777,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 189,
+            "fpr": 0.6019108280254777
+          }
+        },
+        "loss": 0.7258196027973031
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3563.7657653857023,
+      "epoch_seconds": 3694.368477703072,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/context_only",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5334394904458599,
+        "precision": 0.5209580838323353,
+        "recall": 0.8312101910828026,
+        "f1": 0.6404907975460122,
+        "mcc": 0.0832527468019143,
+        "auc": 0.5552557913099923,
+        "auprc": 0.5488352402684912,
+        "tp": 261,
+        "tn": 74,
+        "fp": 240,
+        "fn": 53,
+        "confusion_matrix": [
+          [
+            74,
+            240
+          ],
+          [
+            53,
+            261
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.7643312101910829,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 240,
+            "fpr": 0.7643312101910829
+          }
+        },
+        "loss": 0.751263331763352
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3575.4680905514397,
+      "epoch_seconds": 3711.360919659026,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/rgcl",
+      "complete": true,
+      "selected_epoch": 15,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5589171974522293,
+        "precision": 0.5677655677655677,
+        "recall": 0.49363057324840764,
+        "f1": 0.5281090289608177,
+        "mcc": 0.11885192603808918,
+        "auc": 0.552902754675646,
+        "auprc": 0.5529183821144887,
+        "tp": 155,
+        "tn": 196,
+        "fp": 118,
+        "fn": 159,
+        "confusion_matrix": [
+          [
+            196,
+            118
+          ],
+          [
+            159,
+            155
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.37579617834394907,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 118,
+            "fpr": 0.37579617834394907
+          }
+        },
+        "loss": 1.0046441317359103
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 4132.315206636675,
+      "epoch_seconds": 4263.553121390287,
+      "checkpoint_checked": true
+    }
+  ],
+  "reused": 0,
+  "missing": 0
+}

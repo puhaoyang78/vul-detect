@@ -1,0 +1,44 @@
+{
+  "epoch": 5,
+  "validation": {
+    "accuracy": 0.4882075471698113,
+    "precision": 0.45354185832566696,
+    "recall": 0.8963636363636364,
+    "f1": 0.6023213194868662,
+    "mcc": 0.10349417236774217,
+    "auc": 0.5666148325358852,
+    "auprc": 0.4903758781141909,
+    "tp": 986,
+    "tn": 256,
+    "fp": 1188,
+    "fn": 114,
+    "confusion_matrix": [
+      [
+        256,
+        1188
+      ],
+      [
+        114,
+        986
+      ]
+    ],
+    "samples": 2544,
+    "threshold": 0.5,
+    "comparison": ">",
+    "normal_fpr": 0.8227146814404432,
+    "normal_kinds": {
+      "ordinary": {
+        "functions": 406,
+        "false_positives": 297,
+        "fpr": 0.7315270935960592
+      },
+      "repaired": {
+        "functions": 1038,
+        "false_positives": 891,
+        "fpr": 0.8583815028901735
+      }
+    },
+    "loss": 0.7188180707535654
+  },
+  "selected_fusion_beta": null
+}

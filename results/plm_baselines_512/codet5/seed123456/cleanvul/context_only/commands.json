@@ -1,0 +1,11 @@
+{
+  "dataset": "cleanvul",
+  "seed": 123456,
+  "method": "context_only",
+  "device": "cuda:1",
+  "model_path": "/home/PublicData/PHY-data/resource/codet5-base",
+  "epochs": 16,
+  "save_every": 500,
+  "wall_seconds": 3966.0424588522874,
+  "entry": "shared train_losver; original RandomSampler, optimizer and losses"
+}

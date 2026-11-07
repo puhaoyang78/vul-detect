@@ -1,0 +1,45 @@
+{
+  "selected_epoch": 16,
+  "selection": "Valid MCC only",
+  "metrics": {
+    "accuracy": 0.48663522012578614,
+    "precision": 0.4363411619283066,
+    "recall": 0.6418181818181818,
+    "f1": 0.5194996320824136,
+    "mcc": 0.010542720049571543,
+    "auc": 0.5097173256106775,
+    "auprc": 0.4400447459446096,
+    "tp": 706,
+    "tn": 532,
+    "fp": 912,
+    "fn": 394,
+    "confusion_matrix": [
+      [
+        532,
+        912
+      ],
+      [
+        394,
+        706
+      ]
+    ],
+    "samples": 2544,
+    "threshold": 0.5,
+    "comparison": ">",
+    "normal_fpr": 0.631578947368421,
+    "normal_kinds": {
+      "ordinary": {
+        "functions": 401,
+        "false_positives": 255,
+        "fpr": 0.6359102244389028
+      },
+      "repaired": {
+        "functions": 1043,
+        "false_positives": 657,
+        "fpr": 0.6299137104506232
+      }
+    },
+    "loss": 0.8058694872841146
+  },
+  "inference": "single function source only; no Diff/counterpart"
+}

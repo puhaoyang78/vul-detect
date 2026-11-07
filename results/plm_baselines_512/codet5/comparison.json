@@ -1,0 +1,4234 @@
+{
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "excluded_historical_seed": 123457,
+  "model_path": "/home/PublicData/PHY-data/resource/codet5-base",
+  "backbone": "codet5",
+  "input_tokens": 512,
+  "batch_size": 8,
+  "epochs": 16,
+  "learning_rate": 2e-05,
+  "k": 5,
+  "region_weight": 0.1,
+  "region_weighting": "token",
+  "threshold": 0.5,
+  "comparison": ">",
+  "sampler": "original function RandomSampler",
+  "patch": "stopped; results/weights preserved separately; not part of RGCL",
+  "test_used_for_selection": false,
+  "experiments": [
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/plm_baseline",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 88,
+          "p_v": 242,
+          "p_b": 187,
+          "p_r": 45
+        },
+        "p_c": 0.15658362989323843,
+        "p_v": 0.4306049822064057,
+        "p_b": 0.33274021352313166,
+        "p_r": 0.0800711743772242,
+        "accuracy": 0.5382562277580071,
+        "precision": 0.5348460291734197,
+        "recall": 0.5871886120996441,
+        "f1": 0.5597964376590331,
+        "mcc": 0.0768815081132739,
+        "auc": 0.5413463608616912,
+        "auprc": 0.5259268468910115,
+        "pair_ranking_accuracy": 0.42526690391459077,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5106761565836299,
+        "loss": 0.8442389197806095
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6747.4065591814,
+      "epoch_seconds": 6967.087801729329,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/context_only",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 52,
+          "p_v": 245,
+          "p_b": 248,
+          "p_r": 17
+        },
+        "p_c": 0.09252669039145907,
+        "p_v": 0.4359430604982206,
+        "p_b": 0.4412811387900356,
+        "p_r": 0.030249110320284697,
+        "accuracy": 0.5311387900355872,
+        "precision": 0.5313059033989267,
+        "recall": 0.5284697508896797,
+        "f1": 0.5298840321141838,
+        "mcc": 0.06227846739244612,
+        "auc": 0.5451425387216474,
+        "auprc": 0.5437092373953831,
+        "pair_ranking_accuracy": 0.45907473309608543,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.46619217081850534,
+        "loss": 0.7063301484635536
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6809.559002416208,
+      "epoch_seconds": 7039.2191784475,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/rgcl",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 70,
+          "p_v": 249,
+          "p_b": 228,
+          "p_r": 15
+        },
+        "p_c": 0.12455516014234876,
+        "p_v": 0.4430604982206406,
+        "p_b": 0.40569395017793597,
+        "p_r": 0.026690391459074734,
+        "accuracy": 0.548932384341637,
+        "precision": 0.5471698113207547,
+        "recall": 0.5676156583629893,
+        "f1": 0.5572052401746724,
+        "mcc": 0.09793316259106902,
+        "auc": 0.5665993338483555,
+        "auprc": 0.5561172186355279,
+        "pair_ranking_accuracy": 0.48576512455516013,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.4697508896797153,
+        "loss": 0.71183361778868
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6916.082609889563,
+      "epoch_seconds": 7141.972458025441,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/plm_baseline",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 81,
+          "p_v": 239,
+          "p_b": 199,
+          "p_r": 43
+        },
+        "p_c": 0.14412811387900357,
+        "p_v": 0.42526690391459077,
+        "p_b": 0.3540925266903915,
+        "p_r": 0.07651245551601424,
+        "accuracy": 0.5338078291814946,
+        "precision": 0.53156146179402,
+        "recall": 0.5693950177935944,
+        "f1": 0.5498281786941581,
+        "mcc": 0.06778757524048007,
+        "auc": 0.5363723863679537,
+        "auprc": 0.5269852626536151,
+        "pair_ranking_accuracy": 0.3879003558718861,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.501779359430605,
+        "loss": 1.0352380854863648
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6763.795536223333,
+      "epoch_seconds": 6988.433536584955,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/context_only",
+      "complete": true,
+      "selected_epoch": 14,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 62,
+          "p_v": 276,
+          "p_b": 207,
+          "p_r": 17
+        },
+        "p_c": 0.1103202846975089,
+        "p_v": 0.49110320284697506,
+        "p_b": 0.3683274021352313,
+        "p_r": 0.030249110320284697,
+        "accuracy": 0.5400355871886121,
+        "precision": 0.5356576862123613,
+        "recall": 0.6014234875444839,
+        "f1": 0.5666387259010897,
+        "mcc": 0.08068157629077242,
+        "auc": 0.5543907751928168,
+        "auprc": 0.5531935898530327,
+        "pair_ranking_accuracy": 0.4875444839857651,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5213523131672598,
+        "loss": 0.6997878792438101
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6126.185827939771,
+      "epoch_seconds": 6358.799999324139,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/rgcl",
+      "complete": true,
+      "selected_epoch": 13,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 69,
+          "p_v": 320,
+          "p_b": 157,
+          "p_r": 16
+        },
+        "p_c": 0.12277580071174377,
+        "p_v": 0.5693950177935944,
+        "p_b": 0.2793594306049822,
+        "p_r": 0.028469750889679714,
+        "accuracy": 0.547153024911032,
+        "precision": 0.5365517241379311,
+        "recall": 0.6921708185053381,
+        "f1": 0.6045066045066045,
+        "mcc": 0.0985417835454205,
+        "auc": 0.5656684945732704,
+        "auprc": 0.5544141527889639,
+        "pair_ranking_accuracy": 0.4306049822064057,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.597864768683274,
+        "loss": 0.8606390634961162
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6259.777916911524,
+      "epoch_seconds": 6497.579977944493,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/plm_baseline",
+      "complete": true,
+      "selected_epoch": 13,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 82,
+          "p_v": 278,
+          "p_b": 154,
+          "p_r": 48
+        },
+        "p_c": 0.14590747330960854,
+        "p_v": 0.49466192170818507,
+        "p_b": 0.27402135231316727,
+        "p_r": 0.08540925266903915,
+        "accuracy": 0.5302491103202847,
+        "precision": 0.5247813411078717,
+        "recall": 0.6405693950177936,
+        "f1": 0.5769230769230769,
+        "mcc": 0.062026861086139626,
+        "auc": 0.53430491001887,
+        "auprc": 0.5277295539197551,
+        "pair_ranking_accuracy": 0.398576512455516,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5800711743772242,
+        "loss": 0.8354968927430768
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6943.42849873472,
+      "epoch_seconds": 7167.699462898541,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/context_only",
+      "complete": true,
+      "selected_epoch": 15,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 77,
+          "p_v": 256,
+          "p_b": 213,
+          "p_r": 16
+        },
+        "p_c": 0.13701067615658363,
+        "p_v": 0.4555160142348754,
+        "p_b": 0.3790035587188612,
+        "p_r": 0.028469750889679714,
+        "accuracy": 0.5542704626334519,
+        "precision": 0.5504132231404959,
+        "recall": 0.5925266903914591,
+        "f1": 0.570694087403599,
+        "mcc": 0.10886003478633059,
+        "auc": 0.5739257354896721,
+        "auprc": 0.560654511601843,
+        "pair_ranking_accuracy": 0.4555160142348754,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.48398576512455516,
+        "loss": 0.703919564789914
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6770.296756284777,
+      "epoch_seconds": 7002.434273497667,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/rgcl",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "p_c",
+      "validation": {
+        "samples": 1124,
+        "pairs": 562,
+        "threshold": 0.5,
+        "comparison": ">",
+        "pair_counts": {
+          "p_c": 89,
+          "p_v": 258,
+          "p_b": 192,
+          "p_r": 23
+        },
+        "p_c": 0.1583629893238434,
+        "p_v": 0.45907473309608543,
+        "p_b": 0.3416370106761566,
+        "p_r": 0.04092526690391459,
+        "accuracy": 0.5587188612099644,
+        "precision": 0.552547770700637,
+        "recall": 0.6174377224199288,
+        "f1": 0.5831932773109244,
+        "mcc": 0.11825602464094244,
+        "auc": 0.5747790048251669,
+        "auprc": 0.5572644209582946,
+        "pair_ranking_accuracy": 0.44661921708185054,
+        "pair_ranking_ties": 169,
+        "patched_fpr": 0.5,
+        "loss": 0.9228293468766179
+      },
+      "epochs": 16,
+      "optimizer_steps": 17424,
+      "train_functions": 8708,
+      "valid_functions": 1124,
+      "training_seconds": 6826.258736953139,
+      "epoch_seconds": 7057.801837182138,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/plm_baseline",
+      "complete": true,
+      "selected_epoch": 5,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.532625786163522,
+        "precision": 0.47281612706169823,
+        "recall": 0.7036363636363636,
+        "f1": 0.5655827548410669,
+        "mcc": 0.10962779431293003,
+        "auc": 0.5786206245278267,
+        "auprc": 0.5046726450773564,
+        "tp": 774,
+        "tn": 581,
+        "fp": 863,
+        "fn": 326,
+        "confusion_matrix": [
+          [
+            581,
+            863
+          ],
+          [
+            326,
+            774
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.5976454293628809,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 183,
+            "fpr": 0.45073891625615764
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 680,
+            "fpr": 0.6551059730250481
+          }
+        },
+        "loss": 0.8205659723366207
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13819.788459213916,
+      "epoch_seconds": 14306.930889992509,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/context_only",
+      "complete": true,
+      "selected_epoch": 9,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5538522012578616,
+        "precision": 0.4856909239574816,
+        "recall": 0.54,
+        "f1": 0.511407662505381,
+        "mcc": 0.10352237748734941,
+        "auc": 0.5804359733064719,
+        "auprc": 0.5030231784269523,
+        "tp": 594,
+        "tn": 815,
+        "fp": 629,
+        "fn": 506,
+        "confusion_matrix": [
+          [
+            815,
+            629
+          ],
+          [
+            506,
+            594
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.435595567867036,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 133,
+            "fpr": 0.3275862068965517
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 496,
+            "fpr": 0.47784200385356457
+          }
+        },
+        "loss": 0.9186723213291393
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 15792.008727382403,
+      "epoch_seconds": 16294.627883635927,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/rgcl",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5691823899371069,
+        "precision": 0.5020120724346077,
+        "recall": 0.4536363636363636,
+        "f1": 0.4765998089780325,
+        "mcc": 0.11254127990239543,
+        "auc": 0.5767143037018383,
+        "auprc": 0.4924435878376574,
+        "tp": 499,
+        "tn": 949,
+        "fp": 495,
+        "fn": 601,
+        "confusion_matrix": [
+          [
+            949,
+            495
+          ],
+          [
+            601,
+            499
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.342797783933518,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 102,
+            "fpr": 0.2512315270935961
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 393,
+            "fpr": 0.3786127167630058
+          }
+        },
+        "loss": 0.80584903478435
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 14235.198044051882,
+      "epoch_seconds": 14743.666976511013,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/plm_baseline",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5750786163522013,
+        "precision": 0.5103825136612021,
+        "recall": 0.42454545454545456,
+        "f1": 0.4635235732009925,
+        "mcc": 0.11798870664138511,
+        "auc": 0.5845649710400402,
+        "auprc": 0.5074056204460079,
+        "tp": 467,
+        "tn": 996,
+        "fp": 448,
+        "fn": 633,
+        "confusion_matrix": [
+          [
+            996,
+            448
+          ],
+          [
+            633,
+            467
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.31024930747922436,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 80,
+            "fpr": 0.19704433497536947
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 368,
+            "fpr": 0.35452793834296725
+          }
+        },
+        "loss": 1.0603711237228892
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13688.210047060158,
+      "epoch_seconds": 14172.49024272617,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/context_only",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5817610062893082,
+        "precision": 0.5256410256410257,
+        "recall": 0.33545454545454545,
+        "f1": 0.4095449500554939,
+        "mcc": 0.1162023259140463,
+        "auc": 0.591935595567867,
+        "auprc": 0.5137249634453074,
+        "tp": 369,
+        "tn": 1111,
+        "fp": 333,
+        "fn": 731,
+        "confusion_matrix": [
+          [
+            1111,
+            333
+          ],
+          [
+            731,
+            369
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.23060941828254847,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 60,
+            "fpr": 0.1477832512315271
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 273,
+            "fpr": 0.2630057803468208
+          }
+        },
+        "loss": 0.8072773588809578
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13975.430119136814,
+      "epoch_seconds": 14475.394974203315,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/rgcl",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5569968553459119,
+        "precision": 0.4897025171624714,
+        "recall": 0.5836363636363636,
+        "f1": 0.53255910410618,
+        "mcc": 0.11929079557000381,
+        "auc": 0.5850047217325611,
+        "auprc": 0.4962255967046456,
+        "tp": 642,
+        "tn": 775,
+        "fp": 669,
+        "fn": 458,
+        "confusion_matrix": [
+          [
+            775,
+            669
+          ],
+          [
+            458,
+            642
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.4632963988919668,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 150,
+            "fpr": 0.3694581280788177
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 519,
+            "fpr": 0.5
+          }
+        },
+        "loss": 1.1020794809567478
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 15522.660528568551,
+      "epoch_seconds": 16017.222687235102,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/plm_baseline",
+      "complete": true,
+      "selected_epoch": 7,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5628930817610063,
+        "precision": 0.4929411764705882,
+        "recall": 0.3809090909090909,
+        "f1": 0.4297435897435897,
+        "mcc": 0.08657907954574616,
+        "auc": 0.566193653991438,
+        "auprc": 0.49162409444979455,
+        "tp": 419,
+        "tn": 1013,
+        "fp": 431,
+        "fn": 681,
+        "confusion_matrix": [
+          [
+            1013,
+            431
+          ],
+          [
+            681,
+            419
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.2984764542936288,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 89,
+            "fpr": 0.21921182266009853
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 342,
+            "fpr": 0.32947976878612717
+          }
+        },
+        "loss": 0.9601270860799078
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 13830.100006867666,
+      "epoch_seconds": 14323.957755369134,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/context_only",
+      "complete": true,
+      "selected_epoch": 5,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.4882075471698113,
+        "precision": 0.45354185832566696,
+        "recall": 0.8963636363636364,
+        "f1": 0.6023213194868662,
+        "mcc": 0.10349417236774217,
+        "auc": 0.5666148325358852,
+        "auprc": 0.4903758781141909,
+        "tp": 986,
+        "tn": 256,
+        "fp": 1188,
+        "fn": 114,
+        "confusion_matrix": [
+          [
+            256,
+            1188
+          ],
+          [
+            114,
+            986
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.8227146814404432,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 297,
+            "fpr": 0.7315270935960592
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 891,
+            "fpr": 0.8583815028901735
+          }
+        },
+        "loss": 0.7188180707535654
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 15638.931155199185,
+      "epoch_seconds": 16143.986311899964,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/rgcl",
+      "complete": true,
+      "selected_epoch": 5,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.48663522012578614,
+        "precision": 0.45438441098317095,
+        "recall": 0.9327272727272727,
+        "f1": 0.6110780226325193,
+        "mcc": 0.12474688154048036,
+        "auc": 0.5881582095190128,
+        "auprc": 0.5104165705213273,
+        "tp": 1026,
+        "tn": 212,
+        "fp": 1232,
+        "fn": 74,
+        "confusion_matrix": [
+          [
+            212,
+            1232
+          ],
+          [
+            74,
+            1026
+          ]
+        ],
+        "samples": 2544,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.853185595567867,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 406,
+            "false_positives": 308,
+            "fpr": 0.7586206896551724
+          },
+          "repaired": {
+            "functions": 1038,
+            "false_positives": 924,
+            "fpr": 0.8901734104046243
+          }
+        },
+        "loss": 0.7285161002439523
+      },
+      "epochs": 16,
+      "optimizer_steps": 40704,
+      "train_functions": 20352,
+      "valid_functions": 2544,
+      "training_seconds": 14163.393533498049,
+      "epoch_seconds": 14670.784008378629,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/plm_baseline",
+      "complete": true,
+      "selected_epoch": 9,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5286624203821656,
+        "precision": 0.5849056603773585,
+        "recall": 0.19745222929936307,
+        "f1": 0.29523809523809524,
+        "mcc": 0.0765216491239271,
+        "auc": 0.519970384194085,
+        "auprc": 0.5326068330948295,
+        "tp": 62,
+        "tn": 270,
+        "fp": 44,
+        "fn": 252,
+        "confusion_matrix": [
+          [
+            270,
+            44
+          ],
+          [
+            252,
+            62
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.14012738853503184,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 44,
+            "fpr": 0.14012738853503184
+          }
+        },
+        "loss": 0.733064639417431
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 4083.152455886826,
+      "epoch_seconds": 4211.385285971686,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/context_only",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5286624203821656,
+        "precision": 0.5200892857142857,
+        "recall": 0.7420382165605095,
+        "f1": 0.6115485564304463,
+        "mcc": 0.06338656910463875,
+        "auc": 0.5413505618889205,
+        "auprc": 0.5329614852217576,
+        "tp": 233,
+        "tn": 99,
+        "fp": 215,
+        "fn": 81,
+        "confusion_matrix": [
+          [
+            99,
+            215
+          ],
+          [
+            81,
+            233
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.6847133757961783,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 215,
+            "fpr": 0.6847133757961783
+          }
+        },
+        "loss": 0.7499359136895288
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3593.235867213458,
+      "epoch_seconds": 3731.6636041062884,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/rgcl",
+      "complete": true,
+      "selected_epoch": 9,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5968992248062015,
+        "recall": 0.24522292993630573,
+        "f1": 0.3476297968397291,
+        "mcc": 0.09853598917627025,
+        "auc": 0.5339263256115867,
+        "auprc": 0.5368871430042469,
+        "tp": 77,
+        "tn": 262,
+        "fp": 52,
+        "fn": 237,
+        "confusion_matrix": [
+          [
+            262,
+            52
+          ],
+          [
+            237,
+            77
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.16560509554140126,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 52,
+            "fpr": 0.16560509554140126
+          }
+        },
+        "loss": 0.7929840631122831
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3620.7824415825307,
+      "epoch_seconds": 3751.7976255626418,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/plm_baseline",
+      "complete": true,
+      "selected_epoch": 12,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5333333333333333,
+        "recall": 0.6369426751592356,
+        "f1": 0.5805515239477503,
+        "mcc": 0.08116412559294567,
+        "auc": 0.5207006369426752,
+        "auprc": 0.5169562036403063,
+        "tp": 200,
+        "tn": 139,
+        "fp": 175,
+        "fn": 114,
+        "confusion_matrix": [
+          [
+            139,
+            175
+          ],
+          [
+            114,
+            200
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.5573248407643312,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 175,
+            "fpr": 0.5573248407643312
+          }
+        },
+        "loss": 0.9497147213809097
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3540.731116077397,
+      "epoch_seconds": 3671.5167263220064,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/context_only",
+      "complete": true,
+      "selected_epoch": 8,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5292740046838408,
+        "recall": 0.7197452229299363,
+        "f1": 0.6099865047233468,
+        "mcc": 0.085335166944076,
+        "auc": 0.5453365248083086,
+        "auprc": 0.5377973737337687,
+        "tp": 226,
+        "tn": 113,
+        "fp": 201,
+        "fn": 88,
+        "confusion_matrix": [
+          [
+            113,
+            201
+          ],
+          [
+            88,
+            226
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.6401273885350318,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 201,
+            "fpr": 0.6401273885350318
+          }
+        },
+        "loss": 0.7022107500064222
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3596.2147359941155,
+      "epoch_seconds": 3734.2451029727235,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/rgcl",
+      "complete": true,
+      "selected_epoch": 16,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5477707006369427,
+        "precision": 0.556390977443609,
+        "recall": 0.4713375796178344,
+        "f1": 0.5103448275862069,
+        "mcc": 0.09667766467497557,
+        "auc": 0.5614122276765792,
+        "auprc": 0.5596364200924574,
+        "tp": 148,
+        "tn": 196,
+        "fp": 118,
+        "fn": 166,
+        "confusion_matrix": [
+          [
+            196,
+            118
+          ],
+          [
+            166,
+            148
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.37579617834394907,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 118,
+            "fpr": 0.37579617834394907
+          }
+        },
+        "loss": 0.8166630569892593
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3667.3588968981057,
+      "epoch_seconds": 3801.056012660265,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/plm_baseline",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5270700636942676,
+        "precision": 0.5215189873417722,
+        "recall": 0.6560509554140127,
+        "f1": 0.5811001410437235,
+        "mcc": 0.056036682100740545,
+        "auc": 0.5210454785183983,
+        "auprc": 0.5207865559982858,
+        "tp": 206,
+        "tn": 125,
+        "fp": 189,
+        "fn": 108,
+        "confusion_matrix": [
+          [
+            125,
+            189
+          ],
+          [
+            108,
+            206
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.6019108280254777,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 189,
+            "fpr": 0.6019108280254777
+          }
+        },
+        "loss": 0.7258196027973031
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3563.7657653857023,
+      "epoch_seconds": 3694.368477703072,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "context_only",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/context_only",
+      "complete": true,
+      "selected_epoch": 10,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5334394904458599,
+        "precision": 0.5209580838323353,
+        "recall": 0.8312101910828026,
+        "f1": 0.6404907975460122,
+        "mcc": 0.0832527468019143,
+        "auc": 0.5552557913099923,
+        "auprc": 0.5488352402684912,
+        "tp": 261,
+        "tn": 74,
+        "fp": 240,
+        "fn": 53,
+        "confusion_matrix": [
+          [
+            74,
+            240
+          ],
+          [
+            53,
+            261
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.7643312101910829,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 240,
+            "fpr": 0.7643312101910829
+          }
+        },
+        "loss": 0.751263331763352
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 3575.4680905514397,
+      "epoch_seconds": 3711.360919659026,
+      "checkpoint_checked": true
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "rgcl",
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/rgcl",
+      "complete": true,
+      "selected_epoch": 15,
+      "selection": "mcc",
+      "validation": {
+        "accuracy": 0.5589171974522293,
+        "precision": 0.5677655677655677,
+        "recall": 0.49363057324840764,
+        "f1": 0.5281090289608177,
+        "mcc": 0.11885192603808918,
+        "auc": 0.552902754675646,
+        "auprc": 0.5529183821144887,
+        "tp": 155,
+        "tn": 196,
+        "fp": 118,
+        "fn": 159,
+        "confusion_matrix": [
+          [
+            196,
+            118
+          ],
+          [
+            159,
+            155
+          ]
+        ],
+        "samples": 628,
+        "threshold": 0.5,
+        "comparison": ">",
+        "normal_fpr": 0.37579617834394907,
+        "normal_kinds": {
+          "ordinary": {
+            "functions": 0,
+            "false_positives": 0,
+            "fpr": null
+          },
+          "repaired": {
+            "functions": 314,
+            "false_positives": 118,
+            "fpr": 0.37579617834394907
+          }
+        },
+        "loss": 1.0046441317359103
+      },
+      "epochs": 16,
+      "optimizer_steps": 10032,
+      "train_functions": 5016,
+      "valid_functions": 628,
+      "training_seconds": 4132.315206636675,
+      "epoch_seconds": 4263.553121390287,
+      "checkpoint_checked": true
+    }
+  ],
+  "reused": 0,
+  "missing": 0,
+  "records": [
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5382562277580071,
+        "precision": 0.5348460291734197,
+        "mcc": 0.0768815081132739,
+        "f1": 0.5597964376590331,
+        "auc": 0.5413463608616912,
+        "auprc": 0.5259268468910115,
+        "recall": 0.5871886120996441,
+        "fpr": 0.5106761565836299,
+        "p_c": 0.15658362989323843
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5195035460992907,
+        "precision": 0.5185185185185185,
+        "mcc": 0.03906239162836958,
+        "f1": 0.531951640759931,
+        "auc": 0.5346624918263669,
+        "auprc": 0.5194731377448332,
+        "recall": 0.5460992907801419,
+        "fpr": 0.5070921985815603,
+        "p_c": 0.1347517730496454
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/context_only",
+      "metrics": {
+        "accuracy": 0.5311387900355872,
+        "precision": 0.5313059033989267,
+        "mcc": 0.06227846739244612,
+        "f1": 0.5298840321141838,
+        "auc": 0.5451425387216474,
+        "auprc": 0.5437092373953831,
+        "recall": 0.5284697508896797,
+        "fpr": 0.46619217081850534,
+        "p_c": 0.09252669039145907
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/context_only",
+      "metrics": {
+        "accuracy": 0.526595744680851,
+        "precision": 0.5283018867924528,
+        "mcc": 0.053288405804853015,
+        "f1": 0.5118829981718465,
+        "auc": 0.5534272672400784,
+        "auprc": 0.5528586186839846,
+        "recall": 0.49645390070921985,
+        "fpr": 0.4432624113475177,
+        "p_c": 0.0797872340425532
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/rgcl",
+      "metrics": {
+        "accuracy": 0.548932384341637,
+        "precision": 0.5471698113207547,
+        "mcc": 0.09793316259106902,
+        "f1": 0.5572052401746724,
+        "auc": 0.5665993338483555,
+        "auprc": 0.5561172186355279,
+        "recall": 0.5676156583629893,
+        "fpr": 0.4697508896797153,
+        "p_c": 0.12455516014234876
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 42,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/primevul_paired/rgcl",
+      "metrics": {
+        "accuracy": 0.5425531914893617,
+        "precision": 0.5388349514563107,
+        "mcc": 0.08549917256572244,
+        "f1": 0.5634517766497462,
+        "auc": 0.5602931190583975,
+        "auprc": 0.560699451336413,
+        "recall": 0.5904255319148937,
+        "fpr": 0.5053191489361702,
+        "p_c": 0.09929078014184398
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5338078291814946,
+        "precision": 0.53156146179402,
+        "mcc": 0.06778757524048007,
+        "f1": 0.5498281786941581,
+        "auc": 0.5363723863679537,
+        "auprc": 0.5269852626536151,
+        "recall": 0.5693950177935944,
+        "fpr": 0.501779359430605,
+        "p_c": 0.14412811387900357
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5301418439716312,
+        "precision": 0.5291095890410958,
+        "mcc": 0.06032162655413882,
+        "f1": 0.5383275261324042,
+        "auc": 0.5455082742316785,
+        "auprc": 0.5353697190729048,
+        "recall": 0.5478723404255319,
+        "fpr": 0.4875886524822695,
+        "p_c": 0.14893617021276595
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 14,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/context_only",
+      "metrics": {
+        "accuracy": 0.5400355871886121,
+        "precision": 0.5356576862123613,
+        "mcc": 0.08068157629077242,
+        "f1": 0.5666387259010897,
+        "auc": 0.5543907751928168,
+        "auprc": 0.5531935898530327,
+        "recall": 0.6014234875444839,
+        "fpr": 0.5213523131672598,
+        "p_c": 0.1103202846975089
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 14,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/context_only",
+      "metrics": {
+        "accuracy": 0.5416666666666666,
+        "precision": 0.5410122164048866,
+        "mcc": 0.08334394536458987,
+        "f1": 0.5452946350043976,
+        "auc": 0.5576854157235551,
+        "auprc": 0.555000821761811,
+        "recall": 0.549645390070922,
+        "fpr": 0.46631205673758863,
+        "p_c": 0.1099290780141844
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 13,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/rgcl",
+      "metrics": {
+        "accuracy": 0.547153024911032,
+        "precision": 0.5365517241379311,
+        "mcc": 0.0985417835454205,
+        "f1": 0.6045066045066045,
+        "auc": 0.5656684945732704,
+        "auprc": 0.5544141527889639,
+        "recall": 0.6921708185053381,
+        "fpr": 0.597864768683274,
+        "p_c": 0.12277580071174377
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 1234,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 13,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/primevul_paired/rgcl",
+      "metrics": {
+        "accuracy": 0.5372340425531915,
+        "precision": 0.5294943820224719,
+        "mcc": 0.07717251045496844,
+        "f1": 0.5909090909090909,
+        "auc": 0.5654362205120467,
+        "auprc": 0.5646098217292337,
+        "recall": 0.6684397163120568,
+        "fpr": 0.5939716312056738,
+        "p_c": 0.12056737588652482
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 13,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5302491103202847,
+        "precision": 0.5247813411078717,
+        "mcc": 0.062026861086139626,
+        "f1": 0.5769230769230769,
+        "auc": 0.53430491001887,
+        "auprc": 0.5277295539197551,
+        "recall": 0.6405693950177936,
+        "fpr": 0.5800711743772242,
+        "p_c": 0.14590747330960854
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 13,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/plm_baseline",
+      "metrics": {
+        "accuracy": 0.523936170212766,
+        "precision": 0.5207373271889401,
+        "mcc": 0.04845226461082852,
+        "f1": 0.5580246913580247,
+        "auc": 0.5471241386248177,
+        "auprc": 0.536859867553733,
+        "recall": 0.601063829787234,
+        "fpr": 0.5531914893617021,
+        "p_c": 0.1347517730496454
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 15,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/context_only",
+      "metrics": {
+        "accuracy": 0.5542704626334519,
+        "precision": 0.5504132231404959,
+        "mcc": 0.10886003478633059,
+        "f1": 0.570694087403599,
+        "auc": 0.5739257354896721,
+        "auprc": 0.560654511601843,
+        "recall": 0.5925266903914591,
+        "fpr": 0.48398576512455516,
+        "p_c": 0.13701067615658363
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 15,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/context_only",
+      "metrics": {
+        "accuracy": 0.5416666666666666,
+        "precision": 0.5423423423423424,
+        "mcc": 0.08334394536458987,
+        "f1": 0.5379803395889187,
+        "auc": 0.5638958050399879,
+        "auprc": 0.5595528497253879,
+        "recall": 0.5336879432624113,
+        "fpr": 0.450354609929078,
+        "p_c": 0.10638297872340426
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/rgcl",
+      "metrics": {
+        "accuracy": 0.5587188612099644,
+        "precision": 0.552547770700637,
+        "mcc": 0.11825602464094244,
+        "f1": 0.5831932773109244,
+        "auc": 0.5747790048251669,
+        "auprc": 0.5572644209582946,
+        "recall": 0.6174377224199288,
+        "fpr": 0.5,
+        "p_c": 0.1583629893238434
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "seed": 123456,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/primevul_paired/rgcl",
+      "metrics": {
+        "accuracy": 0.5469858156028369,
+        "precision": 0.5430894308943089,
+        "mcc": 0.09435819599616442,
+        "f1": 0.5665818490245971,
+        "auc": 0.5693469895880489,
+        "auprc": 0.5582041749900497,
+        "recall": 0.5921985815602837,
+        "fpr": 0.49822695035460995,
+        "p_c": 0.13297872340425532
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 5,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/plm_baseline",
+      "metrics": {
+        "accuracy": 0.532625786163522,
+        "precision": 0.47281612706169823,
+        "mcc": 0.10962779431293003,
+        "f1": 0.5655827548410669,
+        "auc": 0.5786206245278267,
+        "auprc": 0.5046726450773564,
+        "recall": 0.7036363636363636,
+        "fpr": 0.5976454293628809
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 5,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/plm_baseline",
+      "metrics": {
+        "accuracy": 0.529874213836478,
+        "precision": 0.47115384615384615,
+        "mcc": 0.10759697423460396,
+        "f1": 0.5672937771345875,
+        "auc": 0.5947236212540922,
+        "auprc": 0.5158017204562722,
+        "recall": 0.7127272727272728,
+        "fpr": 0.6094182825484764
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 9,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/context_only",
+      "metrics": {
+        "accuracy": 0.5538522012578616,
+        "precision": 0.4856909239574816,
+        "mcc": 0.10352237748734941,
+        "f1": 0.511407662505381,
+        "auc": 0.5804359733064719,
+        "auprc": 0.5030231784269523,
+        "recall": 0.54,
+        "fpr": 0.435595567867036
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 9,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/context_only",
+      "metrics": {
+        "accuracy": 0.574685534591195,
+        "precision": 0.5067264573991032,
+        "mcc": 0.15804974461323884,
+        "f1": 0.5561936013125514,
+        "auc": 0.6058187484260892,
+        "auprc": 0.5091419612893421,
+        "recall": 0.6163636363636363,
+        "fpr": 0.45706371191135736
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/rgcl",
+      "metrics": {
+        "accuracy": 0.5691823899371069,
+        "precision": 0.5020120724346077,
+        "mcc": 0.11254127990239543,
+        "f1": 0.4765998089780325,
+        "auc": 0.5767143037018383,
+        "auprc": 0.4924435878376574,
+        "recall": 0.4536363636363636,
+        "fpr": 0.342797783933518
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 42,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/secvuleval/rgcl",
+      "metrics": {
+        "accuracy": 0.5601415094339622,
+        "precision": 0.49097815764482433,
+        "mcc": 0.09938545705753496,
+        "f1": 0.4802601021830004,
+        "auc": 0.587980357592546,
+        "auprc": 0.49914092394243226,
+        "recall": 0.47,
+        "fpr": 0.37119113573407203
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5750786163522013,
+        "precision": 0.5103825136612021,
+        "mcc": 0.11798870664138511,
+        "f1": 0.4635235732009925,
+        "auc": 0.5845649710400402,
+        "auprc": 0.5074056204460079,
+        "recall": 0.42454545454545456,
+        "fpr": 0.31024930747922436
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5852987421383647,
+        "precision": 0.522567703109328,
+        "mcc": 0.14612989165694423,
+        "f1": 0.49690033381020504,
+        "auc": 0.612732938806346,
+        "auprc": 0.5178691217163502,
+        "recall": 0.47363636363636363,
+        "fpr": 0.3296398891966759
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/context_only",
+      "metrics": {
+        "accuracy": 0.5817610062893082,
+        "precision": 0.5256410256410257,
+        "mcc": 0.1162023259140463,
+        "f1": 0.4095449500554939,
+        "auc": 0.591935595567867,
+        "auprc": 0.5137249634453074,
+        "recall": 0.33545454545454545,
+        "fpr": 0.23060941828254847
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/context_only",
+      "metrics": {
+        "accuracy": 0.58687106918239,
+        "precision": 0.5310519645120405,
+        "mcc": 0.1335325505976203,
+        "f1": 0.4436209634727369,
+        "auc": 0.6180876983127677,
+        "auprc": 0.5252135990688865,
+        "recall": 0.3809090909090909,
+        "fpr": 0.2562326869806094
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/rgcl",
+      "metrics": {
+        "accuracy": 0.5569968553459119,
+        "precision": 0.4897025171624714,
+        "mcc": 0.11929079557000381,
+        "f1": 0.53255910410618,
+        "auc": 0.5850047217325611,
+        "auprc": 0.4962255967046456,
+        "recall": 0.5836363636363636,
+        "fpr": 0.4632963988919668
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 1234,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/secvuleval/rgcl",
+      "metrics": {
+        "accuracy": 0.5695754716981132,
+        "precision": 0.5018050541516246,
+        "mcc": 0.15317024138827148,
+        "f1": 0.5593561368209256,
+        "auc": 0.6183351170989676,
+        "auprc": 0.5257394945931592,
+        "recall": 0.6318181818181818,
+        "fpr": 0.4778393351800554
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 7,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5628930817610063,
+        "precision": 0.4929411764705882,
+        "mcc": 0.08657907954574616,
+        "f1": 0.4297435897435897,
+        "auc": 0.566193653991438,
+        "auprc": 0.49162409444979455,
+        "recall": 0.3809090909090909,
+        "fpr": 0.2984764542936288
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 7,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5676100628930818,
+        "precision": 0.5,
+        "mcc": 0.0995911153520967,
+        "f1": 0.4455645161290322,
+        "auc": 0.5939102241249056,
+        "auprc": 0.5130011608109721,
+        "recall": 0.4018181818181818,
+        "fpr": 0.3060941828254848
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 5,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/context_only",
+      "metrics": {
+        "accuracy": 0.4882075471698113,
+        "precision": 0.45354185832566696,
+        "mcc": 0.10349417236774217,
+        "f1": 0.6023213194868662,
+        "auc": 0.5666148325358852,
+        "auprc": 0.4903758781141909,
+        "recall": 0.8963636363636364,
+        "fpr": 0.8227146814404432
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 5,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/context_only",
+      "metrics": {
+        "accuracy": 0.5007861635220126,
+        "precision": 0.4612226277372263,
+        "mcc": 0.14523499798743894,
+        "f1": 0.6142162818955043,
+        "auc": 0.5892778897003275,
+        "auprc": 0.5066617418164461,
+        "recall": 0.9190909090909091,
+        "fpr": 0.8178670360110804
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 5,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/rgcl",
+      "metrics": {
+        "accuracy": 0.48663522012578614,
+        "precision": 0.45438441098317095,
+        "mcc": 0.12474688154048036,
+        "f1": 0.6110780226325193,
+        "auc": 0.5881582095190128,
+        "auprc": 0.5104165705213273,
+        "recall": 0.9327272727272727,
+        "fpr": 0.853185595567867
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "seed": 123456,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 5,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/secvuleval/rgcl",
+      "metrics": {
+        "accuracy": 0.5047169811320755,
+        "precision": 0.4627906976744186,
+        "mcc": 0.14334836233450093,
+        "f1": 0.6123076923076923,
+        "auc": 0.6000343112566104,
+        "auprc": 0.5147423617584823,
+        "recall": 0.9045454545454545,
+        "fpr": 0.7998614958448753
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 9,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5286624203821656,
+        "precision": 0.5849056603773585,
+        "mcc": 0.0765216491239271,
+        "f1": 0.29523809523809524,
+        "auc": 0.519970384194085,
+        "auprc": 0.5326068330948295,
+        "recall": 0.19745222929936307,
+        "fpr": 0.14012738853503184
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 9,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5318471337579618,
+        "precision": 0.5684931506849316,
+        "mcc": 0.07539283052794253,
+        "f1": 0.36086956521739133,
+        "auc": 0.5554434256967828,
+        "auprc": 0.5598164423161925,
+        "recall": 0.2643312101910828,
+        "fpr": 0.20063694267515925
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/context_only",
+      "metrics": {
+        "accuracy": 0.5286624203821656,
+        "precision": 0.5200892857142857,
+        "mcc": 0.06338656910463875,
+        "f1": 0.6115485564304463,
+        "auc": 0.5413505618889205,
+        "auprc": 0.5329614852217576,
+        "recall": 0.7420382165605095,
+        "fpr": 0.6847133757961783
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/context_only",
+      "metrics": {
+        "accuracy": 0.5493630573248408,
+        "precision": 0.5318275154004107,
+        "mcc": 0.11830079329318803,
+        "f1": 0.6466916354556804,
+        "auc": 0.5930514422491785,
+        "auprc": 0.5876544342543216,
+        "recall": 0.8248407643312102,
+        "fpr": 0.7261146496815286
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 9,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/rgcl",
+      "metrics": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5968992248062015,
+        "mcc": 0.09853598917627025,
+        "f1": 0.3476297968397291,
+        "auc": 0.5339263256115867,
+        "auprc": 0.5368871430042469,
+        "recall": 0.24522292993630573,
+        "fpr": 0.16560509554140126
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 42,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 9,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed42/cleanvul/rgcl",
+      "metrics": {
+        "accuracy": 0.5382165605095541,
+        "precision": 0.5740740740740741,
+        "mcc": 0.0873495709440558,
+        "f1": 0.3907563025210084,
+        "auc": 0.5645614426548744,
+        "auprc": 0.5661564427887174,
+        "recall": 0.2961783439490446,
+        "fpr": 0.2197452229299363
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 12,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5333333333333333,
+        "mcc": 0.08116412559294567,
+        "f1": 0.5805515239477503,
+        "auc": 0.5207006369426752,
+        "auprc": 0.5169562036403063,
+        "recall": 0.6369426751592356,
+        "fpr": 0.5573248407643312
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 12,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5589171974522293,
+        "precision": 0.5501355013550135,
+        "mcc": 0.11968470645230868,
+        "f1": 0.5944363103953147,
+        "auc": 0.5767018946001867,
+        "auprc": 0.574812834498034,
+        "recall": 0.6464968152866242,
+        "fpr": 0.5286624203821656
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/context_only",
+      "metrics": {
+        "accuracy": 0.5398089171974523,
+        "precision": 0.5292740046838408,
+        "mcc": 0.085335166944076,
+        "f1": 0.6099865047233468,
+        "auc": 0.5453365248083086,
+        "auprc": 0.5377973737337687,
+        "recall": 0.7197452229299363,
+        "fpr": 0.6401273885350318
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 8,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/context_only",
+      "metrics": {
+        "accuracy": 0.535031847133758,
+        "precision": 0.5252293577981652,
+        "mcc": 0.07603767374628301,
+        "f1": 0.6106666666666667,
+        "auc": 0.5659306665584811,
+        "auprc": 0.5686394442882812,
+        "recall": 0.7292993630573248,
+        "fpr": 0.6592356687898089
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/rgcl",
+      "metrics": {
+        "accuracy": 0.5477707006369427,
+        "precision": 0.556390977443609,
+        "mcc": 0.09667766467497557,
+        "f1": 0.5103448275862069,
+        "auc": 0.5614122276765792,
+        "auprc": 0.5596364200924574,
+        "recall": 0.4713375796178344,
+        "fpr": 0.37579617834394907
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 1234,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 16,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed1234/cleanvul/rgcl",
+      "metrics": {
+        "accuracy": 0.5334394904458599,
+        "precision": 0.5346534653465347,
+        "mcc": 0.06692005665900529,
+        "f1": 0.5251215559157212,
+        "auc": 0.541974319445008,
+        "auprc": 0.5490208659183573,
+        "recall": 0.5159235668789809,
+        "fpr": 0.44904458598726116
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "split": "valid",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5270700636942676,
+        "precision": 0.5215189873417722,
+        "mcc": 0.056036682100740545,
+        "f1": 0.5811001410437235,
+        "auc": 0.5210454785183983,
+        "auprc": 0.5207865559982858,
+        "recall": 0.6560509554140127,
+        "fpr": 0.6019108280254777
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "plm_baseline",
+      "split": "test",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/plm_baseline",
+      "metrics": {
+        "accuracy": 0.5334394904458599,
+        "precision": 0.5263157894736842,
+        "mcc": 0.069472848451963,
+        "f1": 0.5890603085553997,
+        "auc": 0.5457980039758205,
+        "auprc": 0.5654018443701877,
+        "recall": 0.6687898089171974,
+        "fpr": 0.6019108280254777
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "context_only",
+      "split": "valid",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/context_only",
+      "metrics": {
+        "accuracy": 0.5334394904458599,
+        "precision": 0.5209580838323353,
+        "mcc": 0.0832527468019143,
+        "f1": 0.6404907975460122,
+        "auc": 0.5552557913099923,
+        "auprc": 0.5488352402684912,
+        "recall": 0.8312101910828026,
+        "fpr": 0.7643312101910829
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "context_only",
+      "split": "test",
+      "selected_epoch": 10,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/context_only",
+      "metrics": {
+        "accuracy": 0.517515923566879,
+        "precision": 0.5106382978723404,
+        "mcc": 0.04591831301554531,
+        "f1": 0.6353790613718411,
+        "auc": 0.5765700434094689,
+        "auprc": 0.5845155858455102,
+        "recall": 0.8407643312101911,
+        "fpr": 0.8057324840764332
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "rgcl",
+      "split": "valid",
+      "selected_epoch": 15,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/rgcl",
+      "metrics": {
+        "accuracy": 0.5589171974522293,
+        "precision": 0.5677655677655677,
+        "mcc": 0.11885192603808918,
+        "f1": 0.5281090289608177,
+        "auc": 0.552902754675646,
+        "auprc": 0.5529183821144887,
+        "recall": 0.49363057324840764,
+        "fpr": 0.37579617834394907
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "seed": 123456,
+      "method": "rgcl",
+      "split": "test",
+      "selected_epoch": 15,
+      "reused": false,
+      "run": "/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/plm_baselines_512/codet5/seed123456/cleanvul/rgcl",
+      "metrics": {
+        "accuracy": 0.5509554140127388,
+        "precision": 0.5529801324503312,
+        "mcc": 0.10198533030593673,
+        "f1": 0.5422077922077922,
+        "auc": 0.5703223254493083,
+        "auprc": 0.5748999629195806,
+        "recall": 0.5318471337579618,
+        "fpr": 0.4299363057324841
+      }
+    }
+  ],
+  "aggregate": [
+    {
+      "dataset": "primevul_paired",
+      "split": "valid",
+      "method": "plm_baseline",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5341043890865954,
+          "std": 0.004011788036319302
+        },
+        "precision": {
+          "mean": 0.5303962773584371,
+          "std": 0.005132516686859358
+        },
+        "mcc": {
+          "mean": 0.0688986481466312,
+          "std": 0.007489392286913182
+        },
+        "f1": {
+          "mean": 0.5621825644254227,
+          "std": 0.01370414456351898
+        },
+        "auc": {
+          "mean": 0.5373412190828383,
+          "std": 0.003619321084822357
+        },
+        "auprc": {
+          "mean": 0.5268805544881272,
+          "std": 0.0009059034207961693
+        },
+        "recall": {
+          "mean": 0.5990510083036774,
+          "std": 0.037040320275198095
+        },
+        "fpr": {
+          "mean": 0.5308422301304864,
+          "std": 0.04286496195766229
+        },
+        "p_c": {
+          "mean": 0.14887307236061684,
+          "std": 0.006736546080427365
+        }
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "valid",
+      "method": "context_only",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.541814946619217,
+          "std": 0.01166804007882917
+        },
+        "precision": {
+          "mean": 0.5391256042505946,
+          "std": 0.010014602267018302
+        },
+        "mcc": {
+          "mean": 0.08394002615651638,
+          "std": 0.02346111094691437
+        },
+        "f1": {
+          "mean": 0.5557389484729575,
+          "std": 0.0224826380606991
+        },
+        "auc": {
+          "mean": 0.5578196831347121,
+          "std": 0.014694766459600534
+        },
+        "auprc": {
+          "mean": 0.5525191129500863,
+          "std": 0.008492748012421222
+        },
+        "recall": {
+          "mean": 0.5741399762752076,
+          "std": 0.03980094678483419
+        },
+        "fpr": {
+          "mean": 0.49051008303677346,
+          "std": 0.028152892731449178
+        },
+        "p_c": {
+          "mean": 0.1132858837485172,
+          "std": 0.022389781836508752
+        }
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "valid",
+      "method": "rgcl",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5516014234875445,
+          "std": 0.006227758007117422
+        },
+        "precision": {
+          "mean": 0.5454231020531076,
+          "std": 0.008139817034696004
+        },
+        "mcc": {
+          "mean": 0.10491032359247732,
+          "std": 0.011561721637488562
+        },
+        "f1": {
+          "mean": 0.5816350406640671,
+          "std": 0.02368915032248416
+        },
+        "auc": {
+          "mean": 0.5690156110822643,
+          "std": 0.005012897965828448
+        },
+        "auprc": {
+          "mean": 0.5559319307942622,
+          "std": 0.0014341394100176315
+        },
+        "recall": {
+          "mean": 0.6257413997627521,
+          "std": 0.06269138914222452
+        },
+        "fpr": {
+          "mean": 0.5225385527876631,
+          "std": 0.06696477633544613
+        },
+        "p_c": {
+          "mean": 0.13523131672597866,
+          "std": 0.02005236240139616
+        }
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "test",
+      "method": "plm_baseline",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5245271867612293,
+          "std": 0.005343717884168216
+        },
+        "precision": {
+          "mean": 0.5227884782495181,
+          "std": 0.005585526761956712
+        },
+        "mcc": {
+          "mean": 0.04927876093111231,
+          "std": 0.010653689010518547
+        },
+        "f1": {
+          "mean": 0.5427679527501199,
+          "std": 0.01359187379588178
+        },
+        "auc": {
+          "mean": 0.5424316348942877,
+          "std": 0.0067766099520054765
+        },
+        "auprc": {
+          "mean": 0.5305675747904903,
+          "std": 0.009636910067224148
+        },
+        "recall": {
+          "mean": 0.5650118203309693,
+          "std": 0.03123453962582462
+        },
+        "fpr": {
+          "mean": 0.5159574468085106,
+          "std": 0.033687943262411355
+        },
+        "p_c": {
+          "mean": 0.13947990543735225,
+          "std": 0.00818936552042022
+        }
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "test",
+      "method": "context_only",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5366430260047281,
+          "std": 0.008701200865446491
+        },
+        "precision": {
+          "mean": 0.5372188151798939,
+          "std": 0.007750872057545391
+        },
+        "mcc": {
+          "mean": 0.07332543217801092,
+          "std": 0.017352573855453524
+        },
+        "f1": {
+          "mean": 0.5317193242550542,
+          "std": 0.017563729778032215
+        },
+        "auc": {
+          "mean": 0.5583361626678738,
+          "std": 0.005264520358607111
+        },
+        "auprc": {
+          "mean": 0.5558040967237278,
+          "std": 0.0034186430505763255
+        },
+        "recall": {
+          "mean": 0.526595744680851,
+          "std": 0.02729575233748341
+        },
+        "fpr": {
+          "mean": 0.45330969267139476,
+          "std": 0.011805546309360627
+        },
+        "p_c": {
+          "mean": 0.09869976359338062,
+          "std": 0.01647442064393186
+        }
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "test",
+      "method": "rgcl",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.54225768321513,
+          "std": 0.004882598002913195
+        },
+        "precision": {
+          "mean": 0.5371395881243638,
+          "std": 0.006954281492533345
+        },
+        "mcc": {
+          "mean": 0.08567662633895176,
+          "std": 0.00859421690798197
+        },
+        "f1": {
+          "mean": 0.573647572194478,
+          "std": 0.015030614076582124
+        },
+        "auc": {
+          "mean": 0.565025443052831,
+          "std": 0.004540891595564909
+        },
+        "auprc": {
+          "mean": 0.5611711493518988,
+          "std": 0.0032287693940826014
+        },
+        "recall": {
+          "mean": 0.6170212765957447,
+          "std": 0.044538498890356285
+        },
+        "fpr": {
+          "mean": 0.5325059101654847,
+          "std": 0.053348860975871173
+        },
+        "p_c": {
+          "mean": 0.11761229314420804,
+          "std": 0.017037275774703986
+        }
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "valid",
+      "method": "plm_baseline",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5568658280922432,
+          "std": 0.02185878628487693
+        },
+        "precision": {
+          "mean": 0.4920466057311629,
+          "std": 0.01879916336281281
+        },
+        "mcc": {
+          "mean": 0.1047318601666871,
+          "std": 0.016267107823612494
+        },
+        "f1": {
+          "mean": 0.48628330592854974,
+          "std": 0.07072180547021756
+        },
+        "auc": {
+          "mean": 0.5764597498531017,
+          "std": 0.009374345686231514
+        },
+        "auprc": {
+          "mean": 0.5012341199910529,
+          "std": 0.008433962993109655
+        },
+        "recall": {
+          "mean": 0.503030303030303,
+          "std": 0.17509462219543775
+        },
+        "fpr": {
+          "mean": 0.402123730378578,
+          "std": 0.1694290444354617
+        }
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "valid",
+      "method": "context_only",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5412735849056604,
+          "std": 0.04802841471782867
+        },
+        "precision": {
+          "mean": 0.48829126930805805,
+          "std": 0.03611985366593725
+        },
+        "mcc": {
+          "mean": 0.1077396252563793,
+          "std": 0.007328927322477094
+        },
+        "f1": {
+          "mean": 0.5077579773492471,
+          "std": 0.09643999328125967
+        },
+        "auc": {
+          "mean": 0.579662133803408,
+          "std": 0.012678106357529148
+        },
+        "auprc": {
+          "mean": 0.5023746733288169,
+          "std": 0.01168804370271904
+        },
+        "recall": {
+          "mean": 0.5906060606060606,
+          "std": 0.283858207726435
+        },
+        "fpr": {
+          "mean": 0.4963065558633426,
+          "std": 0.3006850989198429
+        }
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "valid",
+      "method": "rgcl",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.537604821802935,
+          "std": 0.04455947749540734
+        },
+        "precision": {
+          "mean": 0.48203300019341666,
+          "std": 0.02472275574722873
+        },
+        "mcc": {
+          "mean": 0.11885965233762653,
+          "std": 0.006114212230698564
+        },
+        "f1": {
+          "mean": 0.540078978572244,
+          "std": 0.06755374801529869
+        },
+        "auc": {
+          "mean": 0.5832924116511374,
+          "std": 0.005910985488841851
+        },
+        "auprc": {
+          "mean": 0.49969525168787676,
+          "std": 0.009475542512904991
+        },
+        "recall": {
+          "mean": 0.6566666666666666,
+          "std": 0.24775409918689914
+        },
+        "fpr": {
+          "mean": 0.5530932594644506,
+          "std": 0.2667799405741191
+        }
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "test",
+      "method": "plm_baseline",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5609276729559749,
+          "std": 0.02831007481136921
+        },
+        "precision": {
+          "mean": 0.4979071830877247,
+          "std": 0.025770740845596895
+        },
+        "mcc": {
+          "mean": 0.1177726604145483,
+          "std": 0.024882179705819425
+        },
+        "f1": {
+          "mean": 0.5032528756912749,
+          "std": 0.06111275920380876
+        },
+        "auc": {
+          "mean": 0.6004555947284479,
+          "std": 0.010640267239490147
+        },
+        "auprc": {
+          "mean": 0.5155573343278649,
+          "std": 0.002443164807967496
+        },
+        "recall": {
+          "mean": 0.5293939393939394,
+          "std": 0.16278143672805784
+        },
+        "fpr": {
+          "mean": 0.415050784856879,
+          "std": 0.1687383868338779
+        }
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "test",
+      "method": "context_only",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5541142557651991,
+          "std": 0.04658364391115907
+        },
+        "precision": {
+          "mean": 0.49966701654945667,
+          "std": 0.035445886184927715
+        },
+        "mcc": {
+          "mean": 0.14560576439943268,
+          "std": 0.01226280153142289
+        },
+        "f1": {
+          "mean": 0.5380102822269308,
+          "std": 0.08673906551645842
+        },
+        "auc": {
+          "mean": 0.6043947788130615,
+          "std": 0.01445759437684839
+        },
+        "auprc": {
+          "mean": 0.5136724340582249,
+          "std": 0.010071580785106353
+        },
+        "recall": {
+          "mean": 0.6387878787878788,
+          "std": 0.269790756590358
+        },
+        "fpr": {
+          "mean": 0.510387811634349,
+          "std": 0.2845889671283321
+        }
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "test",
+      "method": "rgcl",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5448113207547169,
+          "std": 0.03504164612760284
+        },
+        "precision": {
+          "mean": 0.48519130315695586,
+          "std": 0.02014064960423195
+        },
+        "mcc": {
+          "mean": 0.13196802026010246,
+          "std": 0.0286414890617388
+        },
+        "f1": {
+          "mean": 0.5506413104372061,
+          "std": 0.0664537633517353
+        },
+        "auc": {
+          "mean": 0.6021165953160413,
+          "std": 0.015284135119505247
+        },
+        "auprc": {
+          "mean": 0.5132075934313579,
+          "std": 0.01336553872946713
+        },
+        "recall": {
+          "mean": 0.6687878787878788,
+          "std": 0.21961900392965164
+        },
+        "fpr": {
+          "mean": 0.5496306555863343,
+          "std": 0.22317048342834045
+        }
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "valid",
+      "method": "plm_baseline",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5318471337579618,
+          "std": 0.006940921884618918
+        },
+        "precision": {
+          "mean": 0.5465859936841546,
+          "std": 0.033707452208832915
+        },
+        "mcc": {
+          "mean": 0.07124081893920443,
+          "std": 0.01337020866304632
+        },
+        "f1": {
+          "mean": 0.48562992007652306,
+          "std": 0.16488438515869058
+        },
+        "auc": {
+          "mean": 0.5205721665517196,
+          "std": 0.0005489402814121917
+        },
+        "auprc": {
+          "mean": 0.5234498642444738,
+          "std": 0.008158152897032351
+        },
+        "recall": {
+          "mean": 0.4968152866242038,
+          "std": 0.25943199814543055
+        },
+        "fpr": {
+          "mean": 0.43312101910828027,
+          "std": 0.2547173496885963
+        }
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "valid",
+      "method": "context_only",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5339702760084926,
+          "std": 0.005592172904911245
+        },
+        "precision": {
+          "mean": 0.5234404580768206,
+          "std": 0.005070641187728543
+        },
+        "mcc": {
+          "mean": 0.07732482761687635,
+          "std": 0.012115709066232699
+        },
+        "f1": {
+          "mean": 0.6206752862332684,
+          "std": 0.017178500162209193
+        },
+        "auc": {
+          "mean": 0.5473142926690738,
+          "std": 0.007160483614705544
+        },
+        "auprc": {
+          "mean": 0.5398646997413391,
+          "std": 0.008136301520783757
+        },
+        "recall": {
+          "mean": 0.7643312101910827,
+          "std": 0.05898171712564379
+        },
+        "fpr": {
+          "mean": 0.6963906581740976,
+          "std": 0.06291992149782359
+        }
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "valid",
+      "method": "rgcl",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5488322717622081,
+          "std": 0.009598270339716096
+        },
+        "precision": {
+          "mean": 0.5736852566717927,
+          "std": 0.020892859154675508
+        },
+        "mcc": {
+          "mean": 0.10468852662977833,
+          "std": 0.012301006242886516
+        },
+        "f1": {
+          "mean": 0.46202788446225124,
+          "std": 0.09946900799438546
+        },
+        "auc": {
+          "mean": 0.5494137693212706,
+          "std": 0.014071192813115509
+        },
+        "auprc": {
+          "mean": 0.5498139817370643,
+          "std": 0.011688044245576734
+        },
+        "recall": {
+          "mean": 0.4033970276008493,
+          "std": 0.1374355422379801
+        },
+        "fpr": {
+          "mean": 0.30573248407643316,
+          "std": 0.12135387823730989
+        }
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "test",
+      "method": "plm_baseline",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5414012738853503,
+          "std": 0.015190114672244372
+        },
+        "precision": {
+          "mean": 0.5483148138378764,
+          "std": 0.021147544230059028
+        },
+        "mcc": {
+          "mean": 0.08818346181073806,
+          "std": 0.02744098863782135
+        },
+        "f1": {
+          "mean": 0.5147887280560353,
+          "std": 0.1333250046527561
+        },
+        "auc": {
+          "mean": 0.5593144414242633,
+          "std": 0.015811425805489502
+        },
+        "auprc": {
+          "mean": 0.5666770403948047,
+          "std": 0.007579085584277184
+        },
+        "recall": {
+          "mean": 0.5265392781316348,
+          "std": 0.22735225435673834
+        },
+        "fpr": {
+          "mean": 0.4437367303609342,
+          "std": 0.21369244812398458
+        }
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "test",
+      "method": "context_only",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5339702760084926,
+          "std": 0.015950084077830908
+        },
+        "precision": {
+          "mean": 0.5225650570236388,
+          "std": 0.010842952034654924
+        },
+        "mcc": {
+          "mean": 0.08008559335167212,
+          "std": 0.036360625718414204
+        },
+        "f1": {
+          "mean": 0.6309124544980628,
+          "std": 0.01842315192321923
+        },
+        "auc": {
+          "mean": 0.5785173840723762,
+          "std": 0.013664853466442275
+        },
+        "auprc": {
+          "mean": 0.5802698214627043,
+          "std": 0.01019374059155333
+        },
+        "recall": {
+          "mean": 0.7983014861995754,
+          "std": 0.060285651229302316
+        },
+        "fpr": {
+          "mean": 0.7303609341825902,
+          "std": 0.07334066008244537
+        }
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "test",
+      "method": "rgcl",
+      "metrics": {
+        "accuracy": {
+          "mean": 0.5408704883227177,
+          "std": 0.009054523412543489
+        },
+        "precision": {
+          "mean": 0.5539025572903133,
+          "std": 0.019726485971949
+        },
+        "mcc": {
+          "mean": 0.08541831930299927,
+          "std": 0.01761223022956942
+        },
+        "f1": {
+          "mean": 0.4860285502148406,
+          "std": 0.08294929627871059
+        },
+        "auc": {
+          "mean": 0.5589526958497302,
+          "std": 0.014983186965666653
+        },
+        "auprc": {
+          "mean": 0.5633590905422184,
+          "std": 0.013164376175608368
+        },
+        "recall": {
+          "mean": 0.44798301486199577,
+          "std": 0.1317075684187488
+        },
+        "fpr": {
+          "mean": 0.36624203821656054,
+          "std": 0.12722919971616675
+        }
+      }
+    }
+  ],
+  "std_definition": "sample standard deviation; ddof=1; n=3",
+  "cleanvul_data": {
+    "raw_root": "/home/PublicData/PHY-data/vul_detect/data/cleanvul",
+    "files": {
+      "vulnerability_score_0.csv": {
+        "score": 0,
+        "counts": {
+          "rows": 9681,
+          "cc_rows": 964,
+          "cc_with_cve_field": 0,
+          "cc_missing_before": 0,
+          "cc_missing_after": 0,
+          "cc_identical_source": 0
+        },
+        "languages": {
+          "js": 2013,
+          "java": 4870,
+          "py": 1777,
+          "c": 945,
+          "cs": 57,
+          "cpp": 19
+        }
+      },
+      "vulnerability_score_1.csv": {
+        "score": 1,
+        "counts": {
+          "rows": 10241,
+          "cc_rows": 372,
+          "cc_with_cve_field": 0,
+          "cc_missing_before": 0,
+          "cc_missing_after": 0,
+          "cc_identical_source": 0
+        },
+        "languages": {
+          "java": 9322,
+          "c": 366,
+          "py": 237,
+          "js": 289,
+          "cs": 21,
+          "cpp": 6
+        }
+      },
+      "vulnerability_score_2.csv": {
+        "score": 2,
+        "counts": {
+          "rows": 8079,
+          "cc_rows": 1111,
+          "cc_with_cve_field": 0,
+          "cc_missing_before": 0,
+          "cc_missing_after": 0,
+          "cc_identical_source": 0
+        },
+        "languages": {
+          "java": 5808,
+          "c": 1088,
+          "js": 598,
+          "py": 520,
+          "cpp": 23,
+          "cs": 42
+        }
+      },
+      "vulnerability_score_3.csv": {
+        "score": 3,
+        "counts": {
+          "rows": 1830,
+          "cc_rows": 69,
+          "cc_with_cve_field": 0,
+          "cc_missing_before": 0,
+          "cc_missing_after": 0,
+          "cc_identical_source": 0
+        },
+        "languages": {
+          "java": 1657,
+          "py": 52,
+          "js": 42,
+          "c": 67,
+          "cs": 10,
+          "cpp": 2
+        }
+      },
+      "vulnerability_score_4.csv": {
+        "score": 4,
+        "counts": {
+          "rows": 6368,
+          "cc_rows": 3067,
+          "cc_with_cve_field": 0,
+          "cc_missing_before": 0,
+          "cc_missing_after": 0,
+          "cc_identical_source": 0
+        },
+        "languages": {
+          "c": 3006,
+          "java": 1242,
+          "js": 976,
+          "py": 970,
+          "cs": 113,
+          "cpp": 61
+        }
+      }
+    },
+    "high_confidence_cc_pairs": 3136,
+    "retained_pairs": 3136,
+    "diagnostic_reasons": {
+      "retained": 2383,
+      "parse_incomplete_or_not_single_function": 697,
+      "function_name_mismatch": 50,
+      "comments_or_formatting_only": 5,
+      "unknown_function_name": 1
+    },
+    "classification_members_removed": 0,
+    "score_definition": {
+      "source": "https://arxiv.org/html/2411.17274v3#S3",
+      "meaning": "LLM confidence that the change fixes a vulnerability; not severity or human confirmation",
+      "score_3": "high likelihood",
+      "score_4": "very high likelihood",
+      "minimum": 3
+    },
+    "association_rule": "released CSV row supplies the before/after association; no parser/name/change-type classification filter",
+    "label_provenance": "score>=3 repair-before target=1 and repair-after target=0; confidence-based repair labels, not manual ground truth",
+    "raw_sources_modified": false,
+    "duplicates_removed": false,
+    "split_protocol": {
+      "seed": 42,
+      "target_ratios": [
+        0.8,
+        0.1,
+        0.1
+      ],
+      "groups": 1846,
+      "largest_groups": [
+        54,
+        50,
+        44,
+        42,
+        36,
+        34,
+        32,
+        30,
+        28,
+        28
+      ],
+      "grouping": "transitive union of CVE, fix commit, repair link and whitespace-normalized source (including counterparts)",
+      "cross_split_group_overlap": 0,
+      "members_removed": 0,
+      "duplicate_code_groups": 1,
+      "commit_references": "repository-qualified shortest observed compatible hash prefix; original commit_id preserved"
+    },
+    "retained_by_score": {
+      "3": 69,
+      "4": 3067
+    },
+    "retained_by_language": {
+      "c": 3073,
+      "cpp": 63
+    },
+    "commit_reference_kinds": {
+      "full": 3091,
+      "abbreviated": 45
+    },
+    "cross_split_overlap_groups": {
+      "pair_key": 0,
+      "commit_id": 0,
+      "commit_group": 0,
+      "cves": 0,
+      "exact_source": 0,
+      "normalized_source": 0
+    },
+    "input_tokens": 512,
+    "source_token_budget": 510,
+    "model_path": "/home/PublicData/PHY-data/resource/unixcoder-base-nine",
+    "seed": 42,
+    "K": 5,
+    "region_loss_weight": 0.1,
+    "coverage": {
+      "all": {
+        "all": {
+          "functions": 6272,
+          "effective_region": 4137,
+          "effective_percent": 65.95982142857143,
+          "complete_line_effective_region": 4137,
+          "with_diff_lines": 5402,
+          "with_visible_diff": 4417,
+          "partially_visible_diff": 272,
+          "truncated": 3350,
+          "reasons": {
+            "effective": 4137,
+            "no_changed_source_lines_on_this_side": 870,
+            "partially_visible_changed_line": 272,
+            "changed_lines_outside_visible_input": 985,
+            "no_visible_background": 8
+          }
+        },
+        "1": {
+          "functions": 3136,
+          "effective_region": 1793,
+          "effective_percent": 57.17474489795919,
+          "complete_line_effective_region": 1793,
+          "with_diff_lines": 2313,
+          "with_visible_diff": 1884,
+          "partially_visible_diff": 87,
+          "truncated": 1632,
+          "reasons": {
+            "effective": 1793,
+            "no_changed_source_lines_on_this_side": 823,
+            "partially_visible_changed_line": 87,
+            "changed_lines_outside_visible_input": 429,
+            "no_visible_background": 4
+          }
+        },
+        "0": {
+          "functions": 3136,
+          "effective_region": 2344,
+          "effective_percent": 74.74489795918367,
+          "complete_line_effective_region": 2344,
+          "with_diff_lines": 3089,
+          "with_visible_diff": 2533,
+          "partially_visible_diff": 185,
+          "truncated": 1718,
+          "reasons": {
+            "effective": 2344,
+            "changed_lines_outside_visible_input": 556,
+            "partially_visible_changed_line": 185,
+            "no_changed_source_lines_on_this_side": 47,
+            "no_visible_background": 4
+          }
+        },
+        "repaired": {
+          "functions": 3136,
+          "effective_region": 2344,
+          "effective_percent": 74.74489795918367,
+          "complete_line_effective_region": 2344,
+          "with_diff_lines": 3089,
+          "with_visible_diff": 2533,
+          "partially_visible_diff": 185,
+          "truncated": 1718,
+          "reasons": {
+            "effective": 2344,
+            "changed_lines_outside_visible_input": 556,
+            "partially_visible_changed_line": 185,
+            "no_changed_source_lines_on_this_side": 47,
+            "no_visible_background": 4
+          }
+        },
+        "ordinary": {
+          "functions": 0,
+          "effective_region": 0,
+          "effective_percent": null,
+          "complete_line_effective_region": 0,
+          "with_diff_lines": 0,
+          "with_visible_diff": 0,
+          "partially_visible_diff": 0,
+          "truncated": 0,
+          "reasons": {}
+        },
+        "paired": {
+          "functions": 6272,
+          "effective_region": 4137,
+          "effective_percent": 65.95982142857143,
+          "complete_line_effective_region": 4137,
+          "with_diff_lines": 5402,
+          "with_visible_diff": 4417,
+          "partially_visible_diff": 272,
+          "truncated": 3350,
+          "reasons": {
+            "effective": 4137,
+            "no_changed_source_lines_on_this_side": 870,
+            "partially_visible_changed_line": 272,
+            "changed_lines_outside_visible_input": 985,
+            "no_visible_background": 8
+          }
+        },
+        "paired_before": {
+          "functions": 3136,
+          "effective_region": 1793,
+          "effective_percent": 57.17474489795919,
+          "complete_line_effective_region": 1793,
+          "with_diff_lines": 2313,
+          "with_visible_diff": 1884,
+          "partially_visible_diff": 87,
+          "truncated": 1632,
+          "reasons": {
+            "effective": 1793,
+            "no_changed_source_lines_on_this_side": 823,
+            "partially_visible_changed_line": 87,
+            "changed_lines_outside_visible_input": 429,
+            "no_visible_background": 4
+          }
+        }
+      },
+      "train": {
+        "all": {
+          "functions": 5016,
+          "effective_region": 3292,
+          "effective_percent": 65.62998405103669,
+          "complete_line_effective_region": 3292,
+          "with_diff_lines": 4345,
+          "with_visible_diff": 3526,
+          "partially_visible_diff": 227,
+          "truncated": 2744,
+          "reasons": {
+            "effective": 3292,
+            "no_changed_source_lines_on_this_side": 671,
+            "partially_visible_changed_line": 227,
+            "changed_lines_outside_visible_input": 819,
+            "no_visible_background": 7
+          }
+        },
+        "1": {
+          "functions": 2508,
+          "effective_region": 1440,
+          "effective_percent": 57.41626794258373,
+          "complete_line_effective_region": 1440,
+          "with_diff_lines": 1876,
+          "with_visible_diff": 1513,
+          "partially_visible_diff": 70,
+          "truncated": 1340,
+          "reasons": {
+            "effective": 1440,
+            "no_changed_source_lines_on_this_side": 632,
+            "partially_visible_changed_line": 70,
+            "changed_lines_outside_visible_input": 363,
+            "no_visible_background": 3
+          }
+        },
+        "0": {
+          "functions": 2508,
+          "effective_region": 1852,
+          "effective_percent": 73.84370015948963,
+          "complete_line_effective_region": 1852,
+          "with_diff_lines": 2469,
+          "with_visible_diff": 2013,
+          "partially_visible_diff": 157,
+          "truncated": 1404,
+          "reasons": {
+            "effective": 1852,
+            "changed_lines_outside_visible_input": 456,
+            "partially_visible_changed_line": 157,
+            "no_changed_source_lines_on_this_side": 39,
+            "no_visible_background": 4
+          }
+        },
+        "repaired": {
+          "functions": 2508,
+          "effective_region": 1852,
+          "effective_percent": 73.84370015948963,
+          "complete_line_effective_region": 1852,
+          "with_diff_lines": 2469,
+          "with_visible_diff": 2013,
+          "partially_visible_diff": 157,
+          "truncated": 1404,
+          "reasons": {
+            "effective": 1852,
+            "changed_lines_outside_visible_input": 456,
+            "partially_visible_changed_line": 157,
+            "no_changed_source_lines_on_this_side": 39,
+            "no_visible_background": 4
+          }
+        },
+        "ordinary": {
+          "functions": 0,
+          "effective_region": 0,
+          "effective_percent": null,
+          "complete_line_effective_region": 0,
+          "with_diff_lines": 0,
+          "with_visible_diff": 0,
+          "partially_visible_diff": 0,
+          "truncated": 0,
+          "reasons": {}
+        },
+        "paired": {
+          "functions": 5016,
+          "effective_region": 3292,
+          "effective_percent": 65.62998405103669,
+          "complete_line_effective_region": 3292,
+          "with_diff_lines": 4345,
+          "with_visible_diff": 3526,
+          "partially_visible_diff": 227,
+          "truncated": 2744,
+          "reasons": {
+            "effective": 3292,
+            "no_changed_source_lines_on_this_side": 671,
+            "partially_visible_changed_line": 227,
+            "changed_lines_outside_visible_input": 819,
+            "no_visible_background": 7
+          }
+        },
+        "paired_before": {
+          "functions": 2508,
+          "effective_region": 1440,
+          "effective_percent": 57.41626794258373,
+          "complete_line_effective_region": 1440,
+          "with_diff_lines": 1876,
+          "with_visible_diff": 1513,
+          "partially_visible_diff": 70,
+          "truncated": 1340,
+          "reasons": {
+            "effective": 1440,
+            "no_changed_source_lines_on_this_side": 632,
+            "partially_visible_changed_line": 70,
+            "changed_lines_outside_visible_input": 363,
+            "no_visible_background": 3
+          }
+        }
+      },
+      "valid": {
+        "all": {
+          "functions": 628,
+          "effective_region": 428,
+          "effective_percent": 68.15286624203821,
+          "complete_line_effective_region": 428,
+          "with_diff_lines": 525,
+          "with_visible_diff": 445,
+          "partially_visible_diff": 17,
+          "truncated": 289,
+          "reasons": {
+            "no_changed_source_lines_on_this_side": 103,
+            "effective": 428,
+            "changed_lines_outside_visible_input": 80,
+            "partially_visible_changed_line": 17
+          }
+        },
+        "1": {
+          "functions": 314,
+          "effective_region": 177,
+          "effective_percent": 56.36942675159236,
+          "complete_line_effective_region": 177,
+          "with_diff_lines": 217,
+          "with_visible_diff": 184,
+          "partially_visible_diff": 7,
+          "truncated": 139,
+          "reasons": {
+            "no_changed_source_lines_on_this_side": 97,
+            "effective": 177,
+            "changed_lines_outside_visible_input": 33,
+            "partially_visible_changed_line": 7
+          }
+        },
+        "0": {
+          "functions": 314,
+          "effective_region": 251,
+          "effective_percent": 79.93630573248407,
+          "complete_line_effective_region": 251,
+          "with_diff_lines": 308,
+          "with_visible_diff": 261,
+          "partially_visible_diff": 10,
+          "truncated": 150,
+          "reasons": {
+            "effective": 251,
+            "changed_lines_outside_visible_input": 47,
+            "no_changed_source_lines_on_this_side": 6,
+            "partially_visible_changed_line": 10
+          }
+        },
+        "repaired": {
+          "functions": 314,
+          "effective_region": 251,
+          "effective_percent": 79.93630573248407,
+          "complete_line_effective_region": 251,
+          "with_diff_lines": 308,
+          "with_visible_diff": 261,
+          "partially_visible_diff": 10,
+          "truncated": 150,
+          "reasons": {
+            "effective": 251,
+            "changed_lines_outside_visible_input": 47,
+            "no_changed_source_lines_on_this_side": 6,
+            "partially_visible_changed_line": 10
+          }
+        },
+        "ordinary": {
+          "functions": 0,
+          "effective_region": 0,
+          "effective_percent": null,
+          "complete_line_effective_region": 0,
+          "with_diff_lines": 0,
+          "with_visible_diff": 0,
+          "partially_visible_diff": 0,
+          "truncated": 0,
+          "reasons": {}
+        },
+        "paired": {
+          "functions": 628,
+          "effective_region": 428,
+          "effective_percent": 68.15286624203821,
+          "complete_line_effective_region": 428,
+          "with_diff_lines": 525,
+          "with_visible_diff": 445,
+          "partially_visible_diff": 17,
+          "truncated": 289,
+          "reasons": {
+            "no_changed_source_lines_on_this_side": 103,
+            "effective": 428,
+            "changed_lines_outside_visible_input": 80,
+            "partially_visible_changed_line": 17
+          }
+        },
+        "paired_before": {
+          "functions": 314,
+          "effective_region": 177,
+          "effective_percent": 56.36942675159236,
+          "complete_line_effective_region": 177,
+          "with_diff_lines": 217,
+          "with_visible_diff": 184,
+          "partially_visible_diff": 7,
+          "truncated": 139,
+          "reasons": {
+            "no_changed_source_lines_on_this_side": 97,
+            "effective": 177,
+            "changed_lines_outside_visible_input": 33,
+            "partially_visible_changed_line": 7
+          }
+        }
+      },
+      "test": {
+        "all": {
+          "functions": 628,
+          "effective_region": 417,
+          "effective_percent": 66.40127388535032,
+          "complete_line_effective_region": 417,
+          "with_diff_lines": 532,
+          "with_visible_diff": 446,
+          "partially_visible_diff": 28,
+          "truncated": 317,
+          "reasons": {
+            "effective": 417,
+            "no_changed_source_lines_on_this_side": 96,
+            "changed_lines_outside_visible_input": 86,
+            "partially_visible_changed_line": 28,
+            "no_visible_background": 1
+          }
+        },
+        "1": {
+          "functions": 314,
+          "effective_region": 176,
+          "effective_percent": 56.05095541401274,
+          "complete_line_effective_region": 176,
+          "with_diff_lines": 220,
+          "with_visible_diff": 187,
+          "partially_visible_diff": 10,
+          "truncated": 153,
+          "reasons": {
+            "effective": 176,
+            "no_changed_source_lines_on_this_side": 94,
+            "partially_visible_changed_line": 10,
+            "changed_lines_outside_visible_input": 33,
+            "no_visible_background": 1
+          }
+        },
+        "0": {
+          "functions": 314,
+          "effective_region": 241,
+          "effective_percent": 76.7515923566879,
+          "complete_line_effective_region": 241,
+          "with_diff_lines": 312,
+          "with_visible_diff": 259,
+          "partially_visible_diff": 18,
+          "truncated": 164,
+          "reasons": {
+            "effective": 241,
+            "changed_lines_outside_visible_input": 53,
+            "partially_visible_changed_line": 18,
+            "no_changed_source_lines_on_this_side": 2
+          }
+        },
+        "repaired": {
+          "functions": 314,
+          "effective_region": 241,
+          "effective_percent": 76.7515923566879,
+          "complete_line_effective_region": 241,
+          "with_diff_lines": 312,
+          "with_visible_diff": 259,
+          "partially_visible_diff": 18,
+          "truncated": 164,
+          "reasons": {
+            "effective": 241,
+            "changed_lines_outside_visible_input": 53,
+            "partially_visible_changed_line": 18,
+            "no_changed_source_lines_on_this_side": 2
+          }
+        },
+        "ordinary": {
+          "functions": 0,
+          "effective_region": 0,
+          "effective_percent": null,
+          "complete_line_effective_region": 0,
+          "with_diff_lines": 0,
+          "with_visible_diff": 0,
+          "partially_visible_diff": 0,
+          "truncated": 0,
+          "reasons": {}
+        },
+        "paired": {
+          "functions": 628,
+          "effective_region": 417,
+          "effective_percent": 66.40127388535032,
+          "complete_line_effective_region": 417,
+          "with_diff_lines": 532,
+          "with_visible_diff": 446,
+          "partially_visible_diff": 28,
+          "truncated": 317,
+          "reasons": {
+            "effective": 417,
+            "no_changed_source_lines_on_this_side": 96,
+            "changed_lines_outside_visible_input": 86,
+            "partially_visible_changed_line": 28,
+            "no_visible_background": 1
+          }
+        },
+        "paired_before": {
+          "functions": 314,
+          "effective_region": 176,
+          "effective_percent": 56.05095541401274,
+          "complete_line_effective_region": 176,
+          "with_diff_lines": 220,
+          "with_visible_diff": 187,
+          "partially_visible_diff": 10,
+          "truncated": 153,
+          "reasons": {
+            "effective": 176,
+            "no_changed_source_lines_on_this_side": 94,
+            "partially_visible_changed_line": 10,
+            "changed_lines_outside_visible_input": 33,
+            "no_visible_background": 1
+          }
+        }
+      }
+    },
+    "class_counts": {
+      "1": 3136,
+      "0": 3136
+    },
+    "cve_sources": {
+      "missing": 5438,
+      "commit_message": 834
+    },
+    "label_quality": {
+      "exact": {
+        "unique_sources": 6272,
+        "duplicate_groups": 0,
+        "conflicting_groups": 0,
+        "conflicting_functions": 0,
+        "conflicting_positive_functions": 0,
+        "examples": []
+      },
+      "normalized": {
+        "unique_sources": 6271,
+        "duplicate_groups": 1,
+        "conflicting_groups": 0,
+        "conflicting_functions": 0,
+        "conflicting_positive_functions": 0,
+        "examples": []
+      }
+    },
+    "splits": {
+      "train": {
+        "pairs": 2508,
+        "functions": 5016,
+        "class_counts": {
+          "1": 2508,
+          "0": 2508
+        },
+        "fraction": 0.7997448979591837,
+        "normal_kinds": {
+          "vulnerable": 2508,
+          "repaired": 2508
+        },
+        "coverage": {
+          "reliable_counterpart": 5016,
+          "effective_region": 3292,
+          "no_region_function_bce_only": 1724,
+          "truncated": 2744
+        }
+      },
+      "valid": {
+        "pairs": 314,
+        "functions": 628,
+        "class_counts": {
+          "1": 314,
+          "0": 314
+        },
+        "fraction": 0.10012755102040816,
+        "normal_kinds": {
+          "vulnerable": 314,
+          "repaired": 314
+        },
+        "coverage": {
+          "reliable_counterpart": 628,
+          "effective_region": 428,
+          "no_region_function_bce_only": 200,
+          "truncated": 289
+        }
+      },
+      "test": {
+        "pairs": 314,
+        "functions": 628,
+        "class_counts": {
+          "1": 314,
+          "0": 314
+        },
+        "fraction": 0.10012755102040816,
+        "normal_kinds": {
+          "vulnerable": 314,
+          "repaired": 314
+        },
+        "coverage": {
+          "reliable_counterpart": 628,
+          "effective_region": 417,
+          "no_region_function_bce_only": 211,
+          "truncated": 317
+        }
+      }
+    },
+    "classification_positive_weight": 1.0,
+    "classification_weight_rule": "Train negatives / positives; same BCE for all three methods",
+    "official_evaluation_split": false
+  },
+  "deltas": [
+    {
+      "dataset": "primevul_paired",
+      "split": "valid",
+      "before": "plm_baseline",
+      "after": "context_only",
+      "metrics": {
+        "accuracy": 0.00771055753262162,
+        "precision": 0.008729326892157552,
+        "mcc": 0.015041378009885184,
+        "f1": -0.0064436159524652314,
+        "auc": 0.020478464051873813,
+        "auprc": 0.02563855846195906,
+        "recall": -0.02491103202846978,
+        "fpr": -0.04033214709371291,
+        "p_c": -0.03558718861209964
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "valid",
+      "before": "context_only",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.009786476868327454,
+        "precision": 0.006297497802512986,
+        "mcc": 0.020970297435960933,
+        "f1": 0.025896092191109665,
+        "auc": 0.011195927947552198,
+        "auprc": 0.0034128178441759083,
+        "recall": 0.051601423487544484,
+        "fpr": 0.03202846975088969,
+        "p_c": 0.02194543297746146
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "valid",
+      "before": "plm_baseline",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.017497034400949074,
+        "precision": 0.015026824694670537,
+        "mcc": 0.03601167544584612,
+        "f1": 0.019452476238644434,
+        "auc": 0.03167439199942601,
+        "auprc": 0.02905137630613497,
+        "recall": 0.026690391459074703,
+        "fpr": -0.008303677342823224,
+        "p_c": -0.01364175563463818
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "test",
+      "before": "plm_baseline",
+      "after": "context_only",
+      "metrics": {
+        "accuracy": 0.012115839243498794,
+        "precision": 0.014430336930375764,
+        "mcc": 0.02404667124689861,
+        "f1": -0.011048628495065715,
+        "auc": 0.015904527773586086,
+        "auprc": 0.025236521933237444,
+        "recall": -0.038416075650118287,
+        "fpr": -0.06264775413711587,
+        "p_c": -0.040780141843971635
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "test",
+      "before": "context_only",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.0056146572104018855,
+        "precision": -7.922705553009557e-05,
+        "mcc": 0.01235119416094084,
+        "f1": 0.041928247939423846,
+        "auc": 0.006689280384957197,
+        "auprc": 0.005367052628171054,
+        "recall": 0.09042553191489366,
+        "fpr": 0.0791962174940899,
+        "p_c": 0.018912529550827423
+      }
+    },
+    {
+      "dataset": "primevul_paired",
+      "split": "test",
+      "before": "plm_baseline",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.01773049645390068,
+        "precision": 0.014351109874845669,
+        "mcc": 0.03639786540783945,
+        "f1": 0.03087961944435813,
+        "auc": 0.022593808158543283,
+        "auprc": 0.030603574561408498,
+        "recall": 0.05200945626477538,
+        "fpr": 0.01654846335697402,
+        "p_c": -0.021867612293144212
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "valid",
+      "before": "plm_baseline",
+      "after": "context_only",
+      "metrics": {
+        "accuracy": -0.01559224318658281,
+        "precision": -0.003755336423104827,
+        "mcc": 0.0030077650896921937,
+        "f1": 0.021474671420697367,
+        "auc": 0.0032023839503063645,
+        "auprc": 0.001140553337763972,
+        "recall": 0.08757575757575753,
+        "fpr": 0.09418282548476459
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "valid",
+      "before": "context_only",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": -0.0036687631027253476,
+        "precision": -0.0062582691146413905,
+        "mcc": 0.011120027081247236,
+        "f1": 0.03232100122299686,
+        "auc": 0.0036302778477294018,
+        "auprc": -0.0026794216409401495,
+        "recall": 0.06606060606060604,
+        "fpr": 0.056786703601108046
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "valid",
+      "before": "plm_baseline",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": -0.019261006289308158,
+        "precision": -0.010013605537746217,
+        "mcc": 0.01412779217093943,
+        "f1": 0.053795672643694226,
+        "auc": 0.006832661798035766,
+        "auprc": -0.0015388683031761774,
+        "recall": 0.15363636363636357,
+        "fpr": 0.15096952908587263
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "test",
+      "before": "plm_baseline",
+      "after": "context_only",
+      "metrics": {
+        "accuracy": -0.006813417190775772,
+        "precision": 0.0017598334617319744,
+        "mcc": 0.02783310398488438,
+        "f1": 0.034757406535655955,
+        "auc": 0.003939184084613578,
+        "auprc": -0.0018849002696399442,
+        "recall": 0.10939393939393938,
+        "fpr": 0.09533702677746997
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "test",
+      "before": "context_only",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": -0.009302935010482183,
+        "precision": -0.01447571339250081,
+        "mcc": -0.013637744139330221,
+        "f1": 0.012631028210275286,
+        "auc": -0.0022781834970201364,
+        "auprc": -0.00046484062686702465,
+        "recall": 0.030000000000000027,
+        "fpr": 0.039242843951985296
+      }
+    },
+    {
+      "dataset": "secvuleval",
+      "split": "test",
+      "before": "plm_baseline",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": -0.016116352201257955,
+        "precision": -0.012715879930768836,
+        "mcc": 0.014195359845554159,
+        "f1": 0.04738843474593124,
+        "auc": 0.001661000587593442,
+        "auprc": -0.002349740896506969,
+        "recall": 0.1393939393939394,
+        "fpr": 0.13457987072945526
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "valid",
+      "before": "plm_baseline",
+      "after": "context_only",
+      "metrics": {
+        "accuracy": 0.002123142250530785,
+        "precision": -0.02314553560733401,
+        "mcc": 0.0060840086776719204,
+        "f1": 0.13504536615674534,
+        "auc": 0.02674212611735427,
+        "auprc": 0.016414835496865288,
+        "recall": 0.2675159235668789,
+        "fpr": 0.26326963906581735
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "valid",
+      "before": "context_only",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.014861995753715496,
+        "precision": 0.05024479859497211,
+        "mcc": 0.027363699012901976,
+        "f1": -0.15864740177101716,
+        "auc": 0.0020994766521967856,
+        "auprc": 0.009949281995725201,
+        "recall": -0.36093418259023347,
+        "fpr": -0.39065817409766446
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "valid",
+      "before": "plm_baseline",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.01698513800424628,
+        "precision": 0.027099262987638095,
+        "mcc": 0.0334477076905739,
+        "f1": -0.02360203561427182,
+        "auc": 0.028841602769551056,
+        "auprc": 0.02636411749259049,
+        "recall": -0.09341825902335454,
+        "fpr": -0.1273885350318471
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "test",
+      "before": "plm_baseline",
+      "after": "context_only",
+      "metrics": {
+        "accuracy": -0.007430997876857748,
+        "precision": -0.025749756814237634,
+        "mcc": -0.008097868459065946,
+        "f1": 0.11612372644202751,
+        "auc": 0.019202942648112842,
+        "auprc": 0.013592781067899629,
+        "recall": 0.2717622080679406,
+        "fpr": 0.286624203821656
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "test",
+      "before": "context_only",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": 0.006900212314225107,
+        "precision": 0.03133750026667459,
+        "mcc": 0.0053327259513271524,
+        "f1": -0.14488390428322218,
+        "auc": -0.01956468822264601,
+        "auprc": -0.016910730920485895,
+        "recall": -0.35031847133757965,
+        "fpr": -0.36411889596602964
+      }
+    },
+    {
+      "dataset": "cleanvul",
+      "split": "test",
+      "before": "plm_baseline",
+      "after": "rgcl",
+      "metrics": {
+        "accuracy": -0.0005307855626326408,
+        "precision": 0.005587743452436955,
+        "mcc": -0.0027651425077387937,
+        "f1": -0.028760177841194667,
+        "auc": -0.0003617455745331677,
+        "auprc": -0.003317949852586266,
+        "recall": -0.07855626326963905,
+        "fpr": -0.07749469214437366
+      }
+    }
+  ]
+}
