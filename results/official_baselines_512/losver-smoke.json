@@ -1,0 +1,14 @@
+{
+  "localizer": {
+    "functions": 4,
+    "loss": 0.23118580877780914,
+    "gradient_norm": 9.370002746582031,
+    "save_reload_equal": true
+  },
+  "predicted": {
+    "functions": 4,
+    "loss": 0.8259868025779724,
+    "gradient_norm": 10.515999794006348,
+    "save_reload_equal": true
+  }
+}

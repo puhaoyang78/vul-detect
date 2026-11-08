@@ -535,3 +535,15 @@ __pycache__/
 !/results/rgcl_region_attention_512/*.svg
 !/results/rgcl_region_attention_512/*.png
 !/results/rgcl_region_attention_512/*.log
+
+# Pinned official baselines: checkouts, exports, source caches, Token logs and weights stay local.
+/external/
+!/results/official_baselines_512/
+!/results/official_baselines_512/**/
+!/results/official_baselines_512/**/*.json
+!/results/official_baselines_512/**/*.jsonl
+!/results/official_baselines_512/**/*.csv
+!/results/official_baselines_512/**/*.md
+!/results/official_baselines_512/**/*.log
+/results/official_baselines_512/**/*.predicted.jsonl
+/results/official_baselines_512/**/*.local.log

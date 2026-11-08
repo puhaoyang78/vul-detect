@@ -1,0 +1,40 @@
+{
+  "method": "regvd",
+  "upstream": {
+    "repo": "https://github.com/daiquocnguyen/GNN-ReGVD.git",
+    "commit": "b5e6657b003ada704b7c75e4bd237c1eee1d8138",
+    "script": "code/run.py"
+  },
+  "functions": 128,
+  "loss": 0.6954379081726074,
+  "gradient_norm": 0.07192090934976775,
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 128,
+    "pairs": 64,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 2,
+      "p_v": 49,
+      "p_b": 13,
+      "p_r": 0
+    },
+    "p_c": 0.03125,
+    "p_v": 0.765625,
+    "p_b": 0.203125,
+    "p_r": 0.0,
+    "accuracy": 0.515625,
+    "precision": 0.51,
+    "recall": 0.796875,
+    "f1": 0.6219512195121951,
+    "mcc": 0.03779644730092272,
+    "auc": 0.54052734375,
+    "auprc": 0.5409144196175857,
+    "pair_ranking_accuracy": 0.515625,
+    "pair_ranking_ties": 13,
+    "patched_fpr": 0.765625
+  },
+  "maximum_memory_bytes": 1083713536
+}

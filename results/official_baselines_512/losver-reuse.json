@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "runs": [
+    {
+      "method": "losver_localizer",
+      "run": "results/losver_512/primevul_paired/losver_localizer",
+      "epochs": 40,
+      "selected_epoch": 8,
+      "selection": "f1",
+      "seed": 123456,
+      "checkpoint_metadata_checked": true,
+      "full_official_counts": true,
+      "oracle": false
+    },
+    {
+      "method": "losver",
+      "run": "results/losver_512/primevul_paired/losver",
+      "epochs": 16,
+      "selected_epoch": 14,
+      "selection": "p_c",
+      "seed": 123456,
+      "checkpoint_metadata_checked": true,
+      "full_official_counts": true,
+      "oracle": false
+    }
+  ],
+  "reused_seed123456": true,
+  "trained": false,
+  "earlier_pre_source_offset_results_excluded": true,
+  "reproduced_saved_metrics": [
+    "p_c",
+    "mcc",
+    "f1",
+    "auc",
+    "auprc",
+    "recall"
+  ],
+  "recomputed_from_original_predictions": [
+    "patched_fpr"
+  ],
+  "test": {
+    "p_c": 0.1400709219858156,
+    "mcc": 0.08889932035449238,
+    "f1": 0.5267034990791897,
+    "auc": 0.567864732659323,
+    "auprc": 0.5668556062331087,
+    "recall": 0.5070921985815603,
+    "patched_fpr": 0.41843971631205673
+  }
+}

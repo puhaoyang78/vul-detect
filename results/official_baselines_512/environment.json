@@ -1,0 +1,16 @@
+{
+  "python": "3.11.14 | packaged by conda-forge | (main, Oct 22 2025, 22:46:25) [GCC 14.3.0]",
+  "executable": "/home/phy/miniconda3/envs/vul-detect/bin/python",
+  "packages": {
+    "torch": "2.9.1",
+    "transformers": "4.57.3",
+    "numpy": "2.4.0",
+    "scipy": "1.16.3",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.8.0",
+    "tokenizers": "0.22.2"
+  },
+  "unchanged_core_dependencies": true,
+  "hardware": "2 x NVIDIA RTX4090 24GB",
+  "device_management": "tmux; one visible GPU per upstream process"
+}

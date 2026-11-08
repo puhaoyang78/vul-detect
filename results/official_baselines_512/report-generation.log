@@ -1,0 +1,704 @@
+{
+  "protocol": {
+    "dataset": "PrimeVul official paired",
+    "pairs": {
+      "train": 4354,
+      "valid": 562,
+      "test": 564
+    },
+    "seeds": [
+      42,
+      1234,
+      123456
+    ],
+    "selection": "full Valid P-C",
+    "threshold": 0.5,
+    "comparison": ">",
+    "std": "sample SD, ddof=1, n=3 seeds"
+  },
+  "upstream": {
+    "linevul": {
+      "repo": "https://github.com/awsm-research/LineVul.git",
+      "commit": "9401ec6e60b762a9308645961268203244bee048",
+      "directory": "LineVul",
+      "script": "linevul/linevul_main.py",
+      "model": "codebert-base",
+      "epochs": 10,
+      "batch_size": 16,
+      "block_size": 512,
+      "learning_rate": 2e-05,
+      "warmup_fraction": 0.2,
+      "optimizer": "torch.optim.AdamW",
+      "probability_column": 1,
+      "sampler": "RandomSampler"
+    },
+    "svuld": {
+      "repo": "https://github.com/jacknichao/SVulD.git",
+      "commit": "6ebf229e92d030f68752cd2d361f56ff97dffcbd",
+      "directory": "SVulD",
+      "script": "Source_Code/SVulD/run.py",
+      "model": "unixcoder-base-nine",
+      "epochs": 20,
+      "batch_size": 32,
+      "block_size": 400,
+      "learning_rate": 2e-05,
+      "warmup_fraction": 0.1,
+      "optimizer": "torch.optim.AdamW",
+      "probability_column": 1,
+      "sampler": "SequentialSampler",
+      "r_drop": true,
+      "simcse": false,
+      "simct": false,
+      "early_stopping": {
+        "patience": 5,
+        "delta": 0
+      }
+    },
+    "regvd": {
+      "repo": "https://github.com/daiquocnguyen/GNN-ReGVD.git",
+      "commit": "b5e6657b003ada704b7c75e4bd237c1eee1d8138",
+      "directory": "ReGVD",
+      "script": "code/run.py",
+      "model": "graphcodebert-base",
+      "epochs": 100,
+      "batch_size": 128,
+      "block_size": 400,
+      "learning_rate": 0.0005,
+      "warmup_fraction": 0.1,
+      "optimizer": "Transformers AdamW rule",
+      "probability_column": 0,
+      "sampler": "RandomSampler",
+      "gnn": "ReGCN",
+      "hidden_size": 128,
+      "num_GNN_layers": 2,
+      "format": "uni",
+      "window_size": 5,
+      "att_op": "mul",
+      "num_classes": 2
+    },
+    "losver": {
+      "repo": "https://github.com/waroad/losver",
+      "commit": "a158905cb45b4400f481f18eeb1cb4473ccfccdc",
+      "implementation": "existing formal 512 source_offsets with linear function classifier",
+      "training_config": {
+        "seed": 123456,
+        "batch_size": 8,
+        "eval_batch_size": 8,
+        "learning_rate": 2e-05,
+        "adam_epsilon": 1e-08,
+        "weight_decay": 0.0,
+        "gradient_clip": 1.0,
+        "warmup_fraction": 0.1,
+        "block_size": 512,
+        "epochs": {
+          "baseline": 16,
+          "localizer": 40,
+          "predicted": 16,
+          "oracle": 16
+        },
+        "fp16": false,
+        "dropout_probability": 0.0,
+        "class_weight": 1.0,
+        "early_stopping": null
+      }
+    }
+  },
+  "runs": [
+    {
+      "method": "linevul",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/linevul",
+      "completed_epochs": 10,
+      "selected_epoch": 1,
+      "validation": {
+        "p_c": 0.037366548042704624,
+        "mcc": 0.025853413061873838,
+        "f1": 0.6007272727272728,
+        "auc": 0.5151213890401591,
+        "auprc": 0.511296291135658,
+        "recall": 0.7348754448398577,
+        "patched_fpr": 0.7117437722419929
+      },
+      "test": {
+        "p_c": 0.030141843971631204,
+        "mcc": 0.021572152600542377,
+        "f1": 0.5960555149744339,
+        "auc": 0.5128766158643931,
+        "auprc": 0.5128060013857151,
+        "recall": 0.723404255319149,
+        "patched_fpr": 0.7039007092198581
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "linevul",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/linevul",
+      "completed_epochs": 10,
+      "selected_epoch": 10,
+      "validation": {
+        "p_c": 0.09074733096085409,
+        "mcc": 0.06617755391016635,
+        "f1": 0.5554614733276884,
+        "auc": 0.5499170476564379,
+        "auprc": 0.5487811130448457,
+        "recall": 0.5836298932384342,
+        "patched_fpr": 0.5177935943060499
+      },
+      "test": {
+        "p_c": 0.08333333333333333,
+        "mcc": 0.0745882373916174,
+        "f1": 0.55,
+        "auc": 0.5446720486897038,
+        "auprc": 0.5426642169233424,
+        "recall": 0.5656028368794326,
+        "patched_fpr": 0.49113475177304966
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "linevul",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/linevul",
+      "completed_epochs": 10,
+      "selected_epoch": 10,
+      "validation": {
+        "p_c": 0.09074733096085409,
+        "mcc": 0.06458918905328506,
+        "f1": 0.560200668896321,
+        "auc": 0.5442908524461443,
+        "auprc": 0.5354314324132188,
+        "recall": 0.5960854092526691,
+        "patched_fpr": 0.5320284697508897
+      },
+      "test": {
+        "p_c": 0.0797872340425532,
+        "mcc": 0.06213893515072883,
+        "f1": 0.5427830596369922,
+        "auc": 0.5448559554348373,
+        "auprc": 0.544506694731833,
+        "recall": 0.5567375886524822,
+        "patched_fpr": 0.4946808510638298
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "svuld",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/svuld",
+      "completed_epochs": 7,
+      "selected_epoch": 7,
+      "validation": {
+        "p_c": 0.13701067615658363,
+        "mcc": 0.11281069322103299,
+        "f1": 0.5796124684077506,
+        "auc": 0.5783060624865439,
+        "auprc": 0.5673374320665,
+        "recall": 0.6120996441281139,
+        "patched_fpr": 0.5
+      },
+      "test": {
+        "p_c": 0.11879432624113476,
+        "mcc": 0.08757613161130988,
+        "f1": 0.5704753961634695,
+        "auc": 0.5679669030732861,
+        "auprc": 0.5618392154468073,
+        "recall": 0.6063829787234043,
+        "patched_fpr": 0.5195035460992907
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "svuld",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/svuld",
+      "completed_epochs": 7,
+      "selected_epoch": 6,
+      "validation": {
+        "p_c": 0.1494661921708185,
+        "mcc": 0.12802397414342281,
+        "f1": 0.5246853823814134,
+        "auc": 0.5870002279606388,
+        "auprc": 0.5717342065343898,
+        "recall": 0.4822064056939502,
+        "patched_fpr": 0.35587188612099646
+      },
+      "test": {
+        "p_c": 0.10106382978723404,
+        "mcc": 0.08276809077511002,
+        "f1": 0.49806201550387597,
+        "auc": 0.5682781298727427,
+        "auprc": 0.5612722641403445,
+        "recall": 0.45567375886524825,
+        "patched_fpr": 0.374113475177305
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "svuld",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/svuld",
+      "completed_epochs": 7,
+      "selected_epoch": 6,
+      "validation": {
+        "p_c": 0.12455516014234876,
+        "mcc": 0.11621274525999438,
+        "f1": 0.6270430906389302,
+        "auc": 0.5852620280898165,
+        "auprc": 0.5755476262282463,
+        "recall": 0.7508896797153025,
+        "patched_fpr": 0.6441281138790036
+      },
+      "test": {
+        "p_c": 0.12588652482269502,
+        "mcc": 0.11662499310100384,
+        "f1": 0.6243465272591486,
+        "auc": 0.5754866455409688,
+        "auprc": 0.5657854024863825,
+        "recall": 0.7411347517730497,
+        "patched_fpr": 0.6329787234042553
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "regvd",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/regvd",
+      "completed_epochs": 100,
+      "selected_epoch": 88,
+      "validation": {
+        "p_c": 0.08540925266903915,
+        "mcc": 0.043578776856227464,
+        "f1": 0.5647249190938511,
+        "auc": 0.5291061410063196,
+        "auprc": 0.5225898201784895,
+        "recall": 0.6209964412811388,
+        "patched_fpr": 0.5782918149466192
+      },
+      "test": {
+        "p_c": 0.09219858156028368,
+        "mcc": 0.05731712045375278,
+        "f1": 0.5596026490066225,
+        "auc": 0.5359498390423018,
+        "auprc": 0.5259346840247188,
+        "recall": 0.599290780141844,
+        "patched_fpr": 0.5425531914893617
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "regvd",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/regvd",
+      "completed_epochs": 100,
+      "selected_epoch": 60,
+      "validation": {
+        "p_c": 0.08718861209964412,
+        "mcc": 0.06475881150891048,
+        "f1": 0.6113152094048494,
+        "auc": 0.5347576651764795,
+        "auprc": 0.5329059011654635,
+        "recall": 0.7402135231316725,
+        "patched_fpr": 0.6814946619217082
+      },
+      "test": {
+        "p_c": 0.08865248226950355,
+        "mcc": 0.06972264149877891,
+        "f1": 0.6004548900682335,
+        "auc": 0.5394519264624515,
+        "auprc": 0.5309943512721517,
+        "recall": 0.7021276595744681,
+        "patched_fpr": 0.6365248226950354
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "regvd",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/regvd",
+      "completed_epochs": 100,
+      "selected_epoch": 68,
+      "validation": {
+        "p_c": 0.09430604982206406,
+        "mcc": 0.06354751664757906,
+        "f1": 0.5925925925925926,
+        "auc": 0.5440470612074315,
+        "auprc": 0.5402063793362044,
+        "recall": 0.6832740213523132,
+        "patched_fpr": 0.6227758007117438
+      },
+      "test": {
+        "p_c": 0.08156028368794327,
+        "mcc": 0.05110884802691443,
+        "f1": 0.5752773375594294,
+        "auc": 0.532479188672602,
+        "auprc": 0.5245629149485541,
+        "recall": 0.6436170212765957,
+        "patched_fpr": 0.5939716312056738
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "losver",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/losver",
+      "completed_epochs": 16,
+      "selected_epoch": 16,
+      "validation": {
+        "p_c": 0.16725978647686832,
+        "mcc": 0.11216376232387212,
+        "f1": 0.5634295713035871,
+        "auc": 0.571210787604007,
+        "auprc": 0.5692335517979874,
+        "recall": 0.5729537366548043,
+        "patched_fpr": 0.4608540925266904
+      },
+      "test": {
+        "p_c": 0.13829787234042554,
+        "mcc": 0.08720918507466276,
+        "f1": 0.562446898895497,
+        "auc": 0.5653073286052009,
+        "auprc": 0.5511487329552706,
+        "recall": 0.5868794326241135,
+        "patched_fpr": 0.5
+      },
+      "valid_reload_max_probability_difference": null,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "losver",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/losver",
+      "completed_epochs": 16,
+      "selected_epoch": 9,
+      "validation": {
+        "p_c": 0.15658362989323843,
+        "mcc": 0.09821637766500722,
+        "f1": 0.6026541764246682,
+        "auc": 0.566566089588531,
+        "auprc": 0.5715052661660895,
+        "recall": 0.6868327402135231,
+        "patched_fpr": 0.5925266903914591
+      },
+      "test": {
+        "p_c": 0.1453900709219858,
+        "mcc": 0.09466883915784136,
+        "f1": 0.5923566878980892,
+        "auc": 0.5766010889794276,
+        "auprc": 0.5748166183717112,
+        "recall": 0.6595744680851063,
+        "patched_fpr": 0.5673758865248227
+      },
+      "valid_reload_max_probability_difference": null,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "losver",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/losver_512/primevul_paired/losver",
+      "completed_epochs": 16,
+      "selected_epoch": 14,
+      "validation": {
+        "p_c": 0.1423487544483986,
+        "mcc": 0.0873993091171983,
+        "f1": 0.5271889400921659,
+        "auc": 0.5636880865237269,
+        "auprc": 0.5612114420230693,
+        "recall": 0.5088967971530249,
+        "patched_fpr": 0.42170818505338076
+      },
+      "test": {
+        "p_c": 0.1400709219858156,
+        "mcc": 0.08889932035449238,
+        "f1": 0.5267034990791897,
+        "auc": 0.567864732659323,
+        "auprc": 0.5668556062331087,
+        "recall": 0.5070921985815603,
+        "patched_fpr": 0.41843971631205673
+      },
+      "valid_reload_max_probability_difference": null,
+      "metrics_recomputed_from_predictions": [
+        "patched_fpr"
+      ]
+    }
+  ],
+  "aggregate": {
+    "validation": {
+      "linevul": {
+        "p_c": {
+          "mean": 0.07295373665480427,
+          "std": 0.03081940938734657
+        },
+        "mcc": {
+          "mean": 0.05220671867510841,
+          "std": 0.022836445942572798
+        },
+        "f1": {
+          "mean": 0.5721298049837608,
+          "std": 0.024879235612561456
+        },
+        "auc": {
+          "mean": 0.5364430963809138,
+          "std": 0.01867819373172029
+        },
+        "auprc": {
+          "mean": 0.5318362788645742,
+          "std": 0.018999258279459967
+        },
+        "recall": {
+          "mean": 0.638196915776987,
+          "std": 0.08395736094063144
+        },
+        "patched_fpr": {
+          "mean": 0.5871886120996441,
+          "std": 0.10810249237782232
+        }
+      },
+      "svuld": {
+        "p_c": {
+          "mean": 0.13701067615658363,
+          "std": 0.01245551601423487
+        },
+        "mcc": {
+          "mean": 0.11901580420815006,
+          "std": 0.007984599783709532
+        },
+        "f1": {
+          "mean": 0.5771136471426981,
+          "std": 0.051224585803291166
+        },
+        "auc": {
+          "mean": 0.5835227728456664,
+          "std": 0.004600639621396519
+        },
+        "auprc": {
+          "mean": 0.5715397549430453,
+          "std": 0.004108549696599214
+        },
+        "recall": {
+          "mean": 0.6150652431791221,
+          "std": 0.1343661844289953
+        },
+        "patched_fpr": {
+          "mean": 0.5,
+          "std": 0.14412811387900357
+        }
+      },
+      "regvd": {
+        "p_c": {
+          "mean": 0.08896797153024912,
+          "std": 0.004707742546378276
+        },
+        "mcc": {
+          "mean": 0.057295035004239,
+          "std": 0.011894057844043035
+        },
+        "f1": {
+          "mean": 0.5895442403637644,
+          "std": 0.02344425572073095
+        },
+        "auc": {
+          "mean": 0.5359702891300768,
+          "std": 0.007543912562697637
+        },
+        "auprc": {
+          "mean": 0.5319007002267192,
+          "std": 0.008851192622169985
+        },
+        "recall": {
+          "mean": 0.6814946619217082,
+          "std": 0.05962845580112464
+        },
+        "patched_fpr": {
+          "mean": 0.627520759193357,
+          "std": 0.051764784160518655
+        }
+      },
+      "losver": {
+        "p_c": {
+          "mean": 0.1553973902728351,
+          "std": 0.01249780990848485
+        },
+        "mcc": {
+          "mean": 0.09925981636869255,
+          "std": 0.012415156418774824
+        },
+        "f1": {
+          "mean": 0.5644242292734737,
+          "std": 0.03774244933808486
+        },
+        "auc": {
+          "mean": 0.5671549879054216,
+          "std": 0.0037957685396424294
+        },
+        "auprc": {
+          "mean": 0.5673167533290487,
+          "std": 0.005407984018999219
+        },
+        "recall": {
+          "mean": 0.5895610913404508,
+          "std": 0.09012298891208814
+        },
+        "patched_fpr": {
+          "mean": 0.4916963226571768,
+          "std": 0.08948839484005837
+        }
+      }
+    },
+    "test": {
+      "linevul": {
+        "p_c": {
+          "mean": 0.0644208037825059,
+          "std": 0.02973935136030526
+        },
+        "mcc": {
+          "mean": 0.0527664417142962,
+          "std": 0.02772289733335233
+        },
+        "f1": {
+          "mean": 0.5629461915371421,
+          "std": 0.028899680463756062
+        },
+        "auc": {
+          "mean": 0.5341348733296447,
+          "std": 0.01841042064339977
+        },
+        "auprc": {
+          "mean": 0.5333256376802968,
+          "std": 0.017794389182130773
+        },
+        "recall": {
+          "mean": 0.6152482269503546,
+          "std": 0.09377069377430751
+        },
+        "patched_fpr": {
+          "mean": 0.5632387706855793,
+          "std": 0.1218297148449875
+        }
+      },
+      "svuld": {
+        "p_c": {
+          "mean": 0.11524822695035461,
+          "std": 0.012785642820794288
+        },
+        "mcc": {
+          "mean": 0.09565640516247458,
+          "std": 0.01831776662894572
+        },
+        "f1": {
+          "mean": 0.5642946463088314,
+          "std": 0.06336872831997742
+        },
+        "auc": {
+          "mean": 0.5705772261623325,
+          "std": 0.004254528705587972
+        },
+        "auprc": {
+          "mean": 0.5629656273578447,
+          "std": 0.002458395264723545
+        },
+        "recall": {
+          "mean": 0.601063829787234,
+          "std": 0.1428048130387447
+        },
+        "patched_fpr": {
+          "mean": 0.5088652482269503,
+          "std": 0.12976010257824103
+        }
+      },
+      "regvd": {
+        "p_c": {
+          "mean": 0.08747044917257683,
+          "std": 0.005416756140609734
+        },
+        "mcc": {
+          "mean": 0.05938286999314871,
+          "std": 0.009477279025276298
+        },
+        "f1": {
+          "mean": 0.5784449588780951,
+          "std": 0.020609506751808573
+        },
+        "auc": {
+          "mean": 0.5359603180591185,
+          "std": 0.0034863807062402116
+        },
+        "auprc": {
+          "mean": 0.5271639834151415,
+          "std": 0.0033873626967882843
+        },
+        "recall": {
+          "mean": 0.6483451536643026,
+          "std": 0.051581221096119644
+        },
+        "patched_fpr": {
+          "mean": 0.5910165484633569,
+          "std": 0.04705545933655566
+        }
+      },
+      "losver": {
+        "p_c": {
+          "mean": 0.14125295508274233,
+          "std": 0.003690897162173984
+        },
+        "mcc": {
+          "mean": 0.09025911486233217,
+          "std": 0.003911315710580547
+        },
+        "f1": {
+          "mean": 0.560502361957592,
+          "std": 0.03286976146018822
+        },
+        "auc": {
+          "mean": 0.5699243834146506,
+          "std": 0.005921898071822424
+        },
+        "auprc": {
+          "mean": 0.5642736525200301,
+          "std": 0.01204334105444999
+        },
+        "recall": {
+          "mean": 0.58451536643026,
+          "std": 0.07626861893967074
+        },
+        "patched_fpr": {
+          "mean": 0.49527186761229314,
+          "std": 0.07458057472504663
+        }
+      }
+    }
+  },
+  "environment": {
+    "python": "3.11.14",
+    "cuda": "12.8",
+    "packages": {
+      "torch": "2.9.1",
+      "transformers": "4.57.3",
+      "numpy": "2.4.0",
+      "scipy": "1.16.3",
+      "pandas": "2.3.3",
+      "scikit-learn": "1.8.0"
+    }
+  }
+}

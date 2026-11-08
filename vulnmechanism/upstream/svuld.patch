@@ -1,0 +1,128 @@
+diff --git a/Source_Code/SVulD/run.py b/Source_Code/SVulD/run.py
+index 464d54f..4c97368 100644
+--- a/Source_Code/SVulD/run.py
++++ b/Source_Code/SVulD/run.py
+@@ -22,12 +22,12 @@ using a masked language modeling (MLM) loss.
+ from __future__ import absolute_import, division, print_function
+ 
+ import argparse
++from vulnmechanism.official_baselines import (native_begin, native_batches, native_step, native_epoch, native_finish, native_predictions, native_smoke, native_evaluate)
+ from lib2to3.pgen2 import token
+ import logging
+ import os
+ import random
+ import json
+-os.environ["CUDA_VISIBLE_DEVICES"] = "1,0,2,3"
+ import torch
+ import numpy as np
+ import pandas as pd
+@@ -156,9 +156,16 @@ def train(args, train_dataset, model, tokenizer):
+ 
+     losses, best_f1 = [], 0
+     
++    state = native_begin(args, model, optimizer, scheduler)
++    if state["early_stopping"] is not None:
++        for key, value in state["early_stopping"].items():
++            setattr(early_stopping, key, value)
++        if early_stopping.early_stop:
++            native_finish(args, model, optimizer, scheduler)
++            return
+     model.zero_grad()
+-    for idx in range(args.num_train_epochs): 
+-        for step, batch in enumerate(train_dataloader):
++    for idx in range(state["epoch"], args.num_train_epochs): 
++        for step, batch in native_batches(args, train_dataloader, idx):
+             inputs = batch[0].to(args.device)
+             contrasts = batch[1].to(args.device)
+             labels = batch[2].to(args.device)
+@@ -180,33 +187,22 @@ def train(args, train_dataset, model, tokenizer):
+ 
+             optimizer.step()
+             optimizer.zero_grad()
+-            scheduler.step()  
++            scheduler.step()
++            native_step(args, model, optimizer, scheduler, idx, step, loss)
+ 
+         results, eval_loss = evaluate(args, model, tokenizer, args.eval_data_file)
+         
+         # for key, value in results.items():
+         #     logger.info("  %s = %s", key, round(value,4))                    
+         
+-        if results['f1'] > best_f1:
+-            best_f1 = results['f1']
+-            logger.info("  "+"*"*20)  
+-            logger.info("  Best f1:%s",round(best_f1,4))
+-            logger.info("  "+"*"*20)                          
+-
+-            checkpoint_prefix = 'checkpoint-best-f1'
+-            output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))                        
+-            if not os.path.exists(output_dir):
+-                os.makedirs(output_dir)                        
+-            output_dir = os.path.join(output_dir, 'model.bin')
+-            model_to_save = model.module if hasattr(model,'module') else model
+-            torch.save(model_to_save.state_dict(), output_dir)
+-            logger.info("Saving model checkpoint to %s", output_dir)
+-
+         early_stopping(eval_loss)
++        native_epoch(args, model, optimizer, scheduler, idx, early_stopping)
+         if early_stopping.early_stop:
+             print("Early stopping")
+             break
+ 
++    native_finish(args, model, optimizer, scheduler)
++
+ 
+ def evaluate(args, model, tokenizer, data_file):
+     """ Evaluate the model """
+@@ -253,6 +249,7 @@ def evaluate(args, model, tokenizer, data_file):
+         "pr_auc": float(pr_auc),
+         "roc_auc": float(roc_auc)
+     }
++    native_predictions(args, logits[:, 1], labels)
+     return results, eval_loss
+ 
+ 
+@@ -347,6 +344,10 @@ def main():
+     parser.add_argument('--sigma', type=float, default=0.2,
+                         help="")                  
+     # Print arguments
++    parser.add_argument("--reproduction-config", required=True)
++    parser.add_argument("--reproduction-resume", action="store_true")
++    parser.add_argument("--reproduction-smoke", action="store_true")
++    parser.add_argument("--reproduction-evaluate", action="store_true")
+     args = parser.parse_args()
+     
+     # Set log
+@@ -374,6 +375,12 @@ def main():
+     if args.n_gpu > 1:
+         model = torch.nn.DataParallel(model)  
+             
++    if args.reproduction_smoke:
++        native_smoke(args, model, tokenizer, TextDataset(tokenizer, args, args.train_data_file))
++        return
++    if args.reproduction_evaluate:
++        native_evaluate(args, model, tokenizer, TextDataset, evaluate)
++        return
+     # Training     
+     if args.do_train:
+         train_dataset = TextDataset(tokenizer, args, args.train_data_file)
+@@ -405,4 +412,4 @@ def main():
+         
+ 
+ if __name__ == "__main__":
+-    main()
+\ No newline at end of file
++    main()
+diff --git a/Source_Code/SVulD/utils/early_stopping.py b/Source_Code/SVulD/utils/early_stopping.py
+index 81ffb18..ac298be 100644
+--- a/Source_Code/SVulD/utils/early_stopping.py
++++ b/Source_Code/SVulD/utils/early_stopping.py
+@@ -21,7 +21,7 @@ class EarlyStopping:
+         self.counter = 0
+         self.best_score = None
+         self.early_stop = False
+-        self.val_loss_min = np.Inf
++        self.val_loss_min = np.inf
+         self.delta = delta
+ 
+     def __call__(self, val_loss):

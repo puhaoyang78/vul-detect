@@ -1,0 +1,93 @@
+{
+  "selected_epoch": 1,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 17,
+      "p_v": 391,
+      "p_b": 150,
+      "p_r": 6
+    },
+    "p_c": 0.030141843971631204,
+    "p_v": 0.6932624113475178,
+    "p_b": 0.26595744680851063,
+    "p_r": 0.010638297872340425,
+    "accuracy": 0.5097517730496454,
+    "precision": 0.506832298136646,
+    "recall": 0.723404255319149,
+    "f1": 0.5960555149744339,
+    "mcc": 0.021572152600542377,
+    "auc": 0.5128766158643931,
+    "auprc": 0.5128060013857151,
+    "pair_ranking_accuracy": 0.3882978723404255,
+    "pair_ranking_ties": 200,
+    "patched_fpr": 0.7039007092198581
+  },
+  "source_only": true
+}
+{
+  "selected_epoch": 10,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 47,
+      "p_v": 272,
+      "p_b": 240,
+      "p_r": 5
+    },
+    "p_c": 0.08333333333333333,
+    "p_v": 0.48226950354609927,
+    "p_b": 0.425531914893617,
+    "p_r": 0.008865248226950355,
+    "accuracy": 0.5372340425531915,
+    "precision": 0.535234899328859,
+    "recall": 0.5656028368794326,
+    "f1": 0.55,
+    "mcc": 0.0745882373916174,
+    "auc": 0.5446720486897038,
+    "auprc": 0.5426642169233424,
+    "pair_ranking_accuracy": 0.4078014184397163,
+    "pair_ranking_ties": 200,
+    "patched_fpr": 0.49113475177304966
+  },
+  "source_only": true
+}
+{
+  "selected_epoch": 10,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 45,
+      "p_v": 269,
+      "p_b": 240,
+      "p_r": 10
+    },
+    "p_c": 0.0797872340425532,
+    "p_v": 0.4769503546099291,
+    "p_b": 0.425531914893617,
+    "p_r": 0.01773049645390071,
+    "accuracy": 0.5310283687943262,
+    "precision": 0.5295109612141653,
+    "recall": 0.5567375886524822,
+    "f1": 0.5427830596369922,
+    "mcc": 0.06213893515072883,
+    "auc": 0.5448559554348373,
+    "auprc": 0.544506694731833,
+    "pair_ranking_accuracy": 0.4326241134751773,
+    "pair_ranking_ties": 200,
+    "patched_fpr": 0.4946808510638298
+  },
+  "source_only": true
+}

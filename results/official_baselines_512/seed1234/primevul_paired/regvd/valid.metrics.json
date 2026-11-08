@@ -1,0 +1,31 @@
+{
+  "selected_epoch": 60,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1124,
+    "pairs": 562,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 49,
+      "p_v": 367,
+      "p_b": 130,
+      "p_r": 16
+    },
+    "p_c": 0.08718861209964412,
+    "p_v": 0.6530249110320284,
+    "p_b": 0.2313167259786477,
+    "p_r": 0.028469750889679714,
+    "accuracy": 0.5293594306049823,
+    "precision": 0.5206508135168961,
+    "recall": 0.7402135231316725,
+    "f1": 0.6113152094048494,
+    "mcc": 0.06475881150891048,
+    "auc": 0.5347576651764795,
+    "auprc": 0.5329059011654635,
+    "pair_ranking_accuracy": 0.42526690391459077,
+    "pair_ranking_ties": 179,
+    "patched_fpr": 0.6814946619217082
+  },
+  "source_only": true
+}

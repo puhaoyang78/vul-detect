@@ -1,0 +1,181 @@
+{
+  "protocol": {
+    "dataset": "PrimeVul official paired",
+    "pairs": {
+      "train": 4354,
+      "valid": 562,
+      "test": 564
+    },
+    "seeds": [
+      42,
+      1234,
+      123456
+    ],
+    "selection": "full Valid P-C",
+    "threshold": 0.5,
+    "comparison": ">",
+    "std": "sample SD, ddof=1, n=3 seeds"
+  },
+  "upstream": {
+    "linevul": {
+      "repo": "https://github.com/awsm-research/LineVul.git",
+      "commit": "9401ec6e60b762a9308645961268203244bee048",
+      "directory": "LineVul",
+      "script": "linevul/linevul_main.py",
+      "model": "codebert-base",
+      "epochs": 10,
+      "batch_size": 16,
+      "block_size": 512,
+      "learning_rate": 2e-05,
+      "warmup_fraction": 0.2,
+      "optimizer": "torch.optim.AdamW",
+      "probability_column": 1,
+      "sampler": "RandomSampler"
+    },
+    "svuld": {
+      "repo": "https://github.com/jacknichao/SVulD.git",
+      "commit": "6ebf229e92d030f68752cd2d361f56ff97dffcbd",
+      "directory": "SVulD",
+      "script": "Source_Code/SVulD/run.py",
+      "model": "unixcoder-base-nine",
+      "epochs": 20,
+      "batch_size": 32,
+      "block_size": 400,
+      "learning_rate": 2e-05,
+      "warmup_fraction": 0.1,
+      "optimizer": "torch.optim.AdamW",
+      "probability_column": 1,
+      "sampler": "SequentialSampler",
+      "r_drop": true,
+      "simcse": false,
+      "simct": false,
+      "early_stopping": {
+        "patience": 5,
+        "delta": 0
+      }
+    },
+    "regvd": {
+      "repo": "https://github.com/daiquocnguyen/GNN-ReGVD.git",
+      "commit": "b5e6657b003ada704b7c75e4bd237c1eee1d8138",
+      "directory": "ReGVD",
+      "script": "code/run.py",
+      "model": "graphcodebert-base",
+      "epochs": 100,
+      "batch_size": 128,
+      "block_size": 400,
+      "learning_rate": 0.0005,
+      "warmup_fraction": 0.1,
+      "optimizer": "Transformers AdamW rule",
+      "probability_column": 0,
+      "sampler": "RandomSampler",
+      "gnn": "ReGCN",
+      "hidden_size": 128,
+      "num_GNN_layers": 2,
+      "format": "uni",
+      "window_size": 5,
+      "att_op": "mul",
+      "num_classes": 2
+    }
+  },
+  "runs": [
+    {
+      "method": "linevul",
+      "seed": 42,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/linevul"
+    },
+    {
+      "method": "linevul",
+      "seed": 1234,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/linevul"
+    },
+    {
+      "method": "linevul",
+      "seed": 123456,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/linevul"
+    },
+    {
+      "method": "svuld",
+      "seed": 42,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/svuld"
+    },
+    {
+      "method": "svuld",
+      "seed": 1234,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/svuld"
+    },
+    {
+      "method": "svuld",
+      "seed": 123456,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/svuld"
+    },
+    {
+      "method": "regvd",
+      "seed": 42,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/regvd"
+    },
+    {
+      "method": "regvd",
+      "seed": 1234,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/regvd"
+    },
+    {
+      "method": "regvd",
+      "seed": 123456,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/regvd"
+    },
+    {
+      "method": "losver",
+      "seed": 42,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/losver"
+    },
+    {
+      "method": "losver",
+      "seed": 1234,
+      "status": "incomplete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/losver"
+    },
+    {
+      "method": "losver",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/losver_512/primevul_paired/losver",
+      "completed_epochs": 16,
+      "selected_epoch": 14,
+      "validation": {
+        "p_c": 0.1423487544483986,
+        "mcc": 0.0873993091171983,
+        "f1": 0.5271889400921659,
+        "auc": 0.5636880865237269,
+        "auprc": 0.5612114420230693,
+        "recall": 0.5088967971530249,
+        "patched_fpr": 0.42170818505338076
+      },
+      "test": {
+        "p_c": 0.1400709219858156,
+        "mcc": 0.08889932035449238,
+        "f1": 0.5267034990791897,
+        "auc": 0.567864732659323,
+        "auprc": 0.5668556062331087,
+        "recall": 0.5070921985815603,
+        "patched_fpr": 0.41843971631205673
+      },
+      "metrics_recomputed_from_predictions": [
+        "patched_fpr"
+      ]
+    }
+  ],
+  "aggregate": {
+    "validation": {},
+    "test": {}
+  }
+}

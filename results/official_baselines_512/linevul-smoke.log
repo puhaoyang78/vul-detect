@@ -1,0 +1,40 @@
+{
+  "method": "linevul",
+  "upstream": {
+    "repo": "https://github.com/awsm-research/LineVul.git",
+    "commit": "9401ec6e60b762a9308645961268203244bee048",
+    "script": "linevul/linevul_main.py"
+  },
+  "functions": 16,
+  "loss": 0.6748237609863281,
+  "gradient_norm": 1.755003571510315,
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 16,
+    "pairs": 8,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 1,
+      "p_v": 1,
+      "p_b": 6,
+      "p_r": 0
+    },
+    "p_c": 0.125,
+    "p_v": 0.125,
+    "p_b": 0.75,
+    "p_r": 0.0,
+    "accuracy": 0.5625,
+    "precision": 0.6666666666666666,
+    "recall": 0.25,
+    "f1": 0.36363636363636365,
+    "mcc": 0.16012815380508713,
+    "auc": 0.484375,
+    "auprc": 0.6236111111111111,
+    "pair_ranking_accuracy": 0.375,
+    "pair_ranking_ties": 2,
+    "patched_fpr": 0.125
+  },
+  "maximum_memory_bytes": 6238224896
+}

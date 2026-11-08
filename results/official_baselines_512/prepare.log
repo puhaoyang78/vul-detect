@@ -1,0 +1,14 @@
+{
+  "linevul": {
+    "repo": "https://github.com/awsm-research/LineVul.git",
+    "commit": "9401ec6e60b762a9308645961268203244bee048"
+  },
+  "svuld": {
+    "repo": "https://github.com/jacknichao/SVulD.git",
+    "commit": "6ebf229e92d030f68752cd2d361f56ff97dffcbd"
+  },
+  "regvd": {
+    "repo": "https://github.com/daiquocnguyen/GNN-ReGVD.git",
+    "commit": "b5e6657b003ada704b7c75e4bd237c1eee1d8138"
+  }
+}

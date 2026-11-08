@@ -1,0 +1,118 @@
+diff --git a/linevul/linevul_main.py b/linevul/linevul_main.py
+index bc47b66..a3b300d 100644
+--- a/linevul/linevul_main.py
++++ b/linevul/linevul_main.py
+@@ -16,6 +16,7 @@
+ 
+ from __future__ import absolute_import, division, print_function
+ import argparse
++from vulnmechanism.official_baselines import (native_begin, native_batches, native_step, native_epoch, native_finish, native_predictions, native_smoke, native_evaluate)
+ import glob
+ import logging
+ import os
+@@ -37,7 +38,6 @@ from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_sc
+ from sklearn.metrics import auc
+ import matplotlib.pyplot as plt
+ # model reasoning
+-from captum.attr import LayerIntegratedGradients, DeepLift, DeepLiftShap, GradientShap, Saliency
+ # word-level tokenizer
+ from tokenizers import Tokenizer
+ 
+@@ -152,13 +152,15 @@ def train(args, train_dataset, model, tokenizer, eval_dataset):
+     tr_loss, logging_loss, avg_loss, tr_nb, tr_num, train_loss = 0.0, 0.0, 0.0, 0, 0, 0
+     best_f1=0
+ 
++    state = native_begin(args, model, optimizer, scheduler)
++    global_step = state["global_step"]
+     model.zero_grad()
+ 
+-    for idx in range(args.epochs): 
+-        bar = tqdm(train_dataloader,total=len(train_dataloader))
++    for idx in range(state["epoch"], args.epochs): 
++        bar = tqdm(native_batches(args, train_dataloader, idx),total=len(train_dataloader))
+         tr_num = 0
+         train_loss = 0
+-        for step, batch in enumerate(bar):
++        for step, batch in bar:
+             (inputs_ids, labels) = [x.to(args.device) for x in batch]
+             model.train()
+             loss, logits = model(input_ids=inputs_ids, labels=labels)
+@@ -187,25 +189,11 @@ def train(args, train_dataset, model, tokenizer, eval_dataset):
+                 output_flag=True
+                 avg_loss=round(np.exp((tr_loss - logging_loss) /(global_step- tr_nb)),4)
+ 
+-                if global_step % args.save_steps == 0:
+-                    results = evaluate(args, model, tokenizer, eval_dataset, eval_when_training=True)    
+-                    
+-                    # Save model checkpoint
+-                    if results['eval_f1']>best_f1:
+-                        best_f1=results['eval_f1']
+-                        logger.info("  "+"*"*20)  
+-                        logger.info("  Best f1:%s",round(best_f1,4))
+-                        logger.info("  "+"*"*20)                          
+-                        
+-                        checkpoint_prefix = 'checkpoint-best-f1'
+-                        output_dir = os.path.join(args.output_dir, '{}'.format(checkpoint_prefix))                        
+-                        if not os.path.exists(output_dir):
+-                            os.makedirs(output_dir)                        
+-                        model_to_save = model.module if hasattr(model,'module') else model
+-                        output_dir = os.path.join(output_dir, '{}'.format(args.model_name)) 
+-                        torch.save(model_to_save.state_dict(), output_dir)
+-                        logger.info("Saving model checkpoint to %s", output_dir)
+-                        
++                native_step(args, model, optimizer, scheduler, idx, step, loss)
++        evaluate(args, model, tokenizer, eval_dataset, eval_when_training=True)
++        native_epoch(args, model, optimizer, scheduler, idx)
++    native_finish(args, model, optimizer, scheduler)
++
+ def evaluate(args, model, tokenizer, eval_dataset, eval_when_training=False):
+     #build dataloader
+     eval_sampler = SequentialSampler(eval_dataset)
+@@ -257,6 +245,7 @@ def evaluate(args, model, tokenizer, eval_dataset, eval_when_training=False):
+     for key in sorted(result.keys()):
+         logger.info("  %s = %s", key, str(round(result[key],4)))
+ 
++    native_predictions(args, logits[:, 1], y_trues)
+     return result
+ 
+ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
+@@ -670,6 +659,7 @@ def create_ref_input_ids(input_ids, ref_token_id, sep_token_id, cls_token_id):
+ 
+ def line_level_localization_tp(flaw_lines: str, tokenizer, model, mini_batch, original_func: str, args, top_k_loc: list, top_k_constant: list, reasoning_method: str, index: int, write_invalid_data: bool):
+     # function for captum LIG.
++    from captum.attr import LayerIntegratedGradients, DeepLift, DeepLiftShap, GradientShap, Saliency
+     def predict(input_ids):
+         return model(input_ids=input_ids)[0]
+ 
+@@ -833,6 +823,7 @@ def line_level_localization_tp(flaw_lines: str, tokenizer, model, mini_batch, or
+ def line_level_localization(flaw_lines: str, tokenizer, model, mini_batch, original_func: str, args,
+                             top_k_loc: list, top_k_constant: list, reasoning_method: str, index: int):
+     # function for captum LIG.
++    from captum.attr import LayerIntegratedGradients, DeepLift, DeepLiftShap, GradientShap, Saliency
+     def predict(input_ids):
+         return model(input_ids=input_ids)[0]
+ 
+@@ -1206,6 +1197,10 @@ def main():
+     # bpe non-pretrained tokenizer
+     parser.add_argument("--use_non_pretrained_tokenizer", default=False, action='store_true',
+                         help="Whether to use non-pretrained bpe tokenizer.")
++    parser.add_argument("--reproduction-config", required=True)
++    parser.add_argument("--reproduction-resume", action="store_true")
++    parser.add_argument("--reproduction-smoke", action="store_true")
++    parser.add_argument("--reproduction-evaluate", action="store_true")
+     args = parser.parse_args()
+     # Setup CUDA, GPU
+     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+@@ -1233,6 +1228,12 @@ def main():
+         model = RobertaForSequenceClassification.from_pretrained(args.model_name_or_path, config=config, ignore_mismatched_sizes=True)    
+     model = Model(model, config, tokenizer, args)
+     logger.info("Training/evaluation parameters %s", args)
++    if args.reproduction_smoke:
++        native_smoke(args, model, tokenizer, TextDataset(tokenizer, args, file_type='train'))
++        return
++    if args.reproduction_evaluate:
++        native_evaluate(args, model, tokenizer, TextDataset, evaluate)
++        return
+     # Training
+     if args.do_train:
+         train_dataset = TextDataset(tokenizer, args, file_type='train')

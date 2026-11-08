@@ -1,0 +1,40 @@
+{
+  "method": "svuld",
+  "upstream": {
+    "repo": "https://github.com/jacknichao/SVulD.git",
+    "commit": "6ebf229e92d030f68752cd2d361f56ff97dffcbd",
+    "script": "Source_Code/SVulD/run.py"
+  },
+  "functions": 32,
+  "loss": 0.8639111518859863,
+  "gradient_norm": 11.633231163024902,
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 32,
+    "pairs": 16,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 0,
+      "p_v": 16,
+      "p_b": 0,
+      "p_r": 0
+    },
+    "p_c": 0.0,
+    "p_v": 1.0,
+    "p_b": 0.0,
+    "p_r": 0.0,
+    "accuracy": 0.5,
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6666666666666666,
+    "mcc": 0.0,
+    "auc": 0.5703125,
+    "auprc": 0.6207759521288878,
+    "pair_ranking_accuracy": 0.4375,
+    "pair_ranking_ties": 4,
+    "patched_fpr": 1.0
+  },
+  "maximum_memory_bytes": 16633413120
+}
