@@ -505,3 +505,14 @@ __pycache__/
 !/results/rgcl_random_region_512/**/*.md
 !/results/rgcl_random_region_512/**/*.log
 !/results/rgcl_random_region_512/**/*.txt
+
+# Post-hoc RGCL mechanism statistics and reviewed examples; bulk sources stay local.
+!/results/rgcl_mechanism_512/
+!/results/rgcl_mechanism_512/*.json
+!/results/rgcl_mechanism_512/*.jsonl
+!/results/rgcl_mechanism_512/*.csv
+!/results/rgcl_mechanism_512/*.md
+!/results/rgcl_mechanism_512/*.svg
+!/results/rgcl_mechanism_512/*.png
+!/results/rgcl_mechanism_512/*.log
+/results/rgcl_mechanism_512/*.local.md

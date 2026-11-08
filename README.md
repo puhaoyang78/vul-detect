@@ -511,3 +511,11 @@ python -m vulnmechanism.cli rgcl-study report --dataset primevul_paired --method
 ```
 
 训练命令分别使用三个指定种子；512 Token、Batch8、16 Epoch、AdamW lr=2e-5、K=5、区域损失权重0.1不变。完整 Valid P-C 选模、固定概率严格大于0.5，选模完成后评价 Test。Context-only 和 RGCL 只读取历史完整结果，不重复训练或改写。监督量、实际重合率及逐种子/均值±样本标准差见 [消融报告](results/rgcl_random_region_512/report.md)。
+
+RGCL 修复引导机制的事后分析复用同一组三种子 Context-only/RGCL 权重和预测：
+
+```bash
+python -m vulnmechanism.cli rgcl-mechanism --device cuda:0
+```
+
+该入口只做离线统计及缺失 Train 预测的冻结单函数推理，不训练或选模；Test Diff 仅用于事后解释。覆盖率区分完整、部分、不可见及原侧无直接 Diff，Token 质量沿用正式物理行映射。逐种子概率间隔、严格排序、整对正确率、分布图及源码案例见 [机制分析](results/rgcl_mechanism_512/report.md)。

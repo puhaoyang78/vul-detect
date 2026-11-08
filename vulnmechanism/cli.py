@@ -190,6 +190,11 @@ def build_parser():
     p.add_argument("--checkpoint", type=Path, default=Path("results/attention_context_512/context_diff/primevul_paired/unixcoder/best-p_c.pt"))
     p.add_argument("--output-dir", type=Path, default=Path("results/repair_transfer_512"))
     p.add_argument("--device", default="auto")
+    p = sub.add_parser("rgcl-mechanism", help="offline PrimeVul RGCL coverage, probability gaps and case review")
+    p.add_argument("--data-dir", type=Path, default=Path("data"))
+    p.add_argument("--reference-dir", type=Path, default=Path("results/rgcl_multiseed_512"))
+    p.add_argument("--output-dir", type=Path, default=Path("results/rgcl_mechanism_512"))
+    p.add_argument("--device", default="cpu", help="only used for missing frozen Train predictions")
     p = sub.add_parser("rgcl-study", help="fixed RGCL comparisons and repair-pair data inspection")
     p.add_argument("stage", choices=("inventory", "check", "run", "report", "inspect", "prepare"))
     p.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -331,6 +336,11 @@ def main():
             print(json.dumps(repair_transfer.report(args.output_dir), indent=2))
         else:
             getattr(repair_transfer, args.stage)(args.data_dir, args.audit_dir, args.checkpoint, args.output_dir, args.device)
+    elif args.command == "rgcl-mechanism":
+        from .rgcl_mechanism import analyze
+        result = analyze(args.data_dir, args.reference_dir, args.output_dir, device=args.device)
+        print(json.dumps(dict(output_dir=str(args.output_dir), trained=False,
+                              runs=len(result["experiments"])), indent=2))
     elif args.command == "rgcl-study":
         from . import rgcl_study
         args.model = args.model or rgcl_study.BACKBONE_MODELS[args.backbone]

@@ -1,0 +1,34 @@
+test_alignment_checks_full_key_and_never_truncates_missing_records (tests.test_rgcl_mechanism.RGCLMechanismTests.test_alignment_checks_full_key_and_never_truncates_missing_records) ... ok
+test_cross_line_mass_matches_bounded_pool (tests.test_rgcl_mechanism.RGCLMechanismTests.test_cross_line_mass_matches_bounded_pool) ... ok
+test_empty_diff_is_separate_from_invisible_and_all_region (tests.test_rgcl_mechanism.RGCLMechanismTests.test_empty_diff_is_separate_from_invisible_and_all_region) ... ok
+test_ordering_is_not_both_correct_and_threshold_remains_strict (tests.test_rgcl_mechanism.RGCLMechanismTests.test_ordering_is_not_both_correct_and_threshold_remains_strict) ... ok
+test_partial_final_line_keeps_historical_primevul_supervision (tests.test_rgcl_mechanism.RGCLMechanismTests.test_partial_final_line_keeps_historical_primevul_supervision) ... ok
+test_actual_byte_bpe_offsets (tests.test_losver.LOSVERTests.test_actual_byte_bpe_offsets) ...
+
+
+ok
+test_all_variants_share_truncation_and_partial_final_line (tests.test_losver.LOSVERTests.test_all_variants_share_truncation_and_partial_final_line) ... ok
+test_cross_line_token_has_shared_memberships (tests.test_losver.LOSVERTests.test_cross_line_token_has_shared_memberships) ... ok
+test_diff_rule_unchanged (tests.test_losver.LOSVERTests.test_diff_rule_unchanged) ... ok
+test_encoder_padding_invariance_for_both_heads (tests.test_losver.LOSVERTests.test_encoder_padding_invariance_for_both_heads) ... ok
+test_l1_boundaries_and_unique_source_cores (tests.test_losver.LOSVERTests.test_l1_boundaries_and_unique_source_cores) ... ok
+test_l1_global_softmax_does_not_recount_context (tests.test_losver.LOSVERTests.test_l1_global_softmax_does_not_recount_context) ... ok
+test_localizer_positive_f1_and_physical_output_ids (tests.test_losver.LOSVERTests.test_localizer_positive_f1_and_physical_output_ids) ... ok
+test_long_physical_line_is_classified_once_after_core_mean (tests.test_losver.LOSVERTests.test_long_physical_line_is_classified_once_after_core_mean) ... ok
+test_original_focal_and_adamw_are_preserved (tests.test_losver.LOSVERTests.test_original_focal_and_adamw_are_preserved) ... ok
+test_overlapping_byte_offsets_still_mark_incomplete_line (tests.test_losver.LOSVERTests.test_overlapping_byte_offsets_still_mark_incomplete_line) ... ok
+test_pair_metrics_and_oracle_isolation (tests.test_losver.LOSVERTests.test_pair_metrics_and_oracle_isolation) ... ok
+test_paired_report_preserves_input_budget_and_rejects_mixing (tests.test_losver.LOSVERTests.test_paired_report_preserves_input_budget_and_rejects_mixing) ... ok
+test_physical_lines_merged_whitespace_crlf_and_eof (tests.test_losver.LOSVERTests.test_physical_lines_merged_whitespace_crlf_and_eof) ... ok
+test_ragged_batch_preserves_sparse_physical_ids (tests.test_losver.LOSVERTests.test_ragged_batch_preserves_sparse_physical_ids) ... ok
+test_real_encoder_backward_and_strict_reload (tests.test_losver.LOSVERTests.test_real_encoder_backward_and_strict_reload) ... ok
+test_same_factory_and_linear_head_for_three_detectors (tests.test_losver.LOSVERTests.test_same_factory_and_linear_head_for_three_detectors) ... ok
+test_short_l1_is_identical_to_512_for_all_variants (tests.test_losver.LOSVERTests.test_short_l1_is_identical_to_512_for_all_variants) ... ok
+test_softmax_excludes_padding_and_specials_and_trains_all_dimensions (tests.test_losver.LOSVERTests.test_softmax_excludes_padding_and_specials_and_trains_all_dimensions) ... ok
+test_source_only_inference_uses_one_tokenization (tests.test_losver.LOSVERTests.test_source_only_inference_uses_one_tokenization) ... ok
+test_window_checkpoint_preserves_dropout_and_parameter_gradients (tests.test_losver.LOSVERTests.test_window_checkpoint_preserves_dropout_and_parameter_gradients) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 3.017s
+
+OK

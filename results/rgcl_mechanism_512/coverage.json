@@ -1,0 +1,470 @@
+{
+  "train": {
+    "all": {
+      "functions": 8708,
+      "direct_diff_functions": 7402,
+      "category_counts": {
+        "full": 4131,
+        "partial": 1061,
+        "invisible": 2210,
+        "no_direct_diff": 1306
+      },
+      "category_fraction_all": {
+        "full": 0.4743913642627469,
+        "partial": 0.1218419843821773,
+        "invisible": 0.2537896187413872,
+        "no_direct_diff": 0.14997703261368855
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5580924074574439,
+        "partial": 0.14333963793569304,
+        "invisible": 0.29856795460686303
+      },
+      "eligible_functions": 5180,
+      "eligible_with_partial_diff_line": 286,
+      "all_visible_code_is_region": 12,
+      "truncated_functions": 5541,
+      "diff_lines": 49771,
+      "visible_diff_lines": 22627,
+      "fully_visible_diff_lines": 22341,
+      "partial_diff_lines": 286,
+      "token_sums": {
+        "code_tokens": 2980340.0,
+        "visible_region_token_mass": 246063.0,
+        "visible_region_distinct_tokens": 246063.0,
+        "effective_region_token_mass": 245496.0,
+        "effective_background_token_mass": 1395566.0
+      },
+      "eligible_region_tokens": {
+        "n": 5180,
+        "mean": 47.39305019305019,
+        "std": 56.863675205510496,
+        "quantiles": {
+          "0": 1.0,
+          "0.05": 6.0,
+          "0.25": 15.0,
+          "0.5": 27.0,
+          "0.75": 57.0,
+          "0.95": 162.0,
+          "1": 428.0
+        }
+      }
+    },
+    "vulnerable": {
+      "functions": 4354,
+      "direct_diff_functions": 3122,
+      "category_counts": {
+        "full": 1773,
+        "partial": 408,
+        "invisible": 941,
+        "no_direct_diff": 1232
+      },
+      "category_fraction_all": {
+        "full": 0.40721175930179143,
+        "partial": 0.09370693615066605,
+        "invisible": 0.2161231051906293,
+        "no_direct_diff": 0.2829581993569132
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5679051889814222,
+        "partial": 0.13068545803971812,
+        "invisible": 0.3014093529788597
+      },
+      "eligible_functions": 2175,
+      "eligible_with_partial_diff_line": 103,
+      "all_visible_code_is_region": 6,
+      "truncated_functions": 2730,
+      "diff_lines": 18004,
+      "visible_diff_lines": 8088,
+      "fully_visible_diff_lines": 7985,
+      "partial_diff_lines": 103,
+      "token_sums": {
+        "code_tokens": 1475761.0,
+        "visible_region_token_mass": 91760.0,
+        "visible_region_distinct_tokens": 91760.0,
+        "effective_region_token_mass": 91472.0,
+        "effective_background_token_mass": 586231.0
+      },
+      "eligible_region_tokens": {
+        "n": 2175,
+        "mean": 42.05609195402299,
+        "std": 55.88366058481997,
+        "quantiles": {
+          "0": 1.0,
+          "0.05": 5.0,
+          "0.25": 13.0,
+          "0.5": 23.0,
+          "0.75": 47.0,
+          "0.95": 152.29999999999973,
+          "1": 428.0
+        }
+      }
+    },
+    "repaired": {
+      "functions": 4354,
+      "direct_diff_functions": 4280,
+      "category_counts": {
+        "full": 2358,
+        "partial": 653,
+        "invisible": 1269,
+        "no_direct_diff": 74
+      },
+      "category_fraction_all": {
+        "full": 0.5415709692237023,
+        "partial": 0.14997703261368855,
+        "invisible": 0.2914561322921452,
+        "no_direct_diff": 0.016995865870463943
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5509345794392523,
+        "partial": 0.15257009345794392,
+        "invisible": 0.29649532710280374
+      },
+      "eligible_functions": 3005,
+      "eligible_with_partial_diff_line": 183,
+      "all_visible_code_is_region": 6,
+      "truncated_functions": 2811,
+      "diff_lines": 31767,
+      "visible_diff_lines": 14539,
+      "fully_visible_diff_lines": 14356,
+      "partial_diff_lines": 183,
+      "token_sums": {
+        "code_tokens": 1504579.0,
+        "visible_region_token_mass": 154303.0,
+        "visible_region_distinct_tokens": 154303.0,
+        "effective_region_token_mass": 154024.0,
+        "effective_background_token_mass": 809335.0
+      },
+      "eligible_region_tokens": {
+        "n": 3005,
+        "mean": 51.25590682196339,
+        "std": 57.25307745226491,
+        "quantiles": {
+          "0": 1.0,
+          "0.05": 7.0,
+          "0.25": 17.0,
+          "0.5": 32.0,
+          "0.75": 63.0,
+          "0.95": 166.0,
+          "1": 419.0
+        }
+      }
+    },
+    "pairs": 4354,
+    "identical_visible_pairs": 1254,
+    "both_eligible_pairs": 2084,
+    "either_eligible_pairs": 3096
+  },
+  "valid": {
+    "all": {
+      "functions": 1124,
+      "direct_diff_functions": 958,
+      "category_counts": {
+        "full": 548,
+        "partial": 112,
+        "invisible": 298,
+        "no_direct_diff": 166
+      },
+      "category_fraction_all": {
+        "full": 0.4875444839857651,
+        "partial": 0.099644128113879,
+        "invisible": 0.26512455516014233,
+        "no_direct_diff": 0.14768683274021352
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5720250521920668,
+        "partial": 0.11691022964509394,
+        "invisible": 0.31106471816283926
+      },
+      "eligible_functions": 658,
+      "eligible_with_partial_diff_line": 31,
+      "all_visible_code_is_region": 2,
+      "truncated_functions": 671,
+      "diff_lines": 5401,
+      "visible_diff_lines": 2698,
+      "fully_visible_diff_lines": 2667,
+      "partial_diff_lines": 31,
+      "token_sums": {
+        "code_tokens": 378655.0,
+        "visible_region_token_mass": 31635.0,
+        "visible_region_distinct_tokens": 31635.0,
+        "effective_region_token_mass": 31608.0,
+        "effective_background_token_mass": 168680.0
+      },
+      "eligible_region_tokens": {
+        "n": 658,
+        "mean": 48.036474164133736,
+        "std": 56.276471307526386,
+        "quantiles": {
+          "0": 2.0,
+          "0.05": 6.0,
+          "0.25": 16.0,
+          "0.5": 29.0,
+          "0.75": 56.0,
+          "0.95": 150.89999999999986,
+          "1": 396.0
+        }
+      }
+    },
+    "vulnerable": {
+      "functions": 562,
+      "direct_diff_functions": 399,
+      "category_counts": {
+        "full": 230,
+        "partial": 37,
+        "invisible": 132,
+        "no_direct_diff": 163
+      },
+      "category_fraction_all": {
+        "full": 0.4092526690391459,
+        "partial": 0.06583629893238434,
+        "invisible": 0.23487544483985764,
+        "no_direct_diff": 0.2900355871886121
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5764411027568922,
+        "partial": 0.09273182957393483,
+        "invisible": 0.3308270676691729
+      },
+      "eligible_functions": 266,
+      "eligible_with_partial_diff_line": 12,
+      "all_visible_code_is_region": 1,
+      "truncated_functions": 330,
+      "diff_lines": 1830,
+      "visible_diff_lines": 873,
+      "fully_visible_diff_lines": 861,
+      "partial_diff_lines": 12,
+      "token_sums": {
+        "code_tokens": 186746.0,
+        "visible_region_token_mass": 10842.0,
+        "visible_region_distinct_tokens": 10842.0,
+        "effective_region_token_mass": 10826.0,
+        "effective_background_token_mass": 66895.0
+      },
+      "eligible_region_tokens": {
+        "n": 266,
+        "mean": 40.69924812030075,
+        "std": 54.03270869072948,
+        "quantiles": {
+          "0": 3.0,
+          "0.05": 6.0,
+          "0.25": 13.25,
+          "0.5": 24.0,
+          "0.75": 40.75,
+          "0.95": 140.5,
+          "1": 387.0
+        }
+      }
+    },
+    "repaired": {
+      "functions": 562,
+      "direct_diff_functions": 559,
+      "category_counts": {
+        "full": 318,
+        "partial": 75,
+        "invisible": 166,
+        "no_direct_diff": 3
+      },
+      "category_fraction_all": {
+        "full": 0.5658362989323843,
+        "partial": 0.13345195729537365,
+        "invisible": 0.29537366548042704,
+        "no_direct_diff": 0.005338078291814947
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5688729874776386,
+        "partial": 0.13416815742397137,
+        "invisible": 0.29695885509839
+      },
+      "eligible_functions": 392,
+      "eligible_with_partial_diff_line": 19,
+      "all_visible_code_is_region": 1,
+      "truncated_functions": 341,
+      "diff_lines": 3571,
+      "visible_diff_lines": 1825,
+      "fully_visible_diff_lines": 1806,
+      "partial_diff_lines": 19,
+      "token_sums": {
+        "code_tokens": 191909.0,
+        "visible_region_token_mass": 20793.0,
+        "visible_region_distinct_tokens": 20793.0,
+        "effective_region_token_mass": 20782.0,
+        "effective_background_token_mass": 101785.0
+      },
+      "eligible_region_tokens": {
+        "n": 392,
+        "mean": 53.015306122448976,
+        "std": 57.216022538362196,
+        "quantiles": {
+          "0": 2.0,
+          "0.05": 6.550000000000001,
+          "0.25": 19.75,
+          "0.5": 34.0,
+          "0.75": 63.0,
+          "0.95": 159.34999999999997,
+          "1": 396.0
+        }
+      }
+    },
+    "pairs": 562,
+    "identical_visible_pairs": 164,
+    "both_eligible_pairs": 262,
+    "either_eligible_pairs": 396
+  },
+  "test": {
+    "all": {
+      "functions": 1128,
+      "direct_diff_functions": 929,
+      "category_counts": {
+        "full": 531,
+        "partial": 128,
+        "invisible": 270,
+        "no_direct_diff": 199
+      },
+      "category_fraction_all": {
+        "full": 0.47074468085106386,
+        "partial": 0.11347517730496454,
+        "invisible": 0.2393617021276596,
+        "no_direct_diff": 0.17641843971631205
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5715823466092572,
+        "partial": 0.1377825618945102,
+        "invisible": 0.2906350914962325
+      },
+      "eligible_functions": 659,
+      "eligible_with_partial_diff_line": 29,
+      "all_visible_code_is_region": 0,
+      "truncated_functions": 732,
+      "diff_lines": 5162,
+      "visible_diff_lines": 2719,
+      "fully_visible_diff_lines": 2690,
+      "partial_diff_lines": 29,
+      "token_sums": {
+        "code_tokens": 389605.0,
+        "visible_region_token_mass": 30115.0,
+        "visible_region_distinct_tokens": 30115.0,
+        "effective_region_token_mass": 30115.0,
+        "effective_background_token_mass": 181132.0
+      },
+      "eligible_region_tokens": {
+        "n": 659,
+        "mean": 45.69802731411229,
+        "std": 56.30508306099976,
+        "quantiles": {
+          "0": 1.0,
+          "0.05": 6.0,
+          "0.25": 14.0,
+          "0.5": 27.0,
+          "0.75": 53.5,
+          "0.95": 153.9000000000002,
+          "1": 377.0
+        }
+      }
+    },
+    "vulnerable": {
+      "functions": 564,
+      "direct_diff_functions": 375,
+      "category_counts": {
+        "full": 219,
+        "partial": 47,
+        "invisible": 109,
+        "no_direct_diff": 189
+      },
+      "category_fraction_all": {
+        "full": 0.3882978723404255,
+        "partial": 0.08333333333333333,
+        "invisible": 0.19326241134751773,
+        "no_direct_diff": 0.3351063829787234
+      },
+      "category_fraction_nonempty": {
+        "full": 0.584,
+        "partial": 0.12533333333333332,
+        "invisible": 0.2906666666666667
+      },
+      "eligible_functions": 266,
+      "eligible_with_partial_diff_line": 10,
+      "all_visible_code_is_region": 0,
+      "truncated_functions": 360,
+      "diff_lines": 1680,
+      "visible_diff_lines": 851,
+      "fully_visible_diff_lines": 841,
+      "partial_diff_lines": 10,
+      "token_sums": {
+        "code_tokens": 192262.0,
+        "visible_region_token_mass": 9687.0,
+        "visible_region_distinct_tokens": 9687.0,
+        "effective_region_token_mass": 9687.0,
+        "effective_background_token_mass": 73516.0
+      },
+      "eligible_region_tokens": {
+        "n": 266,
+        "mean": 36.41729323308271,
+        "std": 48.85603680736943,
+        "quantiles": {
+          "0": 1.0,
+          "0.05": 6.0,
+          "0.25": 12.0,
+          "0.5": 20.5,
+          "0.75": 38.0,
+          "0.95": 113.25,
+          "1": 370.0
+        }
+      }
+    },
+    "repaired": {
+      "functions": 564,
+      "direct_diff_functions": 554,
+      "category_counts": {
+        "full": 312,
+        "partial": 81,
+        "invisible": 161,
+        "no_direct_diff": 10
+      },
+      "category_fraction_all": {
+        "full": 0.5531914893617021,
+        "partial": 0.14361702127659576,
+        "invisible": 0.2854609929078014,
+        "no_direct_diff": 0.01773049645390071
+      },
+      "category_fraction_nonempty": {
+        "full": 0.5631768953068592,
+        "partial": 0.14620938628158844,
+        "invisible": 0.29061371841155237
+      },
+      "eligible_functions": 393,
+      "eligible_with_partial_diff_line": 19,
+      "all_visible_code_is_region": 0,
+      "truncated_functions": 372,
+      "diff_lines": 3482,
+      "visible_diff_lines": 1868,
+      "fully_visible_diff_lines": 1849,
+      "partial_diff_lines": 19,
+      "token_sums": {
+        "code_tokens": 197343.0,
+        "visible_region_token_mass": 20428.0,
+        "visible_region_distinct_tokens": 20428.0,
+        "effective_region_token_mass": 20428.0,
+        "effective_background_token_mass": 107616.0
+      },
+      "eligible_region_tokens": {
+        "n": 393,
+        "mean": 51.979643765903305,
+        "std": 60.022596193576284,
+        "quantiles": {
+          "0": 2.0,
+          "0.05": 6.0,
+          "0.25": 17.0,
+          "0.5": 31.0,
+          "0.75": 63.0,
+          "0.95": 175.79999999999984,
+          "1": 377.0
+        }
+      }
+    },
+    "pairs": 564,
+    "identical_visible_pairs": 163,
+    "both_eligible_pairs": 258,
+    "either_eligible_pairs": 401
+  }
+}

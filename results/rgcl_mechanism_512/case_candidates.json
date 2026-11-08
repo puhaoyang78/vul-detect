@@ -1,0 +1,42 @@
+{
+  "improved": [
+    "primevul_paired:test:444",
+    "primevul_paired:test:215",
+    "primevul_paired:test:249",
+    "primevul_paired:test:135",
+    "primevul_paired:test:299",
+    "primevul_paired:test:1"
+  ],
+  "introduced_error": [
+    "primevul_paired:test:318",
+    "primevul_paired:test:286",
+    "primevul_paired:test:436",
+    "primevul_paired:test:504",
+    "primevul_paired:test:560",
+    "primevul_paired:test:236"
+  ],
+  "ordered_but_both_vulnerable": [
+    "primevul_paired:test:275",
+    "primevul_paired:test:124",
+    "primevul_paired:test:484",
+    "primevul_paired:test:200",
+    "primevul_paired:test:343",
+    "primevul_paired:test:474"
+  ],
+  "no_improvement": [
+    "primevul_paired:test:392",
+    "primevul_paired:test:275",
+    "primevul_paired:test:148",
+    "primevul_paired:test:61",
+    "primevul_paired:test:186",
+    "primevul_paired:test:416"
+  ],
+  "invisible_change": [
+    "primevul_paired:test:473",
+    "primevul_paired:test:276",
+    "primevul_paired:test:189",
+    "primevul_paired:test:424",
+    "primevul_paired:test:435",
+    "primevul_paired:test:352"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "checkpoint_protocols_checked": 6,
+  "prediction_sets": 18,
+  "prediction_function_records": 65760,
+  "pair_gap_records": 16440,
+  "complete_cohort_pairs": {
+    "train": 4354,
+    "valid": 562,
+    "test": 564
+  },
+  "coverage_functions": 10960,
+  "saved_metrics_reproduced": true,
+  "full_pair_keys_unique": true,
+  "physical_line_and_token_counts_checked": true,
+  "all_subgroup_summaries_recomputed": true,
+  "ordering_and_classification_distinguished": true,
+  "case_pairs": 6,
+  "exact_original_functions_checked": 12,
+  "figures_visually_reviewed": 2,
+  "trained": false,
+  "missing_train_predictions_completed": 4,
+  "historical_train_predictions_reused": 2,
+  "historical_valid_test_prediction_sets_reused": 12,
+  "test_used_for_selection": false
+}
