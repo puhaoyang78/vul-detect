@@ -402,7 +402,7 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
         for label, side in coverage[None]["by_target"].items():
             lines.append(f"| {'Vulnerable' if label == '1' else 'Repaired'} | {side['functions']} | "
                 f"{side['eligible_functions']} | {side['eligible_functions']/side['functions']:.2%} | "
-                f"{side['supervised_region_tokens']:g} | {side['supervised_background_tokens']:g} |")
+                f"{side['supervised_region_tokens']:.12g} | {side['supervised_background_tokens']:.12g} |")
         lines.extend(["", "| Seed | Method | Supervised functions / all Train | Foreground Token mass / epoch | Background Token mass / epoch | Actual function visits (16 epochs) |",
                       "|---|---|---:|---:|---:|---:|"])
         for entry in result["experiments"]:
@@ -430,7 +430,7 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
                 actual_function_visits=visits, visits_recorded=method in RGCL_REGION_TARGETS)
             supervision.append(record)
             lines.append(f"| {record['seed']} | {method} | {record['supervised_functions']}/{len(rows)} | "
-                f"{record['foreground_tokens']:g} | {record['background_tokens']:g} | "
+                f"{record['foreground_tokens']:.12g} | {record['background_tokens']:.12g} | "
                 f"{visits if visits is not None else '— (historical)'} |")
         result.update(side_supervision=supervision, original_train_coverage=coverage[None])
         lines.extend(["", "新增六组的实际函数访问次数来自可恢复训练状态，并核对每个样本保存的真实区域掩码。"

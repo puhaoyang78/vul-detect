@@ -1,0 +1,83 @@
+...megavul train: {'functions': 32, 'class_counts': {'0': 16, '1': 16}, 'normal_kinds': {'ordinary': 16, 'vulnerable': 16}, 'coverage': {'functions': 32, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 32, 'truncated': 0, 'target_0_functions': 16, 'target_0_effective_region': 0, 'target_1_functions': 16, 'target_1_effective_region': 0}, 'actual_fraction': 0.8}
+megavul valid: {'functions': 4, 'class_counts': {'0': 2, '1': 2}, 'normal_kinds': {'ordinary': 2, 'vulnerable': 2}, 'coverage': {'functions': 4, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 4, 'truncated': 0, 'target_0_functions': 2, 'target_0_effective_region': 0, 'target_1_functions': 2, 'target_1_effective_region': 0}, 'actual_fraction': 0.1}
+megavul test: {'functions': 4, 'class_counts': {'1': 2, '0': 2}, 'normal_kinds': {'vulnerable': 2, 'ordinary': 2}, 'coverage': {'functions': 4, 'reliable_counterpart': 0, 'with_diff_lines': 0, 'visible_diff': 0, 'partial_visible_diff': 0, 'effective_region': 0, 'no_region_function_bce_only': 4, 'truncated': 0, 'target_1_functions': 2, 'target_1_effective_region': 0, 'target_0_functions': 2, 'target_0_effective_region': 0}, 'actual_fraction': 0.1}
+.../home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/utils/data/dataloader.py:668: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/multiprocessing/reductions.py", line 619, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/multiprocessing/reductions.py", line 619, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/torch/multiprocessing/reductions.py", line 619, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey, backlog=128)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 464, in __init__
+    self._listener = SocketListener(address, family, backlog)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 605, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey, backlog=128)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 1] Operation not permitted
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey, backlog=128)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 464, in __init__
+    self._listener = SocketListener(address, family, backlog)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 464, in __init__
+    self._listener = SocketListener(address, family, backlog)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 605, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/multiprocessing/connection.py", line 605, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+PermissionError: [Errno 1] Operation not permitted
+PermissionError: [Errno 1] Operation not permitted
