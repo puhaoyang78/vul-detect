@@ -1,0 +1,29 @@
+{
+  "final_tests_passed": true,
+  "final_tests": 49,
+  "real_gpu_smoke_passed": true,
+  "initialization_cpu_rng_equal": true,
+  "initial_context_rgcl_equal": true,
+  "methods": {
+    "context_only": {
+      "finite_gradients": true,
+      "save_reload_equal": true,
+      "diff_independent_inference": true,
+      "single_function_max_delta": 2.384185791015625e-07
+    },
+    "random_region": {
+      "finite_gradients": true,
+      "save_reload_equal": true,
+      "diff_independent_inference": true,
+      "single_function_max_delta": 0.0
+    },
+    "rgcl": {
+      "finite_gradients": true,
+      "save_reload_equal": true,
+      "diff_independent_inference": true,
+      "single_function_max_delta": 0.0
+    }
+  },
+  "original_rgcl_checkpoint_passed": true,
+  "publication": "User explicitly authorized code/results including sample IDs, labels, probabilities, attention and logs; raw source/token IDs and weights remain local"
+}

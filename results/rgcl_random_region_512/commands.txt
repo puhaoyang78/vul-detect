@@ -1,0 +1,3 @@
+/home/phy/miniconda3/envs/vul-detect/bin/python -m vulnmechanism.cli rgcl-study run --dataset primevul_paired --methods random_region --seed 42 --output-dir results/rgcl_random_region_512 --device cuda:0 --save-every 500
+/home/phy/miniconda3/envs/vul-detect/bin/python -m vulnmechanism.cli rgcl-study run --dataset primevul_paired --methods random_region --seed 123456 --output-dir results/rgcl_random_region_512 --device cuda:0 --save-every 500
+/home/phy/miniconda3/envs/vul-detect/bin/python -m vulnmechanism.cli rgcl-study run --dataset primevul_paired --methods random_region --seed 1234 --output-dir results/rgcl_random_region_512 --device cuda:1 --save-every 500

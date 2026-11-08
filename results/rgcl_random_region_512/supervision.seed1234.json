@@ -1,0 +1,13 @@
+{
+  "seed": 1234,
+  "functions": 8708,
+  "eligible_functions": 5180,
+  "zero_region_functions": 3516,
+  "full_region_functions": 12,
+  "exact_token_mass_matches": 8708,
+  "unchanged_eligible_functions": 279,
+  "token_weighted_overlap": 0.3459608303190276,
+  "mean_per_function_overlap": 0.1930331510653784,
+  "no_global_rng_change": true,
+  "maximum_float32_token_mass_delta": 0.0
+}

@@ -1,0 +1,73 @@
+{
+  "device": "cuda:0",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "dataset": "primevul_paired",
+  "train_members": [
+    "primevul_paired:train:1",
+    "primevul_paired:train:2",
+    "primevul_paired:train:3",
+    "primevul_paired:train:4",
+    "primevul_paired:train:5",
+    "primevul_paired:train:6",
+    "primevul_paired:train:7",
+    "primevul_paired:train:8"
+  ],
+  "classification_positive_weight": 1.0,
+  "test_used": false,
+  "methods": {
+    "context_only": {
+      "head_gradient_l1": [
+        75.8997802734375,
+        145.9209747314453
+      ],
+      "head_update_l1": [
+        0.01535831205546856,
+        0.0061134276911616325
+      ],
+      "finite_gradients": true,
+      "save_reload_equal": true,
+      "diff_independent_inference": true,
+      "single_function_max_delta": 2.384185791015625e-07,
+      "parameters": 125389826
+    },
+    "random_region": {
+      "head_gradient_l1": [
+        75.8997802734375,
+        145.91058349609375
+      ],
+      "head_update_l1": [
+        0.01535831019282341,
+        0.0061112502589821815
+      ],
+      "finite_gradients": true,
+      "save_reload_equal": true,
+      "diff_independent_inference": true,
+      "single_function_max_delta": 0.0,
+      "parameters": 125389826,
+      "region_gradient_l1": [
+        72.03707885742188,
+        74.20475769042969
+      ],
+      "exact_token_mass_matches": true
+    },
+    "rgcl": {
+      "head_gradient_l1": [
+        75.8997802734375,
+        145.94851684570312
+      ],
+      "head_update_l1": [
+        0.015358303673565388,
+        0.006108101457357407
+      ],
+      "finite_gradients": true,
+      "save_reload_equal": true,
+      "diff_independent_inference": true,
+      "single_function_max_delta": 0.0,
+      "parameters": 125389826
+    }
+  },
+  "initial_context_rgcl_equal": true,
+  "initialization_cpu_rng_equal": true,
+  "encoder_initialization_equal": true,
+  "seconds": 59.20660451008007
+}
