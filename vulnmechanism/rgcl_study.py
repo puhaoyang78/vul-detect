@@ -11,7 +11,7 @@ import torch
 
 from .artifacts import write_json
 from .data import read_jsonl
-from .training import RGCL_METHODS, LOSVER_CONFIG, train_losver
+from .training import RGCL_METHODS, RGCL_ALL_METHODS, LOSVER_CONFIG, train_losver
 
 SEEDS = (42, 1234, 123456)
 DATASETS = ("primevul_paired", "secvuleval")
@@ -23,19 +23,26 @@ BACKBONE_MODELS = {
 }
 
 
-def study_methods(backbone):
+def study_methods(backbone, methods=None):
     if backbone not in BACKBONE_MODELS:
         raise ValueError("choose a local UniXcoder, CodeBERT or CodeT5 backbone")
-    return RGCL_METHODS
+    selected = RGCL_METHODS if methods is None else tuple(methods)
+    if not selected or len(set(selected)) != len(selected) or any(m not in RGCL_ALL_METHODS for m in selected):
+        raise ValueError("choose distinct existing RGCL methods")
+    if "random_region" in selected and backbone != "unixcoder":
+        raise ValueError("Random-region is restricted to the UniXcoder ablation")
+    return selected
 
 
 def data_root(data_dir, dataset):
     return Path(data_dir) if dataset == "primevul_paired" else Path(data_dir)/"rgcl"
 
 
-def run_path(output_dir, dataset, seed, method, *, backbone="unixcoder"):
+def run_path(output_dir, dataset, seed, method, *, backbone="unixcoder", reference_dir=None):
+    if reference_dir is not None and method != "random_region":
+        return run_path(reference_dir, dataset, seed, method, backbone=backbone)
     if seed == 123456 and backbone == "unixcoder":
-        if dataset == "primevul_paired" and method != "plm_baseline":
+        if dataset == "primevul_paired" and method in ("context_only", "rgcl"):
             old = "context_bce" if method == "context_only" else "context_diff"
             return Path("results/attention_context_512")/old/dataset/"unixcoder"
         if dataset == "secvuleval":
@@ -71,10 +78,16 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
             raise ValueError(f"{path}: CLS baseline must use RobertaClassificationHead")
     elif (not bounded or not bounded.get("context") or bounded.get("k") != 5
           or bounded.get("region_weighting", "token") != "token"
-          or bounded.get("region_supervision") != ("diff" if method == "rgcl" else None)
-          or bounded.get("region_weight") != (.1 if method == "rgcl" else 0.)
+          or bounded.get("region_supervision") != ("random" if method == "random_region" else "diff" if method == "rgcl" else None)
+          or bounded.get("region_weight") != (.1 if method in ("rgcl", "random_region") else 0.)
           or bounded.get("local") or bounded.get("context_scale")):
         raise ValueError(f"{path}: not the fixed original Context/RGCL architecture")
+    if method == "random_region":
+        randomization = bounded.get("randomization", {})
+        if (randomization.get("seed") != seed or not randomization.get("train_only") or
+            randomization.get("exact_token_mass_matches") != len(train) or
+            not randomization.get("fixed_across_epochs")):
+            raise ValueError(f"{path}: Random-region must preserve each Train function's token mass")
     key = "p_c" if dataset == "primevul_paired" else "mcc"
     chosen = json.loads((path/f"best-{key}.json").read_text())
     epochs = [r for r in read_jsonl(path/"best.training.jsonl") if r["event"] == "epoch"]
@@ -106,14 +119,17 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
         epoch_seconds=sum(r["epoch_seconds"] for r in epochs), checkpoint_checked=checkpoint)
 
 
-def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder"):
+def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder", methods=None, reference_dir=None):
     entries = []
+    methods = study_methods(backbone, methods)
+    if "random_region" in methods and tuple(datasets) != ("primevul_paired",):
+        raise ValueError("Random-region study is PrimeVul only")
     if not datasets or any(d not in SUPPORTED_DATASETS for d in datasets):
         raise ValueError("choose a prepared RGCL study dataset")
     for dataset in datasets:
         for seed in SEEDS:
-            for method in study_methods(backbone):
-                path = run_path(output_dir, dataset, seed, method, backbone=backbone)
+            for method in methods:
+                path = run_path(output_dir, dataset, seed, method, backbone=backbone, reference_dir=reference_dir)
                 reused = not path.is_relative_to(Path(output_dir))
                 if (path/"training.metrics.json").exists():
                     info = inspect_run(path, data_dir, dataset, seed, method, model_path)
@@ -133,15 +149,18 @@ def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="
     return result
 
 
-def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS, backbone="unixcoder"):
+def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS, backbone="unixcoder", methods=None, reference_dir=None):
     """Exercise selected datasets and the original RGCL checkpoint, without Test."""
     from . import evaluation, model as core
     from .training import paired_loader, paired_collate, paired_forward
 
     results = {}
+    methods = study_methods(backbone, methods)
+    if "random_region" in methods and tuple(datasets) != ("primevul_paired",):
+        raise ValueError("Random-region study is PrimeVul only")
     for dataset in datasets:
         results[dataset] = evaluation.check_rgcl(data_root(data_dir, dataset), output_dir, model_path, dataset,
-            device=device, methods=study_methods(backbone))
+            device=device, methods=methods)
     if backbone != "unixcoder":
         write_json(Path(output_dir)/"gpu-smoke.json", dict(passed=True, results=results,
             model_path=str(model_path), backbone=backbone, test_used=False))
@@ -166,18 +185,20 @@ def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS,
     return results
 
 
-def run(data_dir, output_dir, model_path, dataset, seed, methods=None, *, device="auto", save_every=500, backbone="unixcoder"):
+def run(data_dir, output_dir, model_path, dataset, seed, methods=None, *, device="auto", save_every=500, backbone="unixcoder", reference_dir=None):
     from .evaluation import evaluate
 
-    methods = study_methods(backbone) if methods is None else methods
-    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or not methods or any(m not in study_methods(backbone) for m in methods):
+    methods = study_methods(backbone, methods)
+    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or ("random_region" in methods and dataset != "primevul_paired"):
         raise ValueError("only the fixed three-seed RGCL comparison is allowed")
     smoke = json.loads((Path(output_dir)/"gpu-smoke.json").read_text())
     if not smoke["passed"] or (backbone != "unixcoder" and
         (smoke.get("backbone") != backbone or smoke.get("model_path") != str(model_path) or dataset not in smoke["results"])):
         raise ValueError("complete real GPU verification before full training")
+    if "random_region" in methods and "random_region" not in smoke.get("results", {}).get("primevul_paired", {}).get("methods", {}):
+        raise ValueError("Random-region requires its own real GPU smoke before training")
     for method in methods:
-        path = run_path(output_dir, dataset, seed, method, backbone=backbone)
+        path = run_path(output_dir, dataset, seed, method, backbone=backbone, reference_dir=reference_dir)
         reused = not path.is_relative_to(Path(output_dir))
         if reused:
             inspect_run(path, data_dir, dataset, seed, method, model_path)
@@ -201,13 +222,14 @@ def run(data_dir, output_dir, model_path, dataset, seed, methods=None, *, device
     return dict(dataset=dataset, seed=seed, methods=list(methods), complete=True)
 
 
-def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder"):
+def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder", methods=None, reference_dir=None):
     """Recompute probabilities at the fixed threshold and summarize three seeds."""
     from .metrics import metrics, paired_metrics
 
     root = Path(output_dir)
-    result = inventory(data_dir, output_dir, model_path, datasets=datasets, backbone=backbone)
-    methods = study_methods(backbone)
+    methods = study_methods(backbone, methods)
+    result = inventory(data_dir, output_dir, model_path, datasets=datasets, backbone=backbone,
+                       methods=methods, reference_dir=reference_dir)
     if result["missing"]:
         raise ValueError("finish all missing combinations before reporting three-seed results")
     records = []
@@ -305,6 +327,13 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
             "Inference reads one function only. No historical data or weights are overwritten.", "",
             "| Dataset | Split | Seed | Method | Epoch | P-C | MCC | F1 | AUC | PR-AUC (AP) | Recall | FPR | Accuracy | Precision |",
             "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    if "random_region" in methods:
+        lines[0] = "# RGCL Random-region 三种子消融"
+        lines[2] = ("只在 PrimeVul + UniXcoder 补充 Random-region；Context-only 与 RGCL 复用历史完整结果。"
+                    "512 Token、Batch8、16 Epoch、AdamW lr=2e-5、K=5、区域损失权重0.1；按完整 Valid P-C 选模，阈值严格>0.5。"
+                    "随机区域为有效代码行的随机子集，逐函数严格保持原 Diff 的有效 Token 质量及辅助损失可用性。"
+                    "跨行 Token 按原实现分摊；局部独立 RNG 随训练种子固定，整个训练期间不重采样。"
+                    "保持原区域损失、编码和函数 BCE；推理仅输入单函数，Test 不参与选模。")
     for r in records:
         m=r["metrics"];pc=f"{m['p_c']:.2%}" if "p_c" in m else "—"
         lines.append(f"| {r['dataset']} | {r['split']} | {r['seed']} | {r['method']} | {r['selected_epoch']} | {pc} | "+
@@ -322,7 +351,12 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
     for dataset in datasets:
         for split in ("valid","test"):
             values={r["method"]:r["metrics"] for r in aggregate if r["dataset"]==dataset and r["split"]==split}
-            for before,after in (("plm_baseline","context_only"),("context_only","rgcl"),("plm_baseline","rgcl")):
+            comparisons = ((("context_only","random_region"),("random_region","rgcl"),("context_only","rgcl"))
+                           if "random_region" in methods else
+                           (("plm_baseline","context_only"),("context_only","rgcl"),("plm_baseline","rgcl")))
+            for before,after in comparisons:
+                if before not in values or after not in values:
+                    continue
                 delta={k:values[after][k]["mean"]-values[before][k]["mean"] for k in values[after]}
                 deltas.append(dict(dataset=dataset,split=split,before=before,after=after,metrics=delta))
                 primary="p_c" if dataset=="primevul_paired" else "mcc"
@@ -331,6 +365,35 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
                 lines.extend(["",f"{dataset} {split}, {before} → {after}: mean {primary} {delta[primary]:+.6f}; improved in {wins}/3 seeds. "
                               f"AUC {delta['auc']:+.6f}; MCC {delta['mcc']:+.6f}; FPR {delta['fpr']:+.6f}."])
     result["deltas"]=deltas
+    if "random_region" in methods:
+        supervision = []
+        lines.extend(["", "## 随机监督核对", "",
+            "随机子集仅以真实区域的 Token 总量为约束，不利用真实修改位置筛选候选。"
+            "Token 质量按原物理行聚合分摊，逐函数精确保持；空区域和全区域继续不计算区域损失。"
+            "不强制排除与真实区域自然重合的抽样，精确 Token 总量可能限制可选子集。", "",
+            "| Seed | Eligible functions | Exact token mass | Unchanged eligible | Token overlap / true positive tokens |",
+            "|---|---:|---:|---:|---:|"])
+        for entry in result["experiments"]:
+            if entry["method"] != "random_region":
+                continue
+            path = Path(entry["run"])
+            config = json.loads((path/"training.metrics.json").read_text())
+            stats = config["bounded_attention"]["randomization"]
+            actual = read_jsonl(path/"train.random_regions.jsonl")
+            if ([r["sample_key"] for r in actual] != config["training_members"] or
+                any(r["diff_region_tokens"] != r["random_region_tokens"] for r in actual) or
+                sum(r["eligible"] for r in actual) != stats["eligible_functions"]):
+                raise ValueError(f"{path}: random supervision records and training configuration differ")
+            row = dict(stats, seed=entry["seed"])
+            row["token_overlap_fraction"] = stats["overlap_tokens"] / stats["positive_tokens"] if stats["positive_tokens"] else 0.
+            supervision.append(row)
+            lines.append(f"| {entry['seed']} | {stats['eligible_functions']}/{stats['functions']} | "
+                         f"{stats['exact_token_mass_matches']}/{stats['functions']} | "
+                         f"{stats['unchanged_eligible_functions']}/{stats['eligible_functions']} | {row['token_overlap_fraction']:.2%} |")
+        result["random_supervision"] = supervision
+        lines.extend(["", "全部新增训练均完成16轮，三种子均完整保留；历史 Context-only/RGCL 未重复训练或改写。"
+                      "初始化、采样、恢复与单函数推理检查见 tests.log、resume-tests.log 及 gpu-smoke.json。"
+                      "Test 在完整 Valid P-C 选模后一次评价；没有依据 Test 改动方法、参数或阈值。"])
     write_json(root/"comparison.json",result)
     (root/"report.md").write_text("\n".join(lines)+"\n")
     return result

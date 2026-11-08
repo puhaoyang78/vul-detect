@@ -40,6 +40,7 @@ METHODS = (
     "hard_aug_vat",
 )
 RGCL_METHODS = ("plm_baseline", "context_only", "rgcl")
+RGCL_ALL_METHODS = (*RGCL_METHODS, "random_region")
 TRAINING = dict(
     seed=42,
     epochs=3,
@@ -191,7 +192,7 @@ def train(
 ):
     if save_every < 1:
         raise ValueError("save_every must be positive")
-    if method in RGCL_METHODS:
+    if method in RGCL_ALL_METHODS:
         from .data import RGCL_DATASETS
         if (dataset not in (*RGCL_DATASETS, "primevul_paired") or paired_input != "512" or config is not None
                 or hard_selection != "hardest" or vat_direction != "finite_difference"
@@ -1182,9 +1183,63 @@ def paired_rdrop_loss(model, batch, device, coefficient):
     return focal + coefficient * divergence, dict(focal=focal, rdrop_kl=divergence)
 
 
-def shuffle_line_labels(features, seed):
-    """Fixed Train-only within-function permutation; never advances global RNG."""
+def shuffle_line_labels(features, seed, *, match_tokens=False):
+    """Fixed Train-only regions: exact token mass or the legacy line permutation.
+
+    Both modes use an independent RNG and leave model/sampler RNG unchanged.
+    """
     rng = random.Random(seed)
+    if match_tokens:
+        records = []
+        for feature in features:
+            original = feature["line_labels"]
+            # Use the same conserved cross-line code-token mass as bounded_pool.
+            tokens = [[t for t in line if feature["code_mask"][t]]
+                      for line in feature["line_token_indices"]]
+            copies = Counter(t for line in tokens for t in line)
+            scale = math.lcm(*copies.values()) if copies else 1
+            counts = [sum(scale // copies[t] for t in line) for line in tokens]
+            target = sum(n for n, y in zip(counts, original) if y == 1)
+            total = sum(counts)
+            shuffled = [int(y == 1 and n > 0) for n, y in zip(counts, original)]
+            eligible = 0 < target < total
+            if eligible:
+                # Random subset-sum: the original region proves the target is
+                # reachable. Randomize traversal and backtracking, without using
+                # original positive locations to choose the new region.
+                complement = target > total - target
+                budget = total - target if complement else target
+                order = [i for i, n in enumerate(counts) if n > 0]
+                rng.shuffle(order)
+                reachable, history = 1, []
+                mask = (1 << (budget + 1)) - 1
+                for i in order:
+                    history.append(reachable)
+                    reachable |= (reachable << counts[i]) & mask
+                if not (reachable >> budget) & 1:
+                    raise ValueError("original region token mass must be reachable")
+                chosen, remaining = set(), budget
+                for i, before in zip(reversed(order), reversed(history)):
+                    skip = (before >> remaining) & 1
+                    take = remaining >= counts[i] and (before >> (remaining - counts[i])) & 1
+                    if take and (not skip or rng.getrandbits(1)):
+                        chosen.add(i)
+                        remaining -= counts[i]
+                if remaining:
+                    raise ValueError("random region failed to preserve token mass")
+                shuffled = [int((i not in chosen) if complement else (i in chosen)) if n else 0
+                            for i, n in enumerate(counts)]
+            feature["line_labels"] = shuffled
+            actual = sum(n for n, y in zip(counts, shuffled) if y == 1)
+            if actual != target:
+                raise ValueError("random and Diff supervision token masses differ")
+            overlap = sum(n for n, a, b in zip(counts, original, shuffled) if a == b == 1)
+            records.append(dict(eligible=eligible, code_tokens=total / scale,
+                diff_region_tokens=target / scale, random_region_tokens=actual / scale,
+                overlap_tokens=overlap / scale, unchanged=original == shuffled,
+                diff_region_lines=sum(y == 1 and n > 0 for n, y in zip(counts, original)),
+                random_region_lines=sum(y == 1 and n > 0 for n, y in zip(counts, shuffled))))
+        return records
     for feature in features:
         shuffled = list(feature["line_labels"])
         rng.shuffle(shuffled)
@@ -1271,7 +1326,7 @@ def train_losver(
     from .evaluation import validate_paired, localize_paired
     import platform
 
-    formal_rgcl = method in RGCL_METHODS
+    formal_rgcl = method in RGCL_ALL_METHODS
     native = formal_rgcl and dataset != "primevul_paired"
     if formal_rgcl:
         from .data import RGCL_DATASETS
@@ -1279,7 +1334,9 @@ def train_losver(
             raise ValueError("RGCL comparisons require prepared datasets with 512 inputs")
         bounded_attention = method != "plm_baseline"
         attention_context = bounded_attention
-        attention_region = "diff" if method == "rgcl" else None
+        attention_region = "random" if method == "random_region" else "diff" if method == "rgcl" else None
+        if method == "random_region" and dataset != "primevul_paired":
+            raise ValueError("Random-region ablation uses only PrimeVul")
     elif dataset != "primevul_paired":
         raise ValueError("original LOSVER keeps the official paired protocol")
     variant = "baseline" if formal_rgcl else LOSVER_VARIANTS[method]
@@ -1548,8 +1605,12 @@ def train_losver(
         insertion_supervision=insertion_supervision,
         rccl=rccl, seed=settings["seed"],
     )
+    random_regions = None
     if line_auxiliary == "random" or attention_region == "random":
-        shuffle_line_labels(loader.dataset, settings["seed"])
+        random_regions = shuffle_line_labels(loader.dataset, settings["seed"], match_tokens=method == "random_region")
+    if random_regions is not None:
+        write_jsonl(run / "train.random_regions.jsonl", [dict(sample_key=r["sample_key"], **s)
+                    for r, s in zip(train_rows, random_regions)])
     if insertion_supervision == "random":
         shuffle_insertion_labels(loader.dataset, settings["seed"])
     if joint:
@@ -1765,6 +1826,16 @@ def train_losver(
             inference="single source only; no Diff or independently predicted localizer",
             cross_line_tokens="conserve one token mass across its physical-line memberships",
         )
+        if random_regions is not None:
+            eligible = [r for r in random_regions if r["eligible"]]
+            metadata["bounded_attention"]["randomization"] = dict(
+                algorithm="random subset-sum over valid code lines; exact conserved token mass",
+                seed=settings["seed"], train_only=True, fixed_across_epochs=True,
+                functions=len(random_regions), eligible_functions=len(eligible),
+                exact_token_mass_matches=sum(r["diff_region_tokens"] == r["random_region_tokens"] for r in random_regions),
+                unchanged_eligible_functions=sum(r["unchanged"] for r in eligible),
+                positive_tokens=sum(r["diff_region_tokens"] for r in eligible),
+                overlap_tokens=sum(r["overlap_tokens"] for r in eligible))
         metadata["localizer_attention"] = "none; bounded line attention from the shared encoding"
         # Keep default metadata identical for exact resumption of legacy runs.
         if attention_region_weighting != "token":

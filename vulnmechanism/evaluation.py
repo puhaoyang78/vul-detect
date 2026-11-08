@@ -558,11 +558,11 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
     import tempfile
     import time
     import numpy as np
-    from .training import RGCL_METHODS, LOSVERAdamW, paired_collate, paired_forward
+    from .training import RGCL_METHODS, RGCL_ALL_METHODS, LOSVERAdamW, paired_collate, paired_forward, shuffle_line_labels
     from .data import paired_features
 
     methods = RGCL_METHODS if methods is None else tuple(methods)
-    if not methods or any(m not in RGCL_METHODS for m in methods):
+    if not methods or any(m not in RGCL_ALL_METHODS for m in methods):
         raise ValueError("choose an existing function classification method for GPU smoke")
     device = core.resolve_device(device)
     if device.type != "cuda":
@@ -593,11 +593,19 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
     initial_context, initial_rng = None, None
     encoder_initial = None
     for method in methods:
+        method_features = features
+        random_regions = None
+        if method == "random_region":
+            import copy
+            method_features = copy.deepcopy(features)
+            random_regions = shuffle_line_labels(method_features, 123456, match_tokens=True)
+        batch = paired_collate(method_features)
         core.seed_everything(123456)
         np.random.seed(123456)
         model, _ = core.losver_model(model_path, "baseline", cls_baseline=method == "plm_baseline",
             class_weight=data["classification_positive_weight"], bounded_attention=method != "plm_baseline",
-            attention_context=method != "plm_baseline", attention_region="diff" if method == "rgcl" else None)
+            attention_context=method != "plm_baseline",
+            attention_region="random" if method == "random_region" else "diff" if method == "rgcl" else None)
         current_rng = torch.get_rng_state()
         current_encoder = next(model.encoder.parameters()).detach().cpu().clone()
         if encoder_initial is None:
@@ -609,13 +617,14 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         model.to(device).eval()
         with torch.no_grad():
             initial = paired_forward(model, batch, "baseline", device, with_labels=False)
-            if method == "context_only":
-                initial_context = initial.detach().cpu()
-            elif method == "rgcl":
-                torch.testing.assert_close(initial.cpu(), initial_context, rtol=0, atol=0)
+            if method != "plm_baseline":
+                if initial_context is None:
+                    initial_context = initial.detach().cpu()
+                else:
+                    torch.testing.assert_close(initial.cpu(), initial_context, rtol=0, atol=0)
         optimizer = LOSVERAdamW(model.parameters(), lr=2e-5)
         model.train()
-        gradients, updates = [], []
+        gradients, updates, auxiliary_gradients = [], [], []
         head = (model.classifier.out_proj if hasattr(model.classifier, "out_proj") else model.classifier)
         for step in range(2):
             before = head.weight.detach().clone()
@@ -623,9 +632,14 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
                 loss, _ = paired_forward(model, batch, "baseline", device)
             else:
                 loss, _, parts = paired_forward(model, batch, "baseline", device, return_attention=True)
-                torch.testing.assert_close(loss, parts["bce"] + (.1 * parts["region_loss"] if method == "rgcl" else 0))
-                if method == "rgcl" and int(parts["region_functions"]) < 1:
+                torch.testing.assert_close(loss, parts["bce"] + (.1 * parts["region_loss"] if model.attention_region else 0))
+                if model.attention_region and int(parts["region_functions"]) < 1:
                     raise ValueError("GPU smoke did not exercise a real auxiliary target")
+                if method == "random_region":
+                    gradient = torch.autograd.grad(parts["region_loss"], model.line_attention.weight, retain_graph=True)[0]
+                    auxiliary_gradients.append(float(gradient.abs().sum()))
+                    if not torch.isfinite(gradient).all() or auxiliary_gradients[-1] <= 0:
+                        raise ValueError("random auxiliary supervision did not reach attention")
             loss.backward()
             if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
                 raise ValueError("nonfinite native GPU gradients")
@@ -669,6 +683,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         result["methods"][method] = dict(head_gradient_l1=gradients, head_update_l1=updates,
             finite_gradients=True, save_reload_equal=True, diff_independent_inference=True,
             single_function_max_delta=float((p[:1] - one).abs().max()), parameters=sum(p.numel() for p in model.parameters()))
+        if random_regions is not None:
+            result["methods"][method].update(region_gradient_l1=auxiliary_gradients,
+                exact_token_mass_matches=all(r["diff_region_tokens"] == r["random_region_tokens"] for r in random_regions))
         del model, optimizer, cp, saved
         torch.cuda.empty_cache()
     result.update(initial_context_rgcl_equal=True if {"context_only", "rgcl"}.issubset(methods) else None,
@@ -1297,13 +1314,13 @@ def localize_paired(
 def evaluate_paired(
     data_dir, output_dir, methods, *, device="auto", splits=("valid", "test")
 ):
-    from .training import LOSVER_METHODS, LOSVER_VARIANTS, RGCL_METHODS, paired_rows
+    from .training import LOSVER_METHODS, LOSVER_VARIANTS, RGCL_ALL_METHODS, paired_rows
 
-    if any(m not in (*LOSVER_METHODS, *RGCL_METHODS) for m in methods):
+    if any(m not in (*LOSVER_METHODS, *RGCL_ALL_METHODS) for m in methods):
         raise ValueError("official paired evaluation requires LOSVER methods")
     device = core.resolve_device(device)
     for method in methods:
-        variant = "baseline" if method in RGCL_METHODS else LOSVER_VARIANTS[method]
+        variant = "baseline" if method in RGCL_ALL_METHODS else LOSVER_VARIANTS[method]
         run = Path(output_dir) / "primevul_paired" / method
         cp = torch.load(
             run / ("best-f1.pt" if variant == "localizer" else "best-p_c.pt"),

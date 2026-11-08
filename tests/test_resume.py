@@ -367,6 +367,25 @@ class ResumeTests(unittest.TestCase):
                             training.train_losver(root/"data",root/"control","fixture","unixcoder",resume=True,
                                                  **dict(options,attention_context_scale=not context_scale))
 
+    def test_random_region_resume_preserves_exact_masks_weights_and_sampler(self):
+        from tests.test_rgcl import factory
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(core, "losver_model", side_effect=factory):
+            root = Path(tmp)
+            self.paired_fixture(root, "512")
+            settings = dict(training.LOSVER_CONFIG, batch_size=4, eval_batch_size=2,
+                            epochs=dict(baseline=2, localizer=2, predicted=2, oracle=2))
+            options = dict(device="cpu", config=settings, seed=42, save_every=1, function_micro_batch=2)
+            training.train_losver(root/"data", root/"control", "fixture", "random_region", **options)
+            with self.interruption(epoch=2, step=4, after_save=True), self.assertRaises(Interrupted):
+                training.train_losver(root/"data", root/"resumed", "fixture", "random_region", **options)
+            training.train_losver(root/"data", root/"resumed", "fixture", "random_region", resume=True, **options)
+            control = root/"control/primevul_paired/random_region"
+            resumed = root/"resumed/primevul_paired/random_region"
+            self.compare_runs(control, resumed, ["best-p_c.pt"])
+            for name in ("train.random_regions.jsonl", "train.attention_regions.jsonl"):
+                self.assertEqual((control/name).read_bytes(), (resumed/name).read_bytes())
+
     def test_attention_regularization_resume_including_epoch_diagnostics(self):
         from tests.test_bounded_attention import detector
 

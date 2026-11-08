@@ -499,3 +499,15 @@ python -m vulnmechanism.cli report --dataset primevul_paired --rccl --output-dir
 ```
 
 三组完整匹配实验、覆盖率、完整 Valid/纯新增子集指标、选模后 Test 及表示相似度诊断见 [results/rccl_512/report.md](results/rccl_512/report.md)。逐条命令和固定配置保存在 `results/rccl_512/commands.json`；历史 Context + Diff checkpoint 保留。
+
+## RGCL Random-region 消融
+
+仅在 PrimeVul + UniXcoder 补充种子 42、1234、123456 的 `random_region`。复用正式模型与训练器，将训练区域改为有效代码行的随机子集；随机子集逐函数严格保持真实 Diff 的有效 Token 总量（跨行 Token 沿用原分摊方式），保留辅助损失可用性。使用独立 RNG 固定整个训练期间的区域，不改变模型初始化或采样 RNG。旧版按正标签行数打乱的随机对照保持原行为。
+
+```bash
+python -m vulnmechanism.cli rgcl-study check --dataset primevul_paired --methods context_only random_region rgcl --output-dir results/rgcl_random_region_512 --device cuda:0
+python -m vulnmechanism.cli rgcl-study run --dataset primevul_paired --methods random_region --seed 42 --output-dir results/rgcl_random_region_512 --device cuda:0
+python -m vulnmechanism.cli rgcl-study report --dataset primevul_paired --methods context_only random_region rgcl --reference-dir results/rgcl_multiseed_512 --output-dir results/rgcl_random_region_512
+```
+
+训练命令分别使用三个指定种子；512 Token、Batch8、16 Epoch、AdamW lr=2e-5、K=5、区域损失权重0.1不变。完整 Valid P-C 选模、固定概率严格大于0.5，选模完成后评价 Test。Context-only 和 RGCL 只读取历史完整结果，不重复训练或改写。监督量、实际重合率及逐种子/均值±样本标准差见 [消融报告](results/rgcl_random_region_512/report.md)。

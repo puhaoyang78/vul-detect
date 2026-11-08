@@ -8,7 +8,7 @@ from .data import DATASETS, RGCL_DATASETS
 
 
 def build_parser():
-    from .training import METHODS, LOSVER_METHODS, RGCL_METHODS
+    from .training import METHODS, LOSVER_METHODS, RGCL_ALL_METHODS
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -58,7 +58,7 @@ def build_parser():
             p.add_argument(
                 "--methods",
                 nargs="+",
-                choices=(*METHODS, *LOSVER_METHODS, *RGCL_METHODS),
+                choices=(*METHODS, *LOSVER_METHODS, *RGCL_ALL_METHODS),
                 default=list(METHODS),
             )
             p.add_argument("--device", default="auto")
@@ -201,8 +201,10 @@ def build_parser():
     p.add_argument("--raw-root", type=Path, help="raw dataset directory for inspection/preparation")
     p.add_argument("--official-dir", type=Path, help="original official Train/Valid/Test JSONL directory")
     p.add_argument("--seed", type=int, choices=(42, 1234, 123456), default=123456)
-    p.add_argument("--methods", nargs="+", choices=RGCL_METHODS,
+    p.add_argument("--methods", nargs="+", choices=RGCL_ALL_METHODS,
                    help="default: CLS baseline, Context-only and RGCL for the selected backbone")
+    p.add_argument("--reference-dir", type=Path,
+                   help="reuse completed standard methods from this directory; train only missing Random-region")
     p.add_argument("--device", default="auto")
     p.add_argument("--save-every", type=int, default=500)
     p = sub.add_parser(
@@ -273,13 +275,13 @@ def main():
         else (getattr(args, "dataset", None),)
     )
     if args.command == "train":
-        from .training import train, LOSVER_METHODS, RGCL_METHODS
+        from .training import train, LOSVER_METHODS, RGCL_ALL_METHODS
 
         for dataset in datasets:
             for method in args.methods:
                 path = args.model or (
                     "/home/PublicData/PHY-data/resource/unixcoder-base-nine"
-                    if method in (*LOSVER_METHODS, *RGCL_METHODS)
+                    if method in (*LOSVER_METHODS, *RGCL_ALL_METHODS)
                     else "/home/PublicData/PHY-data/resource/codebert-base"
                 )
                 train(
@@ -360,14 +362,19 @@ def main():
                 return
             raise ValueError("ReposVul is inspection-only until label and repair quality are resolved")
         common = dict(data_dir=args.data_dir, output_dir=args.output_dir, model_path=args.model)
+        if args.methods is not None:
+            common["methods"] = args.methods
+        if args.reference_dir is not None:
+            common["reference_dir"] = args.reference_dir
         if args.backbone != "unixcoder":
             common["backbone"] = args.backbone
         selected = (dict(datasets=rgcl_study.SUPPORTED_DATASETS) if args.dataset == "all" else
-                    dict(datasets=(args.dataset,)) if args.dataset == "cleanvul" or args.backbone != "unixcoder" else {})
+                    dict(datasets=(args.dataset,)) if args.dataset == "cleanvul" or args.backbone != "unixcoder" or
+                    args.methods is not None or args.reference_dir is not None else {})
         if args.stage == "check":
             result = rgcl_study.check(**common, **selected, device=args.device)
         elif args.stage == "run":
-            result = rgcl_study.run(**common, dataset=args.dataset, seed=args.seed, methods=args.methods,
+            result = rgcl_study.run(**common, dataset=args.dataset, seed=args.seed,
                                      device=args.device, save_every=args.save_every)
         else:
             result = getattr(rgcl_study, args.stage)(**common, **selected)
