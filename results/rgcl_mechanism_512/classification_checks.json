@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "full_pair_keys": true,
+  "complete_same_cohort": true,
+  "pairs_per_seed": 564,
+  "matrix_totals": [
+    564,
+    564,
+    564
+  ],
+  "matrix_row_column_totals_match_original_metrics": true,
+  "error_balance_identities": true,
+  "original_test_predictions": 6,
+  "function_predictions_checked": 6768,
+  "classification_pair_records": 1692,
+  "cases": 4,
+  "source_diff_alignment_checked": true,
+  "trained": false,
+  "inference_run": false,
+  "test_used_for_selection": false,
+  "coverage_reused_without_changes": true
+}

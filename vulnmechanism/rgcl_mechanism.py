@@ -1,8 +1,7 @@
-"""Post-hoc RGCL coverage and paired-probability analysis; never train or select."""
+"""RQ3: repair-guided pairwise classification; frozen official Test predictions."""
 
 import csv
 import difflib
-import gc
 import json
 import math
 import statistics
@@ -12,11 +11,12 @@ from pathlib import Path
 import numpy as np
 
 from .artifacts import write_json
-from .data import modified_lines, paired_features, read_jsonl, write_jsonl
+from .data import modified_lines, read_jsonl, write_jsonl
 from .metrics import paired_metrics
 from .rgcl_study import BACKBONE_MODELS, SEEDS, inspect_run, run_path
 
 METHODS = ("context_only", "rgcl")
+STATES = ("p_c", "p_v", "p_b", "p_r")
 VISIBILITY = ("full", "partial", "invisible", "no_direct_diff")
 
 
@@ -121,459 +121,450 @@ def pair_state(a, b):
     return "p_c" if a > .5 and b <= .5 else "p_v" if a > .5 else "p_r" if b > .5 else "p_b"
 
 
-def paired_records(rows, predictions, coverage, identical, seed, split):
-    result = []
-    keys = set()
+def classification_records(rows, predictions, seed):
+    """One official repair pair per row; no ranking or gap-based decisions."""
+    for method in METHODS:
+        if len(predictions[method]) != len(rows):
+            raise ValueError("complete prediction cohort required")
+        paired_metrics(rows, [p["probability"] for p in predictions[method]])
+    records, keys = [], set()
     for i in range(0, len(rows), 2):
-        a, b = rows[i:i + 2]
-        if a["target"] != 1 or b["target"] != 0 or a["pair_key"] != b["pair_key"] or a["pair_key"] in keys:
-            raise ValueError("official vulnerable/repaired pair is incomplete or duplicated")
+        a, b = rows[i:i+2]
+        if a["pair_key"] in keys:
+            raise ValueError("duplicate full pair_key")
         keys.add(a["pair_key"])
-        r = dict(seed=seed, split=split, pair_key=a["pair_key"],
-            sample_keys=[a["sample_key"], b["sample_key"]], project=a.get("project"),
-            identical_visible_input=identical[i // 2],
-            pure_addition=not a["lines_ground_truth"] and bool(b["lines_ground_truth"]),
-            region_visibility=[coverage[j]["visibility"] for j in (i, i + 1)],
-            region_eligible=[coverage[j]["eligible"] for j in (i, i + 1)],
-            region_tokens=[coverage[j]["visible_region_token_mass"] for j in (i, i + 1)])
+        record = dict(seed=seed, pair_key=a["pair_key"], sample_keys=[a["sample_key"], b["sample_key"]])
         for method in METHODS:
-            pv, pr = (predictions[method][j]["probability"] for j in (i, i + 1))
-            r[method] = dict(vulnerable=pv, repaired=pr, gap=pv-pr, ordered=pv > pr,
-                             tie=pv == pr, state=pair_state(pv, pr))
-        c, d = (r[m] for m in METHODS)
-        r.update(gap_change=d["gap"]-c["gap"], vulnerable_change=d["vulnerable"]-c["vulnerable"],
-                 repaired_change=d["repaired"]-c["repaired"],
-                 gained_p_c=c["state"] != "p_c" and d["state"] == "p_c",
-                 lost_p_c=c["state"] == "p_c" and d["state"] != "p_c")
-        result.append(r)
-    return result
+            ps = predictions[method][i:i+2]
+            if any(p["sample_key"] != r["sample_key"] or p["pair_key"] != r["pair_key"] or
+                   p["target"] != r["target"] or p["prediction"] != int(p["probability"] > .5)
+                   for p, r in zip(ps, (a, b))):
+                raise ValueError("prediction member, pair, label or fixed threshold differs")
+            pv, pr = [p["probability"] for p in ps]
+            record[method] = dict(vulnerable_probability=pv, repaired_probability=pr,
+                vulnerable_prediction=int(pv > .5), repaired_prediction=int(pr > .5), state=pair_state(pv, pr))
+        record["transition"] = record["context_only"]["state"] + "->" + record["rgcl"]["state"]
+        records.append(record)
+    return records
 
 
-def summarize_gaps(records):
-    """Same denominator for strict ordering, ties, and both-correct classification."""
+def fraction(numerator, denominator):
+    return numerator / denominator if denominator else None
+
+
+def summarize_classification(records):
+    """Count pair states and function error corrections on ONE seed/cohort."""
+    if not records or len({r["seed"] for r in records}) != 1:
+        raise ValueError("summarize exactly one nonempty seed, never pooled seed repetitions")
     n = len(records)
-    result = dict(pairs=n, methods={})
-    if not n:
-        return result
-    for m in METHODS:
-        states = Counter(r[m]["state"] for r in records)
-        result["methods"][m] = dict(
-            gap=distribution([r[m]["gap"] for r in records]),
-            vulnerable_probability=distribution([r[m]["vulnerable"] for r in records]),
-            repaired_probability=distribution([r[m]["repaired"] for r in records]),
-            ordered=sum(r[m]["ordered"] for r in records),
-            ordering_rate=sum(r[m]["ordered"] for r in records) / n,
-            ties=sum(r[m]["tie"] for r in records),
-            reversed=sum(r[m]["gap"] < 0 for r in records),
-            pair_counts={s: states[s] for s in ("p_c", "p_v", "p_b", "p_r")}, p_c=states["p_c"] / n,
-            ordered_but_not_p_c=sum(r[m]["ordered"] and r[m]["state"] != "p_c" for r in records))
-    result.update(
-        gap_change=distribution([r["gap_change"] for r in records]),
-        vulnerable_change=distribution([r["vulnerable_change"] for r in records]),
-        repaired_change=distribution([r["repaired_change"] for r in records]),
-        gap_increased=sum(r["gap_change"] > 0 for r in records),
-        gap_decreased=sum(r["gap_change"] < 0 for r in records),
-        gained_p_c=sum(r["gained_p_c"] for r in records), lost_p_c=sum(r["lost_p_c"] for r in records),
-        gained_ordering=sum(not r["context_only"]["ordered"] and r["rgcl"]["ordered"] for r in records),
-        lost_ordering=sum(r["context_only"]["ordered"] and not r["rgcl"]["ordered"] for r in records),
-        transitions=dict(sorted(Counter(r["context_only"]["state"]+"->"+r["rgcl"]["state"] for r in records).items())))
-    return result
+    if len({r["pair_key"] for r in records}) != n:
+        raise ValueError("duplicate repair pairs")
+    matrix = [[0] * 4 for _ in STATES]
+    events = Counter(corrected_fp=0, new_fp=0, corrected_fn=0, new_fn=0)
+    for r in records:
+        c, g = [r[m] for m in METHODS]
+        for p in (c, g):
+            if (p["state"] != pair_state(p["vulnerable_probability"], p["repaired_probability"]) or
+                p["vulnerable_prediction"] != int(p["vulnerable_probability"] > .5) or
+                p["repaired_prediction"] != int(p["repaired_probability"] > .5)):
+                raise ValueError("pair state differs from strict function classifications")
+        matrix[STATES.index(c["state"])][STATES.index(g["state"])] += 1
+        events.update(corrected_fp=int(c["repaired_prediction"] == 1 and g["repaired_prediction"] == 0),
+            new_fp=int(c["repaired_prediction"] == 0 and g["repaired_prediction"] == 1),
+            corrected_fn=int(c["vulnerable_prediction"] == 0 and g["vulnerable_prediction"] == 1),
+            new_fn=int(c["vulnerable_prediction"] == 1 and g["vulnerable_prediction"] == 0))
+    row_totals = list(map(sum, matrix))
+    column_totals = [sum(row[j] for row in matrix) for j in range(4)]
+    methods = {}
+    for method, counts in zip(METHODS, (row_totals, column_totals)):
+        methods[method] = dict(pair_counts=dict(zip(STATES, counts)), p_c=counts[0] / n,
+            recall=(counts[0]+counts[1]) / n, patched_fpr=(counts[1]+counts[3]) / n,
+            false_positives=counts[1]+counts[3], false_negatives=counts[2]+counts[3])
+    gains = {state: matrix[i][0] for i, state in enumerate(STATES) if i}
+    losses = {state: matrix[0][j] for j, state in enumerate(STATES) if j}
+    gained, lost = sum(gains.values()), sum(losses.values())
+    before, after = [methods[m] for m in METHODS]
+    if (sum(row_totals) != n or sum(column_totals) != n or
+        gained-lost != column_totals[0]-row_totals[0] or
+        events["new_fp"]-events["corrected_fp"] != after["false_positives"]-before["false_positives"] or
+        events["new_fn"]-events["corrected_fn"] != after["false_negatives"]-before["false_negatives"]):
+        raise ValueError("transition/error accounting is inconsistent")
+    opportunities = dict(corrected_fp=before["false_positives"], new_fp=n-before["false_positives"],
+                         corrected_fn=before["false_negatives"], new_fn=n-before["false_negatives"])
+    return dict(seed=records[0]["seed"], pairs=n, matrix=matrix, row_totals=row_totals,
+        column_totals=column_totals, methods=methods,
+        fraction_all=[[value/n for value in row] for row in matrix],
+        fraction_source=[[fraction(value, row_totals[i]) for value in row] for i, row in enumerate(matrix)],
+        pc=dict(gained=gained, lost=lost, net=gained-lost, retained=matrix[0][0],
+            gained_fraction=gained/n, lost_fraction=lost/n, net_fraction=(gained-lost)/n,
+            loss_fraction_of_original_pc=fraction(lost, row_totals[0]),
+            gain_sources=gains, gain_source_shares={k:fraction(v, gained) for k,v in gains.items()},
+            loss_destinations=losses),
+        errors={k:dict(count=events[k], fraction_all=events[k]/n, opportunities=opportunities[k],
+                       fraction_opportunity=fraction(events[k], opportunities[k])) for k in events},
+        net_fp=events["new_fp"]-events["corrected_fp"], net_fn=events["new_fn"]-events["corrected_fn"])
 
 
-def subgroup_records(records):
-    return dict(all=records,
-        visible_difference=[r for r in records if not r["identical_visible_input"]],
-        identical_input=[r for r in records if r["identical_visible_input"]],
-        pure_addition=[r for r in records if r["pure_addition"]],
-        both_regions_full=[r for r in records if r["region_visibility"] == ["full", "full"]],
-        any_invisible_region=[r for r in records if "invisible" in r["region_visibility"]])
+def mean_sd(values):
+    # An undefined conditional rate is not imputed or silently removed.
+    return dict(mean=statistics.mean(values), std=statistics.stdev(values)) if all(
+        v is not None for v in values) else dict(mean=None, std=None)
 
 
-def infer_train(run, destination, rows, selected_epoch, device, loader=None):
-    """Use the formal single-source evaluator; no Diff annotations enter inference."""
-    import torch
-    from .evaluation import load_paired, validate_paired
-    from .model import resolve_device
-    from .training import paired_loader
-
-    cache = destination.with_suffix(".metrics.json")
-    if destination.exists():
-        saved = json.loads(cache.read_text())
-        if saved["run"] != str(run) or saved["selected_epoch"] != selected_epoch:
-            raise ValueError("cached frozen Train predictions refer to another checkpoint")
-        return read_jsonl(destination), loader
-    cp = torch.load(run / "best-p_c.pt", map_location="cpu", weights_only=False)
-    if cp["selected_epoch"] != selected_epoch:
-        raise ValueError("Train inference checkpoint differs from the preselected Valid epoch")
-    device = resolve_device(device)
-    model, tokenizer = load_paired(cp, device)
-    if loader is None:
-        clean = [{k: r[k] for k in ("func", "sample_key", "pair_key", "target")} for r in rows]
-        loader = paired_loader(clean, tokenizer, "baseline", batch_size=8)
-        if any("line_labels" in f for f in loader.dataset):
-            raise ValueError("Diff must never enter frozen inference")
-    with torch.no_grad():
-        value, predictions = validate_paired(model, rows, tokenizer, "baseline", device, loader=loader)
-    write_jsonl(destination, predictions)
-    write_json(cache, dict(run=str(run), selected_epoch=selected_epoch, metrics=value,
-                           source_only=True, trained=False))
-    del model, cp
-    gc.collect()
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
-    return predictions, loader
+def aggregate_classification(summaries, records):
+    if sorted(r["seed"] for r in summaries) != list(SEEDS):
+        raise ValueError("aggregate exactly seeds 42, 1234 and 123456")
+    cohorts = [{(r["pair_key"], tuple(r["sample_keys"])) for r in records if r["seed"] == seed} for seed in SEEDS]
+    if not cohorts[0] or any(c != cohorts[0] for c in cohorts[1:]) or any(r["pairs"] != len(cohorts[0]) for r in summaries):
+        raise ValueError("the three seeds must repeat exactly the same cohort")
+    return dict(seeds=list(SEEDS), pairs_per_seed=len(cohorts[0]), std_definition="sample SD, ddof=1; n=3 seeds on the same cohort",
+        matrix=[[mean_sd([r["matrix"][i][j] for r in summaries]) for j in range(4)] for i in range(4)],
+        fraction_all=[[mean_sd([r["fraction_all"][i][j] for r in summaries]) for j in range(4)] for i in range(4)],
+        fraction_source=[[mean_sd([r["fraction_source"][i][j] for r in summaries]) for j in range(4)] for i in range(4)],
+        methods={m:{k:mean_sd([r["methods"][m][k] for r in summaries])
+                    for k in ("p_c", "recall", "patched_fpr", "false_positives", "false_negatives")} for m in METHODS},
+        pc={k:mean_sd([r["pc"][k] for r in summaries]) for k in ("gained", "lost", "net", "retained",
+            "gained_fraction", "lost_fraction", "net_fraction", "loss_fraction_of_original_pc")},
+        gain_sources={s:mean_sd([r["pc"]["gain_sources"][s] for r in summaries]) for s in STATES[1:]},
+        gain_source_shares={s:mean_sd([r["pc"]["gain_source_shares"][s] for r in summaries]) for s in STATES[1:]},
+        errors={k:{field:mean_sd([r["errors"][k][field] for r in summaries])
+                   for field in ("count", "fraction_all", "fraction_opportunity")} for k in summaries[0]["errors"]},
+        net_fp=mean_sd([r["net_fp"] for r in summaries]), net_fn=mean_sd([r["net_fn"] for r in summaries]))
 
 
-def plot_gaps(records, output_dir):
+def plot_transitions(summaries, root):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
 
+    maximum = max(max(row) for r in summaries for row in r["matrix"])
+    labels = [s.upper().replace("_", "-") for s in STATES]
     with plt.rc_context({"font.size": 10, "svg.fonttype": "none", "savefig.facecolor": "white"}):
-        fig, axes = plt.subplots(3, 3, figsize=(12, 9), layout="constrained", sharex=True, sharey=True)
-        for row, split in enumerate(("train", "valid", "test")):
-            for col, seed in enumerate(SEEDS):
-                ax = axes[row, col]
-                subset = [r for r in records if r["split"] == split and r["seed"] == seed]
-                for method, label, color, style in (("context_only", "Context-only", "#0072B2", "-"),
-                                                   ("rgcl", "RGCL", "#D55E00", "--")):
-                    x = np.sort([r[method]["gap"] for r in subset])
-                    ax.step(np.r_[-1., x, 1.], np.r_[0., np.arange(1, len(x)+1)/len(x), 1.],
-                            where="post", label=label, color=color, linestyle=style)
-                ax.axvline(0, color=".55", linewidth=.8)
-                ax.set(xlim=(-1, 1), ylim=(0, 1.01), title=f"{split.title()} | seed {seed} | n={len(subset)}")
-                if col == 0:
-                    ax.set_ylabel("Cumulative pair fraction")
-                if row == 2:
-                    ax.set_xlabel("Probability gap: vulnerable - repaired")
-        axes[0, 0].legend(loc="upper left")
-        for extension in ("svg", "png"):
-            fig.savefig(output_dir / f"probability_gap_ecdf.{extension}", dpi=180)
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4.4), layout="constrained")
+        for ax, r in zip(axes, summaries):
+            im = ax.imshow(r["matrix"], cmap="Blues", vmin=0, vmax=maximum)
+            ax.set(xticks=range(4), yticks=range(4), xticklabels=labels, yticklabels=labels,
+                   xlabel="RGCL state", ylabel="Context-only state", title=f"Seed {r['seed']} | n={r['pairs']} pairs")
+            for i in range(4):
+                for j in range(4):
+                    value = r["matrix"][i][j]
+                    percent = r["fraction_source"][i][j]
+                    annotation = f"{value}\n({100*percent:.1f}%)" if percent is not None else f"{value}\n(N/A)"
+                    ax.text(j, i, annotation, ha="center", va="center", fontsize=10,
+                            color="white" if value > maximum*.65 else "black")
+                    if i and not j:
+                        ax.add_patch(Rectangle((j-.47, i-.47), .94, .94, fill=False, linewidth=1.7,
+                                               edgecolor="#009E73"))
+                    elif j and not i:
+                        ax.add_patch(Rectangle((j-.47, i-.47), .94, .94, fill=False, linewidth=1.7,
+                                               edgecolor="#D55E00", linestyle="--"))
+        fig.colorbar(im, ax=axes, shrink=.78, label="Repair pairs (shared count scale)")
+        for suffix in ("png", "svg"):
+            fig.savefig(root / f"classification_transitions.{suffix}", dpi=200)
         plt.close(fig)
-        fig, axes = plt.subplots(2, 3, figsize=(12, 6), layout="constrained", sharex=True, sharey=True)
-        for row, split in enumerate(("valid", "test")):
-            for col, seed in enumerate(SEEDS):
-                ax = axes[row, col]
-                rs = [r for r in records if r["split"] == split and r["seed"] == seed]
-                for same, label, color, marker in ((False, "Visible difference", "#0072B2", "."),
-                                                   (True, "Identical visible input", "#D55E00", "x")):
-                    subset = [r for r in rs if r["identical_visible_input"] == same]
-                    ax.scatter([r["context_only"]["gap"] for r in subset],
-                               [r["rgcl"]["gap"] for r in subset], s=13, marker=marker,
-                               color=color, alpha=.55, label=label)
-                ax.plot([-1, 1], [-1, 1], linestyle=":", color=".5")
-                ax.axhline(0, color=".7", linewidth=.7)
-                ax.axvline(0, color=".7", linewidth=.7)
-                ax.set(xlim=(-1, 1), ylim=(-1, 1), title=f"{split.title()} | seed {seed}")
-                if col == 0:
-                    ax.set_ylabel("RGCL probability gap")
-                if row == 1:
-                    ax.set_xlabel("Context-only probability gap")
-        axes[0, 0].legend(fontsize=8, loc="upper left")
-        for extension in ("svg", "png"):
-            fig.savefig(output_dir / f"paired_gap_changes.{extension}", dpi=180)
-        plt.close(fig)
-    for name in ("probability_gap_ecdf.svg", "paired_gap_changes.svg"):
-        path = output_dir / name
-        path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-
-
-def analyze(data_dir, reference_dir, output_dir, *, device="cpu"):
-    """Fixed three-seed checkpoints; Test is used only for retrospective analysis."""
-    from transformers import RobertaTokenizerFast
-
-    root, data = Path(output_dir), Path(data_dir) / "primevul_paired"
-    root.mkdir(parents=True, exist_ok=True)
-    model_path = BACKBONE_MODELS["unixcoder"]
-    tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False, local_files_only=True)
-    all_rows, coverages, identical, coverage_summary = {}, {}, {}, {}
-    for split in ("train", "valid", "test"):
-        rows = read_jsonl(data / (f"{split}.lines.jsonl" if split != "test" else "test.oracle.jsonl"))
-        clean = read_jsonl(data / f"{split}.jsonl")
-        paired_metrics(rows, [.5] * len(rows))
-        if len({r["pair_key"] for r in rows}) != len(rows) // 2:
-            raise ValueError("official pair_key is duplicated across pairs")
-        if [{k: r[k] for k in ("sample_key", "pair_key", "target", "func")} for r in rows] != [
-                {k: r[k] for k in ("sample_key", "pair_key", "target", "func")} for r in clean]:
-            raise ValueError("post-hoc Diff records differ from normal single-source inputs")
-        records, signatures = [], []
-        for i, row in enumerate(rows):
-            if row["lines_ground_truth"] != modified_lines(row["func"], rows[i ^ 1]["func"]):
-                raise ValueError("persisted Diff lines disagree with the formal Differ alignment")
-            feature = paired_features(row, tokenizer, "baseline")
-            records.append(coverage_record(row, feature))
-            signatures.append(tuple(feature["input_ids"]))
-        all_rows[split], coverages[split] = rows, records
-        identical[split] = [signatures[i] == signatures[i+1] for i in range(0, len(rows), 2)]
-        coverage_summary[split] = summarize_coverage(records)
-        coverage_summary[split].update(pairs=len(rows)//2, identical_visible_pairs=sum(identical[split]),
-            both_eligible_pairs=sum(records[i]["eligible"] and records[i+1]["eligible"] for i in range(0, len(rows), 2)),
-            either_eligible_pairs=sum(records[i]["eligible"] or records[i+1]["eligible"] for i in range(0, len(rows), 2)))
-        write_jsonl(root / f"{split}.coverage.jsonl", records)
-        print(f"coverage {split}: {len(rows)} functions; {sum(identical[split])} identical pairs", flush=True)
-    write_json(root / "coverage.json", coverage_summary)
-    experiment_records, pair_records, summaries, loader = [], [], [], None
-    for seed in SEEDS:
-        predictions = {s: {} for s in all_rows}
-        for method in METHODS:
-            run = run_path(reference_dir, "primevul_paired", seed, method)
-            info = inspect_run(run, data_dir, "primevul_paired", seed, method, model_path)
-            train_mask = run / "train.attention_regions.jsonl"
-            if method == "rgcl":
-                masks = read_jsonl(train_mask)
-                if len(masks) != len(all_rows["train"]) or any(
-                    m["sample_key"] != r["sample_key"] or m["line_numbers"] != c["line_numbers"] or
-                    m["labels"] != [int(n in r["lines_ground_truth"]) for n in c["line_numbers"]]
-                    for m, r, c in zip(masks, all_rows["train"], coverages["train"])):
-                    raise ValueError("saved Train region masks differ across the seed/cohort")
-            info.update(seed=seed, method=method, predictions={})
-            for split, rows in all_rows.items():
-                filename = ("train.selected.predictions.jsonl" if split == "train" else
-                            "valid.best-p_c.predictions.jsonl" if split == "valid" else "test.predictions.jsonl")
-                path = run / filename
-                if split == "train" and not path.exists():
-                    path = root / "cache" / f"seed{seed}.{method}.train.predictions.jsonl"
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"frozen Train inference: seed {seed} {method}", flush=True)
-                    pred, loader = infer_train(run, path, rows, info["selected_epoch"], device, loader)
-                else:
-                    pred = read_jsonl(path)
-                    if split == "train":
-                        metadata = json.loads((run / "train.selected.metrics.json").read_text())
-                        if metadata["selected_epoch"] != info["selected_epoch"]:
-                            raise ValueError("historical Train cache uses a different epoch")
-                pred = align_predictions(rows, pred, coverages[split])
-                predictions[split][method] = pred
-                value = paired_metrics(rows, [p["probability"] for p in pred])
-                saved = (info["validation"] if split == "valid" else
-                         json.loads((run / "test.metrics.json").read_text())["metrics"] if split == "test" else None)
-                if saved is not None and any(k in saved and value[k] != saved[k] for k in value):
-                    raise ValueError("recomputed fixed-threshold metrics differ from the saved evaluation")
-                info["predictions"][split] = dict(path=str(path), metrics=value)
-            experiment_records.append(info)
-        for split, rows in all_rows.items():
-            pairs = paired_records(rows, predictions[split], coverages[split], identical[split], seed, split)
-            pair_records.extend(pairs)
-            for group, members in subgroup_records(pairs).items():
-                summaries.append(dict(seed=seed, split=split, group=group, **summarize_gaps(members)))
-        print(f"finished probability analysis: seed {seed}", flush=True)
-    write_jsonl(root / "paired_gaps.jsonl", pair_records)
-    aggregate = []
-    for split in all_rows:
-        for group in subgroup_records([]):
-            rs = [r for r in summaries if r["split"] == split and r["group"] == group]
-            if not rs[0]["pairs"]:
-                continue
-            entries = {}
-            for method in METHODS:
-                for name, fn in (("gap", lambda r: r["gap"]["mean"]),
-                                 ("ordering_rate", lambda r: r["ordering_rate"]), ("p_c", lambda r: r["p_c"]),
-                                 ("vulnerable_probability", lambda r: r["vulnerable_probability"]["mean"]),
-                                 ("repaired_probability", lambda r: r["repaired_probability"]["mean"])):
-                    vals = [fn(r["methods"][method]) for r in rs]
-                    entries[f"{method}.{name}"] = dict(mean=statistics.mean(vals), std=statistics.stdev(vals))
-            for name, fn in (("gap_change", lambda r: r["gap_change"]["mean"]),
-                             ("p_c_change", lambda r: (r["gained_p_c"]-r["lost_p_c"])/r["pairs"]),
-                             ("ordering_change", lambda r: (r["gained_ordering"]-r["lost_ordering"])/r["pairs"])):
-                vals = [fn(r) for r in rs]
-                entries[name] = dict(mean=statistics.mean(vals), std=statistics.stdev(vals))
-            aggregate.append(dict(split=split, group=group, pairs_per_seed=rs[0]["pairs"], metrics=entries))
-    result = dict(experiments=experiment_records, coverage=coverage_summary, summaries=summaries, aggregate=aggregate,
-        protocol=dict(seeds=list(SEEDS), threshold=.5, comparison=">", trained=False,
-            model_selection="unchanged existing full-Valid P-C checkpoints", test_use="post-hoc diagnostics only",
-            std="between-seed sample SD, ddof=1; same cohort is not three independent sample sets",
-            distribution_std="within-seed pair population SD, ddof=0",
-            visibility="full: every direct modified line complete; partial: some Diff Token visible but not all lines complete; invisible: nonempty original Diff with no visible Diff Tokens; no_direct_diff: empty original Diff",
-            encoding="formal RobertaTokenizerFast(trim_offsets=False), no prefix/additional special tokens; first510 source BPE Tokens plus CLS/SEP, pad to512; whitespace consumes budget but has no pooling mass; comments remain source; physical line IDs zero-based",
-            token_mass="bounded_pool reciprocal cross-line membership; only foreground>0 AND background>0 contributes region loss; partial final lines retained by historical PrimeVul rule",
-            supervision="Train actual; Valid/Test counterfactual availability only, never supplied to inference"))
-    write_json(root / "analysis.json", result)
-    plot_gaps(pair_records, root)
-    write_tables(root, result)
-    write_case_candidates(root, all_rows["test"], pair_records)
-    write_report(root, result)
-    return result
+    path = root / "classification_transitions.svg"
+    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
 
 
 def write_tables(root, result):
-    with (root / "gap_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (root/"classification_transitions.csv").open("w", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(["split", "seed", "group", "pairs", "method", "gap_mean", "gap_median", "gap_std",
-                         "ordered", "ties", "reversed", "p_c", "p_v", "p_b", "p_r", "ordered_not_p_c"])
+        writer.writerow(["seed", "from_state", "to_state", "count", "all_pairs", "fraction_all", "source_pairs", "fraction_source"])
         for r in result["summaries"]:
-            for m, v in r["methods"].items():
-                writer.writerow([r["split"], r["seed"], r["group"], r["pairs"], m, v["gap"]["mean"],
-                    v["gap"]["quantiles"]["0.5"], v["gap"]["std"], v["ordered"], v["ties"], v["reversed"],
-                    *[v["pair_counts"][k] for k in ("p_c", "p_v", "p_b", "p_r")], v["ordered_but_not_p_c"]])
+            for i, before in enumerate(STATES):
+                for j, after in enumerate(STATES):
+                    writer.writerow([r["seed"], before, after, r["matrix"][i][j], r["pairs"], r["fraction_all"][i][j],
+                                     r["row_totals"][i], r["fraction_source"][i][j]])
+    with (root/"classification_summary.csv").open("w", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        keys = ("gained", "lost", "net", "gained_fraction", "lost_fraction", "net_fraction")
+        writer.writerow(["seed", "pairs", *[f"pc_{k}" for k in keys],
+            *[f"{m}_{k}" for m in METHODS for k in ("p_c", "recall", "patched_fpr")],
+            *result["summaries"][0]["errors"], "net_fp", "net_fn"])
+        for r in result["summaries"]:
+            writer.writerow([r["seed"], r["pairs"], *[r["pc"][k] for k in keys],
+                *[r["methods"][m][k] for m in METHODS for k in ("p_c", "recall", "patched_fpr")],
+                *[v["count"] for v in r["errors"].values()], r["net_fp"], r["net_fn"]])
 
 
-def write_case_candidates(root, rows, records):
-    """Deterministic short-function shortlist for subsequent source-level review."""
-    source = {r["pair_key"]: rows[i:i+2] for i, r in enumerate(rows) if i % 2 == 0}
-    by_key = {}
-    for r in records:
-        if r["split"] == "test":
-            by_key.setdefault(r["pair_key"], []).append(r)
-    groups = dict(
-        improved=lambda rs: sum(r["gained_p_c"] for r in rs) >= 2 and not any(r["lost_p_c"] for r in rs),
-        introduced_error=lambda rs: sum(r["lost_p_c"] for r in rs) >= 2 and not any(r["gained_p_c"] for r in rs),
-        ordered_but_both_vulnerable=lambda rs: all(r["rgcl"]["ordered"] and r["rgcl"]["state"] == "p_v" for r in rs),
-        no_improvement=lambda rs: all(r["context_only"]["state"] != "p_c" and r["rgcl"]["state"] != "p_c" for r in rs)
-                                        and not rs[0]["identical_visible_input"],
-        invisible_change=lambda rs: rs[0]["identical_visible_input"])
-    shortlist = {}
-    for name, select in groups.items():
-        keys = [k for k, rs in by_key.items() if select(rs)]
-        keys.sort(key=lambda k: (max(len(r["func"].splitlines()) for r in source[k]), k))
-        shortlist[name] = keys[:6]
-    write_json(root / "case_candidates.json", shortlist)
-    # Exact source text stays in this local review file until selected examples are reviewed.
-    with (root / "case_candidates.local.md").open("w", encoding="utf-8") as handle:
-        for group, keys in shortlist.items():
-            handle.write(f"# {group}\n\n")
-            for key in keys:
-                a, b = source[key]
-                handle.write(f"## {key} | {a.get('project')} | {a.get('commit_id')}\n\n")
-                for r in sorted(by_key[key], key=lambda x: x["seed"]):
-                    handle.write(json.dumps(r, ensure_ascii=False)+"\n\n")
-                handle.write("```diff\n"+"".join(difflib.unified_diff(a["func"].splitlines(True), b["func"].splitlines(True),
-                    fromfile="vulnerable", tofile="repaired"))+"\n```\n\n")
-                for label, r in (("vulnerable", a), ("repaired", b)):
-                    handle.write(f"### {label} | Diff lines (zero-based): {r['lines_ground_truth']}\n\n```c\n{r['func']}\n```\n\n")
+def write_case_candidates(root, records):
+    groups = {}
+    for before, after in (("p_v", "p_c"), ("p_b", "p_c"), ("p_r", "p_c"), ("p_c", "p_v"), ("p_c", "p_b")):
+        matches = {}
+        for r in records:
+            if (r["context_only"]["state"], r["rgcl"]["state"]) == (before, after):
+                matches.setdefault(r["pair_key"], []).append(r["seed"])
+        groups[before+"->"+after] = [dict(pair_key=k, seeds=matches[k]) for k in sorted(
+            matches, key=lambda k:(-len(matches[k]), k))]
+    write_json(root/"classification_candidates.json", dict(
+        selection="transition type, then number of matching seeds, then full pair_key; no length/visibility/edit-size selection",
+        groups=groups))
+
+
+def analyze(data_dir, reference_dir, output_dir):
+    """RQ3 uses only already selected Test predictions; no encoding/inference."""
+    root, data = Path(output_dir), Path(data_dir)/"primevul_paired"
+    rows = read_jsonl(data/"test.jsonl")
+    coverage = json.loads((root/"coverage.json").read_text())
+    source_mapping = read_jsonl(root/"test.coverage.jsonl")
+    if len(rows) != 1128 or len({r["pair_key"] for r in rows}) != 564:
+        raise ValueError("RQ3 requires all 564 official PrimeVul Test pairs")
+    for side, stats in summarize_coverage(source_mapping).items():
+        if stats != coverage["test"][side]:
+            raise ValueError("preserved coverage statistics do not match the existing records")
+    records, summaries, experiments = [], [], []
+    for seed in SEEDS:
+        predictions, metrics = {}, {}
+        for method in METHODS:
+            path = run_path(reference_dir, "primevul_paired", seed, method)
+            info = inspect_run(path, data_dir, "primevul_paired", seed, method, BACKBONE_MODELS["unixcoder"], checkpoint=False)
+            if not (path/"best-p_c.pt").is_file():
+                raise FileNotFoundError(path/"best-p_c.pt")
+            saved = json.loads((path/"test.metrics.json").read_text())
+            if saved["selected_epoch"] != info["selected_epoch"]:
+                raise ValueError("Test predictions use a different preselected checkpoint")
+            pred = align_predictions(rows, read_jsonl(path/"test.predictions.jsonl"), source_mapping)
+            value = paired_metrics(rows, [p["probability"] for p in pred])
+            if any(value[k] != saved["metrics"][k] for k in value):
+                raise ValueError("saved official Test metrics do not reproduce")
+            predictions[method], metrics[method] = pred, value
+            experiments.append(dict(seed=seed, method=method, run=str(path), selected_epoch=info["selected_epoch"],
+                checkpoint=str(path/"best-p_c.pt"), predictions=str(path/"test.predictions.jsonl"),
+                full_training_and_valid_selection_checked=True, weights_loaded=False,
+                metrics={k:v for k,v in value.items() if not k.startswith("pair_ranking")}))
+        members = classification_records(rows, predictions, seed)
+        summary = summarize_classification(members)
+        for method in METHODS:
+            if summary["methods"][method]["pair_counts"] != metrics[method]["pair_counts"] or any(
+                summary["methods"][method][k] != metrics[method][k] for k in ("p_c", "recall", "patched_fpr")):
+                raise ValueError("matrix margins disagree with official paired metrics")
+        records.extend(members)
+        summaries.append(summary)
+        print(f"seed {seed}: matrix total=564, gained P-C={summary['pc']['gained']}, lost={summary['pc']['lost']}, net={summary['pc']['net']}", flush=True)
+    result = dict(title="RQ3: Repair-Guided Pairwise Classification Analysis", states=list(STATES),
+        protocol=dict(dataset="PrimeVul official paired Test", backbone="UniXcoder", seeds=list(SEEDS),
+            pairs_per_seed=564, functions_per_seed=1128, threshold=.5, comparison=">", input_tokens=512,
+            k=5, region_loss_weight=.1, selection="existing full Valid P-C checkpoint; unchanged",
+            trained=False, inference_run=False, test_used_for_selection=False,
+            test_diff_use="only post-hoc source cases", strata="none; no function-length/visibility/edit-size analysis",
+            denominator="matrix/all-pair rates:564; row rates:source state; gain shares:new P-C; error opportunities:old errors/correct functions",
+            seed_statistics="mean and sample SD, ddof=1; same 564 pairs across seeds, never 1692 independent pairs"),
+        coverage_background=coverage, experiments=experiments, summaries=summaries,
+        aggregate=aggregate_classification(summaries, records))
+    write_jsonl(root/"paired_classifications.jsonl", records)
+    write_json(root/"rq3.json", result)
+    write_tables(root, result)
+    plot_transitions(summaries, root)
+    write_case_candidates(root, records)
+    case_count = write_cases(root, data, rows, records)
+    write_report(root, result)
+    write_json(root/"classification_checks.json", dict(passed=True, seeds=list(SEEDS),
+        full_pair_keys=True, complete_same_cohort=True, pairs_per_seed=564,
+        matrix_totals=[sum(map(sum,r["matrix"])) for r in summaries],
+        matrix_row_column_totals_match_original_metrics=True, error_balance_identities=True,
+        original_test_predictions=6, function_predictions_checked=6768,
+        classification_pair_records=len(records), cases=case_count,
+        source_diff_alignment_checked=True, trained=False, inference_run=False,
+        test_used_for_selection=False, coverage_reused_without_changes=True))
+    return result
+
+
+CASE_STUDIES = (
+    ("primevul_paired:test:444", "P-V→P-C：修复版本误报得到纠正",
+     "原函数直接读取p[0]到p[3]；补丁新增 `if (end - p < 4) return 0;`，在剩余数据不足四字节时提前返回。"
+     "Seed42/1234中，漏洞函数保持判为漏洞，修复函数由漏洞改判正常，形成P-V→P-C；Seed123456保持P-C。"
+     "这是一项明确的修复侧分类改善，不能仅凭输出变化推断模型关注了检查行。"),
+    ("primevul_paired:test:319", "P-B→P-C：原本漏检的漏洞函数被识别",
+     "Vim的eval7处理嵌套表达式，并调用递归的eval1/eval_func路径。补丁新增静态递归计数器，在达到1000层时返回错误，"
+     "进入受保护部分后递增，并在函数末尾递减，限制递归深度。三个种子都由P-B变为P-C："
+     "漏洞函数由正常改判漏洞，修复函数仍判正常。Seed42中修复概率也升高至0.489171，但没有越过固定阈值；"
+     "因此该例的新增P-C来自纠正漏洞漏检，并非要求修复概率必须下降。"),
+    ("primevul_paired:test:318", "P-C→P-V：引入修复版本误报",
+     "RTCP BYE的reason.slen原本只受目标缓冲区大小和报文声明长度约束，随后从pkt+9复制。"
+     "补丁新增 `reason.slen = PJ_MIN(reason.slen, size-9);`，进一步限制实际报文剩余长度。"
+     "Seed1234/123456由P-C退化为P-V：漏洞侧仍判漏洞，修复侧由正常误判为漏洞；Seed42保持P-C。"
+     "这是新增误报，不能把补丁具有清晰安全含义或预测置信度提高当作修复识别成功。"),
+    ("primevul_paired:test:504", "P-C→P-B：引入漏洞函数漏检",
+     "TIPC密钥接收函数先按size分配内存，再按报文提供的keylen执行memcpy，原有大小一致性检查发生在复制之后。"
+     "补丁将最小报文长度、keylen上界及size一致性验证移到分配和复制之前，并调整解锁出口。"
+     "Seed42/1234由P-C变为P-B：漏洞函数由漏洞漏判为正常，修复函数仍为正常；Seed123456保持P-B。"
+     "这说明所选RGCL模型也会丢失原模型已经正确的漏洞识别；不能从概率变化确定它如何处理了检查与复制的顺序。"),
+)
+
+
+def write_cases(root, data, rows, records):
+    oracle = read_jsonl(data/"test.oracle.jsonl")
+    fields = ("sample_key", "pair_key", "target", "func")
+    if [{k:r[k] for k in fields} for r in oracle] != [{k:r[k] for k in fields} for r in rows]:
+        raise ValueError("post-hoc case sources differ from the original Test input")
+    by_key = {r["pair_key"]:oracle[i:i+2] for i,r in enumerate(oracle) if i % 2 == 0}
+    lines = ["# RQ3 典型配对分类案例", "",
+        "复用既定Test预测与原始双版本源码。四例分别说明P-V→P-C、P-B→P-C、P-C→P-V和P-C→P-B；"
+        "优先复用上一轮已有案例，并选择同类转移在多个种子重复出现、代码修改语义可核实的实例。"
+        "候选按转移类型、出现该转移的种子数和完整pair_key排序，未按函数长度、可见性或修改规模筛选。", "",
+        "所有案例都展示三个种子；它们用于说明分类行为，不能用案例频率推断总体规律。"
+        "表中概率显示9位有效数字，判定始终使用原始概率严格>0.5。源码Diff来自原文，保留上下文，"
+        "展示用unified Diff；修改行标签另以正式双向_line_diff核对。Test Diff仅作事后解释。", ""]
+    for key, title, note in CASE_STUDIES:
+        a, b = by_key[key]
+        for row, other in ((a,b), (b,a)):
+            if row["lines_ground_truth"] != modified_lines(row["func"], other["func"]):
+                raise ValueError("case Diff labels do not match the formal source alignment")
+        lines += [f"## {key}：{title}", "", f"项目 `{a['project']}`；修复提交 `{a['commit_id']}`。"
+            f"原始成员 `{a['sample_key']}` / `{b['sample_key']}`，标签1/0。", "", note, "",
+            "| 种子 | Context漏洞概率 | Context修复概率 | RGCL漏洞概率 | RGCL修复概率 | 分类转移 |",
+            "|---:|---:|---:|---:|---:|---|"]
+        for seed in SEEDS:
+            r = next(r for r in records if r["pair_key"] == key and r["seed"] == seed)
+            c, g = [r[m] for m in METHODS]
+            lines.append(f"| {seed} | {c['vulnerable_probability']:.9g} | {c['repaired_probability']:.9g} | "
+                f"{g['vulnerable_probability']:.9g} | {g['repaired_probability']:.9g} | "
+                f"{state_label(c['state'])}→{state_label(g['state'])} |")
+        diff = "".join(difflib.unified_diff(a["func"].splitlines(True), b["func"].splitlines(True),
+                                           fromfile="vulnerable", tofile="repaired"))
+        lines += ["", "```diff", diff.rstrip("\n"), "```", ""]
+    (root/"cases.md").write_text("\n".join(lines), encoding="utf-8")
+    return len(CASE_STUDIES)
+
+
+def state_label(state):
+    return state.upper().replace("_", "-")
 
 
 def write_report(root, result):
-    """Tables use complete cohorts; semantic interpretations live in the reviewed casebook."""
-    percent = lambda x: f"{100*x:.2f}%"
-    mean_sd = lambda x, scale=1: f"{scale*x['mean']:.4f} ± {scale*x['std']:.4f}"
-    lines = ["# RGCL 修复引导机制分析", "",
-        "仅使用 PrimeVul + UniXcoder 已完成的 Seed42、1234、123456 Context-only/RGCL。"
-        "K=5、λ=0.1、Token 加权区域损失；不重新训练、不调整阈值或选模。"
-        "六个 checkpoint 均核对完整16轮训练记录及原完整 Valid P-C 选择。Test Diff 仅用于事后统计。", "",
-        "## 分词、可见性和实际监督", "",
-        "复用正式 `RobertaTokenizerFast(trim_offsets=False)` 与 `paired_features`："
-        "原函数整体分词，不单独逐行分词或删除注释；不添加 UniXcoder 模式前缀。"
-        "先保留前510个源码 BPE Token，再加 CLS/SEP，不足512补 Padding。"
-        "空白 Token 消耗输入预算，但空白、特殊 Token 和 Padding 没有聚合质量；"
-        "注释仍属于原始输入。物理行编号包含空行，底层从0计数。", "",
-        "Diff 沿用 `_line_diff`/`difflib.Differ` 的双向非空删除行规则，已逐函数核对持久化标签。"
-        "完整可见指所有原始直接修改行的映射 Token 均在前510内；部分可见指至少一个修改 Token 可见，"
-        "但并非所有修改行都完整；不可见指原本有直接修改行而一个修改 Token 也不可见。"
-        "原侧无直接 Diff 单列，纯新增修复的漏洞侧属于这一类，不能当成截断。"
-        "下表百分比以该侧全部函数为分母；只以非空 Diff 为分母的比例另存 coverage.json。", "",
-        "| 划分 | 侧 | 函数 | 完整 | 部分 | 不可见 | 无直接 Diff | 可施加区域损失 |",
-        "|---|---|---:|---:|---:|---:|---:|---:|"]
-    for split, c in result["coverage"].items():
-        for side in ("all", "vulnerable", "repaired"):
-            v = c[side]
-            cells = [f"{v['category_counts'][k]} ({percent(v['category_fraction_all'][k])})" for k in VISIBILITY]
-            lines.append(f"| {split} | {side} | {v['functions']} | " + " | ".join(cells) +
-                         f" | {v['eligible_functions']} ({percent(v['eligible_functions']/v['functions'])}) |")
-    lines += ["", "实际区域损失要求可见前景和背景均非空；全区域及空区域不生效，函数 BCE 保留。"
-        "PrimeVul 沿用历史规则，截断末行的可见部分仍可参与区域监督。跨行 Token 按1/归属行数分配，"
-        "质量与 bounded_pool 一致，可能为分数 Token。三个种子的全部 Train 区域掩码均与同一统计核对，"
-        "因此覆盖率不随种子变化。Train 为实际可用监督；Valid/Test 仅表示事后可用性，未输入推理。", "",
-        "| 划分 | 可见前景 Token质量 | 实际可用前景质量 | 对应背景质量 | 生效函数内前景均值/中位数/P95 | 含部分修改行的生效函数 | 全可见代码均为区域 |",
-        "|---|---:|---:|---:|---|---:|---:|"]
-    for split, c in result["coverage"].items():
-        v, t = c["all"], c["all"]["token_sums"]
-        d = v["eligible_region_tokens"]
-        lines.append(f"| {split} | {t['visible_region_token_mass']:.3f} | {t['effective_region_token_mass']:.3f} | "
-            f"{t['effective_background_token_mass']:.3f} | {d['mean']:.2f} / {d['quantiles']['0.5']:.2f} / "
-            f"{d['quantiles']['0.95']:.2f} | {v['eligible_with_partial_diff_line']} | {v['all_visible_code_is_region']} |")
-    lines += ["", "区域损失为 `max(0, log(2) - log(mean_region_rate) + log(mean_background_rate))`，"
-        "对生效函数平均。它在漏洞侧和修复侧都提高修改区域相对背景的平均倍率，"
-        "没有直接要求这些行具有正漏洞 Logit，也没有直接最大化配对概率间隔。", "",
-        "## 预测间隔、排序与两侧均正确", "",
-        "Δp=P(漏洞函数)-P(修复函数)。严格排序要求 Δp>0；相等概率单列，不能计为正确排序。"
-        "P-C 要求漏洞概率>0.5且修复概率≤0.5。P-V=两侧均判漏洞，P-B=两侧均判正常，"
-        "P-R=两侧均判反。排序正确的 P-V/P-B 仍不是 P-C。"
-        "所有预测以唯一 sample_key 加完整 pair_key、标签、物理行和 Token 质量核对，"
-        "Valid/Test 指标与原评价文件完全一致。Train 复用两份历史预测，另四份只补做冻结单函数推理。", "",
-        "| 划分 | 种子 | 方法 | 对数 | Δp均值 | Δp中位数 | 正确排序 | 概率相等 | P-C | 排序正确但非P-C |",
-        "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|"]
-    for r in result["summaries"]:
-        if r["group"] != "all":
-            continue
-        for m, v in r["methods"].items():
-            lines.append(f"| {r['split']} | {r['seed']} | {m} | {r['pairs']} | {v['gap']['mean']:.6f} | "
-                f"{v['gap']['quantiles']['0.5']:.6f} | {v['ordered']} ({percent(v['ordering_rate'])}) | "
-                f"{v['ties']} | {v['pair_counts']['p_c']} ({percent(v['p_c'])}) | {v['ordered_but_not_p_c']} |")
-    lines += ["", "| 划分 | 种子 | 平均Δp变化 | 平均漏洞概率变化 | 平均修复概率变化 | 新增/丢失正确排序 | 新增/丢失P-C |",
-              "|---|---:|---:|---:|---:|---:|---:|"]
-    for r in result["summaries"]:
-        if r["group"] == "all":
-            lines.append(f"| {r['split']} | {r['seed']} | {r['gap_change']['mean']:+.6f} | "
-                f"{r['vulnerable_change']['mean']:+.6f} | {r['repaired_change']['mean']:+.6f} | "
-                f"{r['gained_ordering']}/{r['lost_ordering']} | {r['gained_p_c']}/{r['lost_p_c']} |")
-    lines += ["", "三种子汇总为均值±样本标准差（ddof=1，n=3）。每个种子评估同一批函数，"
-              "不能把重复的成员当作三倍独立样本。分布内部标准差为ddof=0。", "",
-              "| 划分 | 子集 | 每种子对数 | Context Δp | RGCL Δp | Context排序% | RGCL排序% | Context P-C% | RGCL P-C% |",
-              "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
-    for r in result["aggregate"]:
-        if r["group"] not in ("all", "visible_difference", "identical_input"):
-            continue
-        v = r["metrics"]
-        vals = [mean_sd(v[f"{m}.{k}"], 1 if k == "gap" else 100)
-                for k in ("gap", "ordering_rate", "p_c") for m in METHODS]
-        lines.append(f"| {r['split']} | {r['group']} | {r['pairs_per_seed']} | " + " | ".join(vals) + " |")
-    lines += ["", "相同可见输入按正式512 Token ID序列相等定义；所有官方成员保留。"
-        "额外的纯新增修复、两侧区域均完整、任一侧区域不可见子集及所有 P-C/P-V/P-B/P-R 迁移见 analysis.json，"
-        "逐对结果见 paired_gaps.jsonl。完整分母包含不可见配对和概率相等配对。", "",
-        "## 实际发现", ""]
-    aggregate = {(r["split"], r["group"]): r["metrics"] for r in result["aggregate"]}
-    for split in ("train", "valid", "test"):
-        v = aggregate[split, "all"]
-        lines.append(f"{split.title()}：平均Δp {v['context_only.gap']['mean']:.6f} → {v['rgcl.gap']['mean']:.6f}；"
-            f"P-C {percent(v['context_only.p_c']['mean'])} → {percent(v['rgcl.p_c']['mean'])}；"
-            f"严格正确排序 {percent(v['context_only.ordering_rate']['mean'])} → {percent(v['rgcl.ordering_rate']['mean'])}。\n")
-    test = aggregate["test", "all"]
-    v = aggregate["test", "visible_difference"]
-    test_summaries = sorted((r for r in result["summaries"] if r["split"] == "test" and r["group"] == "all"),
-                            key=lambda r: r["seed"])
-    changes = "、".join(f"{r['gained_p_c']}/{r['lost_p_c']}" for r in test_summaries)
-    test_metrics = {m: {k: statistics.mean(e["predictions"]["test"]["metrics"][k]
-                    for e in result["experiments"] if e["method"] == m)
-                    for k in ("patched_fpr", "mcc")} for m in METHODS}
-    test_n = result["coverage"]["test"]["pairs"]
-    test_same = result["coverage"]["test"]["identical_visible_pairs"]
-    train_v = aggregate["train", "visible_difference"]
-    epochs = {m: "/".join(str(next(e["selected_epoch"] for e in result["experiments"]
-                              if e["method"] == m and e["seed"] == s)) for s in SEEDS) for m in METHODS}
-    lines += ["RGCL 的平均间隔在三个种子的 Valid/Test 均增加，但 Test 严格排序只在Seed42增加，"
-        "Seed1234/123456下降；Valid 为两个增加、一个下降。平均间隔是幅度统计，正确排序是符号统计，"
-        f"不能相互替代。Test P-C 两个种子提高、一个持平，同时新增/丢失P-C分别为{changes}。"
-        "各模型的严格排序正确配对中，仍有大量 P-V/P-B；没有依据宣称模型普遍更容易排对前后版本。", "",
-        f"仅看Test中有可见差异的{test_n-test_same}对，P-C {percent(v['context_only.p_c']['mean'])} → "
-        f"{percent(v['rgcl.p_c']['mean'])}，排序 {percent(v['context_only.ordering_rate']['mean'])} → "
-        f"{percent(v['rgcl.ordering_rate']['mean'])}，结论仍相同。相同可见输入的{test_same}对在六个模型中"
-        "概率均相等，Δp和P-C均为0；这部分没有通过修改评价分母被剔除。", "",
-        f"Test 的平均漏洞概率变化为 {test['rgcl.vulnerable_probability']['mean']-test['context_only.vulnerable_probability']['mean']:+.6f}，"
-        f"修复概率变化为 {test['rgcl.repaired_probability']['mean']-test['context_only.repaired_probability']['mean']:+.6f}。"
-        "因此平均间隔扩大并不等于总体修复侧概率下降。Seed42/123456 的两侧平均概率都升高，"
-        f"只有Seed1234修复侧均值下降。三种子Test的修复侧FPR从{percent(test_metrics['context_only']['patched_fpr'])}"
-        f"升至{percent(test_metrics['rgcl']['patched_fpr'])}，MCC从{test_metrics['context_only']['mcc']:.6f}"
-        f"略降至{test_metrics['rgcl']['mcc']:.6f}；P-C收益不代表整体误报下降。", "",
-        f"Train中有可见差异配对的RGCL正确排序为{percent(train_v['rgcl.ordering_rate']['mean'])}、"
-        f"P-C为{percent(train_v['rgcl.p_c']['mean'])}，Test对应为{percent(v['rgcl.ordering_rate']['mean'])}、"
-        f"{percent(v['rgcl.p_c']['mean'])}。训练集的分离能力没有同幅度迁移到未见样本。"
-        f"已有最佳轮次分别为Context-only {epochs['context_only']}、RGCL {epochs['rgcl']}"
-        "（种子42/1234/123456）；Seed1234的Context-only概率尤其集中在0.5附近。"
-        "不能把所选模型的全部差异解释成同一个训练时刻增加Diff损失的直接作用。", "",
-        "## 分布图", "",
-        "![逐种子Train/Valid/Test概率间隔经验CDF；不分箱、不平滑，横轴统一为负1至1](probability_gap_ecdf.png)", "",
-        "[可编辑SVG](probability_gap_ecdf.svg)。每条曲线包含该划分全部配对；0处跳跃包含概率相等的配对。", "",
-        "![逐对Context-only与RGCL间隔；对角线上方表示间隔增加，橙色叉为相同可见输入](paired_gap_changes.png)", "",
-        "[可编辑SVG](paired_gap_changes.svg)。每个点对应一对函数，无抖动或样本删除；重叠点不会展示为独立密度。", "",
-        "## 案例与解释", "",
-        "原始源码、真实Diff、逐种子概率及代码语义核对见 [案例分析](cases.md)。"
-        "候选按跨种子新增P-C、丢失P-C、排序正确但两侧判漏洞、持续失败、相同可见输入分组，"
-        "各组优先短函数，完整规则见 write_case_candidates。案例用于解释已有结果，不用于选模型或阈值。", "",
-        "概率变化只能说明函数输出变化，不能由此推断模型关注了哪些行。"
-        "独立训练并按Valid选择的模型可能选中不同Epoch；这些事后比较描述与Diff监督相关的现象，"
-        "不能独立证明具体代码行的注意力或因果中介作用。", "",
-        "复现统计和图：`python -m vulnmechanism.cli rgcl-mechanism --device cuda:0`。"
-        "缺失Train预测保存在新分析目录的本地cache，不改写任何历史目录、checkpoint或数据。"
-        "26项相关最小测试记录见 tests.log；首次检查发现并修复了空侧分母的统计异常，未放宽断言。"
-        "checks.json 另记录18组预测、65,760条函数记录、各子集统计恒等式、所选Epoch及12段案例原文的一致性核对。", ""]
-    (root / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    percent = lambda x: f"{100*x:.2f}%" if x is not None else "N/A"
+    ms = lambda value, scale=1: f"{scale*value['mean']:.2f}±{scale*value['std']:.2f}" if value["mean"] is not None else "N/A"
+    aggregate, summaries = result["aggregate"], result["summaries"]
+    pc_before, pc_after = [aggregate["methods"][m]["p_c"] for m in METHODS]
+    lines = ["# RQ3: Repair-Guided Pairwise Classification Analysis", "",
+        "**研究问题：修复引导如何改变漏洞函数及其修复版本的实际二分类结果？**", "",
+        f"在固定Test协议下，RGCL的P-C从{ms(pc_before,100)}%提高到{ms(pc_after,100)}%，"
+        f"每个种子平均新增{ms(aggregate['pc']['gained'])}对P-C、丢失{ms(aggregate['pc']['lost'])}对，"
+        f"净增加{ms(aggregate['pc']['net'])}对，即{ms(aggregate['pc']['net_fraction'],100)}个百分点。"
+        "新增正确配对主要来自纠正修复版本误报；完整结果也显示新的误报和漏检，不能将P-C收益解读为全面改善。", "",
+        "## 协议与定义", "",
+        "使用PrimeVul官方完整Test的564对/1128个函数，UniXcoder，Seed42、1234、123456，"
+        "Context-only与RGCL。复用原完整Valid P-C选出的六个checkpoint对应的保存预测；"
+        "不训练、不编码、不重新推理，不选择模型、Epoch或阈值。函数判定始终为严格 `prob > 0.5`，"
+        "等于0.5判正常。RGCL保留512 Token、K=5、λ=0.1及Token加权Diff区域损失。", "",
+        "P-C=(漏洞,正常)，两侧均正确；P-V=(漏洞,漏洞)，修复侧误报；P-B=(正常,正常)，漏洞侧漏检；"
+        "P-R=(正常,漏洞)，两侧均错误。每个转移矩阵的行是Context-only状态，列是RGCL状态。", "",
+        "统计以完整sample_key和pair_key对齐，核对标签、预测、保存的物理行/Token映射及所选Epoch。"
+        "每个种子矩阵总数必须为564，行合计与Context-only原指标一致，列合计与RGCL原指标一致。"
+        "三种子均值±样本标准差（ddof=1）的统计单位是种子；三个模型重复评价同一批564对，"
+        "不将其计为1692个独立配对。", "",
+        "## 1. 配对分类结果", "",
+        "| 种子 | 方法 | P-C对数 | P-V | P-B | P-R | P-C | 漏洞Recall | 修复侧FPR |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in summaries:
+        for m in METHODS:
+            v = r["methods"][m]
+            counts = " | ".join(str(v["pair_counts"][s]) for s in STATES)
+            lines.append(f"| {r['seed']} | {m} | {counts} | {percent(v['p_c'])} | {percent(v['recall'])} | {percent(v['patched_fpr'])} |")
+    for m in METHODS:
+        v = aggregate["methods"][m]
+        lines.append(f"\n{m}三种子：P-C {ms(v['p_c'],100)}%，Recall {ms(v['recall'],100)}%，修复侧FPR {ms(v['patched_fpr'],100)}%。")
+    lines += ["", "## 2. 新增正确配对及分类退化", "",
+        "前三列括号为占该种子新增P-C的比例；新增、丢失和净增加括号为占完整564对的比例。"
+        "均值行的比例先在每个种子内计算，再取均值和标准差，不采用跨种子次数合并后的比例。", "",
+        "| 种子 | P-V→P-C | P-B→P-C | P-R→P-C | 新增P-C | 丢失P-C | 净增加P-C |",
+        "|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in summaries:
+        p = r["pc"]
+        gains = [f"{p['gain_sources'][s]} ({percent(p['gain_source_shares'][s])})" for s in STATES[1:]]
+        cells = [f"{p[k]} ({percent(p[k+'_fraction'])})" for k in ("gained", "lost", "net")]
+        lines.append(f"| {r['seed']} | " + " | ".join(gains+cells) + " |")
+    gains = [f"{ms(aggregate['gain_sources'][s])} ({ms(aggregate['gain_source_shares'][s],100)}%)" for s in STATES[1:]]
+    cells = [f"{ms(aggregate['pc'][k])} ({ms(aggregate['pc'][k+'_fraction'],100)}%)" for k in ("gained", "lost", "net")]
+    lines += ["| 均值±SD | " + " | ".join(gains+cells) + " |", "",
+        f"新增P-C中，P-V→P-C平均占{ms(aggregate['gain_source_shares']['p_v'],100)}%，"
+        f"P-B→P-C占{ms(aggregate['gain_source_shares']['p_b'],100)}%，"
+        f"P-R→P-C占{ms(aggregate['gain_source_shares']['p_r'],100)}%。"
+        "三次实验中，最大的新增来源均为P-V→P-C，说明修复引导确实帮助一部分修复函数从误报转为正常，"
+        "同时保留对应漏洞函数的正确检出。P-B→P-C则说明收益也包含漏洞漏检的纠正。", "",
+        "新增P-C的构成比例不等于原错误状态的转化率；前者还受到Context-only原有错误数量影响。"
+        "以下以对应来源状态为分母，避免将较多的纠错数量解释为更高的条件纠错率。", "",
+        "| 种子 | P-V→P-C / 原P-V | P-B→P-C / 原P-B | P-R→P-C / 原P-R |",
+        "|---:|---:|---:|---:|"]
+    for r in summaries:
+        lines.append(f"| {r['seed']} | " + " | ".join(percent(r["fraction_source"][i][0]) for i in (1,2,3)) + " |")
+    lines += ["| 均值±SD | " + " | ".join(ms(aggregate["fraction_source"][i][0],100)+"%" for i in (1,2,3)) + " |", "",
+        "| 种子 | P-C→P-V：新误报 | P-C→P-B：新漏检 | P-C→P-R：两侧新错 | 保持P-C | 原P-C退化率 |",
+        "|---:|---:|---:|---:|---:|---:|"]
+    for r in summaries:
+        p = r["pc"]
+        cells = [str(p["loss_destinations"][s]) for s in STATES[1:]]
+        lines.append(f"| {r['seed']} | " + " | ".join(cells) + f" | {p['retained']} | {percent(p['loss_fraction_of_original_pc'])} |")
+    loss_cells = [ms(aggregate["matrix"][0][j]) for j in (1,2,3)]
+    lines += ["| 均值±SD | " + " | ".join(loss_cells) + f" | {ms(aggregate['pc']['retained'])} | {ms(aggregate['pc']['loss_fraction_of_original_pc'],100)}% |", "",
+        "上述退化均保留在完整矩阵和统计中；净收益是新增P-C减去丢失P-C，而不是只报告成功迁移。", "",
+        "## 3. 全部函数上的纠错与新增错误", "",
+        "下面统计全部564个漏洞函数或修复函数上的预测翻转，括号以各侧564个函数为分母。"
+        "这是函数级事件，可能在同一配对中同时纠正一侧、损害另一侧，不能将事件数相加当作新增P-C。"
+        "按原模型错误/正确成员数归一化的事件比例见rq3.json；各转移的总体与行内比例见classification_transitions.csv。", "",
+        "| 种子 | 消除修复误报 | 新增修复误报 | 误报净变化 | 纠正漏洞漏检 | 新增漏洞漏检 | 漏检净变化 |",
+        "|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in summaries:
+        cell = lambda k: f"{r['errors'][k]['count']} ({percent(r['errors'][k]['fraction_all'])})"
+        lines.append(f"| {r['seed']} | {cell('corrected_fp')} | {cell('new_fp')} | {r['net_fp']:+d} | "
+            f"{cell('corrected_fn')} | {cell('new_fn')} | {r['net_fn']:+d} |")
+    cell = lambda k: f"{ms(aggregate['errors'][k]['count'])} ({ms(aggregate['errors'][k]['fraction_all'],100)}%)"
+    lines += [f"| 均值±SD | {cell('corrected_fp')} | {cell('new_fp')} | {ms(aggregate['net_fp'])} | "
+        f"{cell('corrected_fn')} | {cell('new_fn')} | {ms(aggregate['net_fn'])} |", "",
+        "公式核对：修复侧FPR变化=(新增误报−消除误报)/564；漏洞Recall变化=(纠正漏检−新增漏检)/564。"
+        "Seed42和123456的Recall提高，但修复侧FPR也升高；Seed1234的修复侧FPR下降，同时Recall下降。"
+        "因而三种子的主要新增P-C来源相似，整体误报/漏检权衡的方向并不一致。", "",
+        f"三种子修复侧FPR为{ms(aggregate['methods']['context_only']['patched_fpr'],100)}%→"
+        f"{ms(aggregate['methods']['rgcl']['patched_fpr'],100)}%，Recall为{ms(aggregate['methods']['context_only']['recall'],100)}%→"
+        f"{ms(aggregate['methods']['rgcl']['recall'],100)}%。"
+        "可以确认局部分类纠错及净P-C收益，不能据此声称RGCL在全部修复函数上降低误报。", "",
+        "## 4. 完整状态转移矩阵", "",
+        "![三个种子的完整4×4配对分类转移矩阵：数字为配对数，括号为该来源状态内的比例](classification_transitions.png)", "",
+        "[可编辑矢量SVG](classification_transitions.svg)。所有面板使用相同计数色阶；"
+        "绿色实线框标出新增P-C，橙色虚线框标出丢失P-C，其余转移与对角线均完整展示。"
+        "P-R来源数量较少，行内百分比必须结合原始计数理解。", ""]
+    labels = [state_label(s) for s in STATES]
+    for r in summaries:
+        lines += [f"### Seed{r['seed']}（总计{r['pairs']}对）", "",
+            "| Context→RGCL | " + " | ".join(labels) + " | 行合计 |", "|---|---:|---:|---:|---:|---:|"]
+        for i, s in enumerate(labels):
+            lines.append(f"| {s} | " + " | ".join(map(str,r["matrix"][i])) + f" | {r['row_totals'][i]} |")
+        lines += ["| 列合计 | " + " | ".join(map(str,r["column_totals"])) + f" | {r['pairs']} |", ""]
+    lines += ["### 三种子单元格均值±SD（每个种子同为564对）", "",
+        "| Context→RGCL | " + " | ".join(labels) + " |", "|---|---:|---:|---:|---:|"]
+    for i, s in enumerate(labels):
+        lines.append(f"| {s} | " + " | ".join(ms(v) for v in aggregate["matrix"][i]) + " |")
+    lines += ["", "## 5. 典型代码语义与分类变化", ""]
+    for key, title, note in CASE_STUDIES:
+        lines += [f"**{key}，{title}。** {note}", ""]
+    lines += ["[完整源码Diff、原始成员/提交及逐种子预测概率](cases.md)。这些例子是事后解释，"
+        "不能将个别成功案例当作普遍规律，也不能根据概率变化推断注意力落在哪些行。", "",
+        "## 6. 修复监督覆盖率背景", "",
+        "沿用既有统计，不重新构造标签或开展可见性、长度、修改规模的分类分层。"
+        "完整/部分/不可见均指原始直接Diff区域在512 Token预算下的可见性；无直接Diff单列。"
+        "Token质量按跨行成员数守恒，区域损失要求前景和背景都非空。", "",
+        "| 划分 | 函数 | 完整 | 部分 | 不可见 | 无直接Diff | 可用区域监督 | 有效区域Token质量 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for split, values in result["coverage_background"].items():
+        r = values["all"]
+        cells = [f"{r['category_counts'][s]} ({percent(r['category_fraction_all'][s])})" for s in VISIBILITY]
+        lines.append(f"| {split} | {r['functions']} | " + " | ".join(cells) +
+            f" | {r['eligible_functions']} ({percent(r['eligible_functions']/r['functions'])}) | {r['token_sums']['effective_region_token_mass']:g} |")
+    lines += ["", "Train为实际监督可用量，Valid/Test为事后可用性。"
+        "正式编码保持原函数整体BPE、前510个源码Token加CLS/SEP、补齐至512；空白消耗预算但不参与聚合，注释保留。"
+        "历史PrimeVul规则允许截断末行的可见Token参与区域损失。完整统计仍存于coverage.json及三个coverage.jsonl文件。", "",
+        "## 中文结论", "",
+        f"三个种子的净P-C变化分别为{'、'.join(str(r['pc']['net']) for r in summaries)}对，"
+        f"{sum(r['pc']['net']>0 for r in summaries)}次增加、{sum(r['pc']['net']==0 for r in summaries)}次持平、"
+        f"{sum(r['pc']['net']<0 for r in summaries)}次下降。"
+        "RGCL在既定Test配对分类中获得平均净P-C收益，新增正确配对的首要来源是修复版本误报的纠正，"
+        "其次是漏洞函数漏检的纠正。它也引入了新的误报、漏检和原P-C退化，整体修复侧FPR没有稳定降低。"
+        "这些结果支持修复监督改善部分漏洞—修复配对的实际分类，不能扩展为全部函数或全部种子上全面改善。", "",
+        "## 复现与检查", "",
+        "`python -m vulnmechanism.cli rgcl-mechanism`。复用六组固定Test预测，未训练或执行前向。"
+        "完整逐对状态见paired_classifications.jsonl，矩阵与比例见classification_transitions.csv，"
+        "分类汇总见classification_summary.csv，三种子原始及汇总统计见rq3.json。"
+        "classification_checks.json记录每个矩阵564对、行列合计、原始指标及错误收支恒等式核对；"
+        "本轮最小测试日志为classification_tests.log。历史概率/间隔/ECDF结果保留，不参与论文版RQ3正文结论。", ""]
+    (root/"report.md").write_text("\n".join(lines), encoding="utf-8")

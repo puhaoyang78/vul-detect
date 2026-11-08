@@ -1,0 +1,13 @@
+test_alignment_checks_full_key_and_never_truncates_missing_records (tests.test_rgcl_mechanism.RGCLMechanismTests.test_alignment_checks_full_key_and_never_truncates_missing_records) ... ok
+test_all_16_transitions_reconcile_pair_and_function_counts (tests.test_rgcl_mechanism.RGCLMechanismTests.test_all_16_transitions_reconcile_pair_and_function_counts) ... ok
+test_cross_line_mass_matches_bounded_pool (tests.test_rgcl_mechanism.RGCLMechanismTests.test_cross_line_mass_matches_bounded_pool) ... ok
+test_empty_diff_is_separate_from_invisible_and_all_region (tests.test_rgcl_mechanism.RGCLMechanismTests.test_empty_diff_is_separate_from_invisible_and_all_region) ... ok
+test_partial_final_line_keeps_historical_primevul_supervision (tests.test_rgcl_mechanism.RGCLMechanismTests.test_partial_final_line_keeps_historical_primevul_supervision) ... ok
+test_seed_repetitions_are_never_pooled_as_independent_pairs (tests.test_rgcl_mechanism.RGCLMechanismTests.test_seed_repetitions_are_never_pooled_as_independent_pairs) ... ok
+test_strict_threshold_and_pair_classification_changes (tests.test_rgcl_mechanism.RGCLMechanismTests.test_strict_threshold_and_pair_classification_changes) ... ok
+test_zero_opportunity_rates_are_undefined_and_duplicate_pairs_rejected (tests.test_rgcl_mechanism.RGCLMechanismTests.test_zero_opportunity_rates_are_undefined_and_duplicate_pairs_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.407s
+
+OK

@@ -1,0 +1,11 @@
+seed 42: matrix total=564, gained P-C=47, lost=47, net=0
+seed 1234: matrix total=564, gained P-C=63, lost=36, net=27
+seed 123456: matrix total=564, gained P-C=44, lost=36, net=8
+/home/phy/.config/matplotlib is not a writable directory
+Matplotlib created a temporary cache directory at /tmp/matplotlib-8q5olvye because there was an issue with the default path (/home/phy/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+Matplotlib is building the font cache; this may take a moment.
+{
+  "output_dir": "results/rgcl_mechanism_512",
+  "trained": false,
+  "runs": 6
+}
