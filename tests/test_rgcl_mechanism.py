@@ -1,13 +1,21 @@
 """Coverage background and exact RQ3 classification/error accounting."""
 
 import copy
+import math
 import unittest
+from unittest.mock import Mock
+
+import torch
 
 from tests.test_losver import Tokens
 from vulnmechanism.data import paired_features
 from vulnmechanism.rgcl_mechanism import (align_predictions, coverage_record, line_counts,
     classification_records, summarize_coverage, summarize_classification, aggregate_classification,
-    pair_state, STATES)
+    pair_state, STATES, REGION_METHODS, SEEDS, compare_region_predictions,
+    region_attention_records, summarize_region_attention)
+from vulnmechanism.model import LOSVERDetector
+from vulnmechanism.evaluation import bounded_region_record
+from vulnmechanism.training import paired_collate, paired_forward
 
 
 class RGCLMechanismTests(unittest.TestCase):
@@ -147,6 +155,95 @@ class RGCLMechanismTests(unittest.TestCase):
         self.assertIsNone(result['pc']['gain_source_shares']['p_v'])
         with self.assertRaisesRegex(ValueError,'duplicate repair pairs'):
             summarize_classification(records*2)
+
+    def attention_fixture(self):
+        rows, cov, pred = self.fixture()
+        for c, p in zip(cov, pred):
+            p.update(line_rates=[4., 2.], logit=0.)
+            c.update(diff_lines=[0])
+        return rows, cov, pred
+
+    def test_region_ratio_matches_formal_token_loss_with_fractional_mass_and_padding(self):
+        # Unequal line lengths: Token-weighted R=.725, equal-line R=1.25.
+        annotation = dict(sample_key='s', pair_key='full:test:0', target=1, lines_ground_truth=[0, 1])
+        pred = dict(sample_key='s', line_numbers=[0, 1, 2],
+                    line_token_counts=[1.5, 8.5, 2.], line_rates=[4., 1., 2.])
+        stat = bounded_region_record(annotation, pred)
+        self.assertAlmostEqual(stat['mean_rate_ratio'], .725)
+        self.assertAlmostEqual(stat['line_mean_rate_ratio'], 1.25)
+        # Other rows have no region/all region; a padded slot must carry no mass.
+        rates = torch.tensor([[4., 1., 2., 5.]]*3, dtype=torch.float64)
+        counts = torch.tensor([[1.5, 8.5, 2., 0.]]*3, dtype=torch.float64)
+        labels = torch.tensor([[1, 1, 0, 1], [0, 0, 0, 1], [1, 1, 1, 0]])
+        loss, eligible = LOSVERDetector.attention_region_loss(rates, counts, labels)
+        self.assertEqual(int(eligible), 1)
+        self.assertAlmostEqual(float(loss), stat['region_margin'])
+        self.assertAlmostEqual(float(loss), math.log(2/.725))
+        pred['line_rates'] = [2.]*3
+        self.assertEqual(bounded_region_record(annotation, pred)['mean_rate_ratio'], 1)
+
+    def test_region_prediction_reproduction_checks_values_and_full_members(self):
+        rows, _, pred = self.attention_fixture()
+        result = compare_region_predictions(rows, pred[::-1], pred)
+        self.assertEqual(result['functions'], 4)
+        self.assertTrue(result['all_classifications_equal'])
+        legacy = [{k:v for k,v in p.items() if k!='logit'} for p in pred]
+        self.assertFalse(compare_region_predictions(rows, pred, legacy)['saved_logit_available'])
+        for changed in (pred[:-1], pred+[pred[0]]):
+            with self.assertRaisesRegex(ValueError, 'unique'):
+                compare_region_predictions(rows, changed, pred)
+        for name, value in [('line_rates', [3., 2.]), ('pair_key', 'wrong'),
+                            ('probability', float('nan')), ('line_token_counts', [2., 2.])]:
+            changed = copy.deepcopy(pred)
+            changed[0][name] = value
+            with self.assertRaises(ValueError):
+                compare_region_predictions(rows, changed, pred)
+
+    def test_region_partition_is_post_forward_and_excludes_only_empty_sides(self):
+        rows, cov, pred = self.attention_fixture()
+        original = copy.deepcopy(pred)
+        cov[0].update(diff_lines=[], eligible=False)
+        cov[1].update(diff_lines=[0, 1], eligible=False)
+        result = region_attention_records(rows, cov, pred, 42, 'rgcl')
+        self.assertEqual([r['sample_key'] for r in result], [r['sample_key'] for r in rows[2:]])
+        self.assertTrue(all(r['ratio']==2 for r in result))
+        self.assertEqual(pred, original)
+        cov[2]['eligible'] = False
+        with self.assertRaisesRegex(ValueError, 'cohort'):
+            region_attention_records(rows, cov, pred, 42, 'rgcl')
+
+    def test_region_summary_repeats_one_cohort_and_uses_seed_sample_sd(self):
+        records = [dict(seed=s, method=m, sample_key=f's:{i}', pair_key='full:test:0',
+                    target=1-i, region_token_mass=1., background_token_mass=9.,
+                    ratio=.8+.2*j+.2*i+(.4 if m=='rgcl' else .1 if m=='random_region' else 0))
+                   for j, s in enumerate(SEEDS) for m in REGION_METHODS for i in range(2)]
+        value = summarize_region_attention(records)
+        self.assertEqual(value['functions_per_run'], 2)
+        self.assertEqual(len(value['summaries']), 9)
+        self.assertAlmostEqual(value['aggregate']['methods']['context_only']['mean']['mean'], 1.1)
+        self.assertAlmostEqual(value['aggregate']['methods']['context_only']['mean']['std'], .2)
+        self.assertAlmostEqual(value['aggregate']['comparisons']['rgcl-context_only']['mean']['mean'], .4)
+        for changed in (records[:-1], records+[records[0]]):
+            with self.assertRaises(ValueError):
+                summarize_region_attention(changed)
+        for key, value in [('sample_key', 'outside'), ('region_token_mass', 2.), ('ratio', float('nan'))]:
+            changed = copy.deepcopy(records)
+            changed[-1][key] = value
+            with self.assertRaises(ValueError):
+                summarize_region_attention(changed)
+
+    def test_source_only_forward_omits_diff_and_function_labels(self):
+        row = dict(func='before();\nafter();', lines_ground_truth=[0], target=1)
+        feature = paired_features(row, Tokens(), 'baseline')
+        spy = Mock(pooling='bounded_attention', attention_region='diff',
+                   attention_local=False, insertion_supervision=None, training=False, rccl=None,
+                   side_effect=lambda **kwargs: kwargs)
+        args = paired_forward(spy, paired_collate([feature]), 'baseline', 'cpu',
+                              with_labels=False, return_attention=True)
+        self.assertNotIn('labels', args)
+        self.assertNotIn('line_labels', args)
+        self.assertTrue(args['return_attention'])
+        self.assertTrue((args['token_weights']==1).all())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "official_functions": 1128,
+  "official_pairs": 564,
+  "checkpoints": 9,
+  "frozen_function_predictions": 10152,
+  "single_function_checks": 9,
+  "fresh_float32_predictions": 3384,
+  "reused_verified_float32_predictions": 6768,
+  "all_predictions_and_line_weights_reproduced": true,
+  "test_diff_loaded_after_all_forwards": true,
+  "no_diff_in_forward_loader": true,
+  "same_cohort_across_nine_runs": true,
+  "token_mass_matches_source_mapping": true,
+  "uses_formal_bounded_region_record": true,
+  "functions_per_run": 659,
+  "function_region_records": 5931,
+  "trained": false,
+  "test_used_for_selection": false,
+  "formal_region_loss_reproduced_all_nine_runs": true,
+  "formal_loss_maximum_absolute_error": 2.220446049250313e-16,
+  "saved_statistics_reproduced": true,
+  "summary_csv_checked": true,
+  "figure_pixels": [
+    3600,
+    1110
+  ],
+  "figure_dpi": [
+    299.9994,
+    299.9994
+  ],
+  "figure_visually_reviewed": true
+}

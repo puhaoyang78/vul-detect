@@ -1,4 +1,4 @@
-"""RQ3: repair-guided pairwise classification; frozen official Test predictions."""
+"""RQ3 classification transitions and RQ4 frozen repair-region attention."""
 
 import csv
 import difflib
@@ -18,6 +18,7 @@ from .rgcl_study import BACKBONE_MODELS, SEEDS, inspect_run, run_path
 METHODS = ("context_only", "rgcl")
 STATES = ("p_c", "p_v", "p_b", "p_r")
 VISIBILITY = ("full", "partial", "invisible", "no_direct_diff")
+REGION_METHODS = ("context_only", "random_region", "rgcl")
 
 
 def line_counts(feature):
@@ -567,4 +568,386 @@ def write_report(root, result):
         "分类汇总见classification_summary.csv，三种子原始及汇总统计见rq3.json。"
         "classification_checks.json记录每个矩阵564对、行列合计、原始指标及错误收支恒等式核对；"
         "本轮最小测试日志为classification_tests.log。历史概率/间隔/ECDF结果保留，不参与论文版RQ3正文结论。", ""]
+    (root/"report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def compare_region_predictions(rows, current, saved, *, rtol=1e-5, atol=1e-6):
+    """Source-only reproduction check, before opening any Test Diff annotation."""
+    expected = {r["sample_key"]: r for r in rows}
+    by_key = [{p["sample_key"]: p for p in ps} for ps in (current, saved)]
+    if (len(expected) != len(rows) or any(len(b) != len(ps) or set(b) != set(expected)
+            for b, ps in zip(by_key, (current, saved)))):
+        raise ValueError("frozen predictions must cover the same unique official sample IDs")
+    has_logit = ["logit" in p for p in saved]
+    if any(has_logit) != all(has_logit):
+        raise ValueError("saved prediction logit fields are inconsistent")
+    fields = ("probability", "line_rates", "line_token_counts") + (("logit",) if all(has_logit) else ())
+    maximum = {k: 0. for k in fields}
+    for key, row in expected.items():
+        a, b = (p[key] for p in by_key)
+        for p in (a, b):
+            if (p["pair_key"] != row["pair_key"] or p["target"] != row["target"]
+                    or not math.isfinite(p["probability"]) or not 0 <= p["probability"] <= 1
+                    or p["prediction"] != int(p["probability"] > .5)):
+                raise ValueError("frozen prediction pair/label/strict threshold differs")
+        if a["prediction"] != b["prediction"] or a["line_numbers"] != b["line_numbers"]:
+            raise ValueError("frozen classification or physical line coordinates changed")
+        for name in maximum:
+            x, y = np.asarray(a[name]), np.asarray(b[name])
+            if x.shape != y.shape or not np.allclose(x, y, rtol=rtol, atol=atol):
+                raise ValueError(f"frozen {name} does not reproduce the saved Test prediction: {key}")
+            maximum[name] = max(maximum[name], float(np.max(np.abs(x-y))))
+    return dict(functions=len(rows), all_classifications_equal=True, line_coordinates_equal=True,
+                rtol=rtol, atol=atol, saved_logit_available=all(has_logit), maximum_absolute_difference=maximum)
+
+
+def region_attention_records(rows, mapping, predictions, seed, method):
+    """Partition already predicted multipliers with the formal Token-weighted statistic."""
+    from .evaluation import bounded_region_record
+
+    if method not in REGION_METHODS:
+        raise ValueError("RQ4 compares Context-only, Random-region and RGCL")
+    aligned = align_predictions(rows, predictions, mapping)
+    records = []
+    for row, cov, pred in zip(rows, mapping, aligned):
+        # The same post-forward helper is used by the formal RGCL diagnostics.
+        value = bounded_region_record(dict(row, lines_ground_truth=cov["diff_lines"]), pred)
+        if value["eligible"] != cov["eligible"]:
+            raise ValueError("model output changed the source-defined eligible cohort")
+        if value["eligible"]:
+            records.append(dict(seed=seed, method=method, sample_key=row["sample_key"],
+                pair_key=row["pair_key"], target=row["target"],
+                region_token_mass=value["region_tokens"],
+                background_token_mass=value["code_tokens"]-value["region_tokens"],
+                ratio=value["mean_rate_ratio"], region_margin=value["region_margin"]))
+    return records
+
+
+def summarize_region_attention(records):
+    """Repeat one fixed function cohort; aggregate seeds, never 3*n independent rows."""
+    groups = {(s, m): [r for r in records if r["seed"] == s and r["method"] == m]
+              for s in SEEDS for m in REGION_METHODS}
+    if sum(map(len, groups.values())) != len(records):
+        raise ValueError("unexpected RQ4 seed or method")
+    cohort = None
+    for rs in groups.values():
+        keys = {(r["sample_key"], r["pair_key"], r["target"], r["region_token_mass"],
+                 r["background_token_mass"]) for r in rs}
+        if not rs or len(keys) != len(rs) or len({r["sample_key"] for r in rs}) != len(rs):
+            raise ValueError("nonempty unique function cohort required for every seed/method")
+        if cohort is not None and keys != cohort:
+            raise ValueError("all nine runs must use exactly the same cohort and Token masses")
+        cohort = keys
+        if any(not math.isfinite(r["ratio"]) or not .2 <= r["ratio"] <= 5
+               or min(r["region_token_mass"], r["background_token_mass"]) <= 0 for r in rs):
+            raise ValueError("invalid K=5 region ratio or empty region/background")
+    summaries, comparisons = [], []
+    for seed in SEEDS:
+        for method in REGION_METHODS:
+            values = [r["ratio"] for r in groups[seed, method]]
+            summaries.append(dict(seed=seed, method=method, **distribution(values),
+                median=float(np.median(values)), fraction_above_one=sum(x>1 for x in values)/len(values),
+                fraction_at_least_two=sum(x>=2 for x in values)/len(values)))
+        rgcl = {r["sample_key"]: r["ratio"] for r in groups[seed, "rgcl"]}
+        for other in REGION_METHODS[:2]:
+            differences = [rgcl[r["sample_key"]]-r["ratio"] for r in groups[seed, other]]
+            comparisons.append(dict(seed=seed, comparison="rgcl-"+other, **distribution(differences),
+                median=float(np.median(differences)),
+                fraction_increased=sum(x>0 for x in differences)/len(differences)))
+    return dict(functions_per_run=len(cohort), summaries=summaries, comparisons=comparisons,
+        aggregate=dict(std_definition="sample SD, ddof=1, n=3 seeds on the same functions",
+            methods={m: {k: mean_sd([r[k] for r in summaries if r["method"]==m])
+                         for k in ("mean", "median", "fraction_above_one", "fraction_at_least_two")}
+                     for m in REGION_METHODS},
+            comparisons={"rgcl-"+m: {k: mean_sd([r[k] for r in comparisons if r["comparison"]=="rgcl-"+m])
+                                    for k in ("mean", "median", "fraction_increased")}
+                         for m in REGION_METHODS[:2]}))
+
+
+def analyze_region_attention(data_dir, reference_dir, random_dir, output_dir, device="auto", *, resume=False):
+    """RQ4: all nine source-only forwards precede loading the post-hoc Test Diff."""
+    import gc
+    import platform
+    import torch
+    import transformers
+    from .data import paired_features
+    from .evaluation import load_paired, validate_paired
+    from .model import resolve_device
+    from .training import paired_loader, paired_collate, paired_forward
+
+    root, data = Path(output_dir), Path(data_dir)/"primevul_paired"
+    root.mkdir(parents=True, exist_ok=True)
+    (root/"cache").mkdir(exist_ok=True)
+    # Whitelist metadata and single-function source, discarding any auxiliary fields.
+    rows = [{k: r[k] for k in ("func", "sample_key", "pair_key", "target")}
+            for r in read_jsonl(data/"test.jsonl")]
+    if len(rows) != 1128 or len({r["pair_key"] for r in rows}) != 564:
+        raise ValueError("RQ4 requires all 1128 functions in the 564 official Test pairs")
+    device = resolve_device(device)
+    experiments, predictions, loader = [], {}, None
+    for seed in SEEDS:
+        for method in REGION_METHODS:
+            path = run_path(random_dir, "primevul_paired", seed, method, reference_dir=reference_dir)
+            info = inspect_run(path, data_dir, "primevul_paired", seed, method,
+                               BACKBONE_MODELS["unixcoder"], checkpoint=False)
+            checkpoint = path/"best-p_c.pt"
+            cp = torch.load(checkpoint, map_location="cpu", weights_only=False)
+            selected = json.loads((path/"best-p_c.json").read_text())
+            saved_metrics = json.loads((path/"test.metrics.json").read_text())
+            if (cp["selected_epoch"] != info["selected_epoch"]
+                or cp["validation"] != selected["validation"]
+                or saved_metrics["selected_epoch"] != cp["selected_epoch"]):
+                raise ValueError("checkpoint or saved Test predictions differ from the original Valid selection")
+            model, tokenizer = load_paired(cp, device)
+            del cp
+            model.requires_grad_(False)
+            if (model.pooling != "bounded_attention" or not model.attention_context
+                or model.attention_max_rate != 5 or model.attention_region_weighting != "token"
+                or model.attention_local or model.attention_context_scale or model.local_mil is not None
+                or model.insertion_supervision is not None or model.rccl is not None):
+                raise ValueError("RQ4 requires the unchanged original Context/RGCL model")
+            if loader is None:
+                loader = paired_loader(rows, tokenizer, "baseline", input_mode="512", batch_size=8)
+            if any("line_labels" in f or "lines_ground_truth" in f for f in loader.dataset):
+                raise ValueError("Test Diff must not enter the forward loader")
+            cache = root/"cache"/f"seed{seed}.{method}.predictions.jsonl"
+            reused = resume and cache.is_file()
+            if reused:
+                pred = read_jsonl(cache)
+                metrics = paired_metrics(rows, [p["probability"] for p in pred])
+            else:
+                metrics, pred = validate_paired(model, rows, tokenizer, "baseline", device, loader=loader)
+            check = compare_region_predictions(rows, pred, read_jsonl(path/"test.predictions.jsonl"))
+            # Float32 GEMM/SDPA rounding depends on batch shape, amplified by the
+            # context dot product. Verify mathematical batch independence in FP64;
+            # the full-cohort analysis above retains the original FP32 protocol.
+            model.double()
+            _, precise = validate_paired(model, rows[:8], tokenizer, "baseline", device,
+                loader=paired_loader(rows[:8], tokenizer, "baseline", input_mode="512"))
+            batch = paired_collate(loader.dataset[:1])
+            with torch.no_grad():
+                probability, details = paired_forward(model, batch, "baseline", device,
+                    with_labels=False, return_attention=True)
+            n = len(pred[0]["line_numbers"])
+            single = dict(precise[0], probability=float(probability[0, 0]),
+                prediction=int(probability[0, 0]>.5), logit=float(details["logits"][0]),
+                line_numbers=batch["line_numbers"][0, :n].tolist(),
+                line_rates=details["line_rates"][0, :n].cpu().tolist(),
+                line_token_counts=details["line_counts"][0, :n].cpu().tolist())
+            single_check = compare_region_predictions(rows[:1], [single], precise[:1], rtol=1e-9, atol=1e-11)
+            if single["prediction"] != pred[0]["prediction"]:
+                raise ValueError("single-function precision check changed the original classification")
+            single_check.update(precision="float64 diagnostic only; statistics retain float32",
+                classification_matches_original_float32=True,
+                float32_vs_float64_maximum_difference={k: float(np.max(np.abs(
+                    np.asarray(pred[0][k])-np.asarray(precise[0][k]))))
+                    for k in ("probability", "logit", "line_rates", "line_token_counts")})
+            if any(metrics[k] != saved_metrics["metrics"][k] for k in ("p_c", "mcc", "f1", "recall", "patched_fpr")):
+                raise ValueError("reproduced Test classifications disagree with historical metrics")
+            if not reused:
+                write_jsonl(cache, pred)
+            predictions[seed, method] = pred
+            experiments.append(dict(seed=seed, method=method, run=str(path), checkpoint=str(checkpoint),
+                selected_epoch=info["selected_epoch"], saved_predictions=str(path/"test.predictions.jsonl"),
+                full_training_and_valid_selection_checked=True, source_only_forward=True,
+                frozen=True, float32_forward_reused=reused, reproduction=check, single_function_check=single_check,
+                existing_classification={k: saved_metrics["metrics"][k] for k in ("p_c", "mcc")}))
+            print(f"seed {seed} {method}: {'reused verified' if reused else 'reproduced'} all 1128 predictions and line weights", flush=True)
+            del model
+            gc.collect()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+
+    # This is the first access to Test repair annotations: all model forwards are over.
+    annotations = read_jsonl(data/"test.oracle.jsonl")
+    oracle = {r["sample_key"]: r for r in annotations}
+    if len(oracle) != len(annotations) or set(oracle) != {r["sample_key"] for r in rows}:
+        raise ValueError("post-hoc Test annotations do not match the official source cohort")
+    mapping = []
+    for row, feature in zip(rows, loader.dataset):
+        ann = oracle[row["sample_key"]]
+        if any(ann[k] != row[k] for k in row):
+            raise ValueError("post-hoc annotation source/full pair_key/target differs")
+        labeled = paired_features(ann, tokenizer, "baseline", encoding=feature)
+        counts = line_counts(feature)
+        labels = [int(n in ann["lines_ground_truth"]) for n in feature["line_numbers"]]
+        if labels != labeled["line_labels"]:
+            raise ValueError("Test region differs from the historical RGCL region rule")
+        fg = math.fsum(c*y for c, y in zip(counts, labels))
+        bg = math.fsum(c*(1-y) for c, y in zip(counts, labels))
+        mapping.append(dict(sample_key=row["sample_key"], pair_key=row["pair_key"], target=row["target"],
+            diff_lines=ann["lines_ground_truth"], line_numbers=feature["line_numbers"],
+            line_labels=labels, line_token_counts=counts, region_token_mass=fg,
+            background_token_mass=bg, eligible=fg>0 and bg>0))
+    records = [r for seed in SEEDS for method in REGION_METHODS
+               for r in region_attention_records(rows, mapping, predictions[seed, method], seed, method)]
+    result = dict(title="RQ4: Repair-Guided Region Attention Analysis",
+        protocol=dict(dataset="PrimeVul official Test", backbone="UniXcoder", seeds=list(SEEDS),
+            methods=list(REGION_METHODS), input_tokens=512, batch_size=8, k=5, region_loss_weight=.1,
+            region_weighting="conserved valid code-Token mass", trained=False,
+            forward="frozen eval, single-function source only; all forwards precede Test Diff access",
+            selection="original full Valid P-C checkpoints; strict probability >0.5; unchanged",
+            test_used_for_selection=False, strata="none",
+            ratio="Token-weighted mean line multiplier on true Diff / Token-weighted mean multiplier on background",
+            eligible="positive code-Token mass in BOTH region and background; identical across all nine runs"),
+        environment=dict(python=platform.python_version(), torch=torch.__version__,
+            transformers=transformers.__version__, cuda=torch.version.cuda, device=str(device),
+            gpu=torch.cuda.get_device_name(device) if device.type=="cuda" else None),
+        cohort=dict(total_functions=len(rows), eligible_functions=sum(r["eligible"] for r in mapping),
+            no_region=sum(r["region_token_mass"]==0 for r in mapping),
+            no_background=sum(r["region_token_mass"]>0 and r["background_token_mass"]==0 for r in mapping)),
+        experiments=experiments, **summarize_region_attention(records))
+    write_jsonl(root/"test.regions.jsonl", mapping)
+    write_jsonl(root/"function_regions.jsonl", records)
+    write_json(root/"rq4.json", result)
+    write_region_outputs(root, result, records)
+    write_json(root/"checks.json", dict(passed=True, official_functions=1128, official_pairs=564,
+        checkpoints=9, frozen_function_predictions=9*1128, single_function_checks=9,
+        fresh_float32_predictions=1128*sum(not r["float32_forward_reused"] for r in experiments),
+        reused_verified_float32_predictions=1128*sum(r["float32_forward_reused"] for r in experiments),
+        all_predictions_and_line_weights_reproduced=True, test_diff_loaded_after_all_forwards=True,
+        no_diff_in_forward_loader=True, same_cohort_across_nine_runs=True,
+        token_mass_matches_source_mapping=True, uses_formal_bounded_region_record=True,
+        functions_per_run=result["functions_per_run"], function_region_records=len(records),
+        trained=False, test_used_for_selection=False))
+    return result
+
+
+def write_region_outputs(root, result, records):
+    """Full-cohort tables and unsmoothed ECDFs; seed is the replicate unit."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    columns = ("seed", "method", "n", "mean", "median", "std", "fraction_above_one", "fraction_at_least_two")
+    with (root/"region_summary.csv").open("w", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow([*columns, "q05", "q25", "q75", "q95", "min", "max"])
+        for r in result["summaries"]:
+            writer.writerow([*[r[k] for k in columns], *[r["quantiles"][q] for q in ("0.05", "0.25", "0.75", "0.95", "0", "1")]])
+    with (root/"paired_changes.csv").open("w", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        columns = ("seed", "comparison", "n", "mean", "median", "fraction_increased")
+        writer.writerow(columns)
+        writer.writerows([r[k] for k in columns] for r in result["comparisons"])
+    names = dict(context_only="Context-only", random_region="Random-region", rgcl="RGCL")
+    styles = dict(context_only=("#0072B2", "--"), random_region=("#B34F00", ":"), rgcl=("#007A55", "-"))
+    with plt.rc_context({"font.size": 10, "svg.fonttype": "none", "savefig.facecolor": "white"}):
+        fig, axes = plt.subplots(1, 3, figsize=(12, 3.7), layout="constrained", sharex=True, sharey=True)
+        for seed, ax in zip(SEEDS, axes):
+            for method in REGION_METHODS:
+                xs = np.sort([r["ratio"] for r in records if r["seed"]==seed and r["method"]==method])
+                color, style = styles[method]
+                ax.step(np.r_[.2, xs, 5], np.r_[0, np.arange(1, len(xs)+1)/len(xs), 1],
+                        where="post", label=names[method], color=color, linestyle=style, linewidth=1.6)
+            ax.axvline(1, color=".5", linewidth=.7)
+            ax.axvline(2, color=".5", linewidth=.7, linestyle="--")
+            ax.set(xlim=(.2, 5), ylim=(0, 1), xlabel="True-Diff / background multiplier ratio R",
+                   title=f"Seed {seed} | n={result['functions_per_run']} functions")
+            ax.grid(axis="y", alpha=.2)
+        axes[0].set_ylabel("Empirical cumulative fraction")
+        axes[-1].legend(loc="lower right", frameon=False)
+        for suffix in ("png", "svg"):
+            fig.savefig(root/f"region_ratio_ecdf.{suffix}", dpi=300)
+        plt.close(fig)
+    svg = root/"region_ratio_ecdf.svg"
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines())+"\n")
+    write_region_report(root, result, names)
+
+
+def write_region_report(root, result, names):
+    pct = lambda x: f"{100*x:.2f}%"
+    fmt = lambda x: f"{x['mean']:.4f} ± {x['std']:.4f}"
+    c, a = result["cohort"], result["aggregate"]
+    lines = ["# RQ4：Repair-Guided Region Attention Analysis", "",
+        "本轮仅冻结分析官方PrimeVul Test、UniXcoder、Seed42/1234/123456的Context-only、Random-region、RGCL九个既有checkpoint。"
+        "未训练、改阈值、改选模或改动RQ1–RQ3。", "", "## 统计口径与共同集合", "",
+        "复用正式bounded_pool的行倍率rᵢ=1+4·sigmoid(sᵢ)，范围[1,5]；有效Token质量nᵢ来自物理行映射。"
+        "跨行Token在所属物理行之间均分其一个Token的质量，CLS/SEP/Padding及非代码空白不计。"
+        "行归一化注意力aᵢ=nᵢrᵢ/Σⱼnⱼrⱼ，不能直接把aᵢ当作行倍率。", "",
+        "R=(ΣDiff nᵢrᵢ/ΣDiff nᵢ)/(Σ背景 nᵢrᵢ/Σ背景 nᵢ)，直接调用正式bounded_region_record，"
+        "与attention_region_loss(weighting='token')一致；每个函数产生一个R，函数间不按长度加权。", "",
+        f"全部{c['total_functions']}个函数（564对）均完成前向；其中{c['eligible_functions']}个函数区域与背景同时有正Token质量，"
+        f"占{pct(c['eligible_functions']/c['total_functions'])}。排除无可见有效区域{c['no_region']}个、"
+        f"有区域但无背景{c['no_background']}个。三方法、三种子严格使用这一相同集合，不按预测或R筛选。", "",
+        "编码保持整个源码的原有BPE与offset映射：前510个源码Token加CLS/SEP、Padding至512。"
+        "沿用PrimeVul历史规则，截断末行的可见Token仍可统计。Test Diff只在九次完整源码前向结束后读取，"
+        "不进入前向loader或模型参数；Random-region也使用相同真实Test Diff作事后区域划分。", "",
+        "## 三种子完整分布", "",
+        "| Seed | 方法 | 函数数 | R均值 | R中位数 | 四分位区间 | R>1 | R≥2 |",
+        "|---|---|---:|---:|---:|---|---:|---:|"]
+    for r in result["summaries"]:
+        q = r["quantiles"]
+        lines.append(f"| {r['seed']} | {names[r['method']]} | {r['n']} | {r['mean']:.4f} | {r['median']:.4f} | "
+                     f"[{q['0.25']:.4f}, {q['0.75']:.4f}] | {pct(r['fraction_above_one'])} | {pct(r['fraction_at_least_two'])} |")
+    lines += ["", "R>1表示区域每Token倍率高于背景；R≥2对应原辅助损失的零惩罚目标，均非搜索阈值。"
+        "完整最小值、最大值、5/25/50/75/95百分位及同一种子内函数间R的标准差见region_summary.csv与rq4.json。", "",
+        "![三个种子、共同函数集合的真实Diff区域倍率比ECDF；线型和颜色共同区分三方法](region_ratio_ecdf.png)", "",
+        "图中ECDF包含全部合格函数，无分箱、平滑或有利样本选择；三面板共享横轴[0.2,5]及纵轴[0,1]。"
+        "曲线整体向右表示更大的R，竖线分别为1和2。可编辑矢量图见region_ratio_ecdf.svg。", "",
+        "## 跨种子汇总与同函数比较", "",
+        "下表为三个种子的函数均值/中位数的均值±样本标准差（ddof=1），重复单位是三个种子，"
+        f"而不是将同一批{result['functions_per_run']}个函数重复计算成独立的3倍样本。", "",
+        "| 方法 | R均值的均值±SD | R中位数的均值±SD |", "|---|---:|---:|"]
+    for m in REGION_METHODS:
+        lines.append(f"| {names[m]} | {fmt(a['methods'][m]['mean'])} | {fmt(a['methods'][m]['median'])} |")
+    lines += ["", "同一函数上计算ΔR=R_RGCL−R_对照，不改变区域或背景大小：", "",
+        "| Seed | 对照 | 平均ΔR | 中位ΔR | R增加的函数比例 |", "|---|---|---:|---:|---:|"]
+    for r in result["comparisons"]:
+        lines.append(f"| {r['seed']} | {names[r['comparison'].removeprefix('rgcl-')]} | {r['mean']:+.4f} | "
+                     f"{r['median']:+.4f} | {pct(r['fraction_increased'])} |")
+    lines += ["", "## 损失目标、实际权重和分类结果的区别", "",
+        "正式区域损失为合格函数上的mean ReLU(log(2)−log R)，权重0.1，与函数BCE联合训练。"
+        "它希望训练Diff区域的每Token平均倍率达到背景的至少两倍；有界倍率和函数分类目标同时约束优化。"
+        "Test的R是未见函数上实际学到的权重分布，不是额外施加损失后的结果，也不要求每个函数都达到2。", "",
+        "分类指标仍由各历史checkpoint在固定prob>0.5下决定。下面仅列完整1128函数/564对的已有指标以区分证据，"
+        "不将区域统计的合格子集用于替换正式分类评价分母。", "",
+        "| Seed | 方法 | 原Test P-C | 原Test MCC |", "|---|---|---:|---:|"]
+    for r in result["experiments"]:
+        v = r["existing_classification"]
+        lines.append(f"| {r['seed']} | {names[r['method']]} | {pct(v['p_c'])} | {v['mcc']:.4f} |")
+    lines += ["", "完整Test三种子平均P-C / MCC分别为："+"；".join(
+        f"{names[m]} {pct(statistics.mean(r['existing_classification']['p_c'] for r in result['experiments'] if r['method']==m))} / "
+        f"{statistics.mean(r['existing_classification']['mcc'] for r in result['experiments'] if r['method']==m):.4f}"
+        for m in REGION_METHODS)+"。这些分类结果不由R的提高直接推出。"]
+    lines += ["", "## 中文结论", ""]
+    for other in REGION_METHODS[:2]:
+        rs = [r for r in result["comparisons"] if r["comparison"]=="rgcl-"+other]
+        increase = sum(r["mean"]>0 for r in rs)
+        lines.append(f"相对{names[other]}，RGCL的平均R在{increase}/3个种子上增加；"
+                     f"平均ΔR的跨种子汇总为{fmt(a['comparisons']['rgcl-'+other]['mean'])}。")
+    lines += ["", f"不利结果同样保留：RGCL仍平均有{pct(1-a['methods']['rgcl']['fraction_above_one']['mean'])}的合格函数R≤1，"
+        f"且相对Context-only、Random-region分别有{pct(1-a['comparisons']['rgcl-context_only']['fraction_increased']['mean'])}、"
+        f"{pct(1-a['comparisons']['rgcl-random_region']['fraction_increased']['mean'])}的函数R没有增加。"
+        "ECDF在部分区间交叉，不能把均值和中位数上升解释为每个函数的权重都更高。"]
+    supported = all(r["mean"]>0 for r in result["comparisons"])
+    lines += ["", ("九个冻结模型在共同Test函数集合上的结果支持：真实修复区域监督改变了权重分配，"
+        "且三个种子中对真实Diff区域的相对偏向均高于Context-only和Random-region。" if supported else
+        "结果未在两个对照和全部三个种子上形成一致的真实Diff区域相对权重提升，"
+        "不足以支持普遍、稳定的更强区域偏向结论；具体变化以上述全量结果为准。"),
+        "这一观察不证明模型理解了漏洞语义，也不证明权重变化直接造成分类改善；"
+        "局部倍率分布与函数分类是不同证据。三个种子和一个数据集支持的结论不应扩大为其他数据集的一般规律。", "",
+        "## 复现与检查", "",
+        "```bash", "/home/phy/miniconda3/envs/vul-detect/bin/python -m vulnmechanism.cli rgcl-mechanism \\",
+        "  --analysis region-attention --device cuda:0", "```", "",
+        "九个checkpoint路径、原始Valid选中Epoch、环境、预测/倍率最大误差见rq4.json。"
+        "全部Test统计使用与历史评价相同的FP32 Batch8前向，复核容差rtol=1e-5、atol=1e-6，分类决定完全相同。"
+        "单函数/批次计算等价性另用FP64诊断复核（rtol=1e-9、atol=1e-11），"
+        "不将FP64诊断输出用于区域统计或替换原始预测。"
+        "checks.json记录源码单函数前向、与原Test预测及行权重一致、同一集合和Token质量核对。"
+        "test.regions.jsonl保存共同区域定义，function_regions.jsonl保存全部逐函数R；"
+        "不包含原始源码、Token ID或模型权重。最小测试日志为tests.log。", ""]
+    precise_error = max(r["single_function_check"]["maximum_absolute_difference"]["line_rates"]
+                        for r in result["experiments"])
+    reused = sum(r["float32_forward_reused"] for r in result["experiments"])
+    lines += [f"FP64单函数/Batch8行倍率最大绝对误差为{precise_error:.3e}。"
+        "初次使用FP32进行单函数数值一致性检查时，Seed1234 RGCL的行倍率出现3.60×10⁻⁵差异，"
+        "概率差为7.75×10⁻⁷、Token质量差为0；CPU复核也存在相近量级的舍入差异（TF32关闭）。"
+        "因此改用更高精度检验数学等价性，正式FP32前向及区域统计保持不变。"
+        "原始中断和逐项数值记录保存在analysis.single_check_failure.log与single_function_numerics.json。", "",
+        "另一次中断来自错误地要求所有历史预测均含logit：Seed123456的Context-only和RGCL文件只保存概率等字段。"
+        "现按实际保存的字段完整核对，不补造历史logit；包含logit的文件额外核对该字段。"
+        "对应记录为analysis.legacy_schema_failure.log；修复后最小测试通过，并完成全部九组复核。"
+        f"此次运行复用本分析中已完成且与原始预测匹配的{reused}组FP32前向缓存，{9-reused}组现算；"
+        "所有九个checkpoint仍逐一加载并完成FP64单函数诊断，未修改任何权重。", ""]
     (root/"report.md").write_text("\n".join(lines), encoding="utf-8")

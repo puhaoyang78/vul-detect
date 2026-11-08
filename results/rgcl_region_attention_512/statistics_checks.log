@@ -1,0 +1,10 @@
+42 context_only eligible= 659 formal_loss_error= 0.0
+42 random_region eligible= 659 formal_loss_error= 2.220446049250313e-16
+42 rgcl eligible= 659 formal_loss_error= 0.0
+1234 context_only eligible= 659 formal_loss_error= 0.0
+1234 random_region eligible= 659 formal_loss_error= 0.0
+1234 rgcl eligible= 659 formal_loss_error= 0.0
+123456 context_only eligible= 659 formal_loss_error= 0.0
+123456 random_region eligible= 659 formal_loss_error= 1.1102230246251565e-16
+123456 rgcl eligible= 659 formal_loss_error= 0.0
+All saved statistics, masks, Token-weighted formal losses, CSVs and figure dimensions passed.

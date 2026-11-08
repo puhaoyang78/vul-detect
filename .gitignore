@@ -525,3 +525,13 @@ __pycache__/
 !/results/rgcl_side_ablation_512/**/*.md
 !/results/rgcl_side_ablation_512/**/*.log
 !/results/rgcl_side_ablation_512/**/*.txt
+
+# RQ4 frozen true-Diff attention analysis; sources, weights and cache stay local.
+!/results/rgcl_region_attention_512/
+!/results/rgcl_region_attention_512/*.json
+!/results/rgcl_region_attention_512/*.jsonl
+!/results/rgcl_region_attention_512/*.csv
+!/results/rgcl_region_attention_512/*.md
+!/results/rgcl_region_attention_512/*.svg
+!/results/rgcl_region_attention_512/*.png
+!/results/rgcl_region_attention_512/*.log
