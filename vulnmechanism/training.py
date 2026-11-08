@@ -40,7 +40,8 @@ METHODS = (
     "hard_aug_vat",
 )
 RGCL_METHODS = ("plm_baseline", "context_only", "rgcl")
-RGCL_ALL_METHODS = (*RGCL_METHODS, "random_region")
+RGCL_REGION_TARGETS = {"vulnerable_only": 1, "repaired_only": 0}
+RGCL_ALL_METHODS = (*RGCL_METHODS, "random_region", *RGCL_REGION_TARGETS)
 TRAINING = dict(
     seed=42,
     epochs=3,
@@ -1246,6 +1247,48 @@ def shuffle_line_labels(features, seed, *, match_tokens=False):
         feature["line_labels"] = shuffled
 
 
+def restrict_region_supervision(features, target):
+    """Disable only the other side's auxiliary targets; retain function labels."""
+    if target not in (0, 1):
+        raise ValueError("region supervision target must be 0 or 1")
+    for feature in features:
+        if feature["labels"] != target:
+            feature["line_labels"] = [0] * len(feature["line_labels"])
+
+
+def region_supervision_statistics(features, target=None):
+    """Count original Diff coverage and enabled loss mass, conserving cross-line tokens."""
+    if target not in (None, 0, 1):
+        raise ValueError("region supervision target must be None, 0 or 1")
+    fields = ("functions", "eligible_functions", "supervised_functions", "code_tokens",
+              "visible_region_tokens", "supervised_region_tokens", "supervised_background_tokens",
+              "empty_region_functions", "all_region_functions")
+    sides = {str(y): dict.fromkeys(fields, 0) for y in (0, 1)}
+    for feature in features:
+        y = int(feature["labels"])
+        side = sides[str(y)]
+        tokens = [[t for t in line if feature["code_mask"][t]]
+                  for line in feature["line_token_indices"]]
+        copies = Counter(t for line in tokens for t in line)
+        scale = math.lcm(*copies.values()) if copies else 1
+        counts = [sum(scale // copies[t] for t in line) for line in tokens]
+        foreground = sum(n for n, label in zip(counts, feature["line_labels"]) if label == 1)
+        total = sum(counts)
+        eligible = 0 < foreground < total
+        enabled = eligible and (target is None or target == y)
+        side["functions"] += 1
+        side["eligible_functions"] += int(eligible)
+        side["supervised_functions"] += int(enabled)
+        side["code_tokens"] += total / scale
+        side["visible_region_tokens"] += foreground / scale
+        side["supervised_region_tokens"] += foreground / scale if enabled else 0
+        side["supervised_background_tokens"] += (total - foreground) / scale if enabled else 0
+        side["empty_region_functions"] += int(foreground == 0)
+        side["all_region_functions"] += int(total > 0 and foreground == total)
+    return dict(target=target, by_target=sides,
+                **{key: sum(s[key] for s in sides.values()) for key in fields})
+
+
 def paired_rows(data_dir, output_dir, variant, split, *, method=None, localizer_dir=None):
     """A predicted detector never opens the test oracle annotations."""
     root = Path(data_dir) / "primevul_paired"
@@ -1334,11 +1377,12 @@ def train_losver(
             raise ValueError("RGCL comparisons require prepared datasets with 512 inputs")
         bounded_attention = method != "plm_baseline"
         attention_context = bounded_attention
-        attention_region = "random" if method == "random_region" else "diff" if method == "rgcl" else None
-        if method == "random_region" and dataset != "primevul_paired":
-            raise ValueError("Random-region ablation uses only PrimeVul")
+        attention_region = "random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None
+        if method in ("random_region", *RGCL_REGION_TARGETS) and dataset != "primevul_paired":
+            raise ValueError("region ablations use only PrimeVul")
     elif dataset != "primevul_paired":
         raise ValueError("original LOSVER keeps the official paired protocol")
+    region_target = RGCL_REGION_TARGETS.get(method)
     variant = "baseline" if formal_rgcl else LOSVER_VARIANTS[method]
     settings = dict(LOSVER_CONFIG if config is None else config)
     if native:
@@ -1491,6 +1535,7 @@ def train_losver(
                 or (local_mil is not None and completed.get("local_mil",{}).get("version",1)!=2)
                 or bool(completed.get("input_marginalization"))!=marginalize_inputs
                 or completed["training_config"]["seed"]!=settings["seed"]
+                or completed.get("bounded_attention",{}).get("region_target")!=region_target
                 or completed.get("bounded_attention",{}).get("region_supervision")!=attention_region):
             raise ValueError(f"{run}: completed training configuration differs")
         print(f"{run}: training complete; skipping", flush=True)
@@ -1606,6 +1651,10 @@ def train_losver(
         rccl=rccl, seed=settings["seed"],
     )
     random_regions = None
+    side_supervision = None
+    if region_target is not None:
+        side_supervision = region_supervision_statistics(loader.dataset, region_target)
+        restrict_region_supervision(loader.dataset, region_target)
     if line_auxiliary == "random" or attention_region == "random":
         random_regions = shuffle_line_labels(loader.dataset, settings["seed"], match_tokens=method == "random_region")
     if random_regions is not None:
@@ -1836,6 +1885,9 @@ def train_losver(
                 unchanged_eligible_functions=sum(r["unchanged"] for r in eligible),
                 positive_tokens=sum(r["diff_region_tokens"] for r in eligible),
                 overlap_tokens=sum(r["overlap_tokens"] for r in eligible))
+        if side_supervision is not None:
+            metadata["bounded_attention"].update(region_target=region_target,
+                side_supervision=side_supervision)
         metadata["localizer_attention"] = "none; bounded line attention from the shared encoding"
         # Keep default metadata identical for exact resumption of legacy runs.
         if attention_region_weighting != "token":
@@ -1973,6 +2025,8 @@ def train_losver(
         state["attention_previous"] = {}
     if rccl is not None:
         state["paired_batch_order"] = []
+    if region_target is not None:
+        state["region_function_visits"] = 0
     if continuing:
         state, saved_rng = load_training_state(
             run,
@@ -2044,6 +2098,8 @@ def train_losver(
             region_total = sum(int(((b["line_labels"]==1).any(-1) &
                                    ((b["line_labels"]==0) & (b["line_numbers"]>=0)).any(-1)).sum())
                                for b in group) if attention_region else 0
+            if region_target is not None:
+                state["region_function_visits"] += region_total
             insertion_total = sum(int(((b["insertion_labels"] == 1).any(-1) &
                                        (b["insertion_labels"] == 0).any(-1)).sum())
                                   for b in group) if insertion_supervision is not None else 0
@@ -2190,6 +2246,8 @@ def train_losver(
         )
         if components is not None:
             event["train_components"] = {k: v / steps_per_epoch for k, v in components.items()}
+        if region_target is not None:
+            event["region_function_visits"] = state["region_function_visits"]
         if rccl is not None:
             event["paired_batch_order"] = state["paired_batch_order"]
         if attention_diagnostics:
@@ -2255,6 +2313,11 @@ def train_losver(
         optimizer_steps=global_step,
         selected_epochs=chosen,
     )
+    if region_target is not None:
+        expected_visits = epochs * side_supervision["supervised_functions"]
+        if state["region_function_visits"] != expected_visits:
+            raise ValueError("actual region supervision visits differ from the full epoch budget")
+        summary["region_function_visits"] = state["region_function_visits"]
     if variant == "localizer":
         del model, optimizer
         if device.type == "cuda":

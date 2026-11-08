@@ -11,7 +11,7 @@ import torch
 
 from .artifacts import write_json
 from .data import read_jsonl
-from .training import RGCL_METHODS, RGCL_ALL_METHODS, LOSVER_CONFIG, train_losver
+from .training import RGCL_METHODS, RGCL_ALL_METHODS, RGCL_REGION_TARGETS, LOSVER_CONFIG, train_losver
 
 SEEDS = (42, 1234, 123456)
 DATASETS = ("primevul_paired", "secvuleval")
@@ -29,8 +29,8 @@ def study_methods(backbone, methods=None):
     selected = RGCL_METHODS if methods is None else tuple(methods)
     if not selected or len(set(selected)) != len(selected) or any(m not in RGCL_ALL_METHODS for m in selected):
         raise ValueError("choose distinct existing RGCL methods")
-    if "random_region" in selected and backbone != "unixcoder":
-        raise ValueError("Random-region is restricted to the UniXcoder ablation")
+    if any(m in selected for m in ("random_region", *RGCL_REGION_TARGETS)) and backbone != "unixcoder":
+        raise ValueError("region ablations are restricted to UniXcoder")
     return selected
 
 
@@ -39,7 +39,7 @@ def data_root(data_dir, dataset):
 
 
 def run_path(output_dir, dataset, seed, method, *, backbone="unixcoder", reference_dir=None):
-    if reference_dir is not None and method != "random_region":
+    if reference_dir is not None and method in RGCL_METHODS:
         return run_path(reference_dir, dataset, seed, method, backbone=backbone)
     if seed == 123456 and backbone == "unixcoder":
         if dataset == "primevul_paired" and method in ("context_only", "rgcl"):
@@ -78,8 +78,9 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
             raise ValueError(f"{path}: CLS baseline must use RobertaClassificationHead")
     elif (not bounded or not bounded.get("context") or bounded.get("k") != 5
           or bounded.get("region_weighting", "token") != "token"
-          or bounded.get("region_supervision") != ("random" if method == "random_region" else "diff" if method == "rgcl" else None)
-          or bounded.get("region_weight") != (.1 if method in ("rgcl", "random_region") else 0.)
+          or bounded.get("region_supervision") != ("random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None)
+          or bounded.get("region_weight") != (.1 if method in ("rgcl", "random_region", *RGCL_REGION_TARGETS) else 0.)
+          or bounded.get("region_target") != RGCL_REGION_TARGETS.get(method)
           or bounded.get("local") or bounded.get("context_scale")):
         raise ValueError(f"{path}: not the fixed original Context/RGCL architecture")
     if method == "random_region":
@@ -88,6 +89,12 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
             randomization.get("exact_token_mass_matches") != len(train) or
             not randomization.get("fixed_across_epochs")):
             raise ValueError(f"{path}: Random-region must preserve each Train function's token mass")
+    if method in RGCL_REGION_TARGETS:
+        stats = bounded["side_supervision"]
+        if (stats["target"] != RGCL_REGION_TARGETS[method] or stats["functions"] != len(train)
+            or stats["by_target"][str(1 - stats["target"])]["supervised_functions"] != 0
+            or config["region_function_visits"] != 16 * stats["supervised_functions"]):
+            raise ValueError(f"{path}: incorrect single-side supervision coverage")
     key = "p_c" if dataset == "primevul_paired" else "mcc"
     chosen = json.loads((path/f"best-{key}.json").read_text())
     epochs = [r for r in read_jsonl(path/"best.training.jsonl") if r["event"] == "epoch"]
@@ -101,6 +108,8 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
         cp = torch.load(path/f"best-{key}.pt", map_location="cpu", weights_only=False)
         if cp["selected_epoch"] != chosen["epoch"] or cp["validation"] != chosen["validation"]:
             raise ValueError(f"{path}: checkpoint and selection record disagree")
+        if method in RGCL_REGION_TARGETS and cp["bounded_attention"] != bounded:
+            raise ValueError(f"{path}: checkpoint auxiliary supervision side differs")
         state = cp["state_dict"]
         if method == "plm_baseline":
             if cp.get("classification_architecture") == "codet5_defect":
@@ -122,8 +131,8 @@ def inspect_run(path, data_dir, dataset, seed, method, model_path, *, checkpoint
 def inventory(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="unixcoder", methods=None, reference_dir=None):
     entries = []
     methods = study_methods(backbone, methods)
-    if "random_region" in methods and tuple(datasets) != ("primevul_paired",):
-        raise ValueError("Random-region study is PrimeVul only")
+    if any(m in methods for m in ("random_region", *RGCL_REGION_TARGETS)) and tuple(datasets) != ("primevul_paired",):
+        raise ValueError("region ablations use only PrimeVul")
     if not datasets or any(d not in SUPPORTED_DATASETS for d in datasets):
         raise ValueError("choose a prepared RGCL study dataset")
     for dataset in datasets:
@@ -156,8 +165,8 @@ def check(data_dir, output_dir, model_path, *, device="auto", datasets=DATASETS,
 
     results = {}
     methods = study_methods(backbone, methods)
-    if "random_region" in methods and tuple(datasets) != ("primevul_paired",):
-        raise ValueError("Random-region study is PrimeVul only")
+    if any(m in methods for m in ("random_region", *RGCL_REGION_TARGETS)) and tuple(datasets) != ("primevul_paired",):
+        raise ValueError("region ablations use only PrimeVul")
     for dataset in datasets:
         results[dataset] = evaluation.check_rgcl(data_root(data_dir, dataset), output_dir, model_path, dataset,
             device=device, methods=methods)
@@ -189,14 +198,15 @@ def run(data_dir, output_dir, model_path, dataset, seed, methods=None, *, device
     from .evaluation import evaluate
 
     methods = study_methods(backbone, methods)
-    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or ("random_region" in methods and dataset != "primevul_paired"):
+    if dataset not in SUPPORTED_DATASETS or seed not in SEEDS or (any(m in methods for m in ("random_region", *RGCL_REGION_TARGETS)) and dataset != "primevul_paired"):
         raise ValueError("only the fixed three-seed RGCL comparison is allowed")
     smoke = json.loads((Path(output_dir)/"gpu-smoke.json").read_text())
     if not smoke["passed"] or (backbone != "unixcoder" and
         (smoke.get("backbone") != backbone or smoke.get("model_path") != str(model_path) or dataset not in smoke["results"])):
         raise ValueError("complete real GPU verification before full training")
-    if "random_region" in methods and "random_region" not in smoke.get("results", {}).get("primevul_paired", {}).get("methods", {}):
-        raise ValueError("Random-region requires its own real GPU smoke before training")
+    for method in methods:
+        if method in ("random_region", *RGCL_REGION_TARGETS) and method not in smoke.get("results", {}).get("primevul_paired", {}).get("methods", {}):
+            raise ValueError(f"{method} requires its own real GPU smoke before training")
     for method in methods:
         path = run_path(output_dir, dataset, seed, method, backbone=backbone, reference_dir=reference_dir)
         reused = not path.is_relative_to(Path(output_dir))
@@ -334,6 +344,13 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
                     "随机区域为有效代码行的随机子集，逐函数严格保持原 Diff 的有效 Token 质量及辅助损失可用性。"
                     "跨行 Token 按原实现分摊；局部独立 RNG 随训练种子固定，整个训练期间不重采样。"
                     "保持原区域损失、编码和函数 BCE；推理仅输入单函数，Test 不参与选模。")
+    if any(m in methods for m in RGCL_REGION_TARGETS):
+        lines[0] = "# RGCL 双侧修复监督消融"
+        lines[2] = ("PrimeVul + UniXcoder，Context-only 与 RGCL 复用历史完整结果；仅新增 Vulnerable-only、Repaired-only 各三种子。"
+                    "全部函数保留原标签参与 BCE，训练顺序不变；仅在训练特征中禁用另一侧的区域标签。"
+                    "区域损失仍按有效 Token 加权、在有效启用函数间平均，系数0.1，不补偿监督数量差异。"
+                    "K=5、512 Token、Batch8、16 Epoch、AdamW lr=2e-5；完整 Valid P-C（保留四位小数，先到先选）选模，阈值严格>0.5。"
+                    "Test 只评价既定 checkpoint，不用于修改方法、训练轮次或参数。")
     for r in records:
         m=r["metrics"];pc=f"{m['p_c']:.2%}" if "p_c" in m else "—"
         lines.append(f"| {r['dataset']} | {r['split']} | {r['seed']} | {r['method']} | {r['selected_epoch']} | {pc} | "+
@@ -351,7 +368,10 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
     for dataset in datasets:
         for split in ("valid","test"):
             values={r["method"]:r["metrics"] for r in aggregate if r["dataset"]==dataset and r["split"]==split}
-            comparisons = ((("context_only","random_region"),("random_region","rgcl"),("context_only","rgcl"))
+            comparisons = ((("context_only","vulnerable_only"),("context_only","repaired_only"),
+                            ("context_only","rgcl"),("vulnerable_only","rgcl"),("repaired_only","rgcl"))
+                           if any(m in methods for m in RGCL_REGION_TARGETS) else
+                           (("context_only","random_region"),("random_region","rgcl"),("context_only","rgcl"))
                            if "random_region" in methods else
                            (("plm_baseline","context_only"),("context_only","rgcl"),("plm_baseline","rgcl")))
             for before,after in comparisons:
@@ -365,6 +385,80 @@ def report(data_dir, output_dir, model_path, *, datasets=DATASETS, backbone="uni
                 lines.extend(["",f"{dataset} {split}, {before} → {after}: mean {primary} {delta[primary]:+.6f}; improved in {wins}/3 seeds. "
                               f"AUC {delta['auc']:+.6f}; MCC {delta['mcc']:+.6f}; FPR {delta['fpr']:+.6f}."])
     result["deltas"]=deltas
+    if any(m in methods for m in RGCL_REGION_TARGETS):
+        from .model import RobertaTokenizerFast
+        from .training import paired_loader, region_supervision_statistics
+
+        rows = read_jsonl(data_root(data_dir, "primevul_paired")/"primevul_paired/train.lines.jsonl")
+        tokenizer = RobertaTokenizerFast.from_pretrained(model_path, trim_offsets=False)
+        features = paired_loader(rows, tokenizer, "baseline").dataset
+        coverage = {target: region_supervision_statistics(features, target) for target in (None, 0, 1)}
+        supervision = []
+        lines.extend(["", "## 真实区域覆盖与实际训练监督", "",
+            "有效区域要求512输入中同时存在修改 Token 和背景 Token。跨物理行 Token 按原 bounded_pool 规则分摊，"
+            "表中 Token 质量是分摊后的数量，不是代码语义质量评分。空区域、全区域和 Padding 沿用原处理。", "",
+            "| Train side | Functions | Eligible Diff functions | Side coverage | Foreground Token mass | Background Token mass |",
+            "|---|---:|---:|---:|---:|---:|"])
+        for label, side in coverage[None]["by_target"].items():
+            lines.append(f"| {'Vulnerable' if label == '1' else 'Repaired'} | {side['functions']} | "
+                f"{side['eligible_functions']} | {side['eligible_functions']/side['functions']:.2%} | "
+                f"{side['supervised_region_tokens']:g} | {side['supervised_background_tokens']:g} |")
+        lines.extend(["", "| Seed | Method | Supervised functions / all Train | Foreground Token mass / epoch | Background Token mass / epoch | Actual function visits (16 epochs) |",
+                      "|---|---|---:|---:|---:|---:|"])
+        for entry in result["experiments"]:
+            method = entry["method"]
+            config = json.loads((Path(entry["run"])/"training.metrics.json").read_text())
+            stats = coverage[RGCL_REGION_TARGETS.get(method)]
+            active = method != "context_only"
+            visits = config.get("region_function_visits")
+            if method in RGCL_REGION_TARGETS:
+                if config["bounded_attention"]["side_supervision"] != stats:
+                    raise ValueError("saved single-side token mass does not reproduce from original Train")
+                masks = read_jsonl(Path(entry["run"])/"train.attention_regions.jsonl")
+                if len(masks) != len(rows):
+                    raise ValueError("single-side training omitted functions")
+                for row, feature, mask in zip(rows, features, masks):
+                    expected = feature["line_labels"] if row["target"] == RGCL_REGION_TARGETS[method] else [0]*len(feature["line_labels"])
+                    if mask != dict(sample_key=row["sample_key"], line_numbers=feature["line_numbers"], labels=expected):
+                        raise ValueError("actual region masks differ from the stipulated true Diff side")
+                if visits != 16 * stats["supervised_functions"]:
+                    raise ValueError("actual auxiliary function visits do not match all 16 epochs")
+            record = dict(seed=entry["seed"], method=method, functions=len(rows),
+                supervised_functions=stats["supervised_functions"] if active else 0,
+                foreground_tokens=stats["supervised_region_tokens"] if active else 0,
+                background_tokens=stats["supervised_background_tokens"] if active else 0,
+                actual_function_visits=visits, visits_recorded=method in RGCL_REGION_TARGETS)
+            supervision.append(record)
+            lines.append(f"| {record['seed']} | {method} | {record['supervised_functions']}/{len(rows)} | "
+                f"{record['foreground_tokens']:g} | {record['background_tokens']:g} | "
+                f"{visits if visits is not None else '— (historical)'} |")
+        result.update(side_supervision=supervision, original_train_coverage=coverage[None])
+        lines.extend(["", "新增六组的实际函数访问次数来自可恢复训练状态，并核对每个样本保存的真实区域掩码。"
+            "历史对照不改写训练日志；其每轮监督数量由同一原始 Train 编码和损失有效性条件重算。"
+            "漏洞侧与修复侧可监督函数数及 Token 质量不同，且原损失在每批有效函数间平均。"
+            "因此本消融同时改变监督来源与覆盖，不能把性能差异直接归因于两侧监督的语义质量，也不作数量补偿。", "",
+            "结果回答固定协议下各侧监督的实际效果；不能据此认定统计显著性。"
+            "三种子分别评价，均值与标准差以种子为单位，不把重复训练的同一测试样本当作独立样本。"])
+        lines.extend(["", "## 固定协议下的结论", ""])
+        test_values = {r["method"]: r["metrics"] for r in aggregate if r["split"] == "test"}
+        for before, after in (("context_only", "vulnerable_only"), ("context_only", "repaired_only"),
+                              ("vulnerable_only", "rgcl"), ("repaired_only", "rgcl")):
+            if before not in test_values or after not in test_values:
+                continue
+            delta = {k: test_values[after][k]["mean"] - test_values[before][k]["mean"] for k in test_values[after]}
+            differences = [next(r for r in records if (r["split"], r["seed"], r["method"]) == ("test", seed, after))["metrics"]["p_c"]
+                         - next(r for r in records if (r["split"], r["seed"], r["method"]) == ("test", seed, before))["metrics"]["p_c"]
+                           for seed in SEEDS]
+            lines.append(f"{before} → {after}：Test 平均 P-C {100*delta['p_c']:+.2f} 个百分点，"
+                f"MCC {delta['mcc']:+.6f}，Recall {100*delta['recall']:+.2f} 个百分点，"
+                f"修复侧 FPR {100*delta['fpr']:+.2f} 个百分点；"
+                f"P-C 提升/持平/下降的种子数为 {sum(d>0 for d in differences)}/{sum(d==0 for d in differences)}/{sum(d<0 for d in differences)}。")
+        lines.extend(["", "验证记录：tests.log（区域损失、训练、恢复回归）、report-tests.log（四方法指标与覆盖分母），"
+            "gpu-smoke.json / primevul_paired/gpu-smoke.json（真实 GPU 梯度、原 RGCL 权重恢复及单函数推理）。"
+            "新增参数为0，初始化及采样 RNG 不变；推理不读取区域标签。"])
+        if (root/"tests.sandbox.log").exists():
+            lines.append("首次沙箱测试因 DataLoader 多进程套接字权限失败，原日志保留于 tests.sandbox.log；"
+                         "相同测试已在宿主环境重跑通过，没有修改断言或跳过失败。")
     if "random_region" in methods:
         supervision = []
         lines.extend(["", "## 随机监督核对", "",

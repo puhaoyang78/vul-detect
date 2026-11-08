@@ -558,7 +558,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
     import tempfile
     import time
     import numpy as np
-    from .training import RGCL_METHODS, RGCL_ALL_METHODS, LOSVERAdamW, paired_collate, paired_forward, shuffle_line_labels
+    from .training import (RGCL_METHODS, RGCL_ALL_METHODS, RGCL_REGION_TARGETS, LOSVERAdamW,
+                           paired_collate, paired_forward, shuffle_line_labels,
+                           restrict_region_supervision, region_supervision_statistics)
     from .data import paired_features
 
     methods = RGCL_METHODS if methods is None else tuple(methods)
@@ -577,7 +579,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         candidates = (r for r in all_rows if r.get("normal_kind", "vulnerable" if r["target"] else "repaired") == kind)
         for row in candidates:
             feature = paired_features(row, tokenizer, "baseline")
-            if kind != "vulnerable" or (1 in feature["line_labels"] and 0 in feature["line_labels"]):
+            if kind == "ordinary" or (1 in feature["line_labels"] and 0 in feature["line_labels"]):
                 selected.append(row)
                 break
     if not selected or selected[0]["target"] != 1:
@@ -595,6 +597,12 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
     for method in methods:
         method_features = features
         random_regions = None
+        side_supervision = None
+        if method in RGCL_REGION_TARGETS:
+            import copy
+            method_features = copy.deepcopy(features)
+            side_supervision = region_supervision_statistics(method_features, RGCL_REGION_TARGETS[method])
+            restrict_region_supervision(method_features, RGCL_REGION_TARGETS[method])
         if method == "random_region":
             import copy
             method_features = copy.deepcopy(features)
@@ -605,7 +613,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         model, _ = core.losver_model(model_path, "baseline", cls_baseline=method == "plm_baseline",
             class_weight=data["classification_positive_weight"], bounded_attention=method != "plm_baseline",
             attention_context=method != "plm_baseline",
-            attention_region="random" if method == "random_region" else "diff" if method == "rgcl" else None)
+            attention_region="random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None)
         current_rng = torch.get_rng_state()
         current_encoder = next(model.encoder.parameters()).detach().cpu().clone()
         if encoder_initial is None:
@@ -635,11 +643,18 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
                 torch.testing.assert_close(loss, parts["bce"] + (.1 * parts["region_loss"] if model.attention_region else 0))
                 if model.attention_region and int(parts["region_functions"]) < 1:
                     raise ValueError("GPU smoke did not exercise a real auxiliary target")
-                if method == "random_region":
+                if method == "random_region" or side_supervision is not None:
                     gradient = torch.autograd.grad(parts["region_loss"], model.line_attention.weight, retain_graph=True)[0]
                     auxiliary_gradients.append(float(gradient.abs().sum()))
                     if not torch.isfinite(gradient).all() or auxiliary_gradients[-1] <= 0:
-                        raise ValueError("random auxiliary supervision did not reach attention")
+                        raise ValueError("auxiliary region supervision did not reach attention")
+                if side_supervision is not None:
+                    if int(parts["region_functions"]) != side_supervision["supervised_functions"]:
+                        raise ValueError("disabled side contributed to auxiliary normalization")
+                    gradient = torch.autograd.grad(parts["region_loss"], parts["line_rates"], retain_graph=True)[0]
+                    disabled = batch["labels"].to(device) != RGCL_REGION_TARGETS[method]
+                    if gradient[disabled].abs().sum() != 0 or gradient[~disabled].abs().sum() <= 0:
+                        raise ValueError("auxiliary gradient reached the wrong repair side")
             loss.backward()
             if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
                 raise ValueError("nonfinite native GPU gradients")
@@ -667,6 +682,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         if method != "plm_baseline":
             cp["bounded_attention"] = dict(k=5, region_supervision=model.attention_region,
                 context=dict(dimension=32))
+            if side_supervision is not None:
+                cp["bounded_attention"].update(region_target=RGCL_REGION_TARGETS[method],
+                    side_supervision=side_supervision)
         with tempfile.TemporaryDirectory(prefix="rgcl-smoke-") as tmp:
             filename = Path(tmp) / "model.pt"
             torch.save(cp, filename)
@@ -686,6 +704,10 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         if random_regions is not None:
             result["methods"][method].update(region_gradient_l1=auxiliary_gradients,
                 exact_token_mass_matches=all(r["diff_region_tokens"] == r["random_region_tokens"] for r in random_regions))
+        if side_supervision is not None:
+            result["methods"][method].update(region_gradient_l1=auxiliary_gradients,
+                side_supervision=side_supervision, disabled_side_region_gradient_zero=True,
+                normalization="mean over enabled eligible functions; no count compensation")
         del model, optimizer, cp, saved
         torch.cuda.empty_cache()
     result.update(initial_context_rgcl_equal=True if {"context_only", "rgcl"}.issubset(methods) else None,

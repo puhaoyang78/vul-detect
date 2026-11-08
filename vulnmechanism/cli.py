@@ -208,7 +208,7 @@ def build_parser():
     p.add_argument("--methods", nargs="+", choices=RGCL_ALL_METHODS,
                    help="default: CLS baseline, Context-only and RGCL for the selected backbone")
     p.add_argument("--reference-dir", type=Path,
-                   help="reuse completed standard methods from this directory; train only missing Random-region")
+                   help="reuse completed standard methods from this directory; train only missing ablations")
     p.add_argument("--device", default="auto")
     p.add_argument("--save-every", type=int, default=500)
     p = sub.add_parser(

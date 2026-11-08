@@ -516,3 +516,12 @@ __pycache__/
 !/results/rgcl_mechanism_512/*.png
 !/results/rgcl_mechanism_512/*.log
 /results/rgcl_mechanism_512/*.local.md
+
+# PrimeVul UniXcoder supervision-side ablation; checkpoints and sources stay local.
+!/results/rgcl_side_ablation_512/
+!/results/rgcl_side_ablation_512/**/
+!/results/rgcl_side_ablation_512/**/*.json
+!/results/rgcl_side_ablation_512/**/*.jsonl
+!/results/rgcl_side_ablation_512/**/*.md
+!/results/rgcl_side_ablation_512/**/*.log
+!/results/rgcl_side_ablation_512/**/*.txt

@@ -19,7 +19,9 @@ from transformers.models.roberta.modeling_roberta import RobertaClassificationHe
 from tests.test_losver import Tokens, config
 from vulnmechanism.data import load_rgcl_native, split_rgcl_groups, balanced, prepare_rgcl, paired_features, read_jsonl, write_jsonl
 from vulnmechanism.model import LOSVERDetector, predict_checkpoint
-from vulnmechanism.training import paired_collate, paired_forward, train_losver, LOSVER_CONFIG, save_training_state, shuffle_line_labels
+from vulnmechanism.training import (paired_collate, paired_forward, train_losver, LOSVER_CONFIG,
+    save_training_state, shuffle_line_labels, RGCL_REGION_TARGETS,
+    restrict_region_supervision, region_supervision_statistics)
 from vulnmechanism.evaluation import load_paired, validate_paired
 from vulnmechanism.metrics import metrics
 
@@ -40,6 +42,53 @@ def record(i, target, *, code=None):
 
 
 class RGCLTests(unittest.TestCase):
+    def test_side_supervision_preserves_members_inputs_labels_rng_and_token_mass(self):
+        template = dict(line_labels=[1, 0, 0], line_token_indices=[[1, 2], [2, 3], [4]],
+                        code_mask=[False, True, True, True, True])
+        features = [dict(copy.deepcopy(template), labels=y) for y in (1, 0)]
+        features += [dict(copy.deepcopy(template), labels=1, line_labels=[0, 0, 0]),
+                     dict(copy.deepcopy(template), labels=0, line_labels=[1, 1, 1])]
+        before = copy.deepcopy(features)
+        py, th = random.getstate(), torch.get_rng_state()
+        for target in (1, 0):
+            actual = copy.deepcopy(features)
+            stats = region_supervision_statistics(actual, target)
+            restrict_region_supervision(actual, target)
+            self.assertEqual(stats["functions"], 4)
+            self.assertEqual(stats["eligible_functions"], 2)
+            self.assertEqual(stats["supervised_functions"], 1)
+            self.assertEqual(stats["supervised_region_tokens"], 1.5)
+            self.assertEqual(stats["supervised_background_tokens"], 2.5)
+            self.assertEqual(stats["code_tokens"], 16)
+            self.assertEqual(stats["empty_region_functions"], 1)
+            self.assertEqual(stats["all_region_functions"], 1)
+            self.assertEqual(stats["by_target"][str(1-target)]["supervised_functions"], 0)
+            for original, selected in zip(before, actual):
+                for key in original:
+                    expected = [0, 0, 0] if key == "line_labels" and original["labels"] != target else original[key]
+                    self.assertEqual(selected[key], expected)
+        self.assertEqual(features, before)
+        self.assertEqual(random.getstate(), py)
+        torch.testing.assert_close(torch.get_rng_state(), th, rtol=0, atol=0)
+
+    def test_side_region_loss_is_original_eligible_function_mean_without_compensation(self):
+        rates = torch.tensor([[3., 3., 3.], [3., 3., 3.], [3., 3., 3.], [3., 3., 3.]], requires_grad=True)
+        counts = torch.tensor([[1., 9., 0.], [2., 3., 1.], [1., 0., 0.], [0., 0., 0.]])
+        truth = torch.tensor([[1., 0., -1.], [0., 1., 0.], [1., -1., -1.], [-1., -1., -1.]])
+        function_targets = torch.tensor([1, 0, 1, 0])
+        for target in (0, 1):
+            labels = truth.clone()
+            labels[function_targets != target] = 0
+            loss, number = LOSVERDetector.attention_region_loss(rates, counts, labels)
+            selected = function_targets == target
+            expected, _ = LOSVERDetector.attention_region_loss(rates[selected], counts[selected], truth[selected])
+            torch.testing.assert_close(loss, expected, rtol=0, atol=0)
+            self.assertEqual(int(number), 1)
+            gradient = torch.autograd.grad(loss, rates, retain_graph=True)[0]
+            self.assertEqual(float(gradient[~selected].abs().sum()), 0)
+            self.assertGreater(float(gradient[selected].abs().sum()), 0)
+            self.assertEqual(float(gradient[counts == 0].abs().sum()), 0)
+
     def test_random_region_exact_code_token_mass_cross_line_and_rng(self):
         features = [dict(line_labels=[1, 0, 0, 0, 1],
             line_token_indices=[[1, 2], [2, 3], [4, 5], [6], [0, 7]],
@@ -255,11 +304,12 @@ class RGCLTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch("vulnmechanism.model.losver_model", side_effect=factory):
             root = Path(tmp)
             for split in ("train", "valid"):
-                rows = records(split=split)
+                rows = records(pairs=[("int f(){\n use(x);\n return x;\n}",
+                                       "int f(){\n checked_use(x);\n return x;\n}")], split=split)
                 write_jsonl(root/"data/primevul_paired"/f"{split}.jsonl", rows)
                 write_jsonl(root/"data/primevul_paired"/f"{split}.lines.jsonl", rows)
             cfg = dict(LOSVER_CONFIG, epochs=dict(LOSVER_CONFIG["epochs"], baseline=2), batch_size=2, eval_batch_size=2)
-            for method in ("plm_baseline", "context_only", "rgcl", "random_region"):
+            for method in ("plm_baseline", "context_only", "rgcl", "random_region", *RGCL_REGION_TARGETS):
                 result = train_losver(root/"data", root/"out", "tiny", method, dataset="primevul_paired",
                                       config=cfg, seed=42, device="cpu")
                 self.assertEqual(result["selected_epochs"].keys(), {"p_c"})
@@ -268,7 +318,15 @@ class RGCLTests(unittest.TestCase):
                 cp = torch.load(run/"best-p_c.pt", weights_only=False)
                 restored, _ = load_paired(cp, "cpu")
                 self.assertEqual(restored.cls_baseline, method == "plm_baseline")
-                self.assertEqual(restored.attention_region, "random" if method == "random_region" else "diff" if method == "rgcl" else None)
+                self.assertEqual(restored.attention_region, "random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None)
+                if method in RGCL_REGION_TARGETS:
+                    self.assertEqual(cp["bounded_attention"]["region_target"], RGCL_REGION_TARGETS[method])
+                    stats = result["bounded_attention"]["side_supervision"]
+                    self.assertEqual(stats["supervised_functions"], 1)
+                    self.assertEqual(result["region_function_visits"], 2)
+                    masks = read_jsonl(run/"train.attention_regions.jsonl")
+                    self.assertEqual([any(r["labels"]) for r in masks],
+                                     [r["target"] == RGCL_REGION_TARGETS[method] for r in rows])
                 if method == "random_region":
                     self.assertEqual(result["bounded_attention"]["randomization"]["exact_token_mass_matches"], len(rows))
                 evaluate(root/"data", root/"out", "primevul_paired", [method], device="cpu", splits=("valid",))
@@ -291,6 +349,11 @@ class RGCLTests(unittest.TestCase):
                          Path("out/seed123456/primevul_paired/random_region"))
         self.assertEqual(study.run_path("out", "primevul_paired", 42, "rgcl", reference_dir="history"),
                          Path("history/seed42/primevul_paired/rgcl"))
+        for method in RGCL_REGION_TARGETS:
+            self.assertEqual(study.run_path("out", "primevul_paired", 123456, method, reference_dir="history"),
+                             Path(f"out/seed123456/primevul_paired/{method}"))
+            with self.assertRaises(ValueError):
+                study.study_methods("codebert", [method])
         self.assertEqual(study.study_methods("unixcoder"), ("plm_baseline", "context_only", "rgcl"))
         with self.assertRaises(ValueError):
             study.study_methods("codebert", ["random_region"])
@@ -306,6 +369,34 @@ class RGCLTests(unittest.TestCase):
                 study.run(root, out, "tiny", "primevul_paired", 123456, ["rgcl"], device="cpu")
                 fit.assert_not_called()
             self.assertEqual({p.name:p.read_bytes() for p in historical.iterdir()}, before)
+
+    def test_side_training_exact_resume_preserves_supervision_visits(self):
+        from tests.test_insertion_localization import records
+        with tempfile.TemporaryDirectory() as tmp, patch("vulnmechanism.model.losver_model", side_effect=factory):
+            root = Path(tmp)
+            for split in ("train", "valid"):
+                rows = records(pairs=[("int f(){\n use(x);\n return x;\n}",
+                                       "int f(){\n checked_use(x);\n return x;\n}")], split=split)
+                write_jsonl(root/"data/primevul_paired"/f"{split}.lines.jsonl", rows)
+            cfg = dict(LOSVER_CONFIG, epochs=dict(LOSVER_CONFIG["epochs"], baseline=2), batch_size=1, eval_batch_size=2)
+            for method in RGCL_REGION_TARGETS:
+                clean = train_losver(root/"data", root/"clean", "tiny", method, config=cfg, seed=42, device="cpu")
+                def interrupt(*args, **kwargs):
+                    save_training_state(*args, **kwargs)
+                    if args[4]["global_step"] == 1:
+                        raise RuntimeError("side interruption probe")
+                with patch("vulnmechanism.training.save_training_state", side_effect=interrupt):
+                    with self.assertRaisesRegex(RuntimeError, "side interruption probe"):
+                        train_losver(root/"data", root/"resumed", "tiny", method, config=cfg, seed=42, device="cpu", save_every=1)
+                recovered = train_losver(root/"data", root/"resumed", "tiny", method, config=cfg, seed=42,
+                                          device="cpu", save_every=1, resume=True)
+                self.assertEqual(clean["selected_epochs"], recovered["selected_epochs"])
+                self.assertEqual(clean["region_function_visits"], recovered["region_function_visits"])
+                a = torch.load(root/f"clean/primevul_paired/{method}/last.pt", weights_only=False)
+                b = torch.load(root/f"resumed/primevul_paired/{method}/last.pt", weights_only=False)
+                for key, value in a["model"].items():
+                    torch.testing.assert_close(value, b["model"][key], rtol=0, atol=0)
+                torch.testing.assert_close(a["rng"]["torch"], b["rng"]["torch"], rtol=0, atol=0)
 
     def test_study_report_three_seed_mean_sample_std_and_fixed_threshold(self):
         import statistics
@@ -375,6 +466,54 @@ class RGCLTests(unittest.TestCase):
             self.assertEqual(result["random_supervision"][0]["token_overlap_fraction"], .25)
             delta = next(r for r in result["deltas"] if r["split"] == "test" and r["before"] == "random_region" and r["after"] == "rgcl")
             self.assertEqual(delta["metrics"]["p_c"], 1.)
+
+    def test_side_report_checks_original_masks_counts_and_four_method_metrics(self):
+        from tests.test_insertion_localization import records
+        from vulnmechanism import rgcl_study as study
+        from vulnmechanism.metrics import paired_metrics
+
+        methods = ("context_only", "vulnerable_only", "repaired_only", "rgcl")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = records(pairs=[("int f(){\n use(x);\n return x;\n}",
+                                   "int f(){\n checked_use(x);\n return x;\n}")])
+            for name in ("train.lines", "valid", "test"):
+                write_jsonl(root/"data/primevul_paired"/f"{name}.jsonl", rows)
+            features = [paired_features(row, Tokens(), "baseline") for row in rows]
+            entries = []
+            for seed in study.SEEDS:
+                for method in methods:
+                    run = root/f"{seed}-{method}"
+                    run.mkdir()
+                    scores = [.8, .2] if method == "rgcl" else [.8, .7]
+                    value = paired_metrics(rows, scores)
+                    pred = [dict(sample_key=row["sample_key"], target=row["target"], probability=p)
+                            for row, p in zip(rows, scores)]
+                    write_jsonl(run/"valid.best-p_c.predictions.jsonl", pred)
+                    write_jsonl(run/"test.predictions.jsonl", pred)
+                    (run/"test.metrics.json").write_text(json.dumps(dict(selected_epoch=1, metrics=value)))
+                    config = {}
+                    if method in RGCL_REGION_TARGETS:
+                        target = RGCL_REGION_TARGETS[method]
+                        stats = region_supervision_statistics(features, target)
+                        config = dict(bounded_attention=dict(side_supervision=stats),
+                                      region_function_visits=16*stats["supervised_functions"])
+                        masks = copy.deepcopy(features)
+                        restrict_region_supervision(masks, target)
+                        write_jsonl(run/"train.attention_regions.jsonl", [dict(sample_key=row["sample_key"],
+                            line_numbers=f["line_numbers"], labels=f["line_labels"]) for row, f in zip(rows, masks)])
+                    (run/"training.metrics.json").write_text(json.dumps(config))
+                    entries.append(dict(dataset="primevul_paired", seed=seed, method=method, run=str(run),
+                        validation=value, selected_epoch=1, reused=method in ("context_only", "rgcl")))
+            with patch.object(study, "inventory", return_value=dict(missing=0, experiments=entries)), \
+                 patch("vulnmechanism.model.RobertaTokenizerFast.from_pretrained", return_value=Tokens()):
+                result = study.report(root/"data", root/"out", "tiny", datasets=("primevul_paired",), methods=methods)
+            self.assertEqual(len(result["records"]), 24)
+            self.assertEqual(len(result["aggregate"]), 8)
+            self.assertEqual([r["supervised_functions"] for r in result["side_supervision"][:4]], [0, 1, 1, 2])
+            self.assertEqual([r["actual_function_visits"] for r in result["side_supervision"][:4]], [None, 16, 16, None])
+            self.assertEqual(len(result["deltas"]), 10)
+            self.assertEqual(result["original_train_coverage"]["supervised_functions"], 2)
 
     def test_native_training_uses_mcc_and_shared_original_loop(self):
         with tempfile.TemporaryDirectory() as tmp:
