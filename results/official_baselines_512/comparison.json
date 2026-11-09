@@ -76,6 +76,42 @@
       "att_op": "mul",
       "num_classes": 2
     },
+    "vulberta": {
+      "repo": "https://github.com/ICL-ml4csec/VulBERTa.git",
+      "commit": "75ab355bf8be124751084c0ff3563df24f48fe38",
+      "directory": "VulBERTa",
+      "script": "Finetuning_VulBERTa-MLP.ipynb",
+      "model": "VulBERTa",
+      "epochs": 10,
+      "batch_size": 4,
+      "block_size": 1024,
+      "learning_rate": 3e-05,
+      "warmup_fraction": 0.0,
+      "optimizer": "Transformers AdamW rule",
+      "probability_column": 1,
+      "sampler": "RandomSampler",
+      "fp16": true,
+      "weight_decay": 0.0,
+      "gradient_clip": 1.0
+    },
+    "vulmixer": {
+      "repo": "https://github.com/mlavd/vulmixer.git",
+      "commit": "090c8fadda530027b6805b1931967b34d2015ed0",
+      "directory": "VulMixer",
+      "script": "run.py",
+      "model": "graphcodebert-base",
+      "epochs": 20,
+      "batch_size": 128,
+      "block_size": 1024,
+      "learning_rate": 0.0005,
+      "warmup_fraction": 0.0,
+      "optimizer": "torch.optim.AdamW",
+      "probability_column": 1,
+      "sampler": "RandomSampler",
+      "fp16": true,
+      "weight_decay": 0.01,
+      "gradient_clip": null
+    },
     "losver": {
       "repo": "https://github.com/waroad/losver",
       "commit": "a158905cb45b4400f481f18eeb1cb4473ccfccdc",
@@ -111,6 +147,16 @@
       "run": "results/official_baselines_512/seed42/primevul_paired/linevul",
       "completed_epochs": 10,
       "selected_epoch": 1,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 6,
+      "last_train_loss": 0.6930806301055699,
+      "test_pair_counts": {
+        "p_c": 17,
+        "p_v": 391,
+        "p_b": 150,
+        "p_r": 6
+      },
       "validation": {
         "p_c": 0.037366548042704624,
         "mcc": 0.025853413061873838,
@@ -139,6 +185,16 @@
       "run": "results/official_baselines_512/seed1234/primevul_paired/linevul",
       "completed_epochs": 10,
       "selected_epoch": 10,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 4,
+      "last_train_loss": 0.6837799724088897,
+      "test_pair_counts": {
+        "p_c": 47,
+        "p_v": 272,
+        "p_b": 240,
+        "p_r": 5
+      },
       "validation": {
         "p_c": 0.09074733096085409,
         "mcc": 0.06617755391016635,
@@ -167,6 +223,16 @@
       "run": "results/official_baselines_512/seed123456/primevul_paired/linevul",
       "completed_epochs": 10,
       "selected_epoch": 10,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 5,
+      "last_train_loss": 0.6892228746632917,
+      "test_pair_counts": {
+        "p_c": 45,
+        "p_v": 269,
+        "p_b": 240,
+        "p_r": 10
+      },
       "validation": {
         "p_c": 0.09074733096085409,
         "mcc": 0.06458918905328506,
@@ -195,6 +261,16 @@
       "run": "results/official_baselines_512/seed42/primevul_paired/svuld",
       "completed_epochs": 7,
       "selected_epoch": 7,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.5910849863792951,
+      "test_pair_counts": {
+        "p_c": 67,
+        "p_v": 275,
+        "p_b": 204,
+        "p_r": 18
+      },
       "validation": {
         "p_c": 0.13701067615658363,
         "mcc": 0.11281069322103299,
@@ -223,6 +299,16 @@
       "run": "results/official_baselines_512/seed1234/primevul_paired/svuld",
       "completed_epochs": 7,
       "selected_epoch": 6,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.5940897951632629,
+      "test_pair_counts": {
+        "p_c": 57,
+        "p_v": 200,
+        "p_b": 296,
+        "p_r": 11
+      },
       "validation": {
         "p_c": 0.1494661921708185,
         "mcc": 0.12802397414342281,
@@ -251,6 +337,16 @@
       "run": "results/official_baselines_512/seed123456/primevul_paired/svuld",
       "completed_epochs": 7,
       "selected_epoch": 6,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.5944851152189485,
+      "test_pair_counts": {
+        "p_c": 71,
+        "p_v": 347,
+        "p_b": 136,
+        "p_r": 10
+      },
       "validation": {
         "p_c": 0.12455516014234876,
         "mcc": 0.11621274525999438,
@@ -279,6 +375,16 @@
       "run": "results/official_baselines_512/seed42/primevul_paired/regvd",
       "completed_epochs": 100,
       "selected_epoch": 88,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.6331728506779325,
+      "test_pair_counts": {
+        "p_c": 52,
+        "p_v": 286,
+        "p_b": 206,
+        "p_r": 20
+      },
       "validation": {
         "p_c": 0.08540925266903915,
         "mcc": 0.043578776856227464,
@@ -307,6 +413,16 @@
       "run": "results/official_baselines_512/seed1234/primevul_paired/regvd",
       "completed_epochs": 100,
       "selected_epoch": 60,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.6286107768183169,
+      "test_pair_counts": {
+        "p_c": 50,
+        "p_v": 346,
+        "p_b": 155,
+        "p_r": 13
+      },
       "validation": {
         "p_c": 0.08718861209964412,
         "mcc": 0.06475881150891048,
@@ -335,6 +451,16 @@
       "run": "results/official_baselines_512/seed123456/primevul_paired/regvd",
       "completed_epochs": 100,
       "selected_epoch": 68,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.62237463740335,
+      "test_pair_counts": {
+        "p_c": 46,
+        "p_v": 317,
+        "p_b": 183,
+        "p_r": 18
+      },
       "validation": {
         "p_c": 0.09430604982206406,
         "mcc": 0.06354751664757906,
@@ -357,12 +483,250 @@
       "metrics_recomputed_from_predictions": []
     },
     {
+      "method": "vulberta",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/vulberta",
+      "completed_epochs": 10,
+      "selected_epoch": 1,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 10,
+      "last_train_loss": 0.6989515210764091,
+      "test_pair_counts": {
+        "p_c": 0,
+        "p_v": 564,
+        "p_b": 0,
+        "p_r": 0
+      },
+      "validation": {
+        "p_c": 0.0,
+        "mcc": 0.0,
+        "f1": 0.6666666666666666,
+        "auc": 0.5196631881561783,
+        "auprc": 0.522582972938821,
+        "recall": 1.0,
+        "patched_fpr": 1.0
+      },
+      "test": {
+        "p_c": 0.0,
+        "mcc": 0.0,
+        "f1": 0.6666666666666666,
+        "auc": 0.5222385694884563,
+        "auprc": 0.528725363719547,
+        "recall": 1.0,
+        "patched_fpr": 1.0
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "vulberta",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/vulberta",
+      "completed_epochs": 10,
+      "selected_epoch": 1,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 10,
+      "last_train_loss": 0.6975463295289558,
+      "test_pair_counts": {
+        "p_c": 0,
+        "p_v": 0,
+        "p_b": 564,
+        "p_r": 0
+      },
+      "validation": {
+        "p_c": 0.0,
+        "mcc": 0.0,
+        "f1": 0.0,
+        "auc": 0.4878389331442105,
+        "auprc": 0.49155364863213274,
+        "recall": 0.0,
+        "patched_fpr": 0.0
+      },
+      "test": {
+        "p_c": 0.0,
+        "mcc": 0.0,
+        "f1": 0.0,
+        "auc": 0.5159825964488709,
+        "auprc": 0.5110098077835568,
+        "recall": 0.0,
+        "patched_fpr": 0.0
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "vulberta",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/vulberta",
+      "completed_epochs": 10,
+      "selected_epoch": 10,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 9,
+      "last_train_loss": 0.6994882170684195,
+      "test_pair_counts": {
+        "p_c": 31,
+        "p_v": 248,
+        "p_b": 281,
+        "p_r": 4
+      },
+      "validation": {
+        "p_c": 0.05871886120996441,
+        "mcc": 0.05007126175200413,
+        "f1": 0.5474576271186441,
+        "auc": 0.5389464419143628,
+        "auprc": 0.5365465261569597,
+        "recall": 0.5747330960854092,
+        "patched_fpr": 0.5249110320284698
+      },
+      "test": {
+        "p_c": 0.0549645390070922,
+        "mcc": 0.04795449678633372,
+        "f1": 0.5095890410958904,
+        "auc": 0.5379633821236357,
+        "auprc": 0.5278722864190667,
+        "recall": 0.4946808510638298,
+        "patched_fpr": 0.44680851063829785
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "vulmixer",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed42/primevul_paired/vulmixer",
+      "completed_epochs": 20,
+      "selected_epoch": 20,
+      "optimizer_updates": 1378,
+      "amp_skipped_updates": 2,
+      "validation_zero_pc_epochs": 9,
+      "last_train_loss": 1.3869227533755095,
+      "test_pair_counts": {
+        "p_c": 33,
+        "p_v": 265,
+        "p_b": 261,
+        "p_r": 5
+      },
+      "validation": {
+        "p_c": 0.05871886120996441,
+        "mcc": 0.043020701971832345,
+        "f1": 0.5486577181208053,
+        "auc": 0.5311482883955371,
+        "auprc": 0.5255775164438361,
+        "recall": 0.5818505338078291,
+        "patched_fpr": 0.5391459074733096
+      },
+      "test": {
+        "p_c": 0.05851063829787234,
+        "mcc": 0.04964663868173118,
+        "f1": 0.5265017667844523,
+        "auc": 0.5278296489110206,
+        "auprc": 0.5313471486239218,
+        "recall": 0.5283687943262412,
+        "patched_fpr": 0.4787234042553192
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "vulmixer",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed1234/primevul_paired/vulmixer",
+      "completed_epochs": 20,
+      "selected_epoch": 10,
+      "optimizer_updates": 1377,
+      "amp_skipped_updates": 3,
+      "validation_zero_pc_epochs": 4,
+      "last_train_loss": 1.3823822684909985,
+      "test_pair_counts": {
+        "p_c": 30,
+        "p_v": 237,
+        "p_b": 284,
+        "p_r": 13
+      },
+      "validation": {
+        "p_c": 0.060498220640569395,
+        "mcc": 0.019589365504939105,
+        "f1": 0.49954586739327883,
+        "auc": 0.5236952419548891,
+        "auprc": 0.5266625025965226,
+        "recall": 0.4893238434163701,
+        "patched_fpr": 0.4697508896797153
+      },
+      "test": {
+        "p_c": 0.05319148936170213,
+        "mcc": 0.03024705142578839,
+        "f1": 0.4939870490286771,
+        "auc": 0.5232602736280871,
+        "auprc": 0.5300919237521287,
+        "recall": 0.4734042553191489,
+        "patched_fpr": 0.4432624113475177
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "vulmixer",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/official_baselines_512/seed123456/primevul_paired/vulmixer",
+      "completed_epochs": 20,
+      "selected_epoch": 10,
+      "optimizer_updates": 1378,
+      "amp_skipped_updates": 2,
+      "validation_zero_pc_epochs": 3,
+      "last_train_loss": 1.381230340487715,
+      "test_pair_counts": {
+        "p_c": 36,
+        "p_v": 223,
+        "p_b": 291,
+        "p_r": 14
+      },
+      "validation": {
+        "p_c": 0.08896797153024912,
+        "mcc": 0.06583723695772875,
+        "f1": 0.5341614906832298,
+        "auc": 0.5239817758133762,
+        "auprc": 0.5170690841474826,
+        "recall": 0.5355871886120996,
+        "patched_fpr": 0.4697508896797153
+      },
+      "test": {
+        "p_c": 0.06382978723404255,
+        "mcc": 0.039293734233595265,
+        "f1": 0.48867924528301887,
+        "auc": 0.5194532468185705,
+        "auprc": 0.5203132755995517,
+        "recall": 0.4592198581560284,
+        "patched_fpr": 0.42021276595744683
+      },
+      "valid_reload_max_probability_difference": 0.0,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
       "method": "losver",
       "seed": 42,
       "status": "complete",
       "run": "results/official_baselines_512/seed42/primevul_paired/losver",
       "completed_epochs": 16,
       "selected_epoch": 16,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.22822864291857112,
+      "test_pair_counts": {
+        "p_c": 78,
+        "p_v": 253,
+        "p_b": 204,
+        "p_r": 29
+      },
       "validation": {
         "p_c": 0.16725978647686832,
         "mcc": 0.11216376232387212,
@@ -391,6 +755,16 @@
       "run": "results/official_baselines_512/seed1234/primevul_paired/losver",
       "completed_epochs": 16,
       "selected_epoch": 9,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.23164319134858566,
+      "test_pair_counts": {
+        "p_c": 82,
+        "p_v": 290,
+        "p_b": 162,
+        "p_r": 30
+      },
       "validation": {
         "p_c": 0.15658362989323843,
         "mcc": 0.09821637766500722,
@@ -419,6 +793,16 @@
       "run": "results/losver_512/primevul_paired/losver",
       "completed_epochs": 16,
       "selected_epoch": 14,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.23111849356746964,
+      "test_pair_counts": {
+        "p_c": 79,
+        "p_v": 207,
+        "p_b": 249,
+        "p_r": 29
+      },
       "validation": {
         "p_c": 0.1423487544483986,
         "mcc": 0.0873993091171983,
@@ -441,6 +825,120 @@
       "metrics_recomputed_from_predictions": [
         "patched_fpr"
       ]
+    },
+    {
+      "method": "rgcl",
+      "seed": 42,
+      "status": "complete",
+      "run": "results/rgcl_multiseed_512/seed42/primevul_paired/rgcl",
+      "completed_epochs": 16,
+      "selected_epoch": 16,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.32584733687359063,
+      "test_pair_counts": {
+        "p_c": 77,
+        "p_v": 284,
+        "p_b": 175,
+        "p_r": 28
+      },
+      "validation": {
+        "p_c": 0.18327402135231316,
+        "mcc": 0.11904362206650985,
+        "f1": 0.5921052631578947,
+        "auc": 0.5815560846493839,
+        "auprc": 0.5736246294600893,
+        "recall": 0.6405693950177936,
+        "patched_fpr": 0.5231316725978647
+      },
+      "test": {
+        "p_c": 0.13652482269503546,
+        "mcc": 0.088548834562696,
+        "f1": 0.5836701697655619,
+        "auc": 0.5686113626075148,
+        "auprc": 0.5650626483811787,
+        "recall": 0.6400709219858156,
+        "patched_fpr": 0.5531914893617021
+      },
+      "valid_reload_max_probability_difference": null,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "rgcl",
+      "seed": 1234,
+      "status": "complete",
+      "run": "results/rgcl_multiseed_512/seed1234/primevul_paired/rgcl",
+      "completed_epochs": 16,
+      "selected_epoch": 13,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.32889338342993624,
+      "test_pair_counts": {
+        "p_c": 83,
+        "p_v": 291,
+        "p_b": 167,
+        "p_r": 23
+      },
+      "validation": {
+        "p_c": 0.16370106761565836,
+        "mcc": 0.10607989298231889,
+        "f1": 0.5980861244019139,
+        "auc": 0.5733020098529653,
+        "auprc": 0.5710400216374314,
+        "recall": 0.6672597864768683,
+        "patched_fpr": 0.5640569395017794
+      },
+      "test": {
+        "p_c": 0.14716312056737588,
+        "mcc": 0.10905126129418223,
+        "f1": 0.597444089456869,
+        "auc": 0.5713668200794729,
+        "auprc": 0.5653680717809131,
+        "recall": 0.6631205673758865,
+        "patched_fpr": 0.5567375886524822
+      },
+      "valid_reload_max_probability_difference": null,
+      "metrics_recomputed_from_predictions": []
+    },
+    {
+      "method": "rgcl",
+      "seed": 123456,
+      "status": "complete",
+      "run": "results/attention_context_512/context_diff/primevul_paired/unixcoder",
+      "completed_epochs": 16,
+      "selected_epoch": 14,
+      "optimizer_updates": null,
+      "amp_skipped_updates": null,
+      "validation_zero_pc_epochs": 0,
+      "last_train_loss": 0.32023845293739905,
+      "test_pair_counts": {
+        "p_c": 77,
+        "p_v": 283,
+        "p_b": 176,
+        "p_r": 28
+      },
+      "validation": {
+        "p_c": 0.17793594306049823,
+        "mcc": 0.1430889425867793,
+        "f1": 0.6069975589910497,
+        "auc": 0.5895552867871481,
+        "auprc": 0.5823064969017904,
+        "recall": 0.6637010676156584,
+        "patched_fpr": 0.5231316725978647
+      },
+      "test": {
+        "p_c": 0.13652482269503546,
+        "mcc": 0.0884864394004473,
+        "f1": 0.582995951417004,
+        "auc": 0.5711876288919069,
+        "auprc": 0.5643932231396971,
+        "recall": 0.6382978723404256,
+        "patched_fpr": 0.5514184397163121
+      },
+      "valid_reload_max_probability_difference": null,
+      "metrics_recomputed_from_predictions": []
     }
   ],
   "aggregate": {
@@ -535,6 +1033,66 @@
           "std": 0.051764784160518655
         }
       },
+      "vulberta": {
+        "p_c": {
+          "mean": 0.019572953736654804,
+          "std": 0.03390135032608123
+        },
+        "mcc": {
+          "mean": 0.016690420584001376,
+          "std": 0.028908656451183797
+        },
+        "f1": {
+          "mean": 0.4047080979284369,
+          "std": 0.35551959464160404
+        },
+        "auc": {
+          "mean": 0.5154828544049173,
+          "std": 0.0258089278327626
+        },
+        "auprc": {
+          "mean": 0.5168943825759712,
+          "std": 0.023029541945689062
+        },
+        "recall": {
+          "mean": 0.5249110320284698,
+          "std": 0.5018582255479832
+        },
+        "patched_fpr": {
+          "mean": 0.5083036773428232,
+          "std": 0.5002068104016989
+        }
+      },
+      "vulmixer": {
+        "p_c": {
+          "mean": 0.0693950177935943,
+          "std": 0.016974007142650283
+        },
+        "mcc": {
+          "mean": 0.0428157681448334,
+          "std": 0.023124616794306566
+        },
+        "f1": {
+          "mean": 0.5274550253991046,
+          "std": 0.025233429769377234
+        },
+        "auc": {
+          "mean": 0.5262751020546008,
+          "std": 0.004222734214715701
+        },
+        "auprc": {
+          "mean": 0.5231030343959471,
+          "std": 0.0052536383048882055
+        },
+        "recall": {
+          "mean": 0.5355871886120996,
+          "std": 0.04626334519572953
+        },
+        "patched_fpr": {
+          "mean": 0.49288256227758004,
+          "std": 0.040065232203550544
+        }
+      },
       "losver": {
         "p_c": {
           "mean": 0.1553973902728351,
@@ -563,6 +1121,36 @@
         "patched_fpr": {
           "mean": 0.4916963226571768,
           "std": 0.08948839484005837
+        }
+      },
+      "rgcl": {
+        "p_c": {
+          "mean": 0.1749703440094899,
+          "std": 0.010117866019710544
+        },
+        "mcc": {
+          "mean": 0.12273748587853602,
+          "std": 0.018779001851874342
+        },
+        "f1": {
+          "mean": 0.5990629821836194,
+          "std": 0.0074940514503044585
+        },
+        "auc": {
+          "mean": 0.5814711270964991,
+          "std": 0.008126971521677281
+        },
+        "auprc": {
+          "mean": 0.5756570493331037,
+          "std": 0.005901814477410405
+        },
+        "recall": {
+          "mean": 0.6571767497034401,
+          "std": 0.014492042375884464
+        },
+        "patched_fpr": {
+          "mean": 0.536773428232503,
+          "std": 0.02362821386363239
         }
       }
     },
@@ -657,6 +1245,66 @@
           "std": 0.04705545933655566
         }
       },
+      "vulberta": {
+        "p_c": {
+          "mean": 0.01832151300236407,
+          "std": 0.031733791391628366
+        },
+        "mcc": {
+          "mean": 0.01598483226211124,
+          "std": 0.027686541628442817
+        },
+        "f1": {
+          "mean": 0.39208523592085237,
+          "std": 0.3485204000974277
+        },
+        "auc": {
+          "mean": 0.5253948493536543,
+          "std": 0.011325206914691547
+        },
+        "auprc": {
+          "mean": 0.5225358193073901,
+          "std": 0.009990927957692622
+        },
+        "recall": {
+          "mean": 0.49822695035460995,
+          "std": 0.5000094310261908
+        },
+        "patched_fpr": {
+          "mean": 0.48226950354609927,
+          "std": 0.5009422237279518
+        }
+      },
+      "vulmixer": {
+        "p_c": {
+          "mean": 0.05851063829787234,
+          "std": 0.00531914893617021
+        },
+        "mcc": {
+          "mean": 0.03972914144703828,
+          "std": 0.009707120119086459
+        },
+        "f1": {
+          "mean": 0.5030560203653828,
+          "std": 0.020477315839999368
+        },
+        "auc": {
+          "mean": 0.5235143897858927,
+          "std": 0.0041939789305436214
+        },
+        "auprc": {
+          "mean": 0.5272507826585341,
+          "std": 0.006040749168337074
+        },
+        "recall": {
+          "mean": 0.4869976359338062,
+          "std": 0.03652367507205764
+        },
+        "patched_fpr": {
+          "mean": 0.44739952718676124,
+          "std": 0.02947389512953117
+        }
+      },
       "losver": {
         "p_c": {
           "mean": 0.14125295508274233,
@@ -686,6 +1334,36 @@
           "mean": 0.49527186761229314,
           "std": 0.07458057472504663
         }
+      },
+      "rgcl": {
+        "p_c": {
+          "mean": 0.1400709219858156,
+          "std": 0.006142024140315161
+        },
+        "mcc": {
+          "mean": 0.0953621784191085,
+          "std": 0.01185513457365818
+        },
+        "f1": {
+          "mean": 0.5880367368798116,
+          "std": 0.008153977831536222
+        },
+        "auc": {
+          "mean": 0.5703886038596315,
+          "std": 0.0015417416195959962
+        },
+        "auprc": {
+          "mean": 0.5649413144339296,
+          "std": 0.0004986220145425294
+        },
+        "recall": {
+          "mean": 0.6471631205673759,
+          "std": 0.013847960418274205
+        },
+        "patched_fpr": {
+          "mean": 0.5537825059101655,
+          "std": 0.0027083780703048314
+        }
       }
     }
   },
@@ -698,7 +1376,13 @@
       "numpy": "2.4.0",
       "scipy": "1.16.3",
       "pandas": "2.3.3",
-      "scikit-learn": "1.8.0"
+      "scikit-learn": "1.8.0",
+      "tokenizers": "0.22.2",
+      "lightning": "2.6.5",
+      "accelerate": "1.12.0",
+      "einops": "0.8.1",
+      "easydict": "1.13",
+      "lizard": "1.17.31"
     }
   }
 }

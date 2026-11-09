@@ -61,9 +61,10 @@ class OfficialBaselineTests(unittest.TestCase):
         torch.testing.assert_close(other,loss,rtol=0,atol=0)
 
     def test_original_budgets_probability_columns_and_models_are_not_unified(self):
-        self.assertEqual([UPSTREAM[m]['epochs'] for m in UPSTREAM],[10,20,100])
-        self.assertEqual([UPSTREAM[m]['block_size'] for m in UPSTREAM],[512,400,400])
-        self.assertEqual([UPSTREAM[m]['probability_column'] for m in UPSTREAM],[1,1,0])
+        original=('linevul','svuld','regvd')
+        self.assertEqual([UPSTREAM[m]['epochs'] for m in original],[10,20,100])
+        self.assertEqual([UPSTREAM[m]['block_size'] for m in original],[512,400,400])
+        self.assertEqual([UPSTREAM[m]['probability_column'] for m in original],[1,1,0])
         self.assertEqual(UPSTREAM['svuld']['sampler'],'SequentialSampler')
         self.assertTrue(UPSTREAM['svuld']['r_drop'])
         self.assertEqual(UPSTREAM['regvd']['model'],'graphcodebert-base')
@@ -71,6 +72,166 @@ class OfficialBaselineTests(unittest.TestCase):
             path=Path('external')/UPSTREAM[method]['directory']
             import subprocess
             self.assertEqual(subprocess.check_output(['git','-C',str(path),'rev-parse','HEAD'],text=True).strip(),UPSTREAM[method]['commit'])
+
+    def test_vulmixer_author_budget_static_embedding_and_unchanged_model(self):
+        import subprocess
+        import sys
+        from vulnmechanism.official_baselines import mixer_embedding_cache
+        spec=UPSTREAM['vulmixer']
+        self.assertEqual((spec['epochs'],spec['block_size'],spec['batch_size']), (20,1024,128))
+        self.assertEqual((spec['learning_rate'],spec['weight_decay'],spec['gradient_clip']),(.0005,.01,None))
+        self.assertTrue(spec['fp16'])
+        repo=Path('external/VulMixer').resolve()
+        self.assertEqual(subprocess.check_output(['git','-C',str(repo),'diff','--','models','cl.py','cl_dataset.py','dataset.py'],text=True),'')
+        sys.path.insert(0,str(repo))
+        try:
+            from util import load_config
+            from models.fire.model import FireSVD
+            cfg=load_config(repo/'config/model/vulmixer.yml')
+            model=FireSVD(cfg)
+            x=torch.randn(2,1024,768)
+            torch.manual_seed(8)
+            out=model(x)
+            self.assertEqual(tuple(out.shape),(2,2))
+            out.square().mean().backward()
+            for name in ('statement_info','function_info','block_info'):
+                branch=getattr(model.mixers[0].layers[0].token_mixer,name)
+                self.assertGreater(float(branch.weight.grad.norm()),0.)
+            model.eval()
+            state=torch.get_rng_state()
+            a=model(x)
+            torch.set_rng_state(state)
+            torch.testing.assert_close(a,model(x),rtol=0,atol=0)
+        finally:
+            sys.path.remove(str(repo))
+
+    def test_vulmixer_exports_keep_every_original_id_label_and_author_format(self):
+        import subprocess
+        import sys
+        from vulnmechanism.data import read_jsonl
+        for split in ('train','valid','test'):
+            original=official_rows('data',split)
+            exported=read_jsonl(f'data/official_baselines/vulmixer/{split}.jsonl')
+            keys=lambda rows:[(r['sample_key'],r['pair_key'],r['target']) for r in rows]
+            self.assertEqual(keys(original),keys(exported))
+            for index in (0,len(original)-1):
+                expected=subprocess.check_output([str(Path(sys.executable).with_name('clang-format')),
+                    '-style=file:external/VulMixer/config/clang-format.yml'],input=original[index]['func'],text=True)
+                self.assertEqual(exported[index]['func'],expected)
+
+    def test_vulmixer_resume_preserves_full_framework_state_and_truncates_history(self):
+        from vulnmechanism.official_baselines import mixer_callback
+        with tempfile.TemporaryDirectory() as tmp:
+            run=Path(tmp);log=run/'best.training.jsonl'
+            log.write_text('committed\n')
+            args=SimpleNamespace(reproduction_run=run,reproduction_metadata={'seed':42})
+            callback=mixer_callback(args)
+            args.reproduction_loop.update(epoch=3,global_step=207)
+            torch.manual_seed(12)
+            checkpoint={};callback.on_save_checkpoint(None,None,checkpoint)
+            expected_rng=torch.get_rng_state().clone()
+            log.write_text('committed\nuncommitted\n')
+            args2=SimpleNamespace(reproduction_run=run,reproduction_metadata={'seed':42})
+            resumed=mixer_callback(args2)
+            resumed.on_load_checkpoint(None,None,checkpoint)
+            torch.manual_seed(999)
+            resumed.on_fit_start(None,None)
+            torch.testing.assert_close(torch.get_rng_state(),expected_rng,rtol=0,atol=0)
+            self.assertEqual(args2.reproduction_loop['global_step'],207)
+            self.assertEqual(log.read_text(),'committed\n')
+            checkpoint['official_reproduction']['metadata']={'seed':1234}
+            with self.assertRaisesRegex(ValueError,'configuration'):
+                resumed.on_load_checkpoint(None,None,checkpoint)
+
+    def test_vulberta_uses_original_notebook_clang_bpe_and_dataset(self):
+        from vulnmechanism.official_baselines import vulberta_notebook_components
+        namespace,book=vulberta_notebook_components()
+        clean=namespace['cleaner']
+        self.assertEqual(clean('int f(){\n// comment\nreturn 1;\t}'),'int f(){return 1;}')
+        texts=['int f(int *p) { return *p; }','int g(void) { return 0; }']
+        encoded=namespace['my_tokenizer'].encode_batch(texts)
+        for e in encoded:
+            self.assertEqual(e.ids[0],0)
+            self.assertEqual(e.ids[sum(e.attention_mask)-1],2)
+        dataset=namespace['MyCustomDataset'](namespace['process_encodings'](encoded),[1,0])
+        self.assertEqual([int(dataset[i]['labels']) for i in range(2)],[1,0])
+        self.assertIn('RobertaForSequenceClassification.from_pretrained', ''.join(book['cells'][27]['source']))
+        self.assertEqual((UPSTREAM['vulberta']['epochs'],UPSTREAM['vulberta']['block_size']), (10,1024))
+
+    def test_original_adamw_accepts_accelerate_closure_without_changing_updates(self):
+        from vulnmechanism.training import LOSVERAdamW
+        p=nn.Parameter(torch.tensor([.2,-.4]))
+        q=nn.Parameter(p.detach().clone())
+        a,b=LOSVERAdamW([p],lr=.003),LOSVERAdamW([q],lr=.003)
+        for step in range(3):
+            p.grad=torch.tensor([.1+step,.2])
+            q.grad=p.grad.clone()
+            self.assertIsNone(a.step())
+            self.assertIsNone(b.step(None))
+            torch.testing.assert_close(p,q,rtol=0,atol=0)
+        def closure():
+            self.assertTrue(torch.is_grad_enabled())
+            b.zero_grad();loss=q.square().sum();loss.backward();return loss
+        before=q.detach().square().sum()
+        torch.testing.assert_close(b.step(closure),before,rtol=0,atol=0)
+
+    def test_real_lightning_epoch_resume_matches_shuffle_dropout_and_optimizer(self):
+        import lightning.pytorch as pl
+        from vulnmechanism.official_baselines import mixer_callback
+        from vulnmechanism.progress import TrainingProgress
+
+        class Module(pl.LightningModule):
+            def __init__(self):
+                super().__init__();self.model=nn.Sequential(nn.Dropout(.25),nn.Linear(4,2));self.order=[]
+            def training_step(self,batch,index):
+                x,y,ids=batch;self.order.extend(ids.tolist())
+                return {'loss':nn.functional.cross_entropy(self.model(x),y)}
+            def validation_step(self,batch,index):
+                return {'all':self.model(batch['input'])}
+            def configure_optimizers(self):
+                return torch.optim.AdamW(self.parameters(),lr=.01)
+
+        class Data(pl.LightningDataModule):
+            def train_dataloader(self):
+                return DataLoader(TensorDataset(torch.arange(64,dtype=torch.float32).reshape(16,4)/64,
+                    torch.arange(16)%2,torch.arange(16)),batch_size=4,shuffle=True)
+            def val_dataloader(self):
+                return DataLoader([{'input':torch.ones(4),'target':1-i%2,'index':i} for i in range(1124)],batch_size=1124)
+
+        class Stop(pl.Callback):
+            def on_train_epoch_end(self,trainer,module):
+                trainer.should_stop=True
+
+        def fit(path,stop=False,resume=False):
+            args=SimpleNamespace(reproduction_run=path,reproduction_metadata={'data_dir':'data','method':'vulmixer'},
+                reproduction_split='valid',reproduction_evaluate=False)
+            cb=mixer_callback(args)
+            args.reproduction_progress=TrainingProgress(path/'best.pt',resume=resume)
+            module=Module()
+            trainer=pl.Trainer(accelerator='cpu',max_epochs=2,reload_dataloaders_every_n_epochs=1,
+                callbacks=[cb,*([Stop()] if stop else [])],logger=False,enable_checkpointing=False,
+                enable_progress_bar=False,enable_model_summary=False)
+            trainer.fit(module,Data(),ckpt_path=str(path/'framework-last.ckpt') if resume else None,weights_only=False)
+            return module,trainer
+
+        with tempfile.TemporaryDirectory() as a,tempfile.TemporaryDirectory() as b:
+            torch.manual_seed(77)
+            complete,trainer=fit(Path(a))
+            expected=torch.get_rng_state().clone()
+            torch.manual_seed(77)
+            first,_=fit(Path(b),stop=True)
+            resumed,resumed_trainer=fit(Path(b),resume=True)
+            self.assertEqual(first.order+resumed.order,complete.order)
+            self.assertEqual(resumed_trainer.global_step,trainer.global_step)
+            for x,y in zip(complete.parameters(),resumed.parameters()):
+                torch.testing.assert_close(x,y,rtol=0,atol=0)
+            a_state=trainer.optimizers[0].state_dict()['state']
+            b_state=resumed_trainer.optimizers[0].state_dict()['state']
+            self.assertEqual(a_state.keys(),b_state.keys())
+            for key in a_state:
+                for name in ('step','exp_avg','exp_avg_sq'):
+                    torch.testing.assert_close(a_state[key][name],b_state[key][name],rtol=0,atol=0)
+            torch.testing.assert_close(torch.get_rng_state(),expected,rtol=0,atol=0)
 
     def test_cached_metadata_keeps_full_cohort_and_strict_threshold(self):
         rows=official_rows('data','valid')

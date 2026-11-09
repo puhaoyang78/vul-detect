@@ -1,0 +1,81 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 583, in <module>
+    main()
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 368, in main
+    result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/official_baselines.py", line 459, in run
+    raise ValueError("choose an official method, one of the three seeds and cuda:0/1")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/external/VulMixer/run.py', '--data', 'primevul', '--model', 'vulmixer', '--log', 'None', '--reproduction-config', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/official_baselines_512/seed42/primevul_paired/vulmixer/config.json', '--reproduction-evaluate']' died with <Signals.SIGTERM: 15>.
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '-m', 'vulnmechanism.cli', 'official-baselines', 'run', '--method', 'vulmixer', '--seed', '42', '--device', 'cuda:0', '--resume']' returned non-zero exit status 1.
+{
+  "selected_epoch": 20,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 33,
+      "p_v": 265,
+      "p_b": 261,
+      "p_r": 5
+    },
+    "p_c": 0.05851063829787234,
+    "p_v": 0.4698581560283688,
+    "p_b": 0.4627659574468085,
+    "p_r": 0.008865248226950355,
+    "accuracy": 0.524822695035461,
+    "precision": 0.5246478873239436,
+    "recall": 0.5283687943262412,
+    "f1": 0.5265017667844523,
+    "mcc": 0.04964663868173118,
+    "auc": 0.5278296489110206,
+    "auprc": 0.5313471486239218,
+    "pair_ranking_accuracy": 0.4698581560283688,
+    "pair_ranking_ties": 120,
+    "patched_fpr": 0.4787234042553192
+  },
+  "source_only": true
+}
+{
+  "selected_epoch": 10,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 36,
+      "p_v": 223,
+      "p_b": 291,
+      "p_r": 14
+    },
+    "p_c": 0.06382978723404255,
+    "p_v": 0.3953900709219858,
+    "p_b": 0.5159574468085106,
+    "p_r": 0.024822695035460994,
+    "accuracy": 0.5195035460992907,
+    "precision": 0.5221774193548387,
+    "recall": 0.4592198581560284,
+    "f1": 0.48867924528301887,
+    "mcc": 0.039293734233595265,
+    "auc": 0.5194532468185705,
+    "auprc": 0.5203132755995517,
+    "pair_ranking_accuracy": 0.4148936170212766,
+    "pair_ranking_ties": 113,
+    "patched_fpr": 0.42021276595744683
+  },
+  "source_only": true
+}

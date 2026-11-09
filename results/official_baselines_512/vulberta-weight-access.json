@@ -1,0 +1,50 @@
+{
+  "method": "vulberta",
+  "status": "resolved",
+  "seeds": [
+    42,
+    1234,
+    123456
+  ],
+  "trained": true,
+  "upstream": {
+    "repo": "https://github.com/ICL-ml4csec/VulBERTa.git",
+    "commit": "75ab355bf8be124751084c0ff3563df24f48fe38",
+    "script": "Finetuning_VulBERTa-MLP.ipynb"
+  },
+  "expected_pretrained_directory": "/home/PublicData/PHY-data/resource/VulBERTa",
+  "official_pretrained_url": "https://1drv.ms/u/s!AueKnGqzBuIVkq4CynZHsF8Mv-en1g?e=3gg60p",
+  "checks": [
+    {
+      "access": "ordinary request",
+      "result": "SSL_ERROR_SYSCALL at onedrive.live.com"
+    },
+    {
+      "access": "existing mihomo HTTP proxy 127.0.0.1:7890",
+      "result": "short link redirects; official OneDrive page and direct download HTTP403"
+    },
+    {
+      "access": "original share via OneDrive API, full URL share encoding",
+      "result": "HTTP401 unauthenticated"
+    },
+    {
+      "access": "explicit direct access with inherited proxies disabled",
+      "result": "ConnectionError at onedrive.live.com"
+    },
+    {
+      "access": "original s! share content endpoint via existing proxy",
+      "result": "HTTP400 malformed share ID; full URL-encoded endpoint already returned401"
+    },
+    {
+      "access": "authorized temporary Hong Kong node and isolated Firefox",
+      "result": "Official pretraining_model.zip successfully downloaded and extracted; original proxy restored"
+    }
+  ],
+  "provenance": "Official models/README.md and author responses in issue6 reconfirm the same URL; no alternative author download found",
+  "resolution": "User authorized temporary Hong Kong node; isolated Firefox downloaded original author public archive",
+  "archive": "/home/PublicData/PHY-data/resource/VulBERTa-pretraining_model.zip",
+  "archive_bytes": 1372364325,
+  "original_proxy_restored": true,
+  "initial_reason": "Verified author pretrained weights are absent locally and cannot be downloaded; no pretraining or substituted weights used",
+  "reason": "Initial download failures resolved with user-authorized temporary Hong Kong exit and independent Firefox; author model verified and original proxy restored"
+}

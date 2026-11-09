@@ -1,0 +1,56 @@
+{
+  "method": "vulmixer",
+  "upstream": {
+    "repo": "https://github.com/mlavd/vulmixer.git",
+    "commit": "090c8fadda530027b6805b1931967b34d2015ed0",
+    "script": "run.py"
+  },
+  "functions": 128,
+  "loss": 1.590982437133789,
+  "gradient_norm": 8.257660865783691,
+  "maximum_parameter_update": 0.0005001798272132874,
+  "amp_attempts": [
+    {
+      "loss": 1.6705236434936523,
+      "scale": 65536.0,
+      "finite_gradient": false,
+      "next_scale": 32768.0,
+      "optimizer_updated": false
+    },
+    {
+      "loss": 1.590982437133789,
+      "scale": 32768.0,
+      "finite_gradient": true,
+      "optimizer_updated": true
+    }
+  ],
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 128,
+    "pairs": 64,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 7,
+      "p_v": 18,
+      "p_b": 35,
+      "p_r": 4
+    },
+    "p_c": 0.109375,
+    "p_v": 0.28125,
+    "p_b": 0.546875,
+    "p_r": 0.0625,
+    "accuracy": 0.5234375,
+    "precision": 0.5319148936170213,
+    "recall": 0.390625,
+    "f1": 0.45045045045045046,
+    "mcc": 0.04862166383263152,
+    "auc": 0.516357421875,
+    "auprc": 0.5446540071704111,
+    "pair_ranking_accuracy": 0.46875,
+    "pair_ranking_ties": 8,
+    "patched_fpr": 0.34375
+  },
+  "maximum_memory_bytes": 5453547008
+}

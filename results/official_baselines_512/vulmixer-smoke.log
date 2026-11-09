@@ -1,0 +1,143 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 583, in <module>
+    main()
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 368, in main
+    result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/official_baselines.py", line 434, in run
+    subprocess.run(command,env=env,cwd=cwd,stdout=handle,stderr=subprocess.STDOUT,check=True)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/external/VulMixer/run.py', '--data', 'primevul', '--model', 'vulmixer', '--log', 'None', '--reproduction-config', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/official_baselines_512/smoke/primevul_paired/vulmixer/config.json', '--reproduction-smoke']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "<string>", line 13, in <module>
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-m', 'vulnmechanism.cli', 'official-baselines', 'smoke', '--method', 'vulmixer', '--seed', '42', '--device', 'cuda:0']' returned non-zero exit status 1.
+{
+  "method": "vulmixer",
+  "upstream": {
+    "repo": "https://github.com/mlavd/vulmixer.git",
+    "commit": "090c8fadda530027b6805b1931967b34d2015ed0",
+    "script": "run.py"
+  },
+  "functions": 128,
+  "loss": 1.5910072326660156,
+  "gradient_norm": 8.257181167602539,
+  "maximum_parameter_update": 0.0005001798272132874,
+  "amp_attempts": [
+    {
+      "loss": 1.670567512512207,
+      "scale": 65536.0,
+      "finite_gradient": false,
+      "next_scale": 32768.0,
+      "optimizer_updated": false
+    },
+    {
+      "loss": 1.5910072326660156,
+      "scale": 32768.0,
+      "finite_gradient": true,
+      "optimizer_updated": true
+    }
+  ],
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 128,
+    "pairs": 64,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 8,
+      "p_v": 19,
+      "p_b": 32,
+      "p_r": 5
+    },
+    "p_c": 0.125,
+    "p_v": 0.296875,
+    "p_b": 0.5,
+    "p_r": 0.078125,
+    "accuracy": 0.5234375,
+    "precision": 0.5294117647058824,
+    "recall": 0.421875,
+    "f1": 0.46956521739130436,
+    "mcc": 0.04787301767423468,
+    "auc": 0.5164794921875,
+    "auprc": 0.5429746239975859,
+    "pair_ranking_accuracy": 0.46875,
+    "pair_ranking_ties": 9,
+    "patched_fpr": 0.375
+  },
+  "maximum_memory_bytes": 5453547008
+}
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 583, in <module>
+    main()
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 368, in main
+    result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/official_baselines.py", line 455, in run
+
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/external/VulMixer/run.py', '--data', 'primevul', '--model', 'vulmixer', '--log', 'None', '--reproduction-config', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/official_baselines_512/smoke/primevul_paired/vulmixer/config.json', '--reproduction-smoke']' died with <Signals.SIGTERM: 15>.
+{
+  "method": "vulmixer",
+  "upstream": {
+    "repo": "https://github.com/mlavd/vulmixer.git",
+    "commit": "090c8fadda530027b6805b1931967b34d2015ed0",
+    "script": "run.py"
+  },
+  "functions": 128,
+  "loss": 1.590982437133789,
+  "gradient_norm": 8.257660865783691,
+  "maximum_parameter_update": 0.0005001798272132874,
+  "amp_attempts": [
+    {
+      "loss": 1.6705236434936523,
+      "scale": 65536.0,
+      "finite_gradient": false,
+      "next_scale": 32768.0,
+      "optimizer_updated": false
+    },
+    {
+      "loss": 1.590982437133789,
+      "scale": 32768.0,
+      "finite_gradient": true,
+      "optimizer_updated": true
+    }
+  ],
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 128,
+    "pairs": 64,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 7,
+      "p_v": 18,
+      "p_b": 35,
+      "p_r": 4
+    },
+    "p_c": 0.109375,
+    "p_v": 0.28125,
+    "p_b": 0.546875,
+    "p_r": 0.0625,
+    "accuracy": 0.5234375,
+    "precision": 0.5319148936170213,
+    "recall": 0.390625,
+    "f1": 0.45045045045045046,
+    "mcc": 0.04862166383263152,
+    "auc": 0.516357421875,
+    "auprc": 0.5446540071704111,
+    "pair_ranking_accuracy": 0.46875,
+    "pair_ranking_ties": 8,
+    "patched_fpr": 0.34375
+  },
+  "maximum_memory_bytes": 5453547008
+}

@@ -1,0 +1,84 @@
+.....GPU available: True (cuda), used: False
+TPU available: False, using: 0 TPU cores
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/setup.py:175: GPU available but not used. You can set it by doing `Trainer(accelerator='gpu')`.
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+`weights_only` was not set, defaulting to `False`.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+`weights_only` was not set, defaulting to `False`.
+`Trainer.fit` stopped: `max_epochs=2` reached.
+GPU available: True (cuda), used: False
+TPU available: False, using: 0 TPU cores
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/setup.py:175: GPU available but not used. You can set it by doing `Trainer(accelerator='gpu')`.
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+`weights_only` was not set, defaulting to `False`.
+GPU available: True (cuda), used: False
+TPU available: False, using: 0 TPU cores
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/setup.py:175: GPU available but not used. You can set it by doing `Trainer(accelerator='gpu')`.
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+Restoring states from the checkpoint path at /tmp/tmp64gwil3m/framework-last.ckpt
+Restored all states from the checkpoint at /tmp/tmp64gwil3m/framework-last.ckpt
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+/home/phy/miniconda3/envs/vul-detect/lib/python3.11/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+`weights_only` was not set, defaulting to `False`.
+`Trainer.fit` stopped: `max_epochs=2` reached.
+.......
+
+
+........................./home/PublicData/PHY-data/vul_detect/work/vul-detect/tests/test_localizer_regularization.py:51: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  self.assertGreater(float((x-y).abs().max()), 0)
+....
+----------------------------------------------------------------------
+Ran 41 tests in 14.786s
+
+OK
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.67404 │ 4     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69790 │ 8     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.67404 │ 4     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬────────┬────────┬────────┐
+│ Loss    │ Steps │ Threshold │ MCC    │ AUC    │ F1     │
+├─────────┼───────┼───────────┼────────┼────────┼────────┤
+│ 0.69790 │ 8     │ 0.5000    │ 0.0000 │ 0.5000 │ 0.6667 │
+└─────────┴───────┴───────────┴────────┴────────┴────────┘
+classifier: LinearClassifier(
+  (classifier): Linear(in_features=128, out_features=2, bias=True)
+)
+
+Training · Epoch 1 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1 │
+├─────────┼───────┼───────────┼─────┼─────┼────┤
+│ 0.70000 │ 0     │ 0.5000    │ —   │ —   │ —  │
+└─────────┴───────┴───────────┴─────┴─────┴────┘
+
+Training · Epoch 2 complete
+┌─────────┬───────┬───────────┬─────┬─────┬────┐
+│ Loss    │ Steps │ Threshold │ MCC │ AUC │ F1 │
+├─────────┼───────┼───────────┼─────┼─────┼────┤
+│ 0.70000 │ 0     │ 0.5000    │ —   │ —   │ —  │
+└─────────┴───────┴───────────┴─────┴─────┴────┘

@@ -14,6 +14,7 @@ from pathlib import Path
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 
 import torch
@@ -44,10 +45,32 @@ UPSTREAM = {
         block_size=400, learning_rate=5e-4, warmup_fraction=.1, optimizer="Transformers AdamW rule",
         probability_column=0, sampler="RandomSampler", gnn="ReGCN", hidden_size=128,
         num_GNN_layers=2, format="uni", window_size=5, att_op="mul", num_classes=2),
+    "vulberta": dict(repo="https://github.com/ICL-ml4csec/VulBERTa.git",
+        commit="75ab355bf8be124751084c0ff3563df24f48fe38", directory="VulBERTa",
+        script="Finetuning_VulBERTa-MLP.ipynb", model="VulBERTa", epochs=10, batch_size=4,
+        block_size=1024, learning_rate=3e-5, warmup_fraction=0., optimizer="Transformers AdamW rule",
+        probability_column=1, sampler="RandomSampler", fp16=True, weight_decay=0., gradient_clip=1.),
+    "vulmixer": dict(repo="https://github.com/mlavd/vulmixer.git",
+        commit="090c8fadda530027b6805b1931967b34d2015ed0", directory="VulMixer",
+        script="run.py", model="graphcodebert-base", epochs=20, batch_size=128,
+        block_size=1024, learning_rate=5e-4, warmup_fraction=0., optimizer="torch.optim.AdamW",
+        probability_column=1, sampler="RandomSampler", fp16=True, weight_decay=.01, gradient_clip=None),
 }
 PAIRS = dict(train=4354, valid=562, test=564)
 METRICS = ("p_c", "mcc", "f1", "auc", "auprc", "recall", "patched_fpr")
 LOSVER_REFERENCE = Path("results/losver_512/primevul_paired")
+VULBERTA_MODEL = Path("/home/PublicData/PHY-data/resource/VulBERTa")
+
+
+def _local_lock_path(path):
+    """Single-host tmux jobs use local locks; GlusterFS flock can block readers."""
+    root=Path(tempfile.gettempdir())/f"vul-detect-official-{os.getuid()}"
+    root.mkdir(mode=0o700,exist_ok=True)
+    if root.is_symlink() or root.stat().st_uid!=os.getuid():
+        raise PermissionError(f"{root}: local lock directory must belong to this user")
+    local=root.joinpath(*Path(path).resolve().parts[1:])
+    local.parent.mkdir(parents=True,exist_ok=True)
+    return local
 
 
 def official_rows(data_dir, split):
@@ -60,34 +83,44 @@ def official_rows(data_dir, split):
     return rows
 
 
-def prepare(data_dir="data"):
+def prepare(data_dir="data", methods=None):
     """Idempotent pinned checkout plus minimal compatibility patches and exports."""
-    for method, spec in UPSTREAM.items():
+    methods = tuple(UPSTREAM) if methods is None else tuple(methods)
+    for method in methods:
+        spec = UPSTREAM[method]
         repo = Path("external")/spec["directory"]
         sparse = ("Source_Code/SVulD" if method=="svuld" else "linevul" if method=="linevul" else "code")
         if not repo.exists():
             subprocess.run(["git", "clone", "--filter=blob:none", "--no-checkout", spec["repo"], str(repo)], check=True)
-            subprocess.run(["git", "-C", str(repo), "sparse-checkout", "set", sparse], check=True)
+            if method not in ("vulberta", "vulmixer"):
+                subprocess.run(["git", "-C", str(repo), "sparse-checkout", "set", sparse], check=True)
             subprocess.run(["git", "-C", str(repo), "checkout", spec["commit"]], check=True)
         actual = subprocess.check_output(["git","-C",str(repo),"rev-parse","HEAD"],text=True).strip()
         if actual != spec["commit"]:
             raise ValueError(f"{repo}: expected author commit {spec['commit']}, got {actual}")
         patch = Path(__file__).with_name("upstream")/f"{method}.patch"
+        if not patch.exists() and method == "vulberta":
+            continue  # The original notebook cells are loaded directly, without a copied trainer.
         applied = subprocess.run(["git","-C",str(repo),"apply","--reverse","--check",str(patch.resolve())], capture_output=True)
         if applied.returncode:
             subprocess.run(["git","-C",str(repo),"apply","--check",str(patch.resolve())],check=True)
             subprocess.run(["git","-C",str(repo),"apply",str(patch.resolve())],check=True)
-    export_data(data_dir)
-    return {m:dict(repo=s["repo"],commit=s["commit"]) for m,s in UPSTREAM.items()}
+    export_data(data_dir, methods)
+    return {m:dict(repo=UPSTREAM[m]["repo"],commit=UPSTREAM[m]["commit"]) for m in methods}
 
 
-def export_data(data_dir):
+def export_data(data_dir, methods=None):
     """Format adaptation only; originals, labels, member order and source stay intact."""
     for split in PAIRS:
         rows = official_rows(data_dir, split)
-        for method in UPSTREAM:
+        for method in (UPSTREAM if methods is None else methods):
             folder = Path(data_dir)/"official_baselines"/method
             folder.mkdir(parents=True, exist_ok=True)
+            if method=="vulberta":
+                continue  # The notebook adapter reads the original members and caches encodings.
+            output = folder/f"{split}.{'csv' if method=='linevul' else 'jsonl'}"
+            if output.exists():
+                continue
             if method == "linevul":
                 with (folder/f"{split}.csv").open("w", newline="") as handle:
                     writer = csv.DictWriter(handle, ("processed_func","target","sample_key","pair_key"))
@@ -103,6 +136,12 @@ def export_data(data_dir):
                         contrast = rows[i ^ 1]["func"] if split=="train" else row["func"]
                         exported.append(dict(common, code=row["func"], contrast=contrast,
                                              label=row["target"], index=i))
+                    elif method == "vulmixer":
+                        # Author preprocessing: clang-format with the supplied configuration.
+                        formatted = subprocess.run([str(Path(sys.executable).with_name("clang-format")),
+                            "-style=file:external/VulMixer/config/clang-format.yml"],
+                            input=row["func"], text=True, capture_output=True, check=True, timeout=15).stdout
+                        exported.append(dict(common, func=formatted, target=row["target"], idx=i))
                     else:
                         exported.append(dict(common, func=row["func"], target=row["target"], idx=i))
                 write_jsonl(folder/f"{split}.jsonl", exported)
@@ -193,13 +232,15 @@ def native_predictions(args, probabilities, labels):
     return result
 
 
-def native_epoch(args, model, optimizer, scheduler, epoch, early_stopping=None):
+def native_epoch(args, model, optimizer, scheduler, epoch, early_stopping=None, *, save_state=True):
     loop, run = args.reproduction_loop, args.reproduction_run
     validation = args.reproduction_validation
     if validation["p_c"] > loop["best_pc"]:
         loop.update(best_pc=validation["p_c"], best_epoch=epoch+1)
         cp = dict(args.reproduction_metadata, selected_epoch=epoch+1, validation=validation,
                   state_dict=_model(model).state_dict())
+        if hasattr(args, "reproduction_validation_rng"):
+            cp["validation_rng"] = args.reproduction_validation_rng
         temporary = run/"best-p_c.pt.tmp"
         torch.save(cp, temporary)
         temporary.replace(run/"best-p_c.pt")
@@ -214,16 +255,20 @@ def native_epoch(args, model, optimizer, scheduler, epoch, early_stopping=None):
     if early_stopping is not None:
         loop["early_stopping"] = {k:getattr(early_stopping,k) for k in ("counter","best_score","early_stop")}
     loop.update(epoch=epoch+1, step=0, epoch_rng=None, loss_sum=0., loss_steps=0)
-    save_training_state(run, _model(model), optimizer, args.reproduction_metadata, loop, scheduler=scheduler)
+    if save_state:
+        save_training_state(run, _model(model), optimizer, args.reproduction_metadata, loop, scheduler=scheduler)
 
 
-def native_finish(args, model, optimizer, scheduler):
+def native_finish(args, model, optimizer, scheduler, *, save_state=True):
     loop = args.reproduction_loop
     loop["complete"] = True
-    save_training_state(args.reproduction_run, _model(model), optimizer,
-                        args.reproduction_metadata, loop, scheduler=scheduler)
+    if save_state:
+        save_training_state(args.reproduction_run, _model(model), optimizer,
+                            args.reproduction_metadata, loop, scheduler=scheduler)
     write_json(args.reproduction_run/"training.metrics.json", dict(args.reproduction_metadata,
         completed_epochs=loop["epoch"], optimizer_steps=loop["global_step"],
+        **({"optimizer_updates":loop["optimizer_updates"],
+            "amp_skipped_updates":loop["global_step"]-loop["optimizer_updates"]} if "optimizer_updates" in loop else {}),
         selected_epochs=dict(p_c=loop["best_epoch"]),
         early_stopping=loop["early_stopping"], complete=True))
 
@@ -238,39 +283,71 @@ def _forward(args, model, batch):
     return model(b[0], b[1])
 
 
-def native_smoke(args, model, tokenizer, dataset):
+def native_smoke(args, model, tokenizer, dataset, *, forward=None, optimizer=None):
     """Actual author model, requested full micro-batch, gradient and state recovery."""
     meta = json.loads(Path(args.reproduction_config).read_text())
     run = Path(args.output_dir)
     model.to(args.device)
     dataset = Subset(dataset, range(meta["training_config"]["batch_size"]))
     batch = next(iter(DataLoader(dataset, batch_size=len(dataset))))
-    optimizer_class = LOSVERAdamW if meta["method"]=="regvd" else torch.optim.AdamW
-    optimizer = optimizer_class(model.parameters(), lr=meta["training_config"]["learning_rate"], weight_decay=0.)
+    optimizer_class = LOSVERAdamW if meta["method"] in ("regvd","vulberta") else torch.optim.AdamW
+    optimizer = optimizer or optimizer_class(model.parameters(), lr=meta["training_config"]["learning_rate"], weight_decay=0.)
+    forward = forward or (lambda batch: _forward(args, model, batch))
+    mixed = meta["training_config"].get("fp16",False)
+    scaler = torch.amp.GradScaler("cuda",enabled=mixed)
     model.train()
-    loss, _ = _forward(args, model, batch)
-    loss.backward()
-    norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(),1.,error_if_nonfinite=True))
-    if not torch.isfinite(loss) or norm<=0:
-        raise ValueError("author model smoke has a nonfinite loss or zero gradient")
-    optimizer.step()
+    attempts=[]
+    for attempt in range(16 if mixed else 1):
+        optimizer.zero_grad()
+        scale=scaler.get_scale()
+        with torch.autocast("cuda",dtype=torch.float16,enabled=mixed):
+            loss, _ = forward(batch)
+        if not torch.isfinite(loss):
+            raise ValueError("author model smoke has a nonfinite loss")
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        finite=all(bool(torch.isfinite(p.grad).all()) for p in model.parameters() if p.grad is not None)
+        if not finite:
+            if not mixed: raise ValueError("author model smoke has nonfinite gradients without AMP")
+            # Same automatic overflow handling as author mixed-precision training:
+            # GradScaler skips the update and lowers its scale. Never clip Inf/NaN.
+            scaler.step(optimizer);scaler.update()
+            attempts.append(dict(loss=float(loss.detach()),scale=scale,finite_gradient=False,
+                                 next_scale=scaler.get_scale(),optimizer_updated=False))
+            continue
+        norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(),
+            meta["training_config"].get("gradient_clip",1.) or float("inf"),error_if_nonfinite=True))
+        if norm<=0: raise ValueError("author model smoke has zero gradient")
+        parameter = next(p for p in model.parameters() if p.grad is not None and bool(p.grad.abs().any()))
+        initial = parameter.detach().clone()
+        scaler.step(optimizer);scaler.update()
+        attempts.append(dict(loss=float(loss.detach()),scale=scale,finite_gradient=True,optimizer_updated=True))
+        break
+    else:
+        write_json(run/"smoke.failure.json",dict(amp_attempts=attempts))
+        raise ValueError("No finite gradient/update after 16 native AMP scale adjustments")
+    update = float((parameter.detach()-initial).abs().max())
+    if update == 0:
+        raise ValueError("author model smoke optimizer did not change parameters")
     model.eval()
-    with torch.no_grad():
-        _, before = _forward(args, model, batch)
+    eval_rng = rng_state()
+    with torch.no_grad(), torch.autocast("cuda",dtype=torch.float16,enabled=mixed):
+        _, before = forward(batch)
     save_training_state(run, _model(model), optimizer, meta, dict(complete=True))
-    parameter = next(p for p in model.parameters() if p.grad is not None)
     with torch.no_grad():
         parameter.add_(1.)
     _, state = load_training_state(run, _model(model), optimizer, meta)
-    restore_rng(state)
-    with torch.no_grad():
-        _, after = _forward(args, model, batch)
+    restore_rng(eval_rng)
+    with torch.no_grad(), torch.autocast("cuda",dtype=torch.float16,enabled=mixed):
+        _, after = forward(batch)
     torch.testing.assert_close(before,after,rtol=0,atol=0)
-    labels = [1,0]*(len(batch[0])//2)
+    count = len(batch["target"] if "target" in batch else batch["labels"]) if isinstance(batch,dict) else len(batch[0])
+    labels = [1,0]*(count//2)
     fake_rows = [dict(target=y,pair_key=f"smoke:{i//2}") for i,y in enumerate(labels)]
     metrics = paired_metrics(fake_rows, after[:,UPSTREAM[meta["method"]]["probability_column"]].cpu().tolist())
     write_json(run/"smoke.json",dict(method=meta["method"], upstream=meta["upstream"],
-        functions=len(batch[0]), loss=float(loss.detach()), gradient_norm=norm,
+        functions=count, loss=float(loss.detach()), gradient_norm=norm,maximum_parameter_update=update,
+        amp_attempts=attempts,
         save_reload_equal=True, source_split="Train", metrics=metrics,
         maximum_memory_bytes=torch.cuda.max_memory_allocated() if torch.cuda.is_available() else None))
 
@@ -300,9 +377,14 @@ def native_command(method, seed, output_dir, data_dir, *, resume=False, smoke=Fa
     run = Path(output_dir)/("smoke" if smoke else f"seed{seed}")/"primevul_paired"/method
     run.mkdir(parents=True,exist_ok=True)
     export = (Path(data_dir)/"official_baselines"/method).resolve()
-    model = Path("/home/PublicData/PHY-data/resource")/spec["model"]
+    model = VULBERTA_MODEL if method=="vulberta" else Path("/home/PublicData/PHY-data/resource")/spec["model"]
+    if method=="vulberta" and (not (model/"config.json").is_file()
+            or not any((model/f).is_file() for f in ("pytorch_model.bin","model.safetensors"))):
+        raise FileNotFoundError(f"Author VulBERTa pretrained weights unavailable at {model}; official OneDrive link required, no substitute allowed")
     settings = {k:v for k,v in spec.items() if k not in ("repo","commit","directory","script","model")}
     settings.update(seed=seed, weight_decay=0., adam_epsilon=1e-8, gradient_clip=1., gradient_accumulation=1, fp16=False)
+    if method in ("vulberta","vulmixer"):
+        settings.update({k:spec[k] for k in ("fp16","weight_decay","gradient_clip")})
     meta = dict(protocol="author_official_primevul",method=method,model_path=str(model),
         upstream={k:spec[k] for k in ("repo","commit","script")}, training_config=settings,
         data_dir=str(Path(data_dir).resolve()), export_dir=str(export), checkpoint_interval=500,
@@ -311,10 +393,39 @@ def native_command(method, seed, output_dir, data_dir, *, resume=False, smoke=Fa
         validation_members=[r["sample_key"] for r in official_rows(data_dir,"valid")],
         selection="full Valid P-C; first strict maximum",decision_threshold=.5,comparison=">",
         environment=dict(torch=torch.__version__,python=sys.version.split()[0],cuda=torch.version.cuda))
+    if method=="vulmixer":
+        meta["embedding_cache"] = str((Path(data_dir)/"official_baselines/vulmixer/graphcodebert-base.embeddings").resolve())
+        meta["preprocessing"] = "author clang-format config; GraphCodeBERT static word embeddings; zero embedding padding"
+        meta["framework"] = "lightning.pytorch; author CurriculumLearning and configure_optimizers; mixed FP16"
+        meta["checkpoint_interval"] = "epoch; native Lightning optimizer/scaler/loop plus RNG and log positions"
+    elif method=="vulberta":
+        meta["preprocessing"] = "author cleaner and Clang+BPE tokenizer; notebook cells"
+        meta["framework"] = "author MyTrainer/RobertaForSequenceClassification; original HF AdamW rule; mixed FP16"
+        meta["checkpoint_interval"] = "500 steps; native Trainer model/optimizer/scheduler/scaler/RNG and log positions"
+        meta["pretrained_source"] = "https://1drv.ms/u/s!AueKnGqzBuIVkq4CynZHsF8Mv-en1g?e=3gg60p"
+        meta["pretrained_configuration"] = json.loads((model/"config.json").read_text())
+        meta["notebook_cells"] = [6,10,11,12,15,27,29,30,32,33,34]
+        meta["training_config"].update(eval_batch_size=8,scheduler="linear",class_weight="N/(2*Nc), from Train")
     config = run/"config.json"
     if config.exists() and json.loads(config.read_text()) != meta:
         raise ValueError(f"{run}: existing configuration differs")
     write_json(config,meta)
+    if method=="vulberta":
+        command=[sys.executable,"-u","-c",
+            "from vulnmechanism.official_baselines import vulberta_native; vulberta_native()",
+            "--reproduction-config",str(config.resolve())]
+        for enabled,flag in ((resume,"resume"),(smoke,"smoke"),(evaluate,"evaluate")):
+            if enabled: command.append(f"--reproduction-{flag}")
+        return run,command
+    if method=="vulmixer":
+        command = [sys.executable,"-u",str((Path("external/VulMixer/run.py")).resolve()),
+            "--data","primevul","--model","vulmixer","--log","None",
+            "--reproduction-config",str(config.resolve())]
+        if smoke: command.append("--reproduction-smoke")
+        elif evaluate: command.append("--reproduction-evaluate")
+        else: command.append("--do_train")
+        if resume: command.append("--reproduction-resume")
+        return run,command
     extension = "csv" if method=="linevul" else "jsonl"
     command=[sys.executable,"-u",str(Path("external")/spec["directory"]/spec["script"]),
         "--output_dir",str(run.resolve()),"--model_name_or_path",str(model),
@@ -349,33 +460,342 @@ def run(method, seed, output_dir, data_dir, device, *, resume=False, smoke=False
     folder = Path(output_dir)/("smoke" if smoke else f"seed{seed}")/"primevul_paired"/method
     folder.mkdir(parents=True,exist_ok=True)
     # Multiple tmux queues can meet at a seed: wait for its owner, never double-train.
-    with (folder/".run.lock").open("a") as lock:
+    with _local_lock_path(folder/".run.lock").open("a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         folder, command = native_command(method,seed,output_dir,data_dir,resume=resume,smoke=smoke)
         env = dict(os.environ,CUDA_VISIBLE_DEVICES=device.split(":")[1],OMP_NUM_THREADS="4",
                    TOKENIZERS_PARALLELISM="false",PYTHONPATH=str(Path.cwd()))
+        cwd = str(Path("external/VulMixer").resolve()) if method=="vulmixer" else None
+        if method=="vulmixer": env["VULMIXER_EMBEDDING_CACHE"]=json.loads((folder/"config.json").read_text())["embedding_cache"]
+        if method=="vulberta": env.update(NCCL_P2P_DISABLE="1",NCCL_IB_DISABLE="1")
         if smoke or not (folder/"training.metrics.json").exists():
             with (folder/"native.local.log").open("a" if resume else "w") as handle:
-                subprocess.run(command,env=env,stdout=handle,stderr=subprocess.STDOUT,check=True)
+                subprocess.run(command,env=env,cwd=cwd,stdout=handle,stderr=subprocess.STDOUT,check=True)
         if not smoke and not (folder/"test.metrics.json").exists():
             _, command = native_command(method,seed,output_dir,data_dir,evaluate=True)
             with (folder/"evaluate.local.log").open("w") as handle:
-                subprocess.run(command,env=env,stdout=handle,stderr=subprocess.STDOUT,check=True)
+                subprocess.run(command,env=env,cwd=cwd,stdout=handle,stderr=subprocess.STDOUT,check=True)
         return json.loads((folder/("smoke.json" if smoke else "test.metrics.json")).read_text())
 
 
+def mixer_embedding_cache(config):
+    """Run the author's cache script once; the cache is a static embedding table."""
+    cache=Path(config["embedding_cache"])
+    cache.parent.mkdir(parents=True,exist_ok=True)
+    if not cache.exists():
+        with _local_lock_path(cache.with_suffix(".lock")).open("a") as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            if not cache.exists():
+                subprocess.run([sys.executable,"scripts/cache_embeddings.py",
+                    "--checkpoint",config["model_path"],"--cache_dir",str(cache.parent)],check=True)
+    embedding=torch.load(cache,map_location="cpu",weights_only=False)
+    if tuple(embedding.weight.shape)!=(50265,768):
+        raise ValueError("Vul-Mixer needs the author's GraphCodeBERT word embedding table")
+    return dict(file=str(cache),shape=list(embedding.weight.shape),
+                bytes=cache.stat().st_size,contextual_encoder_forward=False)
+
+
+def mixer_smoke(args, module, data_module):
+    """Reuse the original shared_step, loss and optimizer, including mixed FP16."""
+    def forward(batch):
+        result=module.shared_step(batch,[])
+        return result["loss"],result["all"].softmax(-1)
+    args.output_dir=args.reproduction_run
+    args.device=module.on_device
+    module.calculate_metrics=False
+    native_smoke(args,module,None,data_module.train_dataset,
+                 forward=forward,optimizer=module.configure_optimizers())
+
+
+def mixer_callback(args):
+    """Attach evaluation/resume bookkeeping to the unchanged Lightning train loop."""
+    from lightning.pytorch import Callback
+
+    class OfficialMixerCallback(Callback):
+        def __init__(self):
+            args.reproduction_cohorts={}
+            args.reproduction_loop=dict(epoch=0,step=0,global_step=0,epoch_rng=None,
+                loss_sum=0.,loss_steps=0,best_pc=-1.,best_epoch=None,history=[],
+                complete=False,early_stopping=None)
+            self.saved_rng=None
+            self.probabilities=[]
+            self.labels=[]
+            self.indices=[]
+
+        def on_load_checkpoint(self,trainer,module,checkpoint):
+            saved=checkpoint["official_reproduction"]
+            if saved["metadata"]!=args.reproduction_metadata:
+                raise ValueError("Vul-Mixer resume configuration or original members differ")
+            args.reproduction_loop=saved["loop"]
+            self.saved_rng=saved["rng"]
+            log=args.reproduction_run/"best.training.jsonl"
+            if log.exists():
+                with log.open("r+b") as handle:
+                    handle.truncate(saved["log_position"])
+
+        def on_save_checkpoint(self,trainer,module,checkpoint):
+            checkpoint["official_reproduction"]=dict(metadata=args.reproduction_metadata,
+                loop=args.reproduction_loop,rng=rng_state(),
+                log_position=(args.reproduction_run/"best.training.jsonl").stat().st_size)
+
+        def on_fit_start(self,trainer,module):
+            # Lightning creates/prefetches the shuffled iterator before on_train_start.
+            # Restore earlier, before iterator creation; sanity validation isolates RNG.
+            if self.saved_rng is not None: restore_rng(self.saved_rng)
+
+        def on_train_start(self,trainer,module):
+            args.reproduction_loop.setdefault("optimizer_updates",0)
+            def updated(optimizer,step_args,step_kwargs):
+                args.reproduction_loop["optimizer_updates"]+=1
+            trainer.optimizers[0].register_step_post_hook(updated)
+
+        def on_train_epoch_start(self,trainer,module):
+            args.reproduction_started=time.monotonic()
+
+        def on_train_batch_end(self,trainer,module,outputs,batch,batch_idx):
+            loop=args.reproduction_loop
+            loop["loss_sum"]+=float(outputs["loss"].detach())
+            loop["loss_steps"]+=1
+            loop["global_step"]=trainer.global_step
+
+        def start_evaluation(self,trainer):
+            self.probabilities=[];self.labels=[];self.indices=[]
+            if args.reproduction_evaluate and hasattr(args,"reproduction_reload_rng"):
+                restore_rng(args.reproduction_reload_rng)
+                del args.reproduction_reload_rng
+            args.reproduction_validation_rng=rng_state()
+
+        def on_validation_epoch_start(self,trainer,module):
+            self.start_evaluation(trainer)
+
+        def on_test_epoch_start(self,trainer,module):
+            self.start_evaluation(trainer)
+
+        def collect(self,outputs,batch):
+            self.probabilities.extend(outputs["all"].softmax(-1)[:,1].detach().float().cpu().tolist())
+            self.labels.extend(batch["target"].tolist())
+            self.indices.extend(batch["index"].tolist())
+
+        def on_validation_batch_end(self,trainer,module,outputs,batch,batch_idx,dataloader_idx=0):
+            if not trainer.sanity_checking: self.collect(outputs,batch)
+
+        def on_test_batch_end(self,trainer,module,outputs,batch,batch_idx,dataloader_idx=0):
+            # The author test_step already applies softmax to results['all'].
+            self.probabilities.extend(outputs["all"][:,1].detach().float().cpu().tolist())
+            self.labels.extend(batch["target"].tolist())
+            self.indices.extend(batch["index"].tolist())
+
+        def on_validation_epoch_end(self,trainer,module):
+            if trainer.sanity_checking: return
+            if self.indices!=list(range(len(self.probabilities))):
+                raise ValueError("Vul-Mixer Valid source indices were reordered or duplicated")
+            args.reproduction_validation=native_predictions(args,self.probabilities,self.labels)
+            if not args.reproduction_evaluate:
+                native_epoch(args,module.model,trainer.optimizers[0],None,trainer.current_epoch,save_state=False)
+
+        def on_test_epoch_end(self,trainer,module):
+            if self.indices!=list(range(len(self.probabilities))):
+                raise ValueError("Vul-Mixer Test source indices were reordered or duplicated")
+            native_predictions(args,self.probabilities,self.labels)
+
+        def on_train_epoch_end(self,trainer,module):
+            checkpoint=args.reproduction_run/"framework-last.ckpt"
+            temporary=checkpoint.with_suffix(".ckpt.tmp")
+            trainer.save_checkpoint(temporary)
+            temporary.replace(checkpoint)
+
+    return OfficialMixerCallback()
+
+
+def mixer_evaluate(args,module,trainer,data_module):
+    checkpoint=torch.load(args.reproduction_run/"best-p_c.pt",map_location="cpu",weights_only=False)
+    module.model.load_state_dict(checkpoint["state_dict"],strict=True)
+    args.reproduction_epoch=checkpoint["selected_epoch"]
+    args.reproduction_reload_rng=checkpoint["validation_rng"]
+    args.reproduction_split="valid"
+    trainer.validate(module,data_module)
+    args.reproduction_split="test"
+    trainer.test(module,data_module)
+
+
+def vulberta_notebook_components():
+    """Load author definitions from their notebook, with only path/API adaptation."""
+    import re
+    import numpy as np
+    from clang import cindex
+    from torch.utils.data import Dataset
+    root=Path("external/VulBERTa").resolve()
+    book=json.loads((root/"Finetuning_VulBERTa-MLP.ipynb").read_text())
+    namespace=dict(torch=torch,re=re,cindex=cindex,Dataset=Dataset,np=np)
+    for index in (6,10,11,12,15):
+        source="".join(book["cells"][index]["source"])
+        source=source.replace("./tokenizer/",str(root/"tokenizer")+"/")
+        # Removed unused symbol in tokenizers 0.22; the actual normalizers are unchanged.
+        source=source.replace("StripAccents, unicode_normalizer_from_str, Replace","StripAccents, Replace")
+        exec(compile(source,f"{root.name}/Finetuning_VulBERTa-MLP.ipynb:cell{index}","exec"),namespace)
+    return namespace,book
+
+
+def vulberta_native():
+    """Execute author notebook components through its original Hugging Face Trainer."""
+    import argparse
+    import numpy as np
+    from sklearn.utils.class_weight import compute_class_weight
+    from transformers import (RobertaForSequenceClassification,Trainer,TrainingArguments,
+                              TrainerCallback,set_seed)
+    from transformers.trainer_utils import get_last_checkpoint
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--reproduction-config",required=True)
+    for flag in ("resume","smoke","evaluate"):
+        parser.add_argument(f"--reproduction-{flag}",action="store_true")
+    args=parser.parse_args()
+    meta=args.reproduction_metadata=json.loads(Path(args.reproduction_config).read_text())
+    run=args.reproduction_run=Path(args.reproduction_config).parent
+    args.output_dir=str(run);args.device=torch.device("cuda")
+    args.reproduction_cohorts={}
+    args.reproduction_split="valid"
+    args.reproduction_loop=dict(epoch=0,step=0,global_step=0,epoch_rng=None,loss_sum=0.,
+        loss_steps=0,best_pc=-1.,best_epoch=None,history=[],complete=False,early_stopping=None)
+    seed=meta["training_config"]["seed"]
+    set_seed(seed)
+    torch.backends.cudnn.enabled=True
+    torch.backends.cudnn.deterministic=True
+    torch.backends.cudnn.benchmark=False
+    namespace,book=vulberta_notebook_components()
+    datasets={}
+    for split in (("valid","test") if args.reproduction_evaluate else ("train","valid")):
+        cache=Path(meta["export_dir"])/f"{split}.encodings.pt"
+        cache.parent.mkdir(parents=True,exist_ok=True)
+        if cache.exists():
+            encoded=torch.load(cache,weights_only=False)
+        else:
+            with _local_lock_path(cache.with_suffix(".lock")).open("a") as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX)
+                if cache.exists():
+                    encoded=torch.load(cache,weights_only=False)
+                else:
+                    rows=official_rows(meta["data_dir"],split)
+                    encodings=namespace["my_tokenizer"].encode_batch([namespace["cleaner"](r["func"]) for r in rows])
+                    encoded=dict(encodings=namespace["process_encodings"](encodings),labels=[r["target"] for r in rows],
+                        members=[r["sample_key"] for r in rows],upstream_commit=meta["upstream"]["commit"],block_size=1024)
+                    temporary=cache.with_suffix(".pt.tmp");torch.save(encoded,temporary);temporary.replace(cache)
+        if encoded["upstream_commit"]!=meta["upstream"]["commit"] or encoded["block_size"]!=1024:
+            raise ValueError("VulBERTa encoding cache version differs")
+        if encoded["members"]!=[r["sample_key"] for r in official_rows(meta["data_dir"],split)]:
+            raise ValueError("VulBERTa encoding cache changes original PrimeVul members")
+        datasets[split]=namespace["MyCustomDataset"](encoded["encodings"],encoded["labels"])
+    model=RobertaForSequenceClassification.from_pretrained(meta["model_path"])
+    labels=[r["target"] for r in official_rows(meta["data_dir"],"train")]
+    weights=compute_class_weight(class_weight="balanced",classes=np.array([0,1]),y=labels)
+    criterion=torch.nn.CrossEntropyLoss(weight=torch.tensor(weights,dtype=torch.float32)).to(args.device)
+    namespace.update(Trainer=Trainer,criterion=criterion,device=args.device,
+                     c_weights=torch.tensor(weights,dtype=torch.float32))
+    source="".join(book["cells"][30]["source"]).replace("def compute_loss(self, model, inputs, return_outputs=False):",
+        "def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):")
+    exec(compile(source,"VulBERTa/Finetuning_VulBERTa-MLP.ipynb:cell30","exec"),namespace)
+
+    class RecordedTrainer(namespace["MyTrainer"]):
+        def compute_loss(self,model,inputs,return_outputs=False,num_items_in_batch=None):
+            result=super().compute_loss(model,inputs,return_outputs=return_outputs)
+            if model.training:
+                loss=result[0] if return_outputs else result
+                args.reproduction_loop["loss_sum"]+=float(loss.detach())
+                args.reproduction_loop["loss_steps"]+=1
+            return result
+
+    class RecordedCallback(TrainerCallback):
+        def on_epoch_begin(self,hf_args,state,control,**kwargs):
+            args.reproduction_started=time.monotonic()
+        def on_evaluate(self,hf_args,state,control,model=None,optimizer=None,lr_scheduler=None,**kwargs):
+            args.reproduction_loop["global_step"]=state.global_step
+            native_epoch(args,model,optimizer,lr_scheduler,round(state.epoch)-1,save_state=False)
+        def on_save(self,hf_args,state,control,**kwargs):
+            checkpoint=Path(hf_args.output_dir)/f"checkpoint-{state.global_step}"
+            torch.save(dict(metadata=meta,loop=args.reproduction_loop,
+                log_position=(run/"best.training.jsonl").stat().st_size),checkpoint/"official_reproduction.pt")
+
+    def compute_metrics(prediction):
+        probability=torch.as_tensor(prediction.predictions).softmax(-1)[:,1].tolist()
+        return native_predictions(args,probability,prediction.label_ids.tolist())
+    optimizer=LOSVERAdamW(model.parameters(),lr=3e-5,weight_decay=0.,eps=1e-8)
+    framework=run/"framework"
+    training_args=TrainingArguments(output_dir=str(framework),per_device_train_batch_size=4,
+        per_device_eval_batch_size=8,num_train_epochs=10,eval_strategy="epoch",save_strategy="steps",
+        save_steps=500,save_total_limit=1,seed=seed,learning_rate=3e-5,fp16=True,report_to=[],
+        load_best_model_at_end=False,disable_tqdm=True)
+    if args.reproduction_smoke:
+        training_args.max_steps=2
+        training_args.eval_strategy="no"
+        training_args.save_strategy="no"
+    trainer=RecordedTrainer(model=model,args=training_args,train_dataset=datasets.get("train"),
+        eval_dataset=datasets["valid"],compute_metrics=compute_metrics,
+        optimizers=(optimizer,None),callbacks=[RecordedCallback()])
+    if args.reproduction_smoke:
+        parameter=next(model.parameters())
+        initial=parameter.detach().clone()
+        updates=[]
+        hook=optimizer.register_step_post_hook(lambda *unused: updates.append(1))
+        try:
+            trainer.train()
+        finally:
+            hook.remove()
+        trainer_update=float((parameter.detach()-initial.to(parameter.device)).abs().max())
+        if not updates or trainer_update==0:
+            raise ValueError("VulBERTa native Trainer did not update parameters")
+        # The two-step diagnostic scheduler has reached zero. The independent
+        # one-batch gradient/reload check below uses the configured learning rate.
+        for group in optimizer.param_groups:
+            group["lr"]=meta["training_config"]["learning_rate"]
+        def forward(batch):
+            inputs={k:v.to(args.device) for k,v in batch.items()}
+            loss,outputs=trainer.compute_loss(model,inputs,return_outputs=True)
+            return loss,outputs["logits"].softmax(-1)
+        native_smoke(args,model,None,datasets["train"],forward=forward,optimizer=optimizer)
+        smoke=json.loads((run/"smoke.json").read_text())
+        smoke.update(native_trainer_steps=trainer.state.global_step,native_trainer_updates=len(updates),
+                     native_trainer_maximum_parameter_update=trainer_update)
+        write_json(run/"smoke.json",smoke)
+        return
+    if args.reproduction_evaluate:
+        checkpoint=torch.load(run/"best-p_c.pt",map_location="cpu",weights_only=False)
+        model.load_state_dict(checkpoint["state_dict"],strict=True)
+        args.reproduction_epoch=checkpoint["selected_epoch"]
+        for split in ("valid","test"):
+            args.reproduction_split=split;trainer.predict(datasets[split])
+        return
+    checkpoint=get_last_checkpoint(str(framework)) if framework.exists() else None
+    if checkpoint and not args.reproduction_resume:
+        raise FileExistsError("Started VulBERTa training requires --resume")
+    if checkpoint:
+        saved=torch.load(Path(checkpoint)/"official_reproduction.pt",map_location="cpu",weights_only=False)
+        if saved["metadata"]!=meta: raise ValueError("VulBERTa resume configuration differs")
+        args.reproduction_loop=saved["loop"]
+        with (run/"best.training.jsonl").open("r+b") as handle: handle.truncate(saved["log_position"])
+    args.reproduction_progress=TrainingProgress(run/"best.pt",resume=bool(checkpoint))
+    args.reproduction_started=time.monotonic()
+    trainer.train(resume_from_checkpoint=checkpoint)
+    native_finish(args,model,trainer.optimizer,trainer.lr_scheduler,save_state=False)
+
+
 def report(output_dir, data_dir="data"):
+    from .rgcl_study import run_path, inspect_run, BACKBONE_MODELS
     root=Path(output_dir)
+    methods=(*UPSTREAM,"losver","rgcl")
     losver_reference=json.loads((LOSVER_REFERENCE/"losver"/"training.metrics.json").read_text())
     cohorts={s:[{k:r[k] for k in ("sample_key","pair_key","target")}
                 for r in official_rows(data_dir,s)] for s in PAIRS}
     records=[]
-    for method in (*UPSTREAM,"losver"):
+    for method in methods:
         for seed in SEEDS:
             path = LOSVER_REFERENCE/"losver" if method=="losver" and seed==123456 else root/f"seed{seed}"/"primevul_paired"/method
+            if method=="rgcl":
+                path=run_path("results/rgcl_multiseed_512","primevul_paired",seed,"rgcl")
             test_file=path/"test.metrics.json"
             if not test_file.is_file():
-                records.append(dict(method=method,seed=seed,status="incomplete",run=str(path)))
+                access=root/f"{method}-weight-access.json"
+                detail=json.loads(access.read_text()) if access.exists() else {}
+                reason=detail.get("reason") if detail.get("status")=="blocked" else None
+                records.append(dict(method=method,seed=seed,status="blocked" if reason else "incomplete",run=str(path),reason=reason))
                 continue
             rows=cohorts["test"]
             pred=read_jsonl(path/"test.predictions.jsonl")
@@ -408,6 +828,8 @@ def report(output_dir, data_dir="data"):
                 if epochs!=spec["epochs"] and not (method=="svuld" and epochs<20
                         and training.get("early_stopping",{}).get("early_stop")):
                     raise ValueError(f"{path}: incomplete author training budget")
+            elif method=="rgcl":
+                inspect_run(path,data_dir,"primevul_paired",seed,"rgcl",BACKBONE_MODELS["unixcoder"],checkpoint=False)
             elif (epochs!=16 or training["optimizer_steps"]!=17424
                   or training["training_config"]["seed"]!=seed or training["input_mode"]!="512"
                   or training["line_mapping"]!="source_offsets"):
@@ -435,12 +857,15 @@ def report(output_dir, data_dir="data"):
                     raise ValueError(f"{path}: frozen Valid inference differs from checkpoint selection")
             records.append(dict(method=method,seed=seed,status="complete",run=str(path),
                 completed_epochs=training["completed_epochs"],selected_epoch=best["epoch"],
+                optimizer_updates=training.get("optimizer_updates"),amp_skipped_updates=training.get("amp_skipped_updates"),
+                validation_zero_pc_epochs=sum(r["validation"]["p_c"]==0 for r in history),
+                last_train_loss=history[-1]["train_loss"],test_pair_counts=value["pair_counts"],
                 validation={k:valid[k] for k in METRICS},test={k:value[k] for k in METRICS},
                 valid_reload_max_probability_difference=reload_difference,
                 metrics_recomputed_from_predictions=[k for k in METRICS if k not in saved["metrics"]]))
     aggregate={split:{m:{k:dict(mean=statistics.mean(r[split][k] for r in records if r["method"]==m),
         std=statistics.stdev(r[split][k] for r in records if r["method"]==m)) for k in METRICS}
-        for m in (*UPSTREAM,"losver") if sum(r["method"]==m and r["status"]=="complete" for r in records)==3}
+        for m in methods if sum(r["method"]==m and r["status"]=="complete" for r in records)==3}
         for split in ("validation","test")}
     result=dict(protocol=dict(dataset="PrimeVul official paired",pairs=PAIRS,seeds=list(SEEDS),
         selection="full Valid P-C",threshold=.5,comparison=">",std="sample SD, ddof=1, n=3 seeds"),
@@ -449,24 +874,27 @@ def report(output_dir, data_dir="data"):
             implementation="existing formal 512 source_offsets with linear function classifier",
             training_config=losver_reference["training_config"])),runs=records,aggregate=aggregate,
         environment=dict(python=sys.version.split()[0],cuda=torch.version.cuda,
-            packages={p:version(p) for p in ("torch","transformers","numpy","scipy","pandas","scikit-learn")}))
+            packages={p:version(p) for p in ("torch","transformers","numpy","scipy","pandas","scikit-learn",
+                "tokenizers","lightning","accelerate","einops","easydict","lizard")}))
     write_json(root/"comparison.json",result)
     lines=["# 官方漏洞检测基线：PrimeVul 三种子复现","",
-        "LineVul、SVulD、ReGVD保持作者模型、Tokenizer、损失、采样、优化器和原始最大训练预算；"
+        "LineVul、SVulD、ReGVD、VulBERTa-MLP、Vul-Mixer沿用作者模型、Tokenizer、损失、采样、优化器和原始最大训练预算；"
         "LOSVER复用本仓库已有正式512实现。统一按完整Valid P-C选模，严格prob>0.5。",
         "每组Test必须含564对/1128函数；Test不参与训练、早停或选择。","",
         "表内指标均为0–1数值；P-C乘100为百分比。PR-AUC沿用现有average_precision_score口径。"
         "历史LOSVER未保存FPR字段时，从全部564个修复函数的既有概率按严格>0.5重算，不修改历史文件。","",
         "| 方法 | Seed | 实际Epoch | 选中Epoch | Test P-C | MCC | F1 | AUC | PR-AUC | Recall | FPR |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    if len(aggregate["test"])==4:
+    if aggregate["test"]:
         ordered=sorted(aggregate["test"],key=lambda m:aggregate["test"][m]["p_c"]["mean"],reverse=True)
         mcc_best=max(aggregate["test"],key=lambda m:aggregate["test"][m]["mcc"]["mean"])
         f1_best=max(aggregate["test"],key=lambda m:aggregate["test"][m]["f1"]["mean"])
         svuld_epochs="/".join(str(r["completed_epochs"]) for r in records if r["method"]=="svuld")
         pc_text="；".join(f"{m} {100*aggregate['test'][m]['p_c']['mean']:.2f} ± "
                            f"{100*aggregate['test'][m]['p_c']['std']:.2f}%" for m in ordered)
-        lines[2:2]=["四种方法×三个种子的12组正式评价全部完成：11组新跑，LOSVER Seed123456复用。",
+        lines[2:2]=[f"已完成{sum(r['status']=='complete' for r in records)}组正式评价；"
+            f"阻塞{sum(r['status']=='blocked' for r in records)}组，未完成{sum(r['status']=='incomplete' for r in records)}组。"
+            "既有基线和RGCL只复用，未重新训练或覆盖。",
             "Test P-C三种子均值±样本标准差："+pc_text+"。",
             f"P-C均值最高为{ordered[0]}，MCC均值最高为{mcc_best}。F1均值最高为{f1_best}，"
             f"其修复侧FPR为{100*aggregate['test'][f1_best]['patched_fpr']['mean']:.2f}%；"
@@ -477,7 +905,7 @@ def report(output_dir, data_dir="data"):
         if r["status"]=="complete":
             lines.append(f"| {r['method']} | {r['seed']} | {r['completed_epochs']} | {r['selected_epoch']} | "+" | ".join(f"{r['test'][k]:.6f}" for k in METRICS)+" |")
         else:
-            lines.append(f"| {r['method']} | {r['seed']} | 未完成 | — | — | — | — | — | — | — | — |")
+            lines.append(f"| {r['method']} | {r['seed']} | {'阻塞' if r['status']=='blocked' else '未完成'} | — | — | — | — | — | — | — | — |")
     lines += ["","三种子均值±样本标准差：","","| 方法 | P-C | MCC | F1 | AUC | PR-AUC | Recall | FPR |",
               "|---|---:|---:|---:|---:|---:|---:|---:|"]
     for m,a in aggregate["test"].items():
@@ -506,6 +934,59 @@ def report(output_dir, data_dir="data"):
     lines += [f"- losver: [作者源码](https://github.com/waroad/losver), 历史元数据源版本 "
               f"`{losver_reference['upstream_commit']}`；沿用已确认的source_offsets/512输入和线性函数分类头。"
               "这些已有实现修正与历史Seed123456一致，本轮未改动；不称为未经适配的论文数值复现。"]
+    lines += ["- rgcl: 复用results/rgcl_multiseed_512的Seed42/1234及results/attention_context_512/context_diff的Seed123456；"
+              "UniXcoder、512 Token、Batch8、16轮、lr=2e-5、K=5、λ=0.1和Token加权区域损失，原权重及结果未改动。"]
+    access=root/"vulberta-weight-access.json"
+    if access.exists():
+        detail=json.loads(access.read_text())
+        lines += ["","## VulBERTa作者权重与notebook适配","",
+            "原官方OneDrive链接的普通访问发生TLS错误，现有mihomo新加坡出口的命令行下载返回403；"
+            "完整分享API也返回401。按照用户追加授权，临时切到现有香港节点，使用独立Firefox代理profile，"
+            "成功取得同一作者分享的pretraining_model.zip；原代理选择已恢复。"
+            f"压缩包{detail.get('archive_bytes')}字节，模型位于/home/PublicData/PHY-data/resource/VulBERTa。"
+            "下载历史保留在vulberta-weight-access.json，没有替换成其他模型或重新预训练。",
+            "从固定提交的Finetuning_VulBERTa-MLP.ipynb直接加载Clang+BPE、cleaner、Dataset和MyTrainer定义，"
+            "没有复制训练循环；沿用RobertaForSequenceClassification双输出分类头和Train类别加权CE。"
+            "原始cleaner的注释/换行/Tab处理不改动，全部原始函数成员及0/1标签保留。",
+            "沿用1024 Token、Batch4、Eval Batch8、10轮、lr=3e-5、FP16、线性调度/零warmup、"
+            "weight_decay=0和梯度裁剪1；旧HF AdamW更新规则复用LOSVERAdamW。"
+            "只移除Tokenizers已删除且未使用的导入，适配compute_loss新增参数、优化器step的可选closure接口、"
+            "数据路径和固定Valid P-C选择；closure=None时更新逐值不变。",
+            "分词结果按划分缓存，检查上游版本及完整成员，使用文件锁避免多个种子重复提取。"
+            "原生Trainer每500步保存模型、优化器、调度器、scaler、RNG与恢复位置，只保留一份恢复目录；"
+            "共享日志在恢复时截断到对应位置，最优分类权重另外按完整Valid P-C保存。"]
+    for r in records:
+        if r["method"]=="vulberta" and r["status"]=="complete":
+            counts=r["test_pair_counts"]
+            lines.append(f"- Seed{r['seed']}：完成{r['completed_epochs']}轮，其中"
+                f"{r['validation_zero_pc_epochs']}轮Valid P-C为0，末轮Train CE={r['last_train_loss']:.6f}；"
+                f"所选权重Test P-C/P-V/P-B/P-R数量为{counts['p_c']}/{counts['p_v']}/{counts['p_b']}/{counts['p_r']}。")
+    input_check=root/"vulberta-input-check.log"
+    if input_check.is_file():
+        checked=json.loads(input_check.read_text())
+        lines.append("输入接口复核见vulberta-input-check.log：两划分各取前8条，按作者批次右Padding规则重编码，"
+                     "与缓存逐值一致；全部成员保留，未发现整体退化为同一输入或特殊Token空输入。")
+        for split,s in checked.items():
+            lines.append(f"- {split}：{s['functions']}个函数，{s['distinct_encoded_functions']}种不同编码，"
+                f"仅特殊Token输入{s['special_tokens_only']}个，非Padding输入的UNK比例"
+                f"{100*s['unknown_tokens']/s['nonpadding_tokens']:.2f}%。")
+    lines += ["","## Vul-Mixer适配与原始行为","",
+        "直接运行固定提交的run.py、FireSVD和CurriculumLearning；模型、多粒度路径、损失及AdamW更新规则均未重写。"
+        "输入先按作者config/clang-format.yml格式化，全部原始成员/标签不变。官方cache_embeddings.py只缓存"
+        "GraphCodeBERT的50265×768静态词嵌入表，并非提取Transformer上下文表示；缓存仅构建一次，三种子共同读取。",
+        "保留1024 Token、Batch128、20轮、lr=5e-4、AdamW默认weight_decay=0.01、无调度器和无梯度裁剪、mixed FP16。"
+        "官方NoCL样本权重为1，训练类别权重N/Nc=2，两者原样保留。未额外引入Joern或编码器。",
+        "GaussianBlur在eval也随机采样，保持作者行为。所选checkpoint额外记录完整Valid前的RNG，"
+        "冻结重载后恢复同一RNG与批次顺序，比较逐函数概率与决策；Test随后只做一次完整564对评价。",
+        "原始Lightning训练循环和两批sanity validation保留。轮末原生完整checkpoint保存优化器、AMP scaler、"
+        "Lightning loop以及追加的Python/NumPy/Torch/CUDA RNG和日志位置，原子覆盖framework-last.ckpt。"
+        "--resume在轮末恢复；中途异常最多重放当前轮，不逐步写大权重。",
+        "新增依赖仅einops 0.8.1、easydict 1.13、lizard 1.17.31，无核心包降级；"
+        "torch.load显式weights_only=False以读取作者缓存的nn.Embedding模块，本地模型路径适配同一GraphCodeBERT。"]
+    for r in records:
+        if r["method"]=="vulmixer" and r["status"]=="complete":
+            lines.append(f"- Seed{r['seed']}：预算内步数{r['completed_epochs']*math.ceil(8708/128)}，"
+                f"实际参数更新{r['optimizer_updates']}，原生AMP跳过{r['amp_skipped_updates']}次；没有补跑跳过步数。")
     lines += ["","必要修改见vulnmechanism/upstream/*.patch：数据/固定评价/已有断点续训接口，"
         "可选解释和日志依赖延后加载，SciPy及NumPy符号更新，ReGVD旧Transformers AdamW使用仓库同一更新规则。",
         "核心依赖未降级。正式训练由tmux管理，原作者前向、反向和优化步顺序保留。",""]
@@ -516,8 +997,10 @@ def report(output_dir, data_dir="data"):
         "python -m vulnmechanism.cli official-baselines smoke --method linevul --seed 42 --device cuda:0",
         "python -m vulnmechanism.cli official-baselines run --method linevul --seed 42 --device cuda:0 --resume",
         "python -m vulnmechanism.cli official-baselines report","```","",
-        "method分别选择linevul、svuld、regvd，seed分别选择42、1234、123456。每个作者训练循环使用相同的正式接口，"
-        "组合级文件锁防止多个tmux队列重复训练；恢复复用原项目模型/优化器/调度器/RNG原子保存与日志截断。",
+        "新增方法分别使用prepare --method vulmixer/vulberta及run/smoke --method vulmixer/vulberta；"
+        "seed分别选择42、1234、123456。每个作者训练循环使用相同的正式接口，"
+        "本机/tmp中的组合级文件锁防止同一服务器多个tmux队列重复训练；缓存原子完成后只读共享。"
+        "恢复复用原项目模型/优化器/调度器/RNG原子保存与日志截断。",
         "测试包括实际数据成员/标签/源码导出对齐、作者R-Drop原始损失、随机采样+Dropout的中断恢复、"
         "P-C为0仍保存第一个checkpoint且同分保留更早Epoch；记录见official-tests.log和losver-tests.log。",
         "真实GPU smoke分别记录在smoke/primevul_paired/<method>/smoke.json，均为Train诊断，不是正式性能。",
@@ -537,12 +1020,25 @@ def report(output_dir, data_dir="data"):
         for phase,s in json.loads(p.read_text()).items():
             lines.append(f"| losver/{phase} | {s['functions']} | {s['loss']:.6f} | "
                          f"{s['gradient_norm']:.6f} | — | {s['save_reload_equal']} |")
-    lines += ["","6项新增基线测试与34项既有LOSVER/恢复测试通过。"
+    lines += ["","本轮41项相关测试通过（12项官方基线测试及既有LOSVER/优化器检查）；记录见vulmixer-tests.log。"
         "恢复测试覆盖作者使用的0/4 worker、随机/顺序采样、Dropout、最终参数及RNG一致性。",
         "实际检查中，最初的stdlib csv读取触发131072字段上限，改用作者的pandas读取器后全量源码对齐通过；"
         "沙箱的本地多进程通信权限不足，相关检查改在同一Conda环境的宿主执行并通过。",
         "I/O使用周期/轮末原子last.pt和Valid改善时的最优权重覆盖保存；评价元数据首次读取后缓存，"
         "不会逐轮累积大权重文件。续跑入口为同一run命令的--resume。",""]
+    lines += ["真实错误与处理：完整Lightning恢复最初触发PyTorch的weights_only默认值变化，"
+        "对本机自行保存的完整checkpoint显式weights_only=False后，连续/中断恢复的采样、Dropout、"
+        "AdamW动量及参数、最终RNG全部一致。Vul-Mixer的GPU smoke首步在默认AMP scale=65536出现溢出，"
+        "保留原生GradScaler跳步/自动降scale，随后取得有限梯度及真实参数更新，再验证权重恢复的输出一致性。"
+        "正式训练保持原始AMP规则，不改变初始scale、精度或训练预算。",
+        "共享GlusterFS上的缓存排他锁使后续只读评价等待；改为本机/tmp作业/构建锁、缓存原子发布和只读并行访问后，"
+        "只恢复阻塞的评价任务，已经完成的两组20轮权重直接复用。"
+        "VulBERTa原生Trainer最初在4090上触发Accelerate的P2P/IB检查，在其单卡子进程设置"
+        "NCCL_P2P_DISABLE=1、NCCL_IB_DISABLE=1。随后首次原生更新发现旧优化器step缺少可选closure参数，"
+        "补齐与旧HF AdamW相同的接口，原无closure路径的更新逐值不变；真实Trainer两步更新、"
+        "独立梯度及恢复检查通过，模型与正式优化配置不变。",
+        "作者Tokenizer对超过512的原始Token序列发出警告；Vul-Mixer实际只查静态词嵌入表并截到1024，"
+        "没有调用受512位置限制的Transformer编码前向，未因此删除或截成额外不同预算的样本。",""]
     (root/"report.md").write_text("\n".join(lines),encoding="utf-8")
     with (root/"comparison.csv").open("w",newline="") as handle:
         writer=csv.writer(handle,lineterminator="\n")

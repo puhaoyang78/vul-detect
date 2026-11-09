@@ -1,0 +1,156 @@
+diff --git a/run.py b/run.py
+index 3373365..89909bf 100644
+--- a/run.py
++++ b/run.py
+@@ -73,7 +73,19 @@ def main(args):
+ 
+ 
+     # Load configurations
+-    data_config = load_config(f'config/data/{args.data}.yml')
++    if args.reproduction_config:
++        from vulnmechanism.official_baselines import (mixer_embedding_cache, mixer_callback,
++            mixer_smoke, mixer_evaluate, native_finish, TrainingProgress)
++        from easydict import EasyDict
++        import json
++        args.reproduction_metadata = json.loads(Path(args.reproduction_config).read_text())
++        args.reproduction_run = Path(args.reproduction_config).parent
++        args.output_dir = args.reproduction_run
++        export = Path(args.reproduction_metadata['export_dir'])
++        data_config = EasyDict({split: str(export / f'{split}.jsonl') for split in ('train','valid','test')})
++        data_config.labels = ['safe','vulnerable']
++    else:
++        data_config = load_config(f'config/data/{args.data}.yml')
+     model_config = load_config(f'config/model/{args.model}.yml')
+     cl_config = load_config(f'config/cl/{args.cl}.yml')
+     console.log('[bold green]Loaded Configs')
+@@ -82,7 +94,7 @@ def main(args):
+     console.log('cl_config=', cl_config)
+ 
+     # Seed everything
+-    pl.seed_everything(42)
++    pl.seed_everything(args.reproduction_metadata['training_config']['seed'] if args.reproduction_config else 42)
+ 
+ 
+     # Get the data module
+@@ -114,6 +126,11 @@ def main(args):
+         console.log(f'checkpoint=[purple]{args.checkpoint}')
+ 
+ 
++    if args.reproduction_config:
++        model_config.input.embeddings = args.reproduction_metadata['model_path']
++        cache = mixer_embedding_cache(args.reproduction_metadata)
++        print('Author embedding cache:', cache)
++
+     # Get transforms
+     transforms = get_transforms(model_config)
+ 
+@@ -130,7 +147,7 @@ def main(args):
+     # Setup MLFlow logger
+     name = f'm={args.model}'#, cl={args.cl}, s={cl_config.schedule}'
+     if args.suffix: name += ', ' + args.suffix
+-    logger = None
++    logger = False if args.reproduction_config else None
+ 
+     if args.log.stem != 'None' and args.do_train:
+         logger = [
+@@ -155,7 +172,12 @@ def main(args):
+     # Set precision
+     torch.set_float32_matmul_precision('medium')
+ 
+-    checkpoint_cb = pl.callbacks.ModelCheckpoint(
++    if args.reproduction_config and args.reproduction_smoke:
++        mixer_smoke(args, train_module, data_module)
++        return
++
++
++    checkpoint_cb = None if args.reproduction_config else pl.callbacks.ModelCheckpoint(
+         monitor='val_ap',
+         save_last=True,
+         save_top_k=2,
+@@ -168,15 +190,32 @@ def main(args):
+         precision='16-mixed',
+         max_epochs=args.max_epochs,
+         reload_dataloaders_every_n_epochs=1,
+-        callbacks=[
++        callbacks=[mixer_callback(args)] if args.reproduction_config else [
+             checkpoint_cb,
+             pl.callbacks.RichProgressBar(leave=True),
+         ],
++        enable_checkpointing=not bool(args.reproduction_config),
++        enable_progress_bar=not bool(args.reproduction_config),
++        num_sanity_val_steps=0 if args.reproduction_evaluate else 2,
+         logger=logger,
+     )
+ 
+ 
++    if args.reproduction_config and args.reproduction_evaluate:
++        mixer_evaluate(args, train_module, trainer, data_module)
++        return
++
+     if args.do_train:
++        if args.reproduction_config:
++            checkpoint = args.reproduction_run / 'framework-last.ckpt'
++            continuing = args.reproduction_resume and checkpoint.exists()
++            if checkpoint.exists() and not continuing:
++                raise FileExistsError('Started Vul-Mixer run requires --resume')
++            args.reproduction_progress = TrainingProgress(args.reproduction_run / 'best.pt', resume=continuing)
++            args.reproduction_split = 'valid'
++            trainer.fit(train_module, data_module, ckpt_path=str(checkpoint) if continuing else None, weights_only=False)
++            native_finish(args, train_module.model, trainer.optimizers[0], None, save_state=False)
++            return
+         trainer.fit(train_module, data_module)
+ 
+         print(checkpoint_cb.best_model_path)  # prints path to the best model's checkpoint
+@@ -210,5 +249,9 @@ if __name__ == '__main__':
+     args.add_argument('--max_epochs', default=20, type=int)
+     args.add_argument('--num_workers', default=8, type=int)
+     args.add_argument('--log', default='./logs/mlflow', type=Path)
++    args.add_argument('--reproduction-config')
++    args.add_argument('--reproduction-resume', action='store_true')
++    args.add_argument('--reproduction-smoke', action='store_true')
++    args.add_argument('--reproduction-evaluate', action='store_true')
+     args = args.parse_args()
+     main(args)    
+diff --git a/scripts/cache_embeddings.py b/scripts/cache_embeddings.py
+index cb8722a..802ec8a 100644
+--- a/scripts/cache_embeddings.py
++++ b/scripts/cache_embeddings.py
+@@ -14,13 +14,15 @@ def main(args):
+         embeddings = model.roberta.embeddings.word_embeddings
+     
+     elif args.checkpoint in [
+-        'microsoft/graphcodebert-base', 'microsoft/longcoder-base' ]:
++        'microsoft/graphcodebert-base', 'microsoft/longcoder-base' ] or (Path(args.checkpoint).is_dir() and Path(args.checkpoint).name == 'graphcodebert-base'):
+         embeddings = model.embeddings.word_embeddings
+     
+     else:
+         raise NotImplementedError('Checkpoint not supported')
+ 
+-    torch.save(embeddings, out)
++    temporary = out.with_suffix(out.suffix + ".tmp")
++    torch.save(embeddings, temporary)
++    temporary.replace(out)
+     print('Done')
+ 
+ 
+diff --git a/transforms.py b/transforms.py
+index 717bdbc..e379225 100644
+--- a/transforms.py
++++ b/transforms.py
+@@ -3,6 +3,7 @@
+ This module provides different dataset transformations for various models.
+ """
+ import torch
++import os
+ import torch.nn.functional as F
+ 
+ class Transform:
+@@ -27,7 +28,7 @@ class FireTransform(Transform):
+         
+         # FIXME Make this configurable
+         name = checkpoint.split('/')[-1] + '.embeddings'
+-        self.embedding = torch.load(f'./data/cache/{name}').to('cuda')        
++        self.embedding = torch.load(os.environ.get('VULMIXER_EMBEDDING_CACHE', f'./data/cache/{name}'), weights_only=False).to('cuda')        
+ 
+     def transform(self, x):
+         if self.normalize:

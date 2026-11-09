@@ -1,0 +1,50 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 583, in <module>
+    main()
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 368, in main
+    result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/official_baselines.py", line 459, in run
+    raise ValueError("choose an official method, one of the three seeds and cuda:0/1")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/external/VulMixer/run.py', '--data', 'primevul', '--model', 'vulmixer', '--log', 'None', '--reproduction-config', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/official_baselines_512/seed1234/primevul_paired/vulmixer/config.json', '--reproduction-evaluate']' died with <Signals.SIGTERM: 15>.
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '-m', 'vulnmechanism.cli', 'official-baselines', 'run', '--method', 'vulmixer', '--seed', '1234', '--device', 'cuda:1', '--resume']' returned non-zero exit status 1.
+{
+  "selected_epoch": 10,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 30,
+      "p_v": 237,
+      "p_b": 284,
+      "p_r": 13
+    },
+    "p_c": 0.05319148936170213,
+    "p_v": 0.42021276595744683,
+    "p_b": 0.5035460992907801,
+    "p_r": 0.02304964539007092,
+    "accuracy": 0.5150709219858156,
+    "precision": 0.5164410058027079,
+    "recall": 0.4734042553191489,
+    "f1": 0.4939870490286771,
+    "mcc": 0.03024705142578839,
+    "auc": 0.5232602736280871,
+    "auprc": 0.5300919237521287,
+    "pair_ranking_accuracy": 0.44858156028368795,
+    "pair_ranking_ties": 117,
+    "patched_fpr": 0.4432624113475177
+  },
+  "source_only": true
+}

@@ -1,0 +1,28 @@
+{
+  "train": {
+    "functions": 8708,
+    "distinct_encoded_functions": 8170,
+    "nonpadding_input_tokens_min": 8,
+    "nonpadding_input_tokens_mean": 587.85498046875,
+    "nonpadding_input_tokens_max": 1024,
+    "special_tokens_only": 0,
+    "unknown_tokens": 96090,
+    "nonpadding_tokens": 5119041,
+    "first_eight_author_reencoding_equal": true,
+    "author_batch_padding": "right padding to dataset batch maximum, pad_id=1 and attention_mask=0",
+    "distinct_tokens": 22024
+  },
+  "valid": {
+    "functions": 1124,
+    "distinct_encoded_functions": 1059,
+    "nonpadding_input_tokens_min": 13,
+    "nonpadding_input_tokens_mean": 566.252685546875,
+    "nonpadding_input_tokens_max": 1024,
+    "special_tokens_only": 0,
+    "unknown_tokens": 12945,
+    "nonpadding_tokens": 636468,
+    "first_eight_author_reencoding_equal": true,
+    "author_batch_padding": "right padding to dataset batch maximum, pad_id=1 and attention_mask=0",
+    "distinct_tokens": 11588
+  }
+}

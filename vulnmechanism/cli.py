@@ -198,9 +198,9 @@ def build_parser():
     p.add_argument("--random-dir", type=Path, default=Path("results/rgcl_random_region_512"))
     p.add_argument("--output-dir", type=Path)
     p.add_argument("--device", default="auto")
-    p = sub.add_parser("official-baselines", help="pinned author LineVul/SVulD/ReGVD with shared PrimeVul evaluation")
+    p = sub.add_parser("official-baselines", help="pinned author vulnerability baselines with shared PrimeVul evaluation")
     p.add_argument("stage", choices=("prepare", "smoke", "run", "report"))
-    p.add_argument("--method", choices=("linevul", "svuld", "regvd"), default="linevul")
+    p.add_argument("--method", choices=("linevul", "svuld", "regvd", "vulberta", "vulmixer"))
     p.add_argument("--seed", type=int, choices=(42,1234,123456), default=123456)
     p.add_argument("--data-dir", type=Path, default=Path("data"))
     p.add_argument("--output-dir", type=Path, default=Path("results/official_baselines_512"))
@@ -361,11 +361,11 @@ def main():
     elif args.command == "official-baselines":
         from . import official_baselines
         if args.stage == "prepare":
-            result = official_baselines.prepare(args.data_dir)
+            result = official_baselines.prepare(args.data_dir, [args.method] if args.method else None)
         elif args.stage == "report":
             result = official_baselines.report(args.output_dir,args.data_dir)
         else:
-            result = official_baselines.run(args.method,args.seed,args.output_dir,args.data_dir,
+            result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
                 args.device,resume=args.resume,smoke=args.stage=="smoke")
         print(json.dumps(result,indent=2))
     elif args.command == "rgcl-study":

@@ -1,0 +1,67 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 583, in <module>
+    main()
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 368, in main
+    result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/official_baselines.py", line 460, in run
+    subprocess.run(command,env=env,cwd=cwd,stdout=handle,stderr=subprocess.STDOUT,check=True)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '-c', 'from vulnmechanism.official_baselines import vulberta_native; vulberta_native()', '--reproduction-config', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/official_baselines_512/seed1234/primevul_paired/vulberta/config.json', '--reproduction-resume']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '-m', 'vulnmechanism.cli', 'official-baselines', 'run', '--method', 'vulberta', '--seed', '1234', '--device', 'cuda:0', '--resume']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 583, in <module>
+    main()
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/cli.py", line 368, in main
+    result = official_baselines.run(args.method or "linevul",args.seed,args.output_dir,args.data_dir,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/PublicData/PHY-data/vul_detect/work/vul-detect/vulnmechanism/official_baselines.py", line 473, in run
+    subprocess.run(command,env=env,cwd=cwd,stdout=handle,stderr=subprocess.STDOUT,check=True)
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '-c', 'from vulnmechanism.official_baselines import vulberta_native; vulberta_native()', '--reproduction-config', '/home/PublicData/PHY-data/vul_detect/work/vul-detect/results/official_baselines_512/seed1234/primevul_paired/vulberta/config.json', '--reproduction-resume']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/home/phy/miniconda3/envs/vul-detect/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/phy/miniconda3/envs/vul-detect/bin/python', '-u', '-m', 'vulnmechanism.cli', 'official-baselines', 'run', '--method', 'vulberta', '--seed', '1234', '--device', 'cuda:0', '--resume']' returned non-zero exit status 1.
+{
+  "selected_epoch": 1,
+  "selection": "full Valid P-C",
+  "metrics": {
+    "samples": 1128,
+    "pairs": 564,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 0,
+      "p_v": 0,
+      "p_b": 564,
+      "p_r": 0
+    },
+    "p_c": 0.0,
+    "p_v": 0.0,
+    "p_b": 1.0,
+    "p_r": 0.0,
+    "accuracy": 0.5,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "mcc": 0.0,
+    "auc": 0.5159825964488709,
+    "auprc": 0.5110098077835568,
+    "pair_ranking_accuracy": 0.3829787234042553,
+    "pair_ranking_ties": 149,
+    "patched_fpr": 0.0
+  },
+  "source_only": true
+}

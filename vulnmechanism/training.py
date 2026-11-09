@@ -799,7 +799,11 @@ class LOSVERAdamW(torch.optim.Optimizer):
         super().__init__(params, dict(lr=lr, eps=eps, betas=(0.9, 0.999), weight_decay=weight_decay))
 
     @torch.no_grad()
-    def step(self):
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
@@ -831,6 +835,7 @@ class LOSVERAdamW(torch.optim.Optimizer):
                 decay = group.get("weight_decay", 0.0)
                 if decay:
                     p.add_(p, alpha=-group["lr"] * decay)
+        return loss
 
 
 def losver_parameter_groups(model, weight_decay):

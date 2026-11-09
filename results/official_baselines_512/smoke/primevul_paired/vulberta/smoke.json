@@ -1,0 +1,52 @@
+{
+  "method": "vulberta",
+  "upstream": {
+    "repo": "https://github.com/ICL-ml4csec/VulBERTa.git",
+    "commit": "75ab355bf8be124751084c0ff3563df24f48fe38",
+    "script": "Finetuning_VulBERTa-MLP.ipynb"
+  },
+  "functions": 4,
+  "loss": 0.7856571674346924,
+  "gradient_norm": 7.267289638519287,
+  "maximum_parameter_update": 3.0090101063251495e-05,
+  "amp_attempts": [
+    {
+      "loss": 0.7856571674346924,
+      "scale": 65536.0,
+      "finite_gradient": true,
+      "optimizer_updated": true
+    }
+  ],
+  "save_reload_equal": true,
+  "source_split": "Train",
+  "metrics": {
+    "samples": 4,
+    "pairs": 2,
+    "threshold": 0.5,
+    "comparison": ">",
+    "pair_counts": {
+      "p_c": 0,
+      "p_v": 2,
+      "p_b": 0,
+      "p_r": 0
+    },
+    "p_c": 0.0,
+    "p_v": 1.0,
+    "p_b": 0.0,
+    "p_r": 0.0,
+    "accuracy": 0.5,
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6666666666666666,
+    "mcc": 0.0,
+    "auc": 0.375,
+    "auprc": 0.5,
+    "pair_ranking_accuracy": 0.0,
+    "pair_ranking_ties": 1,
+    "patched_fpr": 1.0
+  },
+  "maximum_memory_bytes": 3705343488,
+  "native_trainer_steps": 2,
+  "native_trainer_updates": 2,
+  "native_trainer_maximum_parameter_update": 4.501454532146454e-05
+}

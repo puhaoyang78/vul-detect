@@ -547,3 +547,4 @@ __pycache__/
 !/results/official_baselines_512/**/*.log
 /results/official_baselines_512/**/*.predicted.jsonl
 /results/official_baselines_512/**/*.local.log
+/results/official_baselines_512/**/framework/
