@@ -554,7 +554,7 @@ def prepare_candidates(data_dir, output_dir, model_path, dataset, *, test_limit=
 
 
 def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", methods=None):
-    """Real native Train examples through the three shared models and restore."""
+    """Real Train examples through shared classifiers/MIL ablations and restore."""
     import tempfile
     import time
     import numpy as np
@@ -592,7 +592,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
     result = dict(device=str(device), gpu=torch.cuda.get_device_name(device), dataset=dataset,
         train_members=[r["sample_key"] for r in selected], classification_positive_weight=data["classification_positive_weight"],
         test_used=False, methods={})
-    initial_context, initial_rng = None, None
+    initial_context, initial_rng, initial_cuda_rng = None, None, None
     encoder_initial = None
     for method in methods:
         method_features = features
@@ -612,15 +612,19 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         np.random.seed(123456)
         model, _ = core.losver_model(model_path, "baseline", cls_baseline=method == "plm_baseline",
             class_weight=data["classification_positive_weight"], bounded_attention=method != "plm_baseline",
-            attention_context=method != "plm_baseline",
-            attention_region="random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None)
+            attention_context=method not in ("plm_baseline", "rgcl_no_context"),
+            attention_region="random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS, "rgcl_no_context") else None)
         current_rng = torch.get_rng_state()
+        current_cuda_rng = torch.cuda.get_rng_state_all()
         current_encoder = next(model.encoder.parameters()).detach().cpu().clone()
         if encoder_initial is None:
             encoder_initial, initial_rng = current_encoder, current_rng
+            initial_cuda_rng = current_cuda_rng
         else:
             torch.testing.assert_close(current_encoder, encoder_initial, rtol=0, atol=0)
             torch.testing.assert_close(current_rng, initial_rng, rtol=0, atol=0)
+            for a,b in zip(current_cuda_rng, initial_cuda_rng):
+                torch.testing.assert_close(a,b,rtol=0,atol=0)
         model.native_binary = dataset != "primevul_paired"
         model.to(device).eval()
         with torch.no_grad():
@@ -632,7 +636,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
                     torch.testing.assert_close(initial.cpu(), initial_context, rtol=0, atol=0)
         optimizer = LOSVERAdamW(model.parameters(), lr=2e-5)
         model.train()
-        gradients, updates, auxiliary_gradients = [], [], []
+        gradients, updates, auxiliary_gradients, interaction_gradients = [], [], [], []
         head = (model.classifier.out_proj if hasattr(model.classifier, "out_proj") else model.classifier)
         for step in range(2):
             before = head.weight.detach().clone()
@@ -643,7 +647,7 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
                 torch.testing.assert_close(loss, parts["bce"] + (.1 * parts["region_loss"] if model.attention_region else 0))
                 if model.attention_region and int(parts["region_functions"]) < 1:
                     raise ValueError("GPU smoke did not exercise a real auxiliary target")
-                if method == "random_region" or side_supervision is not None:
+                if method in ("random_region", "rgcl_no_context") or side_supervision is not None:
                     gradient = torch.autograd.grad(parts["region_loss"], model.line_attention.weight, retain_graph=True)[0]
                     auxiliary_gradients.append(float(gradient.abs().sum()))
                     if not torch.isfinite(gradient).all() or auxiliary_gradients[-1] <= 0:
@@ -656,6 +660,12 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
                     if gradient[disabled].abs().sum() != 0 or gradient[~disabled].abs().sum() <= 0:
                         raise ValueError("auxiliary gradient reached the wrong repair side")
             loss.backward()
+            if model.attention_context:
+                interaction_gradients.append(dict(u=float(model.context_u.weight.grad.abs().sum()),
+                                                  v=float(model.context_v.weight.grad.abs().sum())))
+                if "rgcl_no_context" in methods and method == "rgcl":
+                    if interaction_gradients[-1]["v"] <= 0 or (step == 0 and interaction_gradients[-1]["u"] != 0) or (step == 1 and interaction_gradients[-1]["u"] <= 0):
+                        raise ValueError("explicit context projections did not receive the expected two-step gradients")
             if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
                 raise ValueError("nonfinite native GPU gradients")
             gradients.append(float(head.weight.grad.abs().sum()))
@@ -680,8 +690,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
             training_config=dict(class_weight=data["classification_positive_weight"]),
             state_dict={k: v.detach().cpu() for k, v in model.state_dict().items()})
         if method != "plm_baseline":
-            cp["bounded_attention"] = dict(k=5, region_supervision=model.attention_region,
-                context=dict(dimension=32))
+            cp["bounded_attention"] = dict(k=5, region_supervision=model.attention_region)
+            if model.attention_context:
+                cp["bounded_attention"]["context"] = dict(dimension=32)
             if side_supervision is not None:
                 cp["bounded_attention"].update(region_target=RGCL_REGION_TARGETS[method],
                     side_supervision=side_supervision)
@@ -700,7 +711,12 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
             del restored
         result["methods"][method] = dict(head_gradient_l1=gradients, head_update_l1=updates,
             finite_gradients=True, save_reload_equal=True, diff_independent_inference=True,
+            attention_context=model.attention_context,
+            interaction_gradient_l1=interaction_gradients,
             single_function_max_delta=float((p[:1] - one).abs().max()), parameters=sum(p.numel() for p in model.parameters()))
+        if method == "rgcl_no_context":
+            result["methods"][method].update(region_gradient_l1=auxiliary_gradients,
+                no_context_parameters=not any(k.startswith(("context_u.", "context_v.")) for k in model.state_dict()))
         if random_regions is not None:
             result["methods"][method].update(region_gradient_l1=auxiliary_gradients,
                 exact_token_mass_matches=all(r["diff_region_tokens"] == r["random_region_tokens"] for r in random_regions))
@@ -711,7 +727,9 @@ def check_rgcl(data_dir, output_dir, model_path, dataset, *, device="auto", meth
         del model, optimizer, cp, saved
         torch.cuda.empty_cache()
     result.update(initial_context_rgcl_equal=True if {"context_only", "rgcl"}.issubset(methods) else None,
+                  initial_no_context_rgcl_equal=True if {"rgcl_no_context", "rgcl"}.issubset(methods) else None,
                   initialization_cpu_rng_equal=True if len(methods) > 1 else None,
+                  initialization_cuda_rng_equal=True if len(methods) > 1 else None,
                   encoder_initialization_equal=True if len(methods) > 1 else None, seconds=time.monotonic() - started)
     write_json(Path(output_dir) / dataset / "gpu-smoke.json", result)
     return result

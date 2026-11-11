@@ -42,6 +42,31 @@ def record(i, target, *, code=None):
 
 
 class RGCLTests(unittest.TestCase):
+    def test_no_context_removes_only_explicit_interaction_with_same_initial_loss_and_rng(self):
+        from tests.test_bounded_attention import batch
+        torch.manual_seed(42)
+        plain,_=factory("tiny","baseline",bounded_attention=True,attention_region="diff",attention_context=False)
+        rng=torch.get_rng_state()
+        torch.manual_seed(42)
+        context,_=factory("tiny","baseline",bounded_attention=True,attention_region="diff",attention_context=True)
+        torch.testing.assert_close(torch.get_rng_state(),rng,rtol=0,atol=0)
+        self.assertEqual(set(context.state_dict())-set(plain.state_dict()),{"context_u.weight","context_v.weight"})
+        for name,value in plain.state_dict().items():
+            torch.testing.assert_close(value,context.state_dict()[name],rtol=0,atol=0)
+        plain.eval();context.eval()
+        a,pa,da=paired_forward(plain,batch(),"baseline","cpu",return_attention=True)
+        b,pb,db=paired_forward(context,batch(),"baseline","cpu",return_attention=True)
+        for left,right in ((a,b),(pa,pb),(da["region_loss"],db["region_loss"]),(da["line_rates"],db["line_rates"])):
+            torch.testing.assert_close(left,right,rtol=0,atol=0)
+        torch.testing.assert_close(a,da["bce"]+.1*da["region_loss"],rtol=0,atol=0)
+        a.backward();b.backward()
+        contextual=dict(context.named_parameters())
+        for name,p in plain.named_parameters():
+            if p.grad is not None:
+                torch.testing.assert_close(p.grad,contextual[name].grad,rtol=1e-6,atol=1e-7)
+        self.assertGreater(float(plain.line_attention.weight.grad.abs().sum()),0.)
+        self.assertGreater(float(context.context_v.weight.grad.abs().sum()),0.)
+
     def test_side_supervision_preserves_members_inputs_labels_rng_and_token_mass(self):
         template = dict(line_labels=[1, 0, 0], line_token_indices=[[1, 2], [2, 3], [4]],
                         code_mask=[False, True, True, True, True])
@@ -309,7 +334,7 @@ class RGCLTests(unittest.TestCase):
                 write_jsonl(root/"data/primevul_paired"/f"{split}.jsonl", rows)
                 write_jsonl(root/"data/primevul_paired"/f"{split}.lines.jsonl", rows)
             cfg = dict(LOSVER_CONFIG, epochs=dict(LOSVER_CONFIG["epochs"], baseline=2), batch_size=2, eval_batch_size=2)
-            for method in ("plm_baseline", "context_only", "rgcl", "random_region", *RGCL_REGION_TARGETS):
+            for method in ("plm_baseline", "context_only", "rgcl", "random_region", *RGCL_REGION_TARGETS, "rgcl_no_context"):
                 result = train_losver(root/"data", root/"out", "tiny", method, dataset="primevul_paired",
                                       config=cfg, seed=42, device="cpu")
                 self.assertEqual(result["selected_epochs"].keys(), {"p_c"})
@@ -318,7 +343,8 @@ class RGCLTests(unittest.TestCase):
                 cp = torch.load(run/"best-p_c.pt", weights_only=False)
                 restored, _ = load_paired(cp, "cpu")
                 self.assertEqual(restored.cls_baseline, method == "plm_baseline")
-                self.assertEqual(restored.attention_region, "random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None)
+                self.assertEqual(restored.attention_region, "random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS, "rgcl_no_context") else None)
+                self.assertEqual(restored.attention_context,method not in ("plm_baseline","rgcl_no_context"))
                 if method in RGCL_REGION_TARGETS:
                     self.assertEqual(cp["bounded_attention"]["region_target"], RGCL_REGION_TARGETS[method])
                     stats = result["bounded_attention"]["side_supervision"]
@@ -347,6 +373,10 @@ class RGCLTests(unittest.TestCase):
                          Path("results/attention_context_512/context_diff/primevul_paired/unixcoder"))
         self.assertEqual(study.run_path("out", "primevul_paired", 123456, "random_region"),
                          Path("out/seed123456/primevul_paired/random_region"))
+        self.assertEqual(study.run_path("out","primevul_paired",123456,"rgcl_no_context"),
+                         Path("results/bounded_attention_512/diff_region/primevul_paired/unixcoder"))
+        self.assertEqual(study.run_path("out","primevul_paired",42,"rgcl_no_context",reference_dir="history"),
+                         Path("out/seed42/primevul_paired/rgcl_no_context"))
         self.assertEqual(study.run_path("out", "primevul_paired", 42, "rgcl", reference_dir="history"),
                          Path("history/seed42/primevul_paired/rgcl"))
         for method in RGCL_REGION_TARGETS:
@@ -357,6 +387,8 @@ class RGCLTests(unittest.TestCase):
         self.assertEqual(study.study_methods("unixcoder"), ("plm_baseline", "context_only", "rgcl"))
         with self.assertRaises(ValueError):
             study.study_methods("codebert", ["random_region"])
+        with self.assertRaises(ValueError):
+            study.study_methods("codebert", ["rgcl_no_context"])
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); out = root/"out"; historical = root/"historical"
             historical.mkdir(); out.mkdir()
@@ -369,6 +401,76 @@ class RGCLTests(unittest.TestCase):
                 study.run(root, out, "tiny", "primevul_paired", 123456, ["rgcl"], device="cpu")
                 fit.assert_not_called()
             self.assertEqual({p.name:p.read_bytes() for p in historical.iterdir()}, before)
+
+    def test_no_context_route_matches_legacy_and_resumes_exactly(self):
+        from tests.test_insertion_localization import records
+        with tempfile.TemporaryDirectory() as tmp,patch("vulnmechanism.model.losver_model",side_effect=factory):
+            root=Path(tmp)
+            for split in ("train","valid"):
+                rows=records(pairs=[("int f(){\n use(x);\n return x;\n}",
+                                     "int f(){\n checked_use(x);\n return x;\n}")],split=split)
+                write_jsonl(root/"data/primevul_paired"/f"{split}.lines.jsonl",rows)
+            cfg=dict(LOSVER_CONFIG,epochs=dict(LOSVER_CONFIG["epochs"],baseline=2),batch_size=1,eval_batch_size=2)
+            options=dict(config=cfg,seed=42,device="cpu",save_every=1)
+            train_losver(root/"data",root/"legacy","tiny","unixcoder",bounded_attention=True,attention_region="diff",**options)
+            train_losver(root/"data",root/"direct","tiny","rgcl_no_context",**options)
+            def interrupt(*args,**kwargs):
+                save_training_state(*args,**kwargs)
+                if args[4]["global_step"]==1:raise RuntimeError("no-context interruption")
+            with patch("vulnmechanism.training.save_training_state",side_effect=interrupt):
+                with self.assertRaisesRegex(RuntimeError,"no-context interruption"):
+                    train_losver(root/"data",root/"resumed","tiny","rgcl_no_context",**options)
+            train_losver(root/"data",root/"resumed","tiny","rgcl_no_context",resume=True,**options)
+            reference=torch.load(root/"legacy/primevul_paired/unixcoder/last.pt",weights_only=False)
+            for path in (root/"direct",root/"resumed"):
+                actual=torch.load(path/"primevul_paired/rgcl_no_context/last.pt",weights_only=False)
+                self.assertFalse(any(k.startswith(("context_u.","context_v.")) for k in actual["model"]))
+                for key,value in reference["model"].items():
+                    torch.testing.assert_close(value,actual["model"][key],rtol=0,atol=0)
+                torch.testing.assert_close(reference["rng"]["torch"],actual["rng"]["torch"],rtol=0,atol=0)
+                for key,state in reference["optimizer"]["state"].items():
+                    for field,value in state.items():
+                        other=actual["optimizer"]["state"][key][field]
+                        if isinstance(value,torch.Tensor):torch.testing.assert_close(value,other,rtol=0,atol=0)
+                        else:self.assertEqual(value,other)
+
+    def test_context_ablation_report_retains_gains_and_losses_and_shared_supervision(self):
+        from vulnmechanism import rgcl_study as study
+        from vulnmechanism.metrics import paired_metrics
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);entries=[]
+            rows=[dict(sample_key=f"s:{i}",pair_key="complete:pair:key",target=1-i) for i in range(2)]
+            for split in ("valid","test"):write_jsonl(root/"data/primevul_paired"/f"{split}.jsonl",rows)
+            for seed in study.SEEDS:
+                for method in ("rgcl_no_context","rgcl"):
+                    scores=([.8,.7] if (seed==42 and method=="rgcl_no_context") or
+                            (seed==1234 and method=="rgcl") else [.8,.5])
+                    value=paired_metrics(rows,scores)
+                    path=root/f"{seed}-{method}";path.mkdir()
+                    entries.append(dict(dataset="primevul_paired",seed=seed,method=method,run=str(path),
+                                        validation=value,selected_epoch=1,reused=True))
+                    pred=[dict(r,probability=p,prediction=int(p>.5)) for r,p in zip(rows,scores)]
+                    write_jsonl(path/"valid.best-p_c.predictions.jsonl",pred)
+                    write_jsonl(path/"test.predictions.jsonl",pred)
+                    (path/"test.metrics.json").write_text(json.dumps(dict(selected_epoch=1,metrics=value)))
+                    cfg=dict(training_config={"seed":seed},training_members=[r["sample_key"] for r in rows],
+                        validation_members=[r["sample_key"] for r in rows],input_mode="512",line_mapping="source_offsets",
+                        model_path="tiny",function_micro_batch=8,gradient_accumulation=1,input_coverage={},
+                        parameters=1000+(49152 if method=="rgcl" else 0))
+                    (path/"training.metrics.json").write_text(json.dumps(cfg))
+                    write_jsonl(path/"train.attention_regions.jsonl",[dict(sample_key=r["sample_key"],labels=[1,0]) for r in rows])
+                    torch.save(dict(rng=dict(torch=torch.arange(5,dtype=torch.uint8),cuda=[])),path/"last.pt")
+            with patch.object(study,"inventory",return_value=dict(missing=0,experiments=entries)):
+                result=study.report(root/"data",root,"tiny",datasets=("primevul_paired",),methods=("rgcl_no_context","rgcl"))
+            changes=[r for r in result["context_pair_changes"] if r["split"]=="test"]
+            self.assertEqual([(r["gains"],r["losses"],r["net"]) for r in changes],[(1,0,1),(0,1,-1),(0,0,0)])
+            self.assertTrue(all(r["cpu_sampler_rng_equal"] and r["train_diff_masks_equal"] for r in result["context_interaction_checks"]))
+            self.assertIn("h_i 本身仍是 UniXcoder",(root/"report.md").read_text())
+            corrupted=root/"42-rgcl/test.predictions.jsonl"
+            bad=read_jsonl(corrupted);bad[0]["pair_key"]="different:pair:key";write_jsonl(corrupted,bad)
+            with patch.object(study,"inventory",return_value=dict(missing=0,experiments=entries)):
+                with self.assertRaisesRegex(ValueError,"members/labels differ"):
+                    study.report(root/"data",root,"tiny",datasets=("primevul_paired",),methods=("rgcl_no_context","rgcl"))
 
     def test_side_training_exact_resume_preserves_supervision_visits(self):
         from tests.test_insertion_localization import records
@@ -487,7 +589,7 @@ class RGCLTests(unittest.TestCase):
                     run.mkdir()
                     scores = [.8, .2] if method == "rgcl" else [.8, .7]
                     value = paired_metrics(rows, scores)
-                    pred = [dict(sample_key=row["sample_key"], target=row["target"], probability=p)
+                    pred = [dict(sample_key=row["sample_key"], pair_key=row["pair_key"], target=row["target"], probability=p)
                             for row, p in zip(rows, scores)]
                     write_jsonl(run/"valid.best-p_c.predictions.jsonl", pred)
                     write_jsonl(run/"test.predictions.jsonl", pred)

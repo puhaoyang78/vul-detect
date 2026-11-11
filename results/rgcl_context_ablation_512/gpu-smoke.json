@@ -1,0 +1,85 @@
+{
+  "passed": true,
+  "results": {
+    "primevul_paired": {
+      "device": "cuda:0",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "dataset": "primevul_paired",
+      "train_members": [
+        "primevul_paired:train:1",
+        "primevul_paired:train:2",
+        "primevul_paired:train:3",
+        "primevul_paired:train:4",
+        "primevul_paired:train:5",
+        "primevul_paired:train:6",
+        "primevul_paired:train:7",
+        "primevul_paired:train:8"
+      ],
+      "classification_positive_weight": 1.0,
+      "test_used": false,
+      "methods": {
+        "rgcl_no_context": {
+          "head_gradient_l1": [
+            75.8997802734375,
+            145.856201171875
+          ],
+          "head_update_l1": [
+            0.01535831019282341,
+            0.006107947789132595
+          ],
+          "finite_gradients": true,
+          "save_reload_equal": true,
+          "diff_independent_inference": true,
+          "attention_context": false,
+          "interaction_gradient_l1": [],
+          "single_function_max_delta": 1.7881393432617188e-07,
+          "parameters": 125340674,
+          "region_gradient_l1": [
+            82.60187530517578,
+            81.67178344726562
+          ],
+          "no_context_parameters": true
+        },
+        "rgcl": {
+          "head_gradient_l1": [
+            75.8997802734375,
+            145.94851684570312
+          ],
+          "head_update_l1": [
+            0.015358303673565388,
+            0.006108101457357407
+          ],
+          "finite_gradients": true,
+          "save_reload_equal": true,
+          "diff_independent_inference": true,
+          "attention_context": true,
+          "interaction_gradient_l1": [
+            {
+              "u": 0.0,
+              "v": 38.30632781982422
+            },
+            {
+              "u": 0.44055306911468506,
+              "v": 28.647968292236328
+            }
+          ],
+          "single_function_max_delta": 0.0,
+          "parameters": 125389826
+        }
+      },
+      "initial_context_rgcl_equal": null,
+      "initial_no_context_rgcl_equal": true,
+      "initialization_cpu_rng_equal": true,
+      "initialization_cuda_rng_equal": true,
+      "encoder_initialization_equal": true,
+      "seconds": 80.09859825391322
+    },
+    "original_rgcl_checkpoint": {
+      "path": "results/attention_context_512/context_diff/primevul_paired/unixcoder",
+      "passed": true,
+      "source_only_predictions_match_historical_valid": true,
+      "single_function": true
+    }
+  },
+  "test_used": false
+}

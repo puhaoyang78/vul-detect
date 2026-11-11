@@ -41,7 +41,7 @@ METHODS = (
 )
 RGCL_METHODS = ("plm_baseline", "context_only", "rgcl")
 RGCL_REGION_TARGETS = {"vulnerable_only": 1, "repaired_only": 0}
-RGCL_ALL_METHODS = (*RGCL_METHODS, "random_region", *RGCL_REGION_TARGETS)
+RGCL_ALL_METHODS = (*RGCL_METHODS, "random_region", *RGCL_REGION_TARGETS, "rgcl_no_context")
 TRAINING = dict(
     seed=42,
     epochs=3,
@@ -1381,10 +1381,10 @@ def train_losver(
         if dataset not in (*RGCL_DATASETS, "primevul_paired") or input_mode != "512":
             raise ValueError("RGCL comparisons require prepared datasets with 512 inputs")
         bounded_attention = method != "plm_baseline"
-        attention_context = bounded_attention
-        attention_region = "random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS) else None
-        if method in ("random_region", *RGCL_REGION_TARGETS) and dataset != "primevul_paired":
-            raise ValueError("region ablations use only PrimeVul")
+        attention_context = bounded_attention and method != "rgcl_no_context"
+        attention_region = "random" if method == "random_region" else "diff" if method in ("rgcl", *RGCL_REGION_TARGETS, "rgcl_no_context") else None
+        if method in ("random_region", *RGCL_REGION_TARGETS, "rgcl_no_context") and dataset != "primevul_paired":
+            raise ValueError("RGCL ablations use only PrimeVul")
     elif dataset != "primevul_paired":
         raise ValueError("original LOSVER keeps the official paired protocol")
     region_target = RGCL_REGION_TARGETS.get(method)

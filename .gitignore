@@ -548,3 +548,11 @@ __pycache__/
 /results/official_baselines_512/**/*.predicted.jsonl
 /results/official_baselines_512/**/*.local.log
 /results/official_baselines_512/**/framework/
+
+# Explicit function-context interaction ablation; weights and raw data remain local.
+!/results/rgcl_context_ablation_512/
+!/results/rgcl_context_ablation_512/**/
+!/results/rgcl_context_ablation_512/**/*.json
+!/results/rgcl_context_ablation_512/**/*.jsonl
+!/results/rgcl_context_ablation_512/**/*.md
+!/results/rgcl_context_ablation_512/**/*.log
