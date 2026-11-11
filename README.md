@@ -2,7 +2,7 @@
 
 函数级漏洞二分类。当前代码保留 CodeBERT 动态困难样本增强及其六组对照，以及 ASE 2025 LOSVER 的复现与实现修正。共享数据读写、训练记录、指标与 CLI；不包含静态关系注入、Motivation、跨域或历史成对表示学习分支。
 
-正式方法为 **RGCL（Repair-Guided Contextual Learning，即 Context + Diff）**：UniXcoder、512 Token、原始 Context 有界 MIL、K=5、0.1 倍 Token 加权 Diff 区域损失和函数 BCE。正式三组对照为 `plm_baseline`（CLS + `RobertaClassificationHead`）、`context_only`、`rgcl`；历史 Global Mean 结果保留。PrimeVul 按完整 Valid P-C、SecVulEval 按完整 Valid MCC 选模，阈值严格大于 0.5，统一 Seed42、1234、123456、Batch8、16 Epoch 和 AdamW lr=2e-5。
+正式方法为 **RGCL（Repair-Guided Context Learning，即 Context + Diff）**：UniXcoder、512 Token、原始 Context 有界 MIL、K=5、0.1 倍 Token 加权 Diff 区域损失和函数 BCE。正式三组对照为 `plm_baseline`（CLS + `RobertaClassificationHead`）、`context_only`、`rgcl`；历史 Global Mean 结果保留。PrimeVul 按完整 Valid P-C、SecVulEval 按完整 Valid MCC 选模，阈值严格大于 0.5，统一 Seed42、1234、123456、Batch8、16 Epoch 和 AdamW lr=2e-5。
 
 `python -m vulnmechanism.cli rgcl-study inventory` 核对并复用完整历史记录；`rgcl-study check --device cuda:0` 执行真实 GPU 检查；`rgcl-study run --dataset primevul_paired --seed 42 --device cuda:0` 补齐指定组合（SecVulEval 使用 `--dataset secvuleval`）；`rgcl-study report` 汇总三种子 Valid/Test。配置、复用来源和完整结果见[正式对照报告](results/rgcl_multiseed_512/report.md)。Seed123457、Patch 和其他历史方法不计入本轮均值。
 
